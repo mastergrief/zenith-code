@@ -74,6 +74,10 @@ from calm.hrm_text_158.native_full_stack.r7_cap_defer_pressure_instrumentation i
     optional_selection_scores_from_step_result_compact,
     pressure_mass_from_tensor_states,
 )
+from calm.hrm_text_158.native_full_stack.d_recompute_window_live_carrier_snapshot import (
+    emit_live_carrier_snapshots_for_probe_step,
+    initialize_live_carrier_snapshot_log,
+)
 from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
     D_RECOMPUTE_WINDOW_LOG_FILENAME,
     ReplayConstants,
@@ -5208,6 +5212,8 @@ def run_bounded_delta_steps(
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_window_log_path: Path | None = None,
     d_recompute_selector_manifest: StratifiedSelectorManifest | None = None,
+    d_live_carrier_snapshot_enabled: bool = False,
+    d_live_carrier_snapshot_path: Path | None = None,
     receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
     d_diagnostic_compact_step_reports: bool = False,
     calibration_warmup_collector: CalibrationWarmupCollector | None = None,
@@ -6027,6 +6033,13 @@ def run_bounded_delta_steps(
                         global_summary=step_result.global_summary,
                         selector_manifest=d_recompute_selector_manifest,
                     )
+                if d_live_carrier_snapshot_enabled and d_live_carrier_snapshot_path is not None:
+                    emit_live_carrier_snapshots_for_probe_step(
+                        enabled=True,
+                        log_path=d_live_carrier_snapshot_path,
+                        step=int(step),
+                        post_update_states=states,
+                    )
                 if calibration_warmup_collector is not None:
                     calibration_warmup_collector.record_step(
                         step=int(step),
@@ -6356,6 +6369,7 @@ def run_c2p1_probe(
     r7_deferred_backlog_carry_enabled: bool = False,
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_selector_manifest_path: Path | None = None,
+    d_live_carrier_snapshot_enabled: bool = False,
     d_diagnostic_compact_step_reports: bool = False,
     d_recompute_calibration_warmup_out: Path | None = None,
     votes_emit_enabled: bool = False,
@@ -6618,6 +6632,13 @@ def run_c2p1_probe(
     )
     if d_recompute_window_log_path is not None:
         initialize_recompute_window_log_for_probe_session(d_recompute_window_log_path)
+    d_live_carrier_snapshot_path = (
+        Path(scratch_root) / "d_recompute_window_diagnostic" / "live_carrier_snapshot.jsonl"
+        if bool(d_live_carrier_snapshot_enabled)
+        else None
+    )
+    if d_live_carrier_snapshot_path is not None:
+        initialize_live_carrier_snapshot_log(d_live_carrier_snapshot_path)
     run_log_path = install_probe_durable_run_log(scratch_root)
     cuda_memory_snapshots_jsonl_path = install_probe_cuda_memory_snapshot_jsonl(
         scratch_root
@@ -7218,6 +7239,8 @@ def run_c2p1_probe(
             ),
             d_recompute_window_log_path=d_recompute_window_log_path,
             d_recompute_selector_manifest=d_recompute_selector_manifest,
+            d_live_carrier_snapshot_enabled=bool(d_live_carrier_snapshot_enabled),
+            d_live_carrier_snapshot_path=d_live_carrier_snapshot_path,
             receipt_emit_profile=str(receipt_emit_profile),
             d_diagnostic_compact_step_reports=bool(d_diagnostic_compact_step_reports),
             calibration_warmup_collector=calibration_warmup_collector,
@@ -7495,6 +7518,11 @@ def run_c2p1_probe(
         assert d_recompute_window_log_path is not None
         receipt["d_recompute_window_instrumentation_enabled"] = True
         receipt["d_recompute_window_log_path"] = str(d_recompute_window_log_path)
+    if d_live_carrier_snapshot_enabled:
+        assert d_live_carrier_snapshot_path is not None
+        receipt["d_live_carrier_snapshot_enabled"] = True
+        receipt["d_live_carrier_snapshot_path"] = str(d_live_carrier_snapshot_path)
+    if d_recompute_window_instrumentation_enabled:
         if d_recompute_selector_manifest is not None:
             receipt["d_recompute_selector_manifest_sha256"] = str(
                 d_recompute_selector_manifest.manifest_sha256
@@ -7920,6 +7948,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--d-live-carrier-snapshot",
+        action="store_true",
+        help=(
+            "Default-off Slice-5 live carrier byte snapshot instrumentation. When "
+            "enabled with event-coded live carrier, append per-step exact carrier "
+            "byte surfaces to live_carrier_snapshot.jsonl under scratch_root."
+        ),
+    )
+    ap.add_argument(
         "--d-diagnostic-compact-step-reports",
         action="store_true",
         help=(
@@ -8071,6 +8108,7 @@ def main(argv: list[str] | None = None) -> int:
         d_recompute_selector_manifest_path=args.d_recompute_selector_manifest,
         d_diagnostic_compact_step_reports=bool(args.d_diagnostic_compact_step_reports),
         d_recompute_calibration_warmup_out=args.d_recompute_calibration_warmup_out,
+        d_live_carrier_snapshot_enabled=bool(args.d_live_carrier_snapshot),
         votes_emit_enabled=bool(args.votes_emit_enabled),
         votes_emit_root=(
             Path(args.scratch_root) if bool(args.votes_emit_enabled) else None

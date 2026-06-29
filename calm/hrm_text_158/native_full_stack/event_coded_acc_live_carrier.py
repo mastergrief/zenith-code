@@ -11,8 +11,63 @@ import torch
 
 from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
     EventCodedAccEvent,
+    encode_event_coded_acc_events,
+    encode_event_coded_backlog_indices,
     pack_event_coded_acc_checkpoint_v1,
 )
+from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
+    EVENT_CODED_ACC_METADATA_HEADER_BYTES,
+)
+
+VARINT_BOUNDARY_FLAT_INDICES: tuple[int, ...] = (
+    127,
+    128,
+    16383,
+    16384,
+    2097151,
+    2097152,
+    268435455,
+    268435456,
+)
+
+
+class LiveCarrierByteCounterDesync(ValueError):
+    """Incremental live-carrier byte counters disagree with codec re-encode."""
+
+
+class _TrackedBacklog:
+    """Guarded backlog index set; mutate only via .add() for byte-counter integrity."""
+
+    __slots__ = ("_indices", "_owner")
+
+    def __init__(self, indices: Iterable[int] | None = None) -> None:
+        self._indices: set[int] = {int(item) for item in (indices or ())}
+        self._owner: EventCodedAccLiveState | None = None
+
+    def _attach_owner(self, owner: EventCodedAccLiveState) -> None:
+        self._owner = owner
+
+    def add(self, flat_index: int) -> None:
+        idx = int(flat_index)
+        if idx in self._indices:
+            return
+        self._indices.add(idx)
+        if self._owner is not None:
+            self._owner._on_backlog_index_added(idx)
+
+    def __contains__(self, item: object) -> bool:
+        if not isinstance(item, int):
+            return False
+        return int(item) in self._indices
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(self._indices)
+
+    def __len__(self) -> int:
+        return len(self._indices)
+
+    def copy_indices(self) -> _TrackedBacklog:
+        return _TrackedBacklog(self._indices)
 from calm.hrm_text_158.native_full_stack.two_tier_carry_reducers import (
     DEFAULT_CROSSING_THRESHOLD_ABS,
     carry_self_update_row,
@@ -385,14 +440,96 @@ class EventCodedAccLiveState:
     demotion_band: int = 3
     _hot: _PackedHotTable = field(default_factory=_PackedHotTable.empty, repr=False, compare=False)
     events: list[EventCodedAccEvent] = field(default_factory=list)
-    backlog: set[int] = field(default_factory=set)
+    backlog: _TrackedBacklog = field(default_factory=_TrackedBacklog)
     q_levels: dict[int, int] = field(default_factory=dict)
     step_records: list[StepSurfaceRecord] = field(default_factory=list)
     dense_accumulator_materialized_numel: int = 0
     _hot_packed_bytes_cache: bytes | None = field(default=None, repr=False, compare=False)
+    _live_carrier_events_bytes: int = field(default=0, repr=False, compare=False)
+    _live_carrier_backlog_bytes: int = field(default=0, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.backlog, _TrackedBacklog):
+            self.backlog = _TrackedBacklog(self.backlog)
+        self.backlog._attach_owner(self)
+        if (
+            self._live_carrier_events_bytes == 0
+            and self._live_carrier_backlog_bytes == 0
+            and (self.events or len(self.backlog) or len(self._hot))
+        ):
+            self.rebuild_live_carrier_byte_counters()
 
     def _invalidate_packed_caches(self) -> None:
         self._hot_packed_bytes_cache = None
+
+    def _on_backlog_index_added(self, flat_index: int) -> None:
+        self._live_carrier_backlog_bytes += len(
+            encode_event_coded_backlog_indices((int(flat_index),))
+        )
+
+    def _append_event(self, event: EventCodedAccEvent) -> None:
+        self.events.append(event)
+        self._live_carrier_events_bytes += len(encode_event_coded_acc_events((event,)))
+
+    def rebuild_live_carrier_byte_counters(self) -> None:
+        self._live_carrier_events_bytes = len(
+            encode_event_coded_acc_events(tuple(self.events))
+        )
+        self._live_carrier_backlog_bytes = len(
+            encode_event_coded_backlog_indices(tuple(sorted(self.backlog)))
+        )
+        self._invalidate_packed_caches()
+
+    def _exact_byte_components_from_codec(self) -> dict[str, int]:
+        events_bytes = len(encode_event_coded_acc_events(tuple(self.events)))
+        backlog_bytes = len(
+            encode_event_coded_backlog_indices(tuple(sorted(self.backlog)))
+        )
+        hot_bytes = len(self.hot_packed_bytes())
+        metadata_bytes = int(EVENT_CODED_ACC_METADATA_HEADER_BYTES)
+        total = int(events_bytes + backlog_bytes + hot_bytes + metadata_bytes)
+        return {
+            "events_bytes": int(events_bytes),
+            "backlog_bytes": int(backlog_bytes),
+            "hot_exact_bytes": int(hot_bytes),
+            "metadata_bytes": int(metadata_bytes),
+            "live_acc_carrier_bytes_total": int(total),
+        }
+
+    def live_carrier_byte_snapshot(self) -> dict[str, int | bool]:
+        hot_bytes = len(self.hot_packed_bytes())
+        metadata_bytes = int(EVENT_CODED_ACC_METADATA_HEADER_BYTES)
+        total = int(
+            self._live_carrier_events_bytes
+            + self._live_carrier_backlog_bytes
+            + hot_bytes
+            + metadata_bytes
+        )
+        return {
+            "events_bytes": int(self._live_carrier_events_bytes),
+            "backlog_bytes": int(self._live_carrier_backlog_bytes),
+            "hot_exact_bytes": int(hot_bytes),
+            "metadata_bytes": int(metadata_bytes),
+            "live_acc_carrier_bytes_total": int(total),
+            "live_carrier_bytes_exact": True,
+        }
+
+    def assert_live_carrier_byte_counters_exact(self) -> dict[str, int]:
+        exact = self._exact_byte_components_from_codec()
+        snapshot = self.live_carrier_byte_snapshot()
+        for key in (
+            "events_bytes",
+            "backlog_bytes",
+            "hot_exact_bytes",
+            "metadata_bytes",
+            "live_acc_carrier_bytes_total",
+        ):
+            if int(snapshot[key]) != int(exact[key]):
+                raise LiveCarrierByteCounterDesync(
+                    f"live carrier byte counter desync on {key}: "
+                    f"incremental={snapshot[key]} codec={exact[key]}"
+                )
+        return exact
 
     def hot_packed_bytes(self) -> bytes:
         if self._hot_packed_bytes_cache is None:
@@ -438,18 +575,22 @@ class EventCodedAccLiveState:
         return _HotExactView(self._hot, invalidate_cache=self._invalidate_packed_caches)
 
     def cow_copy(self) -> EventCodedAccLiveState:
-        return EventCodedAccLiveState(
+        copied = EventCodedAccLiveState(
             logical_numel=int(self.logical_numel),
             cold_default=int(self.cold_default),
             threshold_abs=int(self.threshold_abs),
             demotion_band=int(self.demotion_band),
             _hot=self._hot.fork(),
             events=list(self.events),
-            backlog=set(self.backlog),
+            backlog=self.backlog.copy_indices(),
             q_levels=dict(self.q_levels),
             step_records=list(self.step_records),
             dense_accumulator_materialized_numel=int(self.dense_accumulator_materialized_numel),
+            _live_carrier_events_bytes=int(self._live_carrier_events_bytes),
+            _live_carrier_backlog_bytes=int(self._live_carrier_backlog_bytes),
         )
+        copied.backlog._attach_owner(copied)
+        return copied
 
     def reconstruct_lane(self, flat_index: int) -> int:
         return int(self._hot.get(int(flat_index), int(self.cold_default)))
@@ -686,7 +827,7 @@ class EventCodedAccLiveState:
             idx = int(flat_index)
             direction = 1 if int(post) >= 0 else 0
             residual_mag = min(abs(int(post)), int(self.threshold_abs) - 1)
-            self.events.append(
+            self._append_event(
                 EventCodedAccEvent(
                     flat_index=idx,
                     direction=int(direction),
@@ -760,7 +901,7 @@ def _carrier_as_dict_state(carrier: EventCodedAccLiveState) -> EventCodedAccLive
         demotion_band=int(carrier.demotion_band),
         _hot=_PackedHotTable.from_dict(carrier._hot.to_dict()),
         events=list(carrier.events),
-        backlog=set(carrier.backlog),
+        backlog=carrier.backlog.copy_indices(),
         q_levels=dict(carrier.q_levels),
         step_records=list(carrier.step_records),
         dense_accumulator_materialized_numel=int(carrier.dense_accumulator_materialized_numel),
