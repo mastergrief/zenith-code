@@ -195,6 +195,7 @@ from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     pack_w6_lanes_to_bytes,
 )
 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+    C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY,
     RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV,
     c8_runtime_guard_stats,
 )
@@ -279,6 +280,21 @@ C2P2_AUDIT_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_strict_exact_audit/
 C2P2_SUPPORT_CYCLER_SCHEMA_VERSION = "hrm_text_158_c2p2_identity_full_support_cycler/v0"
 C2P2_TIMING_SCHEMA_VERSION = "hrm_text_158_c2p2_calibration_timing_summary/v0"
 C2P2_PHASE_TELEMETRY_SCHEMA_VERSION = "hrm_text_158_c2p2_phase_telemetry/v0"
+PHASE_MILESTONE_COUNTER_SCHEMA = "hrm_text_158_phase_milestone_counter/v1"
+MILESTONE_BUDGETED_PHASE_IDS = frozenset({
+    "step_forward_backward",
+    "sparse_vote_construction",
+    "sparse_cap_apply",
+    "live_carrier_snapshot_emit",
+    "artifact_flush",
+})
+PROBE_PHASE_TO_MILESTONE_PHASE_ID = {
+    "step_forward_backward": "step_forward_backward",
+    "sparse_vote_construction": "sparse_vote_construction",
+    "sparse_cap_apply": "sparse_cap_apply",
+    "live_carrier_snapshot_emit": "live_carrier_snapshot_emit",
+    "receipt_write": "artifact_flush",
+}
 C2P2_DEVICE_GUARD_SCHEMA_VERSION = "hrm_text_158_c2p2_device_guard/v0"
 C2P2_FAULTHANDLER_SCHEMA_VERSION = "hrm_text_158_faulthandler_guard/v0"
 B1_PRIOR_AUDIT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_audit/v0"
@@ -1751,6 +1767,116 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
     tmp_path.replace(path)
 
 
+
+
+def _validate_event_coded_sparse_vote_authority_config(
+    *,
+    event_coded_sparse_vote_authority: bool,
+    persistent_accumulator_event_coded_live: bool,
+    two_tier_carry_w6_enabled: bool,
+    b2b_sequential_capture_enabled: bool,
+    votes_emit_enabled: bool,
+    carrier_growth_enabled: bool,
+    d_recompute_window_instrumentation_enabled: bool,
+    d_recompute_calibration_warmup_out: Path | None,
+) -> None:
+    if not bool(event_coded_sparse_vote_authority):
+        return
+    if not bool(persistent_accumulator_event_coded_live):
+        raise ValueError(
+            "--event-coded-sparse-vote-authority requires "
+            "--persistent-accumulator-event-coded-live"
+        )
+    incompatible: list[str] = []
+    if bool(two_tier_carry_w6_enabled):
+        incompatible.append("--two-tier-carry-w6")
+    if bool(b2b_sequential_capture_enabled):
+        incompatible.append("--b2b-sequential-capture")
+    if bool(votes_emit_enabled):
+        incompatible.append("--votes-emit-enabled")
+    if bool(carrier_growth_enabled):
+        incompatible.append("--carrier-growth-enabled")
+    if bool(d_recompute_window_instrumentation_enabled):
+        incompatible.append("--d-recompute-window-instrumentation")
+    if d_recompute_calibration_warmup_out is not None:
+        incompatible.append("--d-recompute-calibration-warmup-out")
+    if incompatible:
+        raise ValueError(
+            "event_coded_sparse_vote_authority incompatible with: "
+            + ", ".join(incompatible)
+        )
+
+
+_PROBE_RUNTIME_ENV_KEYS: tuple[str, ...] = (
+    RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV,
+    PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV,
+    PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV,
+    RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV,
+    RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV,
+    RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV,
+    RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV,
+    PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV,
+    PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV,
+)
+
+
+def _snapshot_probe_runtime_env() -> dict[str, str | None]:
+    return {key: os.environ.get(key) for key in _PROBE_RUNTIME_ENV_KEYS}
+
+
+def _restore_probe_runtime_env(snapshot: Mapping[str, str | None]) -> None:
+    for key in _PROBE_RUNTIME_ENV_KEYS:
+        value = snapshot.get(key)
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+
+class PhaseMilestoneEmitter:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        enabled: bool,
+        device: torch.device,
+    ) -> None:
+        self.root = Path(root)
+        self.enabled = bool(enabled)
+        self.device = device
+        self._counters: dict[str, int] = {}
+
+    def record_phase_complete(
+        self,
+        phase_id: str,
+        *,
+        optimizer_step_index: int | None,
+        elapsed_since_phase_enter_seconds: float,
+    ) -> None:
+        if not self.enabled:
+            return
+        if str(phase_id) not in MILESTONE_BUDGETED_PHASE_IDS:
+            return
+        counter = int(self._counters.get(str(phase_id), 0)) + 1
+        self._counters[str(phase_id)] = counter
+        out_path = self.root / "liveness_milestones" / f"{phase_id}.jsonl"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "schema": PHASE_MILESTONE_COUNTER_SCHEMA,
+            "phase_id": str(phase_id),
+            "optimizer_step_index": optimizer_step_index,
+            "milestone_counter": counter,
+            "milestone_kind": "phase_complete",
+            "device": str(self.device),
+            "elapsed_since_phase_enter_seconds": round(
+                float(elapsed_since_phase_enter_seconds),
+                6,
+            ),
+        }
+        with out_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+
 @dataclass
 class ProbeTerminalFlushContext:
     scratch_root: Path
@@ -1861,6 +1987,7 @@ class PhaseProgress:
         arm_faulthandler_timer: bool = True,
         phase_timeout_exemptions: frozenset[str] | set[str] | None = None,
         phase_timeout_exemption_contract: str = PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
+        milestone_emitter: PhaseMilestoneEmitter | None = None,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         self.enabled = bool(enabled)
@@ -1877,6 +2004,7 @@ class PhaseProgress:
         self.phase_timeout_exemptions = frozenset(
             str(phase) for phase in (phase_timeout_exemptions or ())
         )
+        self.milestone_emitter = milestone_emitter
         self.clock = clock
         self.started_at = float(self.clock())
         self.events: list[dict[str, Any]] = []
@@ -2180,6 +2308,16 @@ class PhaseProgress:
             end_fields["phase_timeout_exempted"] = True
             end_fields["scalar_phase_timeout_seconds"] = self.phase_timeout_seconds
         self.mark(phase, "end", duration_seconds=duration, **end_fields)
+        if self.milestone_emitter is not None:
+            milestone_phase_id = PROBE_PHASE_TO_MILESTONE_PHASE_ID.get(str(phase))
+            if milestone_phase_id is not None:
+                step_index = fields.get("step")
+                optimizer_step_index = int(step_index) if step_index is not None else None
+                self.milestone_emitter.record_phase_complete(
+                    milestone_phase_id,
+                    optimizer_step_index=optimizer_step_index,
+                    elapsed_since_phase_enter_seconds=duration,
+                )
         self._write_cleared_last_active_phase_if_idle(phase)
 
     def to_dict(self) -> dict[str, Any]:
@@ -5316,6 +5454,7 @@ def run_bounded_delta_steps(
     votes_emit_root: Path | None = None,
     carrier_growth_enabled: bool = False,
     confirmation_envelope: str | None = None,
+    event_coded_sparse_vote_authority: bool = False,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -5707,14 +5846,16 @@ def run_bounded_delta_steps(
                 }
             with progress.phase("step_update", step=int(step)):
                 sparse_events_by_key: dict[str, Any] = {}
-                votes_by_key, vote_pressure_by_key, finite_weighted_grad = _weighted_grads_to_science_arm_votes(
-                    weighted_grads,
-                    states,
-                    rank_spec=rank_spec,
-                    vote_spec=vote_spec,
-                    science_arm=str(science_arm),
-                    sparse_events_out=sparse_events_by_key,
-                )
+                with progress.phase("sparse_vote_construction", step=int(step)):
+                    votes_by_key, vote_pressure_by_key, finite_weighted_grad = _weighted_grads_to_science_arm_votes(
+                        weighted_grads,
+                        states,
+                        rank_spec=rank_spec,
+                        vote_spec=vote_spec,
+                        science_arm=str(science_arm),
+                        sparse_events_out=sparse_events_by_key,
+                        sparse_construction_only=bool(event_coded_sparse_vote_authority),
+                    )
                 front_c_identity_observer = make_front_c_identity_observer_for_step(
                     front_c_identity_collector,
                     step=int(step),
@@ -5860,9 +6001,14 @@ def run_bounded_delta_steps(
                 s3bb_boundary_step_report: dict[str, Any] = {}
 
                 def _materialize_bounded_delta_vote_step() -> Any:
+                    apply_votes_by_key = (
+                        None
+                        if bool(event_coded_sparse_vote_authority)
+                        else votes_by_key
+                    )
                     return apply_bounded_delta_vote_step(
                         states,
-                        votes_by_key,
+                        apply_votes_by_key,
                         vote_specs,
                         replay_ce_veto_votes_by_key=replay_ce_veto_votes_by_key,
                         replay_ce_veto_moves_by_key=replay_ce_veto_moves_by_key,
@@ -5881,6 +6027,9 @@ def run_bounded_delta_steps(
                         local_selection_ordering_step=int(step),
                         front_c_identity_observer=front_c_identity_observer,
                         candidate_sparse_vote_events_by_key=sparse_events_by_key,
+                        event_coded_sparse_vote_authority=bool(
+                            event_coded_sparse_vote_authority
+                        ),
                         **two_tier_vote_step_kwargs,
                         **resolve_r7_deferred_backlog_vote_step_kwargs(
                             r7_deferred_backlog_carry_enabled=bool(
@@ -5889,6 +6038,12 @@ def run_bounded_delta_steps(
                             carry_backlog=carry_backlog,
                         ),
                     )
+
+                def _invoke_bounded_delta_vote_step_materialize() -> Any:
+                    if bool(event_coded_sparse_vote_authority):
+                        with progress.phase("sparse_cap_apply", step=int(step)):
+                            return _materialize_bounded_delta_vote_step()
+                    return _materialize_bounded_delta_vote_step()
 
                 if votes_emit_collector is not None:
                     from calm.hrm_text_158.native_full_stack.votes_emit_collector import (
@@ -5913,7 +6068,7 @@ def run_bounded_delta_steps(
                     materialization = run_vote_materialization_with_s3bb_boundary_catch(
                         phase=str(phase),
                         step_report=s3bb_boundary_step_report,
-                        materialize=_materialize_bounded_delta_vote_step,
+                        materialize=_invoke_bounded_delta_vote_step_materialize,
                     )
                     if materialization.terminated:
                         breach_duration_seconds = _timing_duration_seconds(
@@ -5965,7 +6120,7 @@ def run_bounded_delta_steps(
                         break
                     step_result = materialization.value
                 else:
-                    step_result = _materialize_bounded_delta_vote_step()
+                    step_result = _invoke_bounded_delta_vote_step_materialize()
                 states = step_result.tensor_states
                 if carrier_growth_collector is not None:
                     from calm.hrm_text_158.native_full_stack.carrier_growth_summary import (
@@ -6042,7 +6197,7 @@ def run_bounded_delta_steps(
                         local_loss_delta_by_key=local_loss_delta_by_key,
                         optimizer_step_index=int(step),
                     )
-                else:
+                elif not bool(event_coded_sparse_vote_authority):
                     control_plans_by_key = _plan_integer_vote_update_for_control_arm_surfaces(
                         tensor_states=pre_apply_states,
                         votes_by_key=votes_by_key,
@@ -6077,6 +6232,11 @@ def run_bounded_delta_steps(
                         local_loss_delta_by_key=None,
                         optimizer_step_index=int(step),
                     )
+                else:
+                    step_result_compact = dict(step_result_compact)
+                    step_result_compact[
+                        "control_arm_index_surfaces_skipped_sparse_authority"
+                    ] = True
                 _update_prior_applied_by_state_key(
                     prior_applied_by_state_key,
                     step_result_compact,
@@ -6132,12 +6292,21 @@ def run_bounded_delta_steps(
                         selector_manifest=d_recompute_selector_manifest,
                     )
                 if d_live_carrier_snapshot_enabled and d_live_carrier_snapshot_path is not None:
-                    emit_live_carrier_snapshots_for_probe_step(
-                        enabled=True,
-                        log_path=d_live_carrier_snapshot_path,
-                        step=int(step),
-                        post_update_states=states,
-                    )
+                    if bool(event_coded_sparse_vote_authority):
+                        with progress.phase("live_carrier_snapshot_emit", step=int(step)):
+                            emit_live_carrier_snapshots_for_probe_step(
+                                enabled=True,
+                                log_path=d_live_carrier_snapshot_path,
+                                step=int(step),
+                                post_update_states=states,
+                            )
+                    else:
+                        emit_live_carrier_snapshots_for_probe_step(
+                            enabled=True,
+                            log_path=d_live_carrier_snapshot_path,
+                            step=int(step),
+                            post_update_states=states,
+                        )
                 if calibration_warmup_collector is not None:
                     calibration_warmup_collector.record_step(
                         step=int(step),
@@ -6478,6 +6647,7 @@ def run_c2p1_probe(
     confirmation_envelope: str | None = None,
     dense_accumulator_w7_clip: bool = False,
     dense_accumulator_w8_clip: bool = False,
+    event_coded_sparse_vote_authority: bool = False,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -6514,493 +6684,984 @@ def run_c2p1_probe(
         raise ValueError(
             "dense_accumulator_w7_clip and dense_accumulator_w8_clip are mutually exclusive"
         )
-    if bool(persistent_accumulator_event_coded_live):
-        if bool(persistent_accumulator_w6_byte_packed) or bool(
-            persistent_accumulator_w5_byte_packed
-        ) or bool(dense_accumulator_w7_clip) or bool(dense_accumulator_w8_clip):
-            raise ValueError(
-                "persistent_accumulator_event_coded_live is mutually exclusive with "
-                "W5/W6 byte-packed accumulators and W7/W8 clip boundaries"
+    _probe_runtime_env_snapshot = _snapshot_probe_runtime_env()
+    try:
+        if bool(persistent_accumulator_event_coded_live):
+            if bool(persistent_accumulator_w6_byte_packed) or bool(
+                persistent_accumulator_w5_byte_packed
+            ) or bool(dense_accumulator_w7_clip) or bool(dense_accumulator_w8_clip):
+                raise ValueError(
+                    "persistent_accumulator_event_coded_live is mutually exclusive with "
+                    "W5/W6 byte-packed accumulators and W7/W8 clip boundaries"
+                )
+            resolve_live_acc_carrier_selector(
+                v4_enabled=True,
+                w5_enabled=bool(persistent_accumulator_w5_byte_packed),
+                w6_enabled=bool(persistent_accumulator_w6_byte_packed),
+                w7_enabled=bool(dense_accumulator_w7_clip),
+                w8_enabled=bool(dense_accumulator_w8_clip),
             )
-        resolve_live_acc_carrier_selector(
-            v4_enabled=True,
-            w5_enabled=bool(persistent_accumulator_w5_byte_packed),
-            w6_enabled=bool(persistent_accumulator_w6_byte_packed),
-            w7_enabled=bool(dense_accumulator_w7_clip),
-            w8_enabled=bool(dense_accumulator_w8_clip),
-        )
-        os.environ[RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV] = "1"
-    elif RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV in os.environ:
-        os.environ.pop(RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV, None)
-    if bool(persistent_accumulator_w6_byte_packed):
-        os.environ[PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV] = "1"
-    elif PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV in os.environ:
-        os.environ.pop(PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV, None)
-    if bool(persistent_accumulator_w5_byte_packed):
-        os.environ[PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV] = "1"
-        os.environ[RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV] = "1"
-        os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
-    elif PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV in os.environ:
-        os.environ.pop(PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV, None)
-        os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
-    if bool(dense_accumulator_w7_clip):
-        os.environ[RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV] = "1"
-        os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
-        os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
-        os.environ.pop(RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV, None)
-    elif RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV in os.environ:
-        os.environ.pop(RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV, None)
-    if bool(dense_accumulator_w8_clip):
-        os.environ[RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV] = "1"
-        os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
-        os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
-        os.environ.pop(RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV, None)
-    elif RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV in os.environ:
-        os.environ.pop(RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV, None)
-    if bool(persistent_q_ternary_byte_packed):
-        os.environ[PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV] = "1"
-    elif PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV in os.environ:
-        os.environ.pop(PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV, None)
-    if bool(persistent_q_ternary_base3_codec):
-        os.environ[PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV] = "1"
-    elif PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV in os.environ:
-        os.environ.pop(PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV, None)
-    if oracle_screen_mode is not None and str(oracle_screen_mode) not in ORACLE_SCREEN_MODE_CHOICES:
-        raise ValueError(
-            f"oracle_screen_mode must be one of {ORACLE_SCREEN_MODE_CHOICES}, got {oracle_screen_mode!r}"
-        )
-    if oracle_screen_mode is None and str(science_arm) not in SCIENCE_ARM_CHOICES:
-        raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
-    if int(max_steps_hard) <= 0:
-        raise ValueError("max_steps_hard must be positive")
-    if int(steps) > int(max_steps_hard):
-        raise ValueError(
-            f"steps={int(steps)} exceeds max_steps_hard={int(max_steps_hard)}"
-        )
-    if int(audit_interval) < 0:
-        raise ValueError("audit_interval must be non-negative")
-    if int(matched_continued_training_horizon_steps) < 0:
-        raise ValueError("matched_continued_training_horizon_steps must be non-negative")
-    if support_order_seed is not None and int(support_order_seed) < 0:
-        raise ValueError("support_order_seed must be non-negative when set")
-    global_cap_contract_receipt = named_global_cap_contract_receipt(str(global_cap_contract))
-    if str(tie_rule_mode) not in GLOBAL_TIE_RULE_MODES:
-        raise ValueError(
-            f"tie_rule_mode must be one of {GLOBAL_TIE_RULE_MODES}, got {tie_rule_mode!r}"
-        )
-    if (
-        str(global_cap_contract) == GLOBAL_CAP_CONTRACT_OFF
-        and str(tie_rule_mode) != EXACT_GLOBAL_CAP_TIE_RULE_MODE
-    ):
-        raise ValueError(
-            "tie_rule_mode requires a non-off global_cap_contract; "
-            "use exact_global_cap when global_cap_contract=off"
-        )
-    requested_prior_audit_supports = parse_prior_audit_supports(prior_audit_supports)
-    requested_b2_retained_supports = parse_b2_retained_supports(b2_retained_supports)
-    if b2_full_verdict_mode:
-        missing_retained = [
-            support
-            for support in B2_FULL_STOP_SUPPORTS
-            if support not in requested_b2_retained_supports
-        ]
-        if missing_retained:
+            os.environ[RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV] = "1"
+        elif RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV in os.environ:
+            os.environ.pop(RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV, None)
+        if bool(persistent_accumulator_w6_byte_packed):
+            os.environ[PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV] = "1"
+        elif PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV in os.environ:
+            os.environ.pop(PERSISTENT_ACCUMULATOR_W6_BYTE_PACKED_ENV, None)
+        if bool(persistent_accumulator_w5_byte_packed):
+            os.environ[PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV] = "1"
+            os.environ[RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV] = "1"
+            os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
+        elif PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV in os.environ:
+            os.environ.pop(PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV, None)
+            os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
+        if bool(dense_accumulator_w7_clip):
+            os.environ[RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV] = "1"
+            os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
+            os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
+            os.environ.pop(RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV, None)
+        elif RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV in os.environ:
+            os.environ.pop(RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV, None)
+        if bool(dense_accumulator_w8_clip):
+            os.environ[RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV] = "1"
+            os.environ.pop(RUN_NARROW_CARRIER_W5_TRAINER_INTEGRATION_ENV, None)
+            os.environ.pop(RUN_NARROW_CARRIER_W6_TRAINER_INTEGRATION_ENV, None)
+            os.environ.pop(RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV, None)
+        elif RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV in os.environ:
+            os.environ.pop(RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV, None)
+        if bool(persistent_q_ternary_byte_packed):
+            os.environ[PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV] = "1"
+        elif PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV in os.environ:
+            os.environ.pop(PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV, None)
+        if bool(persistent_q_ternary_base3_codec):
+            os.environ[PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV] = "1"
+        elif PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV in os.environ:
+            os.environ.pop(PERSISTENT_Q_TERNARY_BASE3_CODEC_ENV, None)
+        if oracle_screen_mode is not None and str(oracle_screen_mode) not in ORACLE_SCREEN_MODE_CHOICES:
             raise ValueError(
-                "B2-full verdict mode requires retained supports "
-                f"{B2_FULL_STOP_SUPPORTS}; missing {tuple(missing_retained)}"
+                f"oracle_screen_mode must be one of {ORACLE_SCREEN_MODE_CHOICES}, got {oracle_screen_mode!r}"
             )
-        required_prior_supports = (*B2_FULL_STOP_SUPPORTS, "L0c1")
-        missing_prior = [
-            support
-            for support in required_prior_supports
-            if support not in requested_prior_audit_supports
-        ]
-        if missing_prior:
+        if oracle_screen_mode is None and str(science_arm) not in SCIENCE_ARM_CHOICES:
+            raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
+        if int(max_steps_hard) <= 0:
+            raise ValueError("max_steps_hard must be positive")
+        if int(steps) > int(max_steps_hard):
             raise ValueError(
-                "B2-full verdict mode requires prior audit supports "
-                f"{required_prior_supports}; missing {tuple(missing_prior)}"
+                f"steps={int(steps)} exceeds max_steps_hard={int(max_steps_hard)}"
             )
-        if int(audit_interval) <= 0:
-            raise ValueError("B2-full verdict mode requires audit_interval > 0")
-    if b2_pc_aux_mode not in B2_PC_AUX_MODES:
-        raise ValueError(f"b2_pc_aux_mode must be one of {B2_PC_AUX_MODES}, got {b2_pc_aux_mode!r}")
-    if float(b2_parent_consistency_weight) < 0.0:
-        raise ValueError("b2_parent_consistency_weight must be non-negative")
-    if front_c_identity_emission_artifact is not None:
-        if int(steps) <= 0:
-            raise ValueError("Front-C identity emission requires steps > 0")
-        if int(front_c_identity_emission_interval) < 0:
-            raise ValueError("front_c_identity_emission_interval must be non-negative")
-        required_front_c_prior = ("L0b", "math_a0", "L0c1")
-        missing_front_c_prior = [
-            support
-            for support in required_front_c_prior
-            if support not in requested_prior_audit_supports
-        ]
-        if missing_front_c_prior:
+        if int(audit_interval) < 0:
+            raise ValueError("audit_interval must be non-negative")
+        if int(matched_continued_training_horizon_steps) < 0:
+            raise ValueError("matched_continued_training_horizon_steps must be non-negative")
+        if support_order_seed is not None and int(support_order_seed) < 0:
+            raise ValueError("support_order_seed must be non-negative when set")
+        global_cap_contract_receipt = named_global_cap_contract_receipt(str(global_cap_contract))
+        if str(tie_rule_mode) not in GLOBAL_TIE_RULE_MODES:
             raise ValueError(
-                "Front-C identity emission requires prior audit supports "
-                f"{required_front_c_prior}; missing {tuple(missing_front_c_prior)}"
+                f"tie_rule_mode must be one of {GLOBAL_TIE_RULE_MODES}, got {tie_rule_mode!r}"
             )
-    if oracle_screen_mode is not None:
-        if int(steps) != 1:
-            raise ValueError("oracle_screen_mode requires steps=1 because the screen evaluates one support batch")
-        if int(batch_size) <= 0:
-            raise ValueError("oracle_screen_mode requires batch_size > 0")
-        if requested_prior_audit_supports:
-            raise ValueError("oracle_screen_mode does not support prior_audit_supports")
-        if requested_b2_retained_supports:
-            raise ValueError("oracle_screen_mode does not support b2_retained_supports")
-        if float(b2_parent_consistency_weight) != 0.0:
-            raise ValueError("oracle_screen_mode does not support parent-consistency auxiliary paths")
-        if str(global_cap_contract) != GLOBAL_CAP_CONTRACT_OFF:
-            raise ValueError("oracle_screen_mode requires global_cap_contract=off")
-        if str(tie_rule_mode) != EXACT_GLOBAL_CAP_TIE_RULE_MODE:
-            raise ValueError("oracle_screen_mode requires tie_rule_mode=exact_global_cap")
-        if bool(stop_on_strict_exact):
-            raise ValueError("oracle_screen_mode does not support stop_on_strict_exact")
-        if int(matched_continued_training_horizon_steps) != 0:
-            raise ValueError("oracle_screen_mode requires matched_continued_training_horizon_steps=0")
-        if bool(b2_full_verdict_mode):
-            raise ValueError("oracle_screen_mode does not support b2_full_verdict_mode")
-        if front_c_identity_emission_artifact is not None or bool(front_c_independent_oracle):
-            raise ValueError("oracle_screen_mode does not support Front-C identity emission")
-    if b2b_sequential_capture_enabled:
-        if oracle_screen_mode is not None:
-            raise ValueError(
-                "b2b sequential capture cannot run together with oracle_screen_mode"
-            )
-        if int(steps) <= 0:
-            raise ValueError("b2b sequential capture requires steps > 0")
-        if int(b2b_sequential_min_steps_for_verdict) <= 0:
-            raise ValueError("b2b sequential min steps for verdict must be positive")
         if (
-            int(b2b_sequential_max_sampled_candidates)
-            != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+            str(global_cap_contract) == GLOBAL_CAP_CONTRACT_OFF
+            and str(tie_rule_mode) != EXACT_GLOBAL_CAP_TIE_RULE_MODE
         ):
             raise ValueError(
-                "b2b sequential capture requires max_sampled_candidates == 32"
+                "tie_rule_mode requires a non-off global_cap_contract; "
+                "use exact_global_cap when global_cap_contract=off"
             )
-        if b2b_sequential_capture_out is None:
-            b2b_sequential_capture_out = scratch_root / "b2b_sequential_trace.ndjson"
-    phase_timeout_exemptions = resolve_phase_timeout_exemptions(
-        contract=str(phase_timeout_exemption_contract)
-    )
-    validate_b2b_phase_timeout_launch_requirements(
-        b2b_sequential_capture_enabled=bool(b2b_sequential_capture_enabled),
-        phase_timeout_seconds=float(phase_timeout_seconds),
-        phase_timeout_exemption_contract=str(phase_timeout_exemption_contract),
-        total_timeout_seconds=float(total_timeout_seconds),
-        silent_phase_timeout_seconds=max_silent_phase_seconds,
-        allow_gpu_launch=bool(allow_gpu_launch),
-        max_silent_phase_seconds=max_silent_phase_seconds,
-    )
-    oracle_screen_max_seconds = oracle_screen_budget_max_seconds(oracle_screen_budget)
-    b2_support_batch_sizes = {
-        "L0b": int(b2_l0b_batch_size),
-        "math_a0": int(b2_math_a0_batch_size),
-    }
-    torch_device = torch.device(device)
-    guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
-    device_guard = assert_probe_device_ready(torch_device)
-    scratch_root.mkdir(parents=True, exist_ok=True)
-    if str(receipt_emit_profile) not in RECEIPT_EMIT_PROFILE_CHOICES:
-        raise ValueError(
-            f"receipt_emit_profile must be one of {RECEIPT_EMIT_PROFILE_CHOICES}, "
-            f"got {receipt_emit_profile!r}"
+        requested_prior_audit_supports = parse_prior_audit_supports(prior_audit_supports)
+        requested_b2_retained_supports = parse_b2_retained_supports(b2_retained_supports)
+        if b2_full_verdict_mode:
+            missing_retained = [
+                support
+                for support in B2_FULL_STOP_SUPPORTS
+                if support not in requested_b2_retained_supports
+            ]
+            if missing_retained:
+                raise ValueError(
+                    "B2-full verdict mode requires retained supports "
+                    f"{B2_FULL_STOP_SUPPORTS}; missing {tuple(missing_retained)}"
+                )
+            required_prior_supports = (*B2_FULL_STOP_SUPPORTS, "L0c1")
+            missing_prior = [
+                support
+                for support in required_prior_supports
+                if support not in requested_prior_audit_supports
+            ]
+            if missing_prior:
+                raise ValueError(
+                    "B2-full verdict mode requires prior audit supports "
+                    f"{required_prior_supports}; missing {tuple(missing_prior)}"
+                )
+            if int(audit_interval) <= 0:
+                raise ValueError("B2-full verdict mode requires audit_interval > 0")
+        if b2_pc_aux_mode not in B2_PC_AUX_MODES:
+            raise ValueError(f"b2_pc_aux_mode must be one of {B2_PC_AUX_MODES}, got {b2_pc_aux_mode!r}")
+        if float(b2_parent_consistency_weight) < 0.0:
+            raise ValueError("b2_parent_consistency_weight must be non-negative")
+        if front_c_identity_emission_artifact is not None:
+            if int(steps) <= 0:
+                raise ValueError("Front-C identity emission requires steps > 0")
+            if int(front_c_identity_emission_interval) < 0:
+                raise ValueError("front_c_identity_emission_interval must be non-negative")
+            required_front_c_prior = ("L0b", "math_a0", "L0c1")
+            missing_front_c_prior = [
+                support
+                for support in required_front_c_prior
+                if support not in requested_prior_audit_supports
+            ]
+            if missing_front_c_prior:
+                raise ValueError(
+                    "Front-C identity emission requires prior audit supports "
+                    f"{required_front_c_prior}; missing {tuple(missing_front_c_prior)}"
+                )
+        if oracle_screen_mode is not None:
+            if int(steps) != 1:
+                raise ValueError("oracle_screen_mode requires steps=1 because the screen evaluates one support batch")
+            if int(batch_size) <= 0:
+                raise ValueError("oracle_screen_mode requires batch_size > 0")
+            if requested_prior_audit_supports:
+                raise ValueError("oracle_screen_mode does not support prior_audit_supports")
+            if requested_b2_retained_supports:
+                raise ValueError("oracle_screen_mode does not support b2_retained_supports")
+            if float(b2_parent_consistency_weight) != 0.0:
+                raise ValueError("oracle_screen_mode does not support parent-consistency auxiliary paths")
+            if str(global_cap_contract) != GLOBAL_CAP_CONTRACT_OFF:
+                raise ValueError("oracle_screen_mode requires global_cap_contract=off")
+            if str(tie_rule_mode) != EXACT_GLOBAL_CAP_TIE_RULE_MODE:
+                raise ValueError("oracle_screen_mode requires tie_rule_mode=exact_global_cap")
+            if bool(stop_on_strict_exact):
+                raise ValueError("oracle_screen_mode does not support stop_on_strict_exact")
+            if int(matched_continued_training_horizon_steps) != 0:
+                raise ValueError("oracle_screen_mode requires matched_continued_training_horizon_steps=0")
+            if bool(b2_full_verdict_mode):
+                raise ValueError("oracle_screen_mode does not support b2_full_verdict_mode")
+            if front_c_identity_emission_artifact is not None or bool(front_c_independent_oracle):
+                raise ValueError("oracle_screen_mode does not support Front-C identity emission")
+        if b2b_sequential_capture_enabled:
+            if oracle_screen_mode is not None:
+                raise ValueError(
+                    "b2b sequential capture cannot run together with oracle_screen_mode"
+                )
+            if int(steps) <= 0:
+                raise ValueError("b2b sequential capture requires steps > 0")
+            if int(b2b_sequential_min_steps_for_verdict) <= 0:
+                raise ValueError("b2b sequential min steps for verdict must be positive")
+            if (
+                int(b2b_sequential_max_sampled_candidates)
+                != PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES
+            ):
+                raise ValueError(
+                    "b2b sequential capture requires max_sampled_candidates == 32"
+                )
+            if b2b_sequential_capture_out is None:
+                b2b_sequential_capture_out = scratch_root / "b2b_sequential_trace.ndjson"
+        phase_timeout_exemptions = resolve_phase_timeout_exemptions(
+            contract=str(phase_timeout_exemption_contract)
         )
-    slim_receipt_emit = str(receipt_emit_profile) == RECEIPT_EMIT_PROFILE_SLIM
-    snapshot_mode = (
-        SNAPSHOT_MODE_AGGREGATE_ONLY if slim_receipt_emit else SNAPSHOT_MODE_FULL
-    )
-    headroom_wiring_sidecar_path = (
-        scratch_root / HEADROOM_WIRING_SIDECAR_FILENAME if slim_receipt_emit else None
-    )
-    if headroom_wiring_sidecar_path is not None:
-        initialize_headroom_wiring_sidecar_for_probe_session(headroom_wiring_sidecar_path)
-    r7_cap_defer_pressure_sidecar_path = (
-        scratch_root / R7_SIDECAR_FILENAME
-        if bool(r7_cap_defer_pressure_instrumentation_enabled)
-        else None
-    )
-    d_recompute_window_log_path = (
-        scratch_root / D_RECOMPUTE_WINDOW_LOG_FILENAME
-        if bool(d_recompute_window_instrumentation_enabled)
-        else None
-    )
-    if d_recompute_window_log_path is not None:
-        initialize_recompute_window_log_for_probe_session(d_recompute_window_log_path)
-    d_live_carrier_snapshot_path = (
-        Path(scratch_root) / "d_recompute_window_diagnostic" / "live_carrier_snapshot.jsonl"
-        if bool(d_live_carrier_snapshot_enabled)
-        else None
-    )
-    if d_live_carrier_snapshot_path is not None:
-        initialize_live_carrier_snapshot_log(d_live_carrier_snapshot_path)
-    run_log_path = install_probe_durable_run_log(scratch_root)
-    cuda_memory_snapshots_jsonl_path = install_probe_cuda_memory_snapshot_jsonl(
-        scratch_root
-    )
-    faulthandler_report = register_probe_faulthandler(run_log_path=run_log_path)
-    silent_phase_timeout_seconds = resolve_max_silent_phase_seconds(
-        allow_gpu_launch=bool(allow_gpu_launch),
-        max_silent_phase_seconds=max_silent_phase_seconds,
-    )
-    phase_timeout_exemption_receipt = build_phase_timeout_exemption_receipt(
-        contract=str(phase_timeout_exemption_contract),
-        phase_timeout_seconds=float(phase_timeout_seconds),
-        silent_phase_timeout_seconds=silent_phase_timeout_seconds,
-        total_timeout_seconds=float(total_timeout_seconds),
-    )
-    last_active_phase_path = scratch_root / "last_active_phase.json"
-    resolved_phase_heartbeat_seconds = resolve_phase_heartbeat_seconds(
-        emit_progress=bool(emit_progress),
-        phase_heartbeat_seconds=phase_heartbeat_seconds,
-    )
-    stdout_liveness_receipt = build_probe_stdout_liveness_receipt(
-        emit_progress=bool(emit_progress),
-        phase_heartbeat_seconds=resolved_phase_heartbeat_seconds,
-    )
-    validate_probe_stdout_liveness_config(stdout_liveness_receipt)
-    phase_progress = PhaseProgress(
-        enabled=bool(emit_progress),
-        device=torch_device,
-        phase_timeout_seconds=float(phase_timeout_seconds),
-        total_timeout_seconds=float(total_timeout_seconds),
-        silent_phase_timeout_seconds=silent_phase_timeout_seconds,
-        phase_heartbeat_interval_seconds=resolved_phase_heartbeat_seconds,
-        last_active_phase_path=last_active_phase_path,
-        phase_timeout_exemptions=phase_timeout_exemptions,
-        phase_timeout_exemption_contract=str(phase_timeout_exemption_contract),
-    )
-    if torch_device.type == "cuda":
-        with phase_progress.phase("cuda_memory_reset"):
-            reset_cuda_memory_stats(torch_device)
-    run_timing_start = _timing_start(torch_device)
-
-    with phase_progress.phase("load"):
-        ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
-    set_probe_terminal_flush_context(
-        ProbeTerminalFlushContext(
-            scratch_root=scratch_root,
-            parent_checkpoint_path=Path(parent),
-            parent_hash_before=str(parent_hash_before),
+        validate_b2b_phase_timeout_launch_requirements(
+            b2b_sequential_capture_enabled=bool(b2b_sequential_capture_enabled),
+            phase_timeout_seconds=float(phase_timeout_seconds),
+            phase_timeout_exemption_contract=str(phase_timeout_exemption_contract),
+            total_timeout_seconds=float(total_timeout_seconds),
+            silent_phase_timeout_seconds=max_silent_phase_seconds,
+            allow_gpu_launch=bool(allow_gpu_launch),
+            max_silent_phase_seconds=max_silent_phase_seconds,
         )
-    )
-    with phase_progress.phase("build_model"):
-        model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)
-    b2_parent_model = None
-    if requested_b2_retained_supports and float(b2_parent_consistency_weight) > 0.0:
-        with phase_progress.phase("b2_parent_model_build"):
-            b2_parent_model, _parent_tok, _parent_cfg = build_model_from_checkpoint(ckpt, torch_device)
-            b2_parent_model.eval()
-            for param in b2_parent_model.parameters():
-                param.requires_grad_(False)
-    with phase_progress.phase("support_build"):
-        support_batches, support_cycler_proof = build_identity_full_support_batches(
-            tok=tok,
-            max_len=int(max_len or ckpt["config"]["max_seq_len"]),
-            batch_size=int(batch_size),
-            curriculum_seed=int(curriculum_seed),
+        oracle_screen_max_seconds = oracle_screen_budget_max_seconds(oracle_screen_budget)
+        b2_support_batch_sizes = {
+            "L0b": int(b2_l0b_batch_size),
+            "math_a0": int(b2_math_a0_batch_size),
+        }
+        torch_device = torch.device(device)
+        guard_gpu_launch(torch_device, allow_gpu_launch=allow_gpu_launch)
+        device_guard = assert_probe_device_ready(torch_device)
+        scratch_root.mkdir(parents=True, exist_ok=True)
+        if str(receipt_emit_profile) not in RECEIPT_EMIT_PROFILE_CHOICES:
+            raise ValueError(
+                f"receipt_emit_profile must be one of {RECEIPT_EMIT_PROFILE_CHOICES}, "
+                f"got {receipt_emit_profile!r}"
+            )
+        slim_receipt_emit = str(receipt_emit_profile) == RECEIPT_EMIT_PROFILE_SLIM
+        snapshot_mode = (
+            SNAPSHOT_MODE_AGGREGATE_ONLY if slim_receipt_emit else SNAPSHOT_MODE_FULL
+        )
+        headroom_wiring_sidecar_path = (
+            scratch_root / HEADROOM_WIRING_SIDECAR_FILENAME if slim_receipt_emit else None
+        )
+        if headroom_wiring_sidecar_path is not None:
+            initialize_headroom_wiring_sidecar_for_probe_session(headroom_wiring_sidecar_path)
+        r7_cap_defer_pressure_sidecar_path = (
+            scratch_root / R7_SIDECAR_FILENAME
+            if bool(r7_cap_defer_pressure_instrumentation_enabled)
+            else None
+        )
+        d_recompute_window_log_path = (
+            scratch_root / D_RECOMPUTE_WINDOW_LOG_FILENAME
+            if bool(d_recompute_window_instrumentation_enabled)
+            else None
+        )
+        if d_recompute_window_log_path is not None:
+            initialize_recompute_window_log_for_probe_session(d_recompute_window_log_path)
+        d_live_carrier_snapshot_path = (
+            Path(scratch_root) / "d_recompute_window_diagnostic" / "live_carrier_snapshot.jsonl"
+            if bool(d_live_carrier_snapshot_enabled)
+            else None
+        )
+        if d_live_carrier_snapshot_path is not None:
+            initialize_live_carrier_snapshot_log(d_live_carrier_snapshot_path)
+        run_log_path = install_probe_durable_run_log(scratch_root)
+        cuda_memory_snapshots_jsonl_path = install_probe_cuda_memory_snapshot_jsonl(
+            scratch_root
+        )
+        faulthandler_report = register_probe_faulthandler(run_log_path=run_log_path)
+        silent_phase_timeout_seconds = resolve_max_silent_phase_seconds(
+            allow_gpu_launch=bool(allow_gpu_launch),
+            max_silent_phase_seconds=max_silent_phase_seconds,
+        )
+        phase_timeout_exemption_receipt = build_phase_timeout_exemption_receipt(
+            contract=str(phase_timeout_exemption_contract),
+            phase_timeout_seconds=float(phase_timeout_seconds),
+            silent_phase_timeout_seconds=silent_phase_timeout_seconds,
+            total_timeout_seconds=float(total_timeout_seconds),
+        )
+        last_active_phase_path = scratch_root / "last_active_phase.json"
+        resolved_phase_heartbeat_seconds = resolve_phase_heartbeat_seconds(
+            emit_progress=bool(emit_progress),
+            phase_heartbeat_seconds=phase_heartbeat_seconds,
+        )
+        stdout_liveness_receipt = build_probe_stdout_liveness_receipt(
+            emit_progress=bool(emit_progress),
+            phase_heartbeat_seconds=resolved_phase_heartbeat_seconds,
+        )
+        validate_probe_stdout_liveness_config(stdout_liveness_receipt)
+        milestone_emitter = PhaseMilestoneEmitter(
+            scratch_root,
+            enabled=bool(event_coded_sparse_vote_authority),
             device=torch_device,
-            support_order_seed=support_order_seed,
         )
-    prior_support_sets: dict[str, dict[str, Any]] = {}
-    if requested_prior_audit_supports:
-        with phase_progress.phase("prior_support_build"):
-            prior_support_sets = build_prior_audit_support_sets(
-                requested_prior_audit_supports,
+        phase_progress = PhaseProgress(
+            enabled=bool(emit_progress),
+            device=torch_device,
+            phase_timeout_seconds=float(phase_timeout_seconds),
+            total_timeout_seconds=float(total_timeout_seconds),
+            silent_phase_timeout_seconds=silent_phase_timeout_seconds,
+            phase_heartbeat_interval_seconds=resolved_phase_heartbeat_seconds,
+            last_active_phase_path=last_active_phase_path,
+            phase_timeout_exemptions=phase_timeout_exemptions,
+            phase_timeout_exemption_contract=str(phase_timeout_exemption_contract),
+            milestone_emitter=milestone_emitter,
+        )
+        if torch_device.type == "cuda":
+            with phase_progress.phase("cuda_memory_reset"):
+                reset_cuda_memory_stats(torch_device)
+        run_timing_start = _timing_start(torch_device)
+    
+        with phase_progress.phase("load"):
+            ckpt, parent_hash_before = load_parent_checkpoint(parent, expected_sha256=parent_sha256)
+        set_probe_terminal_flush_context(
+            ProbeTerminalFlushContext(
+                scratch_root=scratch_root,
+                parent_checkpoint_path=Path(parent),
+                parent_hash_before=str(parent_hash_before),
+            )
+        )
+        with phase_progress.phase("build_model"):
+            model, tok, cfg = build_model_from_checkpoint(ckpt, torch_device)
+        b2_parent_model = None
+        if requested_b2_retained_supports and float(b2_parent_consistency_weight) > 0.0:
+            with phase_progress.phase("b2_parent_model_build"):
+                b2_parent_model, _parent_tok, _parent_cfg = build_model_from_checkpoint(ckpt, torch_device)
+                b2_parent_model.eval()
+                for param in b2_parent_model.parameters():
+                    param.requires_grad_(False)
+        with phase_progress.phase("support_build"):
+            support_batches, support_cycler_proof = build_identity_full_support_batches(
                 tok=tok,
                 max_len=int(max_len or ckpt["config"]["max_seq_len"]),
                 batch_size=int(batch_size),
-                run_curriculum_seed=int(curriculum_seed),
-                device=torch_device,
-            )
-    b2_retained_support_sets: dict[str, dict[str, Any]] = {}
-    if requested_b2_retained_supports:
-        with phase_progress.phase("b2_retained_support_build"):
-            b2_retained_support_sets = build_b2_retained_support_sets(
-                requested_b2_retained_supports,
-                tok=tok,
-                max_len=int(max_len or ckpt["config"]["max_seq_len"]),
-                support_batch_sizes=b2_support_batch_sizes,
                 curriculum_seed=int(curriculum_seed),
                 device=torch_device,
+                support_order_seed=support_order_seed,
             )
-    model_batch = support_batches[0]["batch"]
-    batch_proof = {
-        **support_cycler_proof,
-        "selected_batch_index": 0,
-        "selected_batch_metadata": support_batches[0]["metadata"],
-        "batch_shape": {
-            "inputs": list(model_batch["inputs"].shape),
-            "labels": list(model_batch["labels"].shape),
-            "sep_positions": list(model_batch["sep_positions"].shape),
-        },
-    }
-    with phase_progress.phase("support_control"):
-        support_control_proof = identity_full_support_control_proof(int(curriculum_seed))
-    with phase_progress.phase("select_eligible"):
-        eligible = select_eligible_bitlinears(model, eligible_scope=eligible_scope)
-    with phase_progress.phase("state_init"):
-        tensor_states, init_fidelity = derive_tensor_states_and_check_init_fidelity(
-            eligible,
-            threshold=float(init_fidelity_atol),
-        )
-        if bool(persistent_accumulator_event_coded_live):
-            tensor_states = {
-                state_key: make_event_coded_live_tensor_state(
-                    state_key,
-                    state.q_levels,
-                    state.frozen_scale,
-                    demotion_band=int(event_coded_live_demotion_band),
+        prior_support_sets: dict[str, dict[str, Any]] = {}
+        if requested_prior_audit_supports:
+            with phase_progress.phase("prior_support_build"):
+                prior_support_sets = build_prior_audit_support_sets(
+                    requested_prior_audit_supports,
+                    tok=tok,
+                    max_len=int(max_len or ckpt["config"]["max_seq_len"]),
+                    batch_size=int(batch_size),
+                    run_curriculum_seed=int(curriculum_seed),
+                    device=torch_device,
                 )
-                for state_key, state in tensor_states.items()
-            }
-    if not init_fidelity["all_pass"]:
-        raise RuntimeError("weight-level init-fidelity allclose failed")
-
-    d_recompute_selector_manifest: StratifiedSelectorManifest | None = None
-    if d_recompute_selector_manifest_path is not None:
-        d_recompute_selector_manifest = load_stratified_selector_manifest(
-            d_recompute_selector_manifest_path
+        b2_retained_support_sets: dict[str, dict[str, Any]] = {}
+        if requested_b2_retained_supports:
+            with phase_progress.phase("b2_retained_support_build"):
+                b2_retained_support_sets = build_b2_retained_support_sets(
+                    requested_b2_retained_supports,
+                    tok=tok,
+                    max_len=int(max_len or ckpt["config"]["max_seq_len"]),
+                    support_batch_sizes=b2_support_batch_sizes,
+                    curriculum_seed=int(curriculum_seed),
+                    device=torch_device,
+                )
+        model_batch = support_batches[0]["batch"]
+        batch_proof = {
+            **support_cycler_proof,
+            "selected_batch_index": 0,
+            "selected_batch_metadata": support_batches[0]["metadata"],
+            "batch_shape": {
+                "inputs": list(model_batch["inputs"].shape),
+                "labels": list(model_batch["labels"].shape),
+                "sep_positions": list(model_batch["sep_positions"].shape),
+            },
+        }
+        with phase_progress.phase("support_control"):
+            support_control_proof = identity_full_support_control_proof(int(curriculum_seed))
+        with phase_progress.phase("select_eligible"):
+            eligible = select_eligible_bitlinears(model, eligible_scope=eligible_scope)
+        with phase_progress.phase("state_init"):
+            tensor_states, init_fidelity = derive_tensor_states_and_check_init_fidelity(
+                eligible,
+                threshold=float(init_fidelity_atol),
+            )
+            if bool(persistent_accumulator_event_coded_live):
+                tensor_states = {
+                    state_key: make_event_coded_live_tensor_state(
+                        state_key,
+                        state.q_levels,
+                        state.frozen_scale,
+                        demotion_band=int(event_coded_live_demotion_band),
+                    )
+                    for state_key, state in tensor_states.items()
+                }
+        if not init_fidelity["all_pass"]:
+            raise RuntimeError("weight-level init-fidelity allclose failed")
+    
+        d_recompute_selector_manifest: StratifiedSelectorManifest | None = None
+        if d_recompute_selector_manifest_path is not None:
+            d_recompute_selector_manifest = load_stratified_selector_manifest(
+                d_recompute_selector_manifest_path
+            )
+    
+        calibration_warmup_collector: CalibrationWarmupCollector | None = None
+        if d_recompute_calibration_warmup_out is not None:
+            if not d_recompute_window_instrumentation_enabled:
+                raise ValueError(
+                    "d_recompute_calibration_warmup_out requires "
+                    "d_recompute_window_instrumentation_enabled"
+                )
+            from scripts.hrm_text_158_d_recompute_calibration_prepass import (
+                default_calibration_policy,
+            )
+    
+            warmup_observations_path = Path(d_recompute_calibration_warmup_out)
+            if not warmup_observations_path.is_absolute():
+                warmup_observations_path = scratch_root.parent / warmup_observations_path
+            calibration_warmup_collector = CalibrationWarmupCollector(
+                output_path=warmup_observations_path,
+                pre_warmup_parent_sha256=str(parent_hash_before),
+                policy=default_calibration_policy(),
+            )
+    
+        _validate_event_coded_sparse_vote_authority_config(
+            event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
+            persistent_accumulator_event_coded_live=bool(
+                persistent_accumulator_event_coded_live
+            ),
+            two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+            b2b_sequential_capture_enabled=bool(b2b_sequential_capture_enabled),
+            votes_emit_enabled=bool(votes_emit_enabled),
+            carrier_growth_enabled=bool(carrier_growth_enabled),
+            d_recompute_window_instrumentation_enabled=bool(
+                d_recompute_window_instrumentation_enabled
+            ),
+            d_recompute_calibration_warmup_out=d_recompute_calibration_warmup_out,
         )
-
-    calibration_warmup_collector: CalibrationWarmupCollector | None = None
-    if d_recompute_calibration_warmup_out is not None:
-        if not d_recompute_window_instrumentation_enabled:
-            raise ValueError(
-                "d_recompute_calibration_warmup_out requires "
-                "d_recompute_window_instrumentation_enabled"
+    
+        front_c_identity_collector = None
+        if front_c_identity_emission_artifact is not None:
+            artifact_path = Path(front_c_identity_emission_artifact)
+            if not artifact_path.is_absolute():
+                artifact_path = scratch_root / artifact_path
+            front_c_identity_collector = FrontCLiveIdentityCollector(
+                artifact_path=artifact_path,
+                emission_interval=int(front_c_identity_emission_interval),
+                audit_interval=int(audit_interval),
+                independent_oracle_compare=bool(front_c_independent_oracle),
             )
-        from scripts.hrm_text_158_d_recompute_calibration_prepass import (
-            default_calibration_policy,
-        )
-
-        warmup_observations_path = Path(d_recompute_calibration_warmup_out)
-        if not warmup_observations_path.is_absolute():
-            warmup_observations_path = scratch_root.parent / warmup_observations_path
-        calibration_warmup_collector = CalibrationWarmupCollector(
-            output_path=warmup_observations_path,
-            pre_warmup_parent_sha256=str(parent_hash_before),
-            policy=default_calibration_policy(),
-        )
-
-    front_c_identity_collector = None
-    if front_c_identity_emission_artifact is not None:
-        artifact_path = Path(front_c_identity_emission_artifact)
-        if not artifact_path.is_absolute():
-            artifact_path = scratch_root / artifact_path
-        front_c_identity_collector = FrontCLiveIdentityCollector(
-            artifact_path=artifact_path,
-            emission_interval=int(front_c_identity_emission_interval),
-            audit_interval=int(audit_interval),
-            independent_oracle_compare=bool(front_c_independent_oracle),
-        )
-
-    with phase_progress.phase("forward_fidelity"):
-        forward_init_fidelity = compute_forward_level_init_fidelity(
-            model,
-            model_batch,
-            tensor_states,
-            eligible,
-            device=torch_device,
-            threshold=float(init_fidelity_atol),
-            eligible_scope=eligible_scope,
-            total_steps=int(steps),
-        )
-    if oracle_screen_mode is not None:
-        extras = model.compute_train_extra_args(1, max(1, int(steps)))
-        if str(oracle_screen_mode) == ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY:
-            oracle_screen = run_candidate_set_viability_oracle_screen(
-                model=model,
-                batch=model_batch,
-                tensor_states=tensor_states,
-                eligible_modules=eligible,
-                device=torch_device,
-                max_abs_per_tensor=int(max_abs_per_tensor),
-                extras=extras,
-                max_sampled_candidates=oracle_screen_budget,
-                max_seconds=oracle_screen_max_seconds,
-                phase_progress=phase_progress,
-            )
-        elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT:
-            oracle_screen = run_credit_ranking_pivot_measurement_oracle_screen(
-                model=model,
-                batch=model_batch,
-                tensor_states=tensor_states,
-                eligible_modules=eligible,
-                device=torch_device,
-                max_abs_per_tensor=int(max_abs_per_tensor),
-                extras=extras,
-                max_sampled_candidates=oracle_screen_budget,
-                max_seconds=oracle_screen_max_seconds,
-                phase_progress=phase_progress,
-            )
-        elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR:
-            oracle_screen = run_within_tie_band_discriminator_oracle_screen(
-                model=model,
-                batch=model_batch,
-                tensor_states=tensor_states,
-                eligible_modules=eligible,
-                device=torch_device,
-                max_abs_per_tensor=int(max_abs_per_tensor),
-                extras=extras,
-                max_sampled_candidates=oracle_screen_budget,
-                max_seconds=oracle_screen_max_seconds,
-                phase_progress=phase_progress,
-            )
-        elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE:
-            oracle_screen = run_activation_credit_scale_smoke_oracle_screen(
-                model=model,
-                batch=model_batch,
-                tensor_states=tensor_states,
-                eligible_modules=eligible,
-                device=torch_device,
-                max_abs_per_tensor=int(max_abs_per_tensor),
-                extras=extras,
-                max_sampled_candidates=oracle_screen_budget,
-                max_seconds=oracle_screen_max_seconds,
-                phase_progress=phase_progress,
-            )
-        elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT:
-            oracle_screen = run_activation_credit_measurement_oracle_screen(
-                model=model,
-                batch=model_batch,
-                tensor_states=tensor_states,
-                eligible_modules=eligible,
-                device=torch_device,
-                max_abs_per_tensor=int(max_abs_per_tensor),
-                extras=extras,
-                max_sampled_candidates=oracle_screen_budget,
-                max_seconds=oracle_screen_max_seconds,
-                phase_progress=phase_progress,
-            )
-        else:
-            raise RuntimeError(f"unsupported oracle screen mode {oracle_screen_mode!r}")
-        with phase_progress.phase("checkpoint_payload"):
-            checkpoint_payload = build_authoritative_checkpoint_payload(
+    
+        with phase_progress.phase("forward_fidelity"):
+            forward_init_fidelity = compute_forward_level_init_fidelity(
+                model,
+                model_batch,
                 tensor_states,
-                step=0,
-                updater_config={
-                    "oracle_screen_mode": str(oracle_screen_mode),
-                    "projection_law": S1_PROJECTION_LAW,
-                    "vote_law": S1_RANK_BUCKET_VOTE_LAW,
-                },
-                oracle_receipt=None,
-                dry_run=True,
-                checkpoint_written=False,
+                eligible,
+                device=torch_device,
+                threshold=float(init_fidelity_atol),
+                eligible_scope=eligible_scope,
+                total_steps=int(steps),
             )
-            validate_authoritative_resume_payload(checkpoint_payload)
+        if oracle_screen_mode is not None:
+            extras = model.compute_train_extra_args(1, max(1, int(steps)))
+            if str(oracle_screen_mode) == ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY:
+                oracle_screen = run_candidate_set_viability_oracle_screen(
+                    model=model,
+                    batch=model_batch,
+                    tensor_states=tensor_states,
+                    eligible_modules=eligible,
+                    device=torch_device,
+                    max_abs_per_tensor=int(max_abs_per_tensor),
+                    extras=extras,
+                    max_sampled_candidates=oracle_screen_budget,
+                    max_seconds=oracle_screen_max_seconds,
+                    phase_progress=phase_progress,
+                )
+            elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_CREDIT_RANKING_PIVOT_MEASUREMENT:
+                oracle_screen = run_credit_ranking_pivot_measurement_oracle_screen(
+                    model=model,
+                    batch=model_batch,
+                    tensor_states=tensor_states,
+                    eligible_modules=eligible,
+                    device=torch_device,
+                    max_abs_per_tensor=int(max_abs_per_tensor),
+                    extras=extras,
+                    max_sampled_candidates=oracle_screen_budget,
+                    max_seconds=oracle_screen_max_seconds,
+                    phase_progress=phase_progress,
+                )
+            elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_WITHIN_TIE_BAND_DISCRIMINATOR:
+                oracle_screen = run_within_tie_band_discriminator_oracle_screen(
+                    model=model,
+                    batch=model_batch,
+                    tensor_states=tensor_states,
+                    eligible_modules=eligible,
+                    device=torch_device,
+                    max_abs_per_tensor=int(max_abs_per_tensor),
+                    extras=extras,
+                    max_sampled_candidates=oracle_screen_budget,
+                    max_seconds=oracle_screen_max_seconds,
+                    phase_progress=phase_progress,
+                )
+            elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_SCALE_SMOKE:
+                oracle_screen = run_activation_credit_scale_smoke_oracle_screen(
+                    model=model,
+                    batch=model_batch,
+                    tensor_states=tensor_states,
+                    eligible_modules=eligible,
+                    device=torch_device,
+                    max_abs_per_tensor=int(max_abs_per_tensor),
+                    extras=extras,
+                    max_sampled_candidates=oracle_screen_budget,
+                    max_seconds=oracle_screen_max_seconds,
+                    phase_progress=phase_progress,
+                )
+            elif str(oracle_screen_mode) == ORACLE_SCREEN_MODE_ACTIVATION_CREDIT_MEASUREMENT:
+                oracle_screen = run_activation_credit_measurement_oracle_screen(
+                    model=model,
+                    batch=model_batch,
+                    tensor_states=tensor_states,
+                    eligible_modules=eligible,
+                    device=torch_device,
+                    max_abs_per_tensor=int(max_abs_per_tensor),
+                    extras=extras,
+                    max_sampled_candidates=oracle_screen_budget,
+                    max_seconds=oracle_screen_max_seconds,
+                    phase_progress=phase_progress,
+                )
+            else:
+                raise RuntimeError(f"unsupported oracle screen mode {oracle_screen_mode!r}")
+            with phase_progress.phase("checkpoint_payload"):
+                checkpoint_payload = build_authoritative_checkpoint_payload(
+                    tensor_states,
+                    step=0,
+                    updater_config={
+                        "oracle_screen_mode": str(oracle_screen_mode),
+                        "projection_law": S1_PROJECTION_LAW,
+                        "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+                    },
+                    oracle_receipt=None,
+                    dry_run=True,
+                    checkpoint_written=False,
+                )
+                validate_authoritative_resume_payload(checkpoint_payload)
+            with phase_progress.phase("parent_hash_after"):
+                parent_hash_after = file_sha256(parent)
+            parent_hash_unchanged = parent_hash_before == parent_hash_after
+            if not parent_hash_unchanged:
+                raise RuntimeError("parent checkpoint hash changed during oracle screen")
+            total_run_duration_seconds = _timing_duration_seconds(
+                run_timing_start,
+                torch_device,
+            )
+            receipt = {
+                "schema": C2P1_HARNESS_SCHEMA_VERSION,
+                "c2p0_schema": BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
+                "bounded_delta_checkpoint_schema": BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
+                "phase": phase,
+                "implementation_gpu_validation_split": True,
+                "gpu_launch_authorized": bool(torch_device.type == "cuda"),
+                "gpu_launched": bool(torch_device.type == "cuda"),
+                "device": str(torch_device),
+                "device_guard": device_guard,
+                "faulthandler": faulthandler_report,
+                "silent_phase_guard": {
+                    "default_on_with_allow_gpu_launch": True,
+                    "allow_gpu_launch": bool(allow_gpu_launch),
+                    "max_silent_phase_seconds": silent_phase_timeout_seconds,
+                    "last_active_phase_path": str(last_active_phase_path),
+                    "fail_closed_mechanism": "faulthandler.dump_traceback_later(exit=True)",
+                },
+                "stdout_liveness": stdout_liveness_receipt,
+                "dry_run": True,
+                "checkpoint_written": False,
+                "creditdir_mutated": False,
+                "banked_pt_mutated": False,
+                "parent": str(parent),
+                "parent_hash_before": parent_hash_before,
+                "parent_hash_after": parent_hash_after,
+                "parent_hash_unchanged": parent_hash_unchanged,
+                "model_config": {
+                    "max_seq_len": int(cfg.max_seq_len),
+                    "n_layers": int(cfg.n_layers),
+                    "hidden_size": int(cfg.hidden_size),
+                    "num_heads": int(cfg.num_heads),
+                    "H_cycles": int(cfg.H_cycles),
+                    "L_cycles": int(cfg.L_cycles),
+                    "half_layers": bool(cfg.half_layers),
+                    "use_ternary_bulk": bool(cfg.use_ternary_bulk),
+                },
+                "batch": batch_proof,
+                "identity_full_control": support_control_proof,
+                "support_cycler": support_cycler_proof,
+                "eligible_scope": eligible_scope,
+                "eligible_module_count": len(eligible),
+                "eligible_modules": sorted(eligible),
+                "weight_level_init_fidelity": init_fidelity,
+                "forward_level_init_fidelity": forward_init_fidelity,
+                "steps_requested": int(steps),
+                "steps_completed": int(steps),
+                "max_steps_hard": int(max_steps_hard),
+                "audit_interval": int(audit_interval),
+                "stop_on_strict_exact": False,
+                "matched_continued_training_horizon_steps": 0,
+                "global_cap_contract": global_cap_contract_receipt,
+                "tie_rule_mode": str(tie_rule_mode),
+                "science_arm": None,
+                "oracle_screen_mode": str(oracle_screen_mode),
+                "target_vote_law": S1_RANK_BUCKET_VOTE_LAW,
+                "target_tie_policy_id": TIE_POLICY_CURRENT_MARGIN_INDEX,
+                "local_selection_ordering_mode": LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+                "local_selection_ordering_seed": 17,
+                "local_selection_ordering_step": 1,
+                "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
+                "default_rank_bucket_path_unchanged": True,
+                "stop_reason": "oracle_screen_completed",
+                "forward_backward_update_executed": False,
+                "step0_optimizer_identity_proof": prove_step0_optimizer_identity(model, eligible),
+                "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+                "step_reports": {},
+                "audit_reports": {},
+                "prior_audit": build_prior_audit_receipt(
+                    requested_supports=(),
+                    support_sets={},
+                    start_reports={},
+                    final_reports={},
+                ),
+                "b2_retention": build_b2_retention_receipt(
+                    requested_supports=(),
+                    support_sets={},
+                    step_reports={},
+                    pc_aux_mode=str(b2_pc_aux_mode),
+                    parent_consistency_weight=0.0,
+                ),
+                "front_c_identity_emission": {"enabled": False},
+                "timing_summary": {
+                    "schema": C2P2_TIMING_SCHEMA_VERSION,
+                    "step_reports": {},
+                    "audit_reports": {},
+                    "total_run_duration_seconds": total_run_duration_seconds,
+                },
+                "acquisition_trajectory": build_acquisition_trajectory(
+                    audit_enabled=False,
+                    audit_reports={},
+                    step_reports={},
+                    support_cycler_proof=support_cycler_proof,
+                    audit_interval=0,
+                    stop_on_strict_exact=False,
+                    matched_continued_training_horizon_steps=0,
+                    max_steps_hard=int(max_steps_hard),
+                    stop_reason="oracle_screen_completed",
+                    timing_summary={
+                        "schema": C2P2_TIMING_SCHEMA_VERSION,
+                        "step_reports": {},
+                        "audit_reports": {},
+                        "total_run_duration_seconds": total_run_duration_seconds,
+                    },
+                ),
+                "checkpoint_payload": checkpoint_payload,
+                "memory": cuda_memory_receipt(torch_device),
+                "oracle_screen": oracle_screen,
+                "branch_classification": oracle_screen["branch_classification"],
+                "phase_telemetry": phase_progress.to_dict(),
+            }
+            receipt_path = scratch_root / "receipt.json"
+            receipt["receipt_path"] = str(receipt_path)
+            receipt["run_log_path"] = str(run_log_path)
+            receipt["cuda_memory_snapshots_jsonl_path"] = str(
+                cuda_memory_snapshots_jsonl_path
+            )
+            receipt["terminal_status"] = build_receipt_terminal_status(
+                stop_reason=str(receipt["stop_reason"]),
+                steps_completed=int(receipt["steps_completed"]),
+                steps_requested=int(receipt["steps_requested"]),
+            )
+            with phase_progress.phase("receipt_write", path=str(receipt_path)):
+                receipt["phase_telemetry"] = phase_progress.to_dict()
+                receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+            receipt["phase_telemetry"] = phase_progress.to_dict()
+            return receipt
+    
+        prior_audit_start_reports: dict[str, dict[str, Any]] = {}
+        if prior_support_sets:
+            with phase_progress.phase("prior_audit0"):
+                prior_audit_start_reports = audit_prior_support_sets(
+                    model,
+                    prior_support_sets,
+                    tensor_states,
+                    eligible,
+                    tok=tok,
+                    device=torch_device,
+                    phase="prior_audit0",
+                    step=0,
+                    total_steps=max(1, int(steps)),
+                )
+    
+        step0_optimizer_identity_proof = None
+        if int(steps) <= 0:
+            with phase_progress.phase("step0_optimizer_identity"):
+                step0_optimizer_identity_proof = prove_step0_optimizer_identity(model, eligible)
+    
+        audit_enabled = (
+            int(audit_interval) > 0
+            or bool(stop_on_strict_exact)
+            or bool(b2_full_verdict_mode)
+        )
+    
+        def audit_callback(step: int, states: Mapping[str, Any]) -> dict[str, Any]:
+            return audit_identity_full_support(
+                model,
+                support_batches,
+                states,
+                eligible,
+                tok=tok,
+                device=torch_device,
+                step=int(step),
+                total_steps=max(1, int(steps)),
+            )
+    
+        b2_full_prior_snapshot_callback = None
+        b2_full_audit_export_callback = None
+        if b2_full_verdict_mode:
+    
+            def b2_full_prior_snapshot_callback(
+                step: int,
+                states: Mapping[str, Any],
+                target_audit: Mapping[str, Any],
+                coverage_by_support: Mapping[str, Mapping[str, Any]],
+            ) -> dict[str, Any]:
+                current_reports = audit_prior_support_sets(
+                    model,
+                    prior_support_sets,
+                    states,
+                    eligible,
+                    tok=tok,
+                    device=torch_device,
+                    phase="b2_full_prior_snapshot",
+                    step=int(step),
+                    total_steps=max(1, int(steps)),
+                )
+                return build_b2_full_prior_snapshot(
+                    snapshot_name="runtime_prior_snapshot",
+                    step=int(step),
+                    target_audit=target_audit,
+                    coverage_by_support=coverage_by_support,
+                    start_reports=prior_audit_start_reports,
+                    current_reports=current_reports,
+                )
+    
+            def b2_full_audit_export_callback(
+                step: int,
+                states: Mapping[str, Any],
+                target_audit: Mapping[str, Any],
+                coverage_by_support: Mapping[str, Mapping[str, Any]],
+                verdict_state: Mapping[str, Any],
+                updater_config: Mapping[str, Any],
+            ) -> str | None:
+                checkpoint_payload = build_authoritative_checkpoint_payload(
+                    states,
+                    step=int(step),
+                    updater_config=updater_config,
+                    oracle_receipt=None,
+                    dry_run=True,
+                    checkpoint_written=False,
+                )
+                validate_authoritative_resume_payload(checkpoint_payload)
+                parent_hash_current = file_sha256(parent)
+                audit_dir = scratch_root / "audits" / f"step_{int(step):04d}"
+                audit_dir.mkdir(parents=True, exist_ok=True)
+                audit_path = audit_dir / "summary.json"
+                summary = {
+                    "schema": B2_FULL_VERDICT_SCHEMA_VERSION,
+                    "artifact_role": "b2_full_audit_summary",
+                    "step": int(step),
+                    "dry_run": True,
+                    "checkpoint_written": False,
+                    "checkpoint_artifact_written": False,
+                    "pt_artifact_written": False,
+                    "parent_hash_before": parent_hash_before,
+                    "parent_hash_current": parent_hash_current,
+                    "parent_hash_unchanged": parent_hash_current == parent_hash_before,
+                    "checkpoint_payload_summary": {
+                        "schema": checkpoint_payload["schema"],
+                        "artifact_role": checkpoint_payload["artifact_role"],
+                        "step": checkpoint_payload["step"],
+                        "dry_run": checkpoint_payload["dry_run"],
+                        "checkpoint_written": checkpoint_payload["checkpoint_written"],
+                        "authoritative_state_sha256": checkpoint_payload[
+                            "authoritative_state_sha256"
+                        ],
+                        "updater_config_sha256": checkpoint_payload[
+                            "updater_config_sha256"
+                        ],
+                        "tensor_summary_count": len(checkpoint_payload["tensor_summaries"]),
+                    },
+                    "target_audit": dict(target_audit),
+                    "coverage_by_support": {
+                        support: dict(coverage)
+                        for support, coverage in coverage_by_support.items()
+                    },
+                    "math_a0_coverage_cycles": b2_full_coverage_cycles(
+                        coverage_by_support,
+                        "math_a0",
+                    ),
+                    "l0b_coverage_cycles": b2_full_coverage_cycles(
+                        coverage_by_support,
+                        "L0b",
+                    ),
+                    "verdict_summary": {
+                        "prior_audit_count": verdict_state.get("prior_audit_count", 0),
+                        "snapshot_steps": dict(verdict_state.get("snapshot_steps", {})),
+                        "combined_stop": dict(verdict_state.get("combined_stop", {})),
+                        "first_audited_target_ge_90": summarize_b2_full_prior_snapshot(
+                            verdict_state.get("first_audited_target_ge_90")
+                        ),
+                        "first_covered_target_ge_90": summarize_b2_full_prior_snapshot(
+                            verdict_state.get("first_covered_target_ge_90")
+                        ),
+                    },
+                }
+                audit_path.write_text(
+                    json.dumps(summary, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+                return str(audit_path)
+    
+        b2b_capture_receipt: dict[str, Any] | None = None
+        with phase_progress.phase("bounded_steps"):
+            (
+                step_reports,
+                updater_config,
+                final_states,
+                audit_reports,
+                stop_reason,
+                steps_completed,
+                b2_full_verdict_state,
+                b2b_capture_receipt,
+                grad_proxy_ingress_crossing_eligible_count_by_step,
+            ) = run_bounded_delta_steps(
+                model,
+                model_batch,
+                tensor_states,
+                eligible,
+                device=torch_device,
+                steps=int(steps),
+                require_q_change=bool(require_q_change),
+                max_abs_per_tensor=int(max_abs_per_tensor),
+                support_batches=support_batches,
+                b2_retained_support_sets=b2_retained_support_sets,
+                b2_parent_model=b2_parent_model,
+                b2_parent_consistency_weight=float(b2_parent_consistency_weight),
+                b2_pc_aux_mode=str(b2_pc_aux_mode),
+                audit_callback=audit_callback if audit_enabled else None,
+                audit_interval=int(audit_interval),
+                stop_on_strict_exact=bool(stop_on_strict_exact),
+                matched_continued_training_horizon_steps=int(
+                    matched_continued_training_horizon_steps
+                ),
+                global_cap_contract=str(global_cap_contract),
+                tie_rule_mode=str(tie_rule_mode),
+                science_arm=str(science_arm),
+                b2_full_verdict_mode=bool(b2_full_verdict_mode),
+                b2_full_prior_snapshot_callback=b2_full_prior_snapshot_callback,
+                b2_full_audit_export_callback=b2_full_audit_export_callback,
+                front_c_identity_collector=front_c_identity_collector,
+                phase_progress=phase_progress,
+                b2b_sequential_capture_enabled=bool(b2b_sequential_capture_enabled),
+                b2b_sequential_capture_out=b2b_sequential_capture_out,
+                b2b_sequential_min_steps_for_verdict=int(b2b_sequential_min_steps_for_verdict),
+                b2b_sequential_max_sampled_candidates=int(
+                    b2b_sequential_max_sampled_candidates
+                ),
+                two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+                oracle_screen_max_sampled_candidates=int(
+                    oracle_screen_max_sampled_candidates
+                ),
+                phase=str(phase),
+                snapshot_mode=str(snapshot_mode),
+                headroom_wiring_sidecar_path=headroom_wiring_sidecar_path,
+                r7_cap_defer_pressure_instrumentation_enabled=bool(
+                    r7_cap_defer_pressure_instrumentation_enabled
+                ),
+                r7_deferred_backlog_carry_enabled=bool(r7_deferred_backlog_carry_enabled),
+                r7_cap_defer_pressure_sidecar_path=r7_cap_defer_pressure_sidecar_path,
+                d_recompute_window_instrumentation_enabled=bool(
+                    d_recompute_window_instrumentation_enabled
+                ),
+                d_recompute_window_log_path=d_recompute_window_log_path,
+                d_recompute_selector_manifest=d_recompute_selector_manifest,
+                d_live_carrier_snapshot_enabled=bool(d_live_carrier_snapshot_enabled),
+                d_live_carrier_snapshot_path=d_live_carrier_snapshot_path,
+                receipt_emit_profile=str(receipt_emit_profile),
+                d_diagnostic_compact_step_reports=bool(d_diagnostic_compact_step_reports),
+                calibration_warmup_collector=calibration_warmup_collector,
+                votes_emit_enabled=bool(votes_emit_enabled),
+                votes_emit_root=votes_emit_root,
+                carrier_growth_enabled=bool(carrier_growth_enabled),
+                confirmation_envelope=confirmation_envelope,
+                event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
+            )
+        if calibration_warmup_collector is not None:
+            with phase_progress.phase("calibration_warmup_observations_write"):
+                calibration_warmup_collector.write()
+        prior_audit_final_reports: dict[str, dict[str, Any]] = {}
+        if prior_support_sets:
+            with phase_progress.phase("prior_final_audit", step=int(steps_completed)):
+                prior_audit_final_reports = audit_prior_support_sets(
+                    model,
+                    prior_support_sets,
+                    final_states,
+                    eligible,
+                    tok=tok,
+                    device=torch_device,
+                    phase="prior_final_audit",
+                    step=int(steps_completed),
+                    total_steps=max(1, int(steps)),
+                )
+        if not updater_config:
+            envelope = resolve_confirmation_envelope(confirmation_envelope)
+            rank_spec = (
+                envelope.rank_spec if envelope is not None else default_dry_run_rank_vote_spec()
+            )
+            vote_spec = (
+                envelope.vote_update_spec(max_abs_per_tensor=int(max_abs_per_tensor))
+                if envelope is not None
+                else default_vote_update_spec(max_abs_per_tensor)
+            )
+            updater_config = {
+                "rank_vote_spec": rank_spec.to_live_dict(),
+                "vote_update_spec": asdict(vote_spec),
+                "projection_law": S1_PROJECTION_LAW,
+                "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+            }
+        if slim_receipt_emit:
+            checkpoint_payload = {
+                "checkpoint_payload_omitted": True,
+                "reason": RECEIPT_EMIT_PROFILE_SLIM,
+                "schema": BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
+                "dry_run": True,
+                "tensor_count": len(final_states),
+            }
+        else:
+            with phase_progress.phase("checkpoint_payload"):
+                _maybe_log_checkpoint_states_dump(
+                    checkpoint_states_dump,
+                    tensor_states=final_states,
+                )
+                checkpoint_payload = _build_checkpoint_payload_with_phase_telemetry(
+                    phase_progress,
+                    final_states,
+                    step=int(steps_completed),
+                    updater_config=updater_config,
+                    oracle_receipt=None,
+                    dry_run=True,
+                    checkpoint_written=False,
+                )
+                validate_authoritative_resume_payload(checkpoint_payload)
         with phase_progress.phase("parent_hash_after"):
             parent_hash_after = file_sha256(parent)
         parent_hash_unchanged = parent_hash_before == parent_hash_after
         if not parent_hash_unchanged:
-            raise RuntimeError("parent checkpoint hash changed during oracle screen")
+            raise RuntimeError("parent checkpoint hash changed during C2.1 probe")
+        if b2b_capture_receipt is not None:
+            b2b_capture_receipt["parent_hash_unchanged"] = bool(parent_hash_unchanged)
         total_run_duration_seconds = _timing_duration_seconds(
             run_timing_start,
             torch_device,
+            )
+        timing_summary = build_timing_summary(
+            step_reports=step_reports,
+            audit_reports=audit_reports,
+            total_run_duration_seconds=total_run_duration_seconds,
         )
+        prior_audit_receipt = build_prior_audit_receipt(
+            requested_supports=requested_prior_audit_supports,
+            support_sets=prior_support_sets,
+            start_reports=prior_audit_start_reports,
+            final_reports=prior_audit_final_reports,
+        )
+        b2_retention_receipt = build_b2_retention_receipt(
+            requested_supports=requested_b2_retained_supports,
+            support_sets=b2_retained_support_sets,
+            step_reports=step_reports,
+            pc_aux_mode=str(b2_pc_aux_mode),
+            parent_consistency_weight=float(b2_parent_consistency_weight),
+        )
+        b2_full_verdict_receipt = None
+        if b2_full_verdict_mode:
+            if b2_full_verdict_state is None:
+                raise RuntimeError("B2-full verdict mode did not return verdict state")
+            if not audit_reports:
+                raise RuntimeError("B2-full verdict mode requires at least one target audit")
+            final_audit_step = str(
+                max(int(step) for step in audit_reports)
+            )
+            coverage_by_support = b2_full_verdict_state.get("coverage_by_support", {})
+            terminal_snapshot = build_b2_full_prior_snapshot(
+                snapshot_name="terminal",
+                step=int(steps_completed),
+                target_audit=audit_reports[final_audit_step],
+                coverage_by_support=coverage_by_support,
+                start_reports=prior_audit_start_reports,
+                current_reports=prior_audit_final_reports,
+            )
+            b2_full_verdict_receipt = finalize_b2_full_verdict_state(
+                b2_full_verdict_state,
+                terminal_snapshot=terminal_snapshot,
+            )
+        front_c_identity_emission_receipt: dict[str, Any] = {"enabled": False}
+        if front_c_identity_collector is not None:
+            with phase_progress.phase("front_c_identity_artifact", step=int(steps_completed)):
+                front_c_identity_emission_receipt = {
+                    "enabled": True,
+                    **front_c_identity_collector.finalize(
+                        audit_reports=audit_reports,
+                        prior_audit_start_reports=prior_audit_start_reports,
+                        prior_audit_final_reports=prior_audit_final_reports,
+                        steps_completed=int(steps_completed),
+                        stop_reason=stop_reason,
+                    ),
+                }
         receipt = {
             "schema": C2P1_HARNESS_SCHEMA_VERSION,
             "c2p0_schema": BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
@@ -7020,6 +7681,7 @@ def run_c2p1_probe(
                 "fail_closed_mechanism": "faulthandler.dump_traceback_later(exit=True)",
             },
             "stdout_liveness": stdout_liveness_receipt,
+            "phase_timeout_exemption": phase_timeout_exemption_receipt,
             "dry_run": True,
             "checkpoint_written": False,
             "creditdir_mutated": False,
@@ -7047,71 +7709,181 @@ def run_c2p1_probe(
             "weight_level_init_fidelity": init_fidelity,
             "forward_level_init_fidelity": forward_init_fidelity,
             "steps_requested": int(steps),
-            "steps_completed": int(steps),
+            "steps_completed": int(steps_completed),
             "max_steps_hard": int(max_steps_hard),
             "audit_interval": int(audit_interval),
-            "stop_on_strict_exact": False,
-            "matched_continued_training_horizon_steps": 0,
+            "stop_on_strict_exact": bool(stop_on_strict_exact),
+            "matched_continued_training_horizon_steps": int(
+                matched_continued_training_horizon_steps
+            ),
             "global_cap_contract": global_cap_contract_receipt,
             "tie_rule_mode": str(tie_rule_mode),
-            "science_arm": None,
-            "oracle_screen_mode": str(oracle_screen_mode),
-            "target_vote_law": S1_RANK_BUCKET_VOTE_LAW,
-            "target_tie_policy_id": TIE_POLICY_CURRENT_MARGIN_INDEX,
-            "local_selection_ordering_mode": LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
-            "local_selection_ordering_seed": 17,
-            "local_selection_ordering_step": 1,
+            "science_arm": str(science_arm),
+            "target_vote_law": _science_arm_vote_law(str(science_arm)),
+            "target_tie_policy_id": _science_arm_tie_policy(str(science_arm)),
+            "local_selection_ordering_mode": _science_local_selection_ordering_mode(str(science_arm)),
+            "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
             "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
-            "default_rank_bucket_path_unchanged": True,
-            "stop_reason": "oracle_screen_completed",
-            "forward_backward_update_executed": False,
-            "step0_optimizer_identity_proof": prove_step0_optimizer_identity(model, eligible),
+            "default_rank_bucket_path_unchanged": str(science_arm) == ARM_A0_RANK_BUCKET_CURRENT,
+            "stop_reason": stop_reason,
+            "forward_backward_update_executed": bool(steps > 0),
+            "step0_optimizer_identity_proof": step0_optimizer_identity_proof,
             "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
-            "step_reports": {},
-            "audit_reports": {},
-            "prior_audit": build_prior_audit_receipt(
-                requested_supports=(),
-                support_sets={},
-                start_reports={},
-                final_reports={},
-            ),
-            "b2_retention": build_b2_retention_receipt(
-                requested_supports=(),
-                support_sets={},
-                step_reports={},
-                pc_aux_mode=str(b2_pc_aux_mode),
-                parent_consistency_weight=0.0,
-            ),
-            "front_c_identity_emission": {"enabled": False},
-            "timing_summary": {
-                "schema": C2P2_TIMING_SCHEMA_VERSION,
-                "step_reports": {},
-                "audit_reports": {},
-                "total_run_duration_seconds": total_run_duration_seconds,
-            },
+            "step_reports": step_reports,
+            "audit_reports": audit_reports,
+            "prior_audit": prior_audit_receipt,
+            "b2_retention": b2_retention_receipt,
+            "front_c_identity_emission": front_c_identity_emission_receipt,
+            "timing_summary": timing_summary,
             "acquisition_trajectory": build_acquisition_trajectory(
-                audit_enabled=False,
-                audit_reports={},
-                step_reports={},
+                audit_enabled=audit_enabled,
+                audit_reports=audit_reports,
+                step_reports=step_reports,
                 support_cycler_proof=support_cycler_proof,
-                audit_interval=0,
-                stop_on_strict_exact=False,
-                matched_continued_training_horizon_steps=0,
+                audit_interval=int(audit_interval),
+                stop_on_strict_exact=bool(stop_on_strict_exact),
+                matched_continued_training_horizon_steps=int(
+                    matched_continued_training_horizon_steps
+                ),
                 max_steps_hard=int(max_steps_hard),
-                stop_reason="oracle_screen_completed",
-                timing_summary={
-                    "schema": C2P2_TIMING_SCHEMA_VERSION,
-                    "step_reports": {},
-                    "audit_reports": {},
-                    "total_run_duration_seconds": total_run_duration_seconds,
-                },
+                stop_reason=stop_reason,
+                timing_summary=timing_summary,
             ),
             "checkpoint_payload": checkpoint_payload,
             "memory": cuda_memory_receipt(torch_device),
-            "oracle_screen": oracle_screen,
-            "branch_classification": oracle_screen["branch_classification"],
             "phase_telemetry": phase_progress.to_dict(),
+            "b2b_sequential_capture": b2b_capture_receipt,
+            "receipt_emit_profile": str(receipt_emit_profile),
+            "persistent_accumulator_w6_byte_packed": bool(persistent_accumulator_w6_byte_packed),
+            "persistent_accumulator_w5_byte_packed": bool(persistent_accumulator_w5_byte_packed),
+            "dense_accumulator_w7_clip": bool(dense_accumulator_w7_clip),
+            "dense_accumulator_w8_clip": bool(dense_accumulator_w8_clip),
+            "persistent_accumulator_event_coded_live": bool(
+                persistent_accumulator_event_coded_live
+            ),
+            "event_coded_live_demotion_band": int(event_coded_live_demotion_band),
+            "r3_persistent_ledger": build_r3_persistent_ledger_receipt(
+                final_states,
+                byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
+            ),
+            "persistent_q_ternary_byte_packed": bool(persistent_q_ternary_byte_packed),
+            "persistent_q_ternary_base3_codec": bool(persistent_q_ternary_base3_codec),
+            "r4_persistent_ledger": build_r4_persistent_ledger_receipt(
+                final_states,
+                q_packed_enabled=bool(persistent_q_ternary_byte_packed),
+                acc_byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
+            ),
+            "r4b_persistent_ledger": build_r4b_persistent_ledger_receipt(
+                final_states,
+                q_packed_enabled=bool(persistent_q_ternary_byte_packed),
+                acc_byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
+                q_codec_selector=(
+                    Q_CODEC_SELECTOR_BASE3
+                    if bool(persistent_q_ternary_base3_codec)
+                    else "2bit"
+                ),
+            ),
+            "r5_persistent_ledger": build_r5_persistent_ledger_receipt(
+                final_states,
+                q_packed_enabled=bool(persistent_q_ternary_byte_packed),
+                acc_w5_byte_packed_enabled=bool(persistent_accumulator_w5_byte_packed),
+            ),
+            "r4v_persistent_ledger": build_r4v_persistent_ledger_receipt(
+                final_states,
+                event_coded_live_enabled=bool(persistent_accumulator_event_coded_live),
+            ),
         }
+        if bool(event_coded_sparse_vote_authority):
+            receipt["event_coded_sparse_vote_authority"] = True
+            receipt["control_arm_index_surfaces_skipped_sparse_authority"] = True
+            last_step_key = str(int(steps_completed))
+            last_step = dict(step_reports.get(last_step_key) or {})
+            step_result_body = dict(last_step.get("step_result") or {})
+            global_summary = dict(step_result_body.get("global_summary") or {})
+            receipt["bounded_delta_global_summary"] = global_summary
+            if C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY in global_summary:
+                receipt["C8_TRANSIENT_DENSE_COMPUTE_NUMEL"] = int(
+                    global_summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY]
+                )
+    
+        envelope = resolve_confirmation_envelope(confirmation_envelope)
+        if envelope is not None:
+            receipt.update(envelope.receipt_fields())
+        if slim_receipt_emit:
+            assert headroom_wiring_sidecar_path is not None
+            receipt["headroom_wiring_sidecar_path"] = str(headroom_wiring_sidecar_path)
+            receipt["headroom_wiring_sidecar_schema"] = HEADROOM_WIRING_SIDECAR_SCHEMA_VERSION
+        if r7_cap_defer_pressure_instrumentation_enabled:
+            assert r7_cap_defer_pressure_sidecar_path is not None
+            receipt["r7_cap_defer_pressure_instrumentation_enabled"] = True
+            receipt["r7_cap_defer_pressure_sidecar_path"] = str(
+                r7_cap_defer_pressure_sidecar_path
+            )
+        if d_recompute_window_instrumentation_enabled:
+            assert d_recompute_window_log_path is not None
+            receipt["d_recompute_window_instrumentation_enabled"] = True
+            receipt["d_recompute_window_log_path"] = str(d_recompute_window_log_path)
+        if d_live_carrier_snapshot_enabled:
+            assert d_live_carrier_snapshot_path is not None
+            receipt["d_live_carrier_snapshot_enabled"] = True
+            receipt["d_live_carrier_snapshot_path"] = str(d_live_carrier_snapshot_path)
+        if d_recompute_window_instrumentation_enabled:
+            if d_recompute_selector_manifest is not None:
+                receipt["d_recompute_selector_manifest_sha256"] = str(
+                    d_recompute_selector_manifest.manifest_sha256
+                )
+                if d_recompute_selector_manifest_path is not None:
+                    receipt["d_recompute_selector_manifest_path"] = str(
+                        d_recompute_selector_manifest_path
+                    )
+        if calibration_warmup_collector is not None:
+            receipt["d_recompute_calibration_warmup_observations_path"] = str(
+                calibration_warmup_collector.output_path
+            )
+            receipt["pre_warmup_banked_state_sha256"] = str(parent_hash_before)
+            receipt["calibration_discarded_before_measurement"] = True
+        if r7_deferred_backlog_carry_enabled:
+            receipt["r7_deferred_backlog_carry_enabled"] = True
+        if b2_full_verdict_mode:
+            assert b2_full_verdict_receipt is not None
+            receipt.update(
+                {
+                    "b2_full_verdict_mode": True,
+                    "b2_full_retention_verdict": b2_full_verdict_receipt,
+                    "math_a0_coverage_cycles": b2_full_verdict_receipt.get(
+                        "math_a0_coverage_cycles"
+                    ),
+                    "l0b_coverage_cycles": b2_full_verdict_receipt.get(
+                        "l0b_coverage_cycles"
+                    ),
+                }
+        )
+        if two_tier_carry_w6_enabled:
+            receipt.update(
+                {
+                    "two_tier_carry_w6_enabled": True,
+                    "harness_wire_tier_a_index_surface_keys": sorted(
+                        TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS
+                    ),
+                    "grad_proxy_ingress_enabled": True,
+                    "grad_proxy_ingress_estimand": (
+                        "first_order_grad_proxy_weighted_local_loss_delta"
+                    ),
+                    "grad_proxy_ingress_population_mode": (
+                        POPULATION_MODE_FULL_CROSSING_ELIGIBLE
+                    ),
+                    "grad_proxy_ingress_crossing_eligible_count_by_step": list(
+                        grad_proxy_ingress_crossing_eligible_count_by_step
+                    ),
+                }
+            )
+        receipt["harness_wire_cap_window_audit_surface_keys"] = sorted(
+            CAP_WINDOW_AUDIT_SURFACE_KEYS
+        )
+        receipt["cap_window_audit_non_authoritative"] = True
+        receipt["cap_window_audit_forbidden_persistent_authority_surfaces"] = list(
+            FORBIDDEN_PERSIST_SELECTOR_SURFACES
+        )
         receipt_path = scratch_root / "receipt.json"
         receipt["receipt_path"] = str(receipt_path)
         receipt["run_log_path"] = str(run_log_path)
@@ -7119,592 +7891,29 @@ def run_c2p1_probe(
             cuda_memory_snapshots_jsonl_path
         )
         receipt["terminal_status"] = build_receipt_terminal_status(
-            stop_reason=str(receipt["stop_reason"]),
-            steps_completed=int(receipt["steps_completed"]),
-            steps_requested=int(receipt["steps_requested"]),
+            stop_reason=str(stop_reason),
+            steps_completed=int(steps_completed),
+            steps_requested=int(steps),
         )
         with phase_progress.phase("receipt_write", path=str(receipt_path)):
             receipt["phase_telemetry"] = phase_progress.to_dict()
-            receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
+            if not slim_receipt_emit:
+                compact_probe_receipt_for_banking(receipt)
+                compactness_failures = validate_bankable_probe_receipt(receipt)
+                if compactness_failures:
+                    raise RuntimeError(
+                        "probe receipt failed bankable compactness guard: "
+                        + "; ".join(compactness_failures)
+                    )
+            if slim_receipt_emit:
+                receipt_text = json.dumps(receipt, separators=(",", ":"), sort_keys=True)
+            else:
+                receipt_text = json.dumps(receipt, indent=2, sort_keys=True)
+            receipt_path.write_text(receipt_text, encoding="utf-8")
         receipt["phase_telemetry"] = phase_progress.to_dict()
         return receipt
-
-    prior_audit_start_reports: dict[str, dict[str, Any]] = {}
-    if prior_support_sets:
-        with phase_progress.phase("prior_audit0"):
-            prior_audit_start_reports = audit_prior_support_sets(
-                model,
-                prior_support_sets,
-                tensor_states,
-                eligible,
-                tok=tok,
-                device=torch_device,
-                phase="prior_audit0",
-                step=0,
-                total_steps=max(1, int(steps)),
-            )
-
-    step0_optimizer_identity_proof = None
-    if int(steps) <= 0:
-        with phase_progress.phase("step0_optimizer_identity"):
-            step0_optimizer_identity_proof = prove_step0_optimizer_identity(model, eligible)
-
-    audit_enabled = (
-        int(audit_interval) > 0
-        or bool(stop_on_strict_exact)
-        or bool(b2_full_verdict_mode)
-    )
-
-    def audit_callback(step: int, states: Mapping[str, Any]) -> dict[str, Any]:
-        return audit_identity_full_support(
-            model,
-            support_batches,
-            states,
-            eligible,
-            tok=tok,
-            device=torch_device,
-            step=int(step),
-            total_steps=max(1, int(steps)),
-        )
-
-    b2_full_prior_snapshot_callback = None
-    b2_full_audit_export_callback = None
-    if b2_full_verdict_mode:
-
-        def b2_full_prior_snapshot_callback(
-            step: int,
-            states: Mapping[str, Any],
-            target_audit: Mapping[str, Any],
-            coverage_by_support: Mapping[str, Mapping[str, Any]],
-        ) -> dict[str, Any]:
-            current_reports = audit_prior_support_sets(
-                model,
-                prior_support_sets,
-                states,
-                eligible,
-                tok=tok,
-                device=torch_device,
-                phase="b2_full_prior_snapshot",
-                step=int(step),
-                total_steps=max(1, int(steps)),
-            )
-            return build_b2_full_prior_snapshot(
-                snapshot_name="runtime_prior_snapshot",
-                step=int(step),
-                target_audit=target_audit,
-                coverage_by_support=coverage_by_support,
-                start_reports=prior_audit_start_reports,
-                current_reports=current_reports,
-            )
-
-        def b2_full_audit_export_callback(
-            step: int,
-            states: Mapping[str, Any],
-            target_audit: Mapping[str, Any],
-            coverage_by_support: Mapping[str, Mapping[str, Any]],
-            verdict_state: Mapping[str, Any],
-            updater_config: Mapping[str, Any],
-        ) -> str | None:
-            checkpoint_payload = build_authoritative_checkpoint_payload(
-                states,
-                step=int(step),
-                updater_config=updater_config,
-                oracle_receipt=None,
-                dry_run=True,
-                checkpoint_written=False,
-            )
-            validate_authoritative_resume_payload(checkpoint_payload)
-            parent_hash_current = file_sha256(parent)
-            audit_dir = scratch_root / "audits" / f"step_{int(step):04d}"
-            audit_dir.mkdir(parents=True, exist_ok=True)
-            audit_path = audit_dir / "summary.json"
-            summary = {
-                "schema": B2_FULL_VERDICT_SCHEMA_VERSION,
-                "artifact_role": "b2_full_audit_summary",
-                "step": int(step),
-                "dry_run": True,
-                "checkpoint_written": False,
-                "checkpoint_artifact_written": False,
-                "pt_artifact_written": False,
-                "parent_hash_before": parent_hash_before,
-                "parent_hash_current": parent_hash_current,
-                "parent_hash_unchanged": parent_hash_current == parent_hash_before,
-                "checkpoint_payload_summary": {
-                    "schema": checkpoint_payload["schema"],
-                    "artifact_role": checkpoint_payload["artifact_role"],
-                    "step": checkpoint_payload["step"],
-                    "dry_run": checkpoint_payload["dry_run"],
-                    "checkpoint_written": checkpoint_payload["checkpoint_written"],
-                    "authoritative_state_sha256": checkpoint_payload[
-                        "authoritative_state_sha256"
-                    ],
-                    "updater_config_sha256": checkpoint_payload[
-                        "updater_config_sha256"
-                    ],
-                    "tensor_summary_count": len(checkpoint_payload["tensor_summaries"]),
-                },
-                "target_audit": dict(target_audit),
-                "coverage_by_support": {
-                    support: dict(coverage)
-                    for support, coverage in coverage_by_support.items()
-                },
-                "math_a0_coverage_cycles": b2_full_coverage_cycles(
-                    coverage_by_support,
-                    "math_a0",
-                ),
-                "l0b_coverage_cycles": b2_full_coverage_cycles(
-                    coverage_by_support,
-                    "L0b",
-                ),
-                "verdict_summary": {
-                    "prior_audit_count": verdict_state.get("prior_audit_count", 0),
-                    "snapshot_steps": dict(verdict_state.get("snapshot_steps", {})),
-                    "combined_stop": dict(verdict_state.get("combined_stop", {})),
-                    "first_audited_target_ge_90": summarize_b2_full_prior_snapshot(
-                        verdict_state.get("first_audited_target_ge_90")
-                    ),
-                    "first_covered_target_ge_90": summarize_b2_full_prior_snapshot(
-                        verdict_state.get("first_covered_target_ge_90")
-                    ),
-                },
-            }
-            audit_path.write_text(
-                json.dumps(summary, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-            return str(audit_path)
-
-    b2b_capture_receipt: dict[str, Any] | None = None
-    with phase_progress.phase("bounded_steps"):
-        (
-            step_reports,
-            updater_config,
-            final_states,
-            audit_reports,
-            stop_reason,
-            steps_completed,
-            b2_full_verdict_state,
-            b2b_capture_receipt,
-            grad_proxy_ingress_crossing_eligible_count_by_step,
-        ) = run_bounded_delta_steps(
-            model,
-            model_batch,
-            tensor_states,
-            eligible,
-            device=torch_device,
-            steps=int(steps),
-            require_q_change=bool(require_q_change),
-            max_abs_per_tensor=int(max_abs_per_tensor),
-            support_batches=support_batches,
-            b2_retained_support_sets=b2_retained_support_sets,
-            b2_parent_model=b2_parent_model,
-            b2_parent_consistency_weight=float(b2_parent_consistency_weight),
-            b2_pc_aux_mode=str(b2_pc_aux_mode),
-            audit_callback=audit_callback if audit_enabled else None,
-            audit_interval=int(audit_interval),
-            stop_on_strict_exact=bool(stop_on_strict_exact),
-            matched_continued_training_horizon_steps=int(
-                matched_continued_training_horizon_steps
-            ),
-            global_cap_contract=str(global_cap_contract),
-            tie_rule_mode=str(tie_rule_mode),
-            science_arm=str(science_arm),
-            b2_full_verdict_mode=bool(b2_full_verdict_mode),
-            b2_full_prior_snapshot_callback=b2_full_prior_snapshot_callback,
-            b2_full_audit_export_callback=b2_full_audit_export_callback,
-            front_c_identity_collector=front_c_identity_collector,
-            phase_progress=phase_progress,
-            b2b_sequential_capture_enabled=bool(b2b_sequential_capture_enabled),
-            b2b_sequential_capture_out=b2b_sequential_capture_out,
-            b2b_sequential_min_steps_for_verdict=int(b2b_sequential_min_steps_for_verdict),
-            b2b_sequential_max_sampled_candidates=int(
-                b2b_sequential_max_sampled_candidates
-            ),
-            two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
-            oracle_screen_max_sampled_candidates=int(
-                oracle_screen_max_sampled_candidates
-            ),
-            phase=str(phase),
-            snapshot_mode=str(snapshot_mode),
-            headroom_wiring_sidecar_path=headroom_wiring_sidecar_path,
-            r7_cap_defer_pressure_instrumentation_enabled=bool(
-                r7_cap_defer_pressure_instrumentation_enabled
-            ),
-            r7_deferred_backlog_carry_enabled=bool(r7_deferred_backlog_carry_enabled),
-            r7_cap_defer_pressure_sidecar_path=r7_cap_defer_pressure_sidecar_path,
-            d_recompute_window_instrumentation_enabled=bool(
-                d_recompute_window_instrumentation_enabled
-            ),
-            d_recompute_window_log_path=d_recompute_window_log_path,
-            d_recompute_selector_manifest=d_recompute_selector_manifest,
-            d_live_carrier_snapshot_enabled=bool(d_live_carrier_snapshot_enabled),
-            d_live_carrier_snapshot_path=d_live_carrier_snapshot_path,
-            receipt_emit_profile=str(receipt_emit_profile),
-            d_diagnostic_compact_step_reports=bool(d_diagnostic_compact_step_reports),
-            calibration_warmup_collector=calibration_warmup_collector,
-            votes_emit_enabled=bool(votes_emit_enabled),
-            votes_emit_root=votes_emit_root,
-            carrier_growth_enabled=bool(carrier_growth_enabled),
-            confirmation_envelope=confirmation_envelope,
-        )
-    if calibration_warmup_collector is not None:
-        with phase_progress.phase("calibration_warmup_observations_write"):
-            calibration_warmup_collector.write()
-    prior_audit_final_reports: dict[str, dict[str, Any]] = {}
-    if prior_support_sets:
-        with phase_progress.phase("prior_final_audit", step=int(steps_completed)):
-            prior_audit_final_reports = audit_prior_support_sets(
-                model,
-                prior_support_sets,
-                final_states,
-                eligible,
-                tok=tok,
-                device=torch_device,
-                phase="prior_final_audit",
-                step=int(steps_completed),
-                total_steps=max(1, int(steps)),
-            )
-    if not updater_config:
-        envelope = resolve_confirmation_envelope(confirmation_envelope)
-        rank_spec = (
-            envelope.rank_spec if envelope is not None else default_dry_run_rank_vote_spec()
-        )
-        vote_spec = (
-            envelope.vote_update_spec(max_abs_per_tensor=int(max_abs_per_tensor))
-            if envelope is not None
-            else default_vote_update_spec(max_abs_per_tensor)
-        )
-        updater_config = {
-            "rank_vote_spec": rank_spec.to_live_dict(),
-            "vote_update_spec": asdict(vote_spec),
-            "projection_law": S1_PROJECTION_LAW,
-            "vote_law": S1_RANK_BUCKET_VOTE_LAW,
-        }
-    if slim_receipt_emit:
-        checkpoint_payload = {
-            "checkpoint_payload_omitted": True,
-            "reason": RECEIPT_EMIT_PROFILE_SLIM,
-            "schema": BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
-            "dry_run": True,
-            "tensor_count": len(final_states),
-        }
-    else:
-        with phase_progress.phase("checkpoint_payload"):
-            _maybe_log_checkpoint_states_dump(
-                checkpoint_states_dump,
-                tensor_states=final_states,
-            )
-            checkpoint_payload = _build_checkpoint_payload_with_phase_telemetry(
-                phase_progress,
-                final_states,
-                step=int(steps_completed),
-                updater_config=updater_config,
-                oracle_receipt=None,
-                dry_run=True,
-                checkpoint_written=False,
-            )
-            validate_authoritative_resume_payload(checkpoint_payload)
-    with phase_progress.phase("parent_hash_after"):
-        parent_hash_after = file_sha256(parent)
-    parent_hash_unchanged = parent_hash_before == parent_hash_after
-    if not parent_hash_unchanged:
-        raise RuntimeError("parent checkpoint hash changed during C2.1 probe")
-    if b2b_capture_receipt is not None:
-        b2b_capture_receipt["parent_hash_unchanged"] = bool(parent_hash_unchanged)
-    total_run_duration_seconds = _timing_duration_seconds(
-        run_timing_start,
-        torch_device,
-        )
-    timing_summary = build_timing_summary(
-        step_reports=step_reports,
-        audit_reports=audit_reports,
-        total_run_duration_seconds=total_run_duration_seconds,
-    )
-    prior_audit_receipt = build_prior_audit_receipt(
-        requested_supports=requested_prior_audit_supports,
-        support_sets=prior_support_sets,
-        start_reports=prior_audit_start_reports,
-        final_reports=prior_audit_final_reports,
-    )
-    b2_retention_receipt = build_b2_retention_receipt(
-        requested_supports=requested_b2_retained_supports,
-        support_sets=b2_retained_support_sets,
-        step_reports=step_reports,
-        pc_aux_mode=str(b2_pc_aux_mode),
-        parent_consistency_weight=float(b2_parent_consistency_weight),
-    )
-    b2_full_verdict_receipt = None
-    if b2_full_verdict_mode:
-        if b2_full_verdict_state is None:
-            raise RuntimeError("B2-full verdict mode did not return verdict state")
-        if not audit_reports:
-            raise RuntimeError("B2-full verdict mode requires at least one target audit")
-        final_audit_step = str(
-            max(int(step) for step in audit_reports)
-        )
-        coverage_by_support = b2_full_verdict_state.get("coverage_by_support", {})
-        terminal_snapshot = build_b2_full_prior_snapshot(
-            snapshot_name="terminal",
-            step=int(steps_completed),
-            target_audit=audit_reports[final_audit_step],
-            coverage_by_support=coverage_by_support,
-            start_reports=prior_audit_start_reports,
-            current_reports=prior_audit_final_reports,
-        )
-        b2_full_verdict_receipt = finalize_b2_full_verdict_state(
-            b2_full_verdict_state,
-            terminal_snapshot=terminal_snapshot,
-        )
-    front_c_identity_emission_receipt: dict[str, Any] = {"enabled": False}
-    if front_c_identity_collector is not None:
-        with phase_progress.phase("front_c_identity_artifact", step=int(steps_completed)):
-            front_c_identity_emission_receipt = {
-                "enabled": True,
-                **front_c_identity_collector.finalize(
-                    audit_reports=audit_reports,
-                    prior_audit_start_reports=prior_audit_start_reports,
-                    prior_audit_final_reports=prior_audit_final_reports,
-                    steps_completed=int(steps_completed),
-                    stop_reason=stop_reason,
-                ),
-            }
-    receipt = {
-        "schema": C2P1_HARNESS_SCHEMA_VERSION,
-        "c2p0_schema": BOUNDED_DELTA_LEARNER_SCHEMA_VERSION,
-        "bounded_delta_checkpoint_schema": BOUNDED_DELTA_CHECKPOINT_SCHEMA_VERSION,
-        "phase": phase,
-        "implementation_gpu_validation_split": True,
-        "gpu_launch_authorized": bool(torch_device.type == "cuda"),
-        "gpu_launched": bool(torch_device.type == "cuda"),
-        "device": str(torch_device),
-        "device_guard": device_guard,
-        "faulthandler": faulthandler_report,
-        "silent_phase_guard": {
-            "default_on_with_allow_gpu_launch": True,
-            "allow_gpu_launch": bool(allow_gpu_launch),
-            "max_silent_phase_seconds": silent_phase_timeout_seconds,
-            "last_active_phase_path": str(last_active_phase_path),
-            "fail_closed_mechanism": "faulthandler.dump_traceback_later(exit=True)",
-        },
-        "stdout_liveness": stdout_liveness_receipt,
-        "phase_timeout_exemption": phase_timeout_exemption_receipt,
-        "dry_run": True,
-        "checkpoint_written": False,
-        "creditdir_mutated": False,
-        "banked_pt_mutated": False,
-        "parent": str(parent),
-        "parent_hash_before": parent_hash_before,
-        "parent_hash_after": parent_hash_after,
-        "parent_hash_unchanged": parent_hash_unchanged,
-        "model_config": {
-            "max_seq_len": int(cfg.max_seq_len),
-            "n_layers": int(cfg.n_layers),
-            "hidden_size": int(cfg.hidden_size),
-            "num_heads": int(cfg.num_heads),
-            "H_cycles": int(cfg.H_cycles),
-            "L_cycles": int(cfg.L_cycles),
-            "half_layers": bool(cfg.half_layers),
-            "use_ternary_bulk": bool(cfg.use_ternary_bulk),
-        },
-        "batch": batch_proof,
-        "identity_full_control": support_control_proof,
-        "support_cycler": support_cycler_proof,
-        "eligible_scope": eligible_scope,
-        "eligible_module_count": len(eligible),
-        "eligible_modules": sorted(eligible),
-        "weight_level_init_fidelity": init_fidelity,
-        "forward_level_init_fidelity": forward_init_fidelity,
-        "steps_requested": int(steps),
-        "steps_completed": int(steps_completed),
-        "max_steps_hard": int(max_steps_hard),
-        "audit_interval": int(audit_interval),
-        "stop_on_strict_exact": bool(stop_on_strict_exact),
-        "matched_continued_training_horizon_steps": int(
-            matched_continued_training_horizon_steps
-        ),
-        "global_cap_contract": global_cap_contract_receipt,
-        "tie_rule_mode": str(tie_rule_mode),
-        "science_arm": str(science_arm),
-        "target_vote_law": _science_arm_vote_law(str(science_arm)),
-        "target_tie_policy_id": _science_arm_tie_policy(str(science_arm)),
-        "local_selection_ordering_mode": _science_local_selection_ordering_mode(str(science_arm)),
-        "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
-        "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
-        "default_rank_bucket_path_unchanged": str(science_arm) == ARM_A0_RANK_BUCKET_CURRENT,
-        "stop_reason": stop_reason,
-        "forward_backward_update_executed": bool(steps > 0),
-        "step0_optimizer_identity_proof": step0_optimizer_identity_proof,
-        "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
-        "step_reports": step_reports,
-        "audit_reports": audit_reports,
-        "prior_audit": prior_audit_receipt,
-        "b2_retention": b2_retention_receipt,
-        "front_c_identity_emission": front_c_identity_emission_receipt,
-        "timing_summary": timing_summary,
-        "acquisition_trajectory": build_acquisition_trajectory(
-            audit_enabled=audit_enabled,
-            audit_reports=audit_reports,
-            step_reports=step_reports,
-            support_cycler_proof=support_cycler_proof,
-            audit_interval=int(audit_interval),
-            stop_on_strict_exact=bool(stop_on_strict_exact),
-            matched_continued_training_horizon_steps=int(
-                matched_continued_training_horizon_steps
-            ),
-            max_steps_hard=int(max_steps_hard),
-            stop_reason=stop_reason,
-            timing_summary=timing_summary,
-        ),
-        "checkpoint_payload": checkpoint_payload,
-        "memory": cuda_memory_receipt(torch_device),
-        "phase_telemetry": phase_progress.to_dict(),
-        "b2b_sequential_capture": b2b_capture_receipt,
-        "receipt_emit_profile": str(receipt_emit_profile),
-        "persistent_accumulator_w6_byte_packed": bool(persistent_accumulator_w6_byte_packed),
-        "persistent_accumulator_w5_byte_packed": bool(persistent_accumulator_w5_byte_packed),
-        "dense_accumulator_w7_clip": bool(dense_accumulator_w7_clip),
-        "dense_accumulator_w8_clip": bool(dense_accumulator_w8_clip),
-        "persistent_accumulator_event_coded_live": bool(
-            persistent_accumulator_event_coded_live
-        ),
-        "event_coded_live_demotion_band": int(event_coded_live_demotion_band),
-        "r3_persistent_ledger": build_r3_persistent_ledger_receipt(
-            final_states,
-            byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
-        ),
-        "persistent_q_ternary_byte_packed": bool(persistent_q_ternary_byte_packed),
-        "persistent_q_ternary_base3_codec": bool(persistent_q_ternary_base3_codec),
-        "r4_persistent_ledger": build_r4_persistent_ledger_receipt(
-            final_states,
-            q_packed_enabled=bool(persistent_q_ternary_byte_packed),
-            acc_byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
-        ),
-        "r4b_persistent_ledger": build_r4b_persistent_ledger_receipt(
-            final_states,
-            q_packed_enabled=bool(persistent_q_ternary_byte_packed),
-            acc_byte_packed_enabled=bool(persistent_accumulator_w6_byte_packed),
-            q_codec_selector=(
-                Q_CODEC_SELECTOR_BASE3
-                if bool(persistent_q_ternary_base3_codec)
-                else "2bit"
-            ),
-        ),
-        "r5_persistent_ledger": build_r5_persistent_ledger_receipt(
-            final_states,
-            q_packed_enabled=bool(persistent_q_ternary_byte_packed),
-            acc_w5_byte_packed_enabled=bool(persistent_accumulator_w5_byte_packed),
-        ),
-        "r4v_persistent_ledger": build_r4v_persistent_ledger_receipt(
-            final_states,
-            event_coded_live_enabled=bool(persistent_accumulator_event_coded_live),
-        ),
-    }
-    envelope = resolve_confirmation_envelope(confirmation_envelope)
-    if envelope is not None:
-        receipt.update(envelope.receipt_fields())
-    if slim_receipt_emit:
-        assert headroom_wiring_sidecar_path is not None
-        receipt["headroom_wiring_sidecar_path"] = str(headroom_wiring_sidecar_path)
-        receipt["headroom_wiring_sidecar_schema"] = HEADROOM_WIRING_SIDECAR_SCHEMA_VERSION
-    if r7_cap_defer_pressure_instrumentation_enabled:
-        assert r7_cap_defer_pressure_sidecar_path is not None
-        receipt["r7_cap_defer_pressure_instrumentation_enabled"] = True
-        receipt["r7_cap_defer_pressure_sidecar_path"] = str(
-            r7_cap_defer_pressure_sidecar_path
-        )
-    if d_recompute_window_instrumentation_enabled:
-        assert d_recompute_window_log_path is not None
-        receipt["d_recompute_window_instrumentation_enabled"] = True
-        receipt["d_recompute_window_log_path"] = str(d_recompute_window_log_path)
-    if d_live_carrier_snapshot_enabled:
-        assert d_live_carrier_snapshot_path is not None
-        receipt["d_live_carrier_snapshot_enabled"] = True
-        receipt["d_live_carrier_snapshot_path"] = str(d_live_carrier_snapshot_path)
-    if d_recompute_window_instrumentation_enabled:
-        if d_recompute_selector_manifest is not None:
-            receipt["d_recompute_selector_manifest_sha256"] = str(
-                d_recompute_selector_manifest.manifest_sha256
-            )
-            if d_recompute_selector_manifest_path is not None:
-                receipt["d_recompute_selector_manifest_path"] = str(
-                    d_recompute_selector_manifest_path
-                )
-    if calibration_warmup_collector is not None:
-        receipt["d_recompute_calibration_warmup_observations_path"] = str(
-            calibration_warmup_collector.output_path
-        )
-        receipt["pre_warmup_banked_state_sha256"] = str(parent_hash_before)
-        receipt["calibration_discarded_before_measurement"] = True
-    if r7_deferred_backlog_carry_enabled:
-        receipt["r7_deferred_backlog_carry_enabled"] = True
-    if b2_full_verdict_mode:
-        assert b2_full_verdict_receipt is not None
-        receipt.update(
-            {
-                "b2_full_verdict_mode": True,
-                "b2_full_retention_verdict": b2_full_verdict_receipt,
-                "math_a0_coverage_cycles": b2_full_verdict_receipt.get(
-                    "math_a0_coverage_cycles"
-                ),
-                "l0b_coverage_cycles": b2_full_verdict_receipt.get(
-                    "l0b_coverage_cycles"
-                ),
-            }
-    )
-    if two_tier_carry_w6_enabled:
-        receipt.update(
-            {
-                "two_tier_carry_w6_enabled": True,
-                "harness_wire_tier_a_index_surface_keys": sorted(
-                    TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS
-                ),
-                "grad_proxy_ingress_enabled": True,
-                "grad_proxy_ingress_estimand": (
-                    "first_order_grad_proxy_weighted_local_loss_delta"
-                ),
-                "grad_proxy_ingress_population_mode": (
-                    POPULATION_MODE_FULL_CROSSING_ELIGIBLE
-                ),
-                "grad_proxy_ingress_crossing_eligible_count_by_step": list(
-                    grad_proxy_ingress_crossing_eligible_count_by_step
-                ),
-            }
-        )
-    receipt["harness_wire_cap_window_audit_surface_keys"] = sorted(
-        CAP_WINDOW_AUDIT_SURFACE_KEYS
-    )
-    receipt["cap_window_audit_non_authoritative"] = True
-    receipt["cap_window_audit_forbidden_persistent_authority_surfaces"] = list(
-        FORBIDDEN_PERSIST_SELECTOR_SURFACES
-    )
-    receipt_path = scratch_root / "receipt.json"
-    receipt["receipt_path"] = str(receipt_path)
-    receipt["run_log_path"] = str(run_log_path)
-    receipt["cuda_memory_snapshots_jsonl_path"] = str(
-        cuda_memory_snapshots_jsonl_path
-    )
-    receipt["terminal_status"] = build_receipt_terminal_status(
-        stop_reason=str(stop_reason),
-        steps_completed=int(steps_completed),
-        steps_requested=int(steps),
-    )
-    with phase_progress.phase("receipt_write", path=str(receipt_path)):
-        receipt["phase_telemetry"] = phase_progress.to_dict()
-        if not slim_receipt_emit:
-            compact_probe_receipt_for_banking(receipt)
-            compactness_failures = validate_bankable_probe_receipt(receipt)
-            if compactness_failures:
-                raise RuntimeError(
-                    "probe receipt failed bankable compactness guard: "
-                    + "; ".join(compactness_failures)
-                )
-        if slim_receipt_emit:
-            receipt_text = json.dumps(receipt, separators=(",", ":"), sort_keys=True)
-        else:
-            receipt_text = json.dumps(receipt, indent=2, sort_keys=True)
-        receipt_path.write_text(receipt_text, encoding="utf-8")
-    receipt["phase_telemetry"] = phase_progress.to_dict()
-    return receipt
+    finally:
+        _restore_probe_runtime_env(_probe_runtime_env_snapshot)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -8216,6 +8425,7 @@ def main(argv: list[str] | None = None) -> int:
             args.persistent_accumulator_event_coded_live
         ),
         event_coded_live_demotion_band=int(args.event_coded_live_demotion_band),
+        event_coded_sparse_vote_authority=bool(args.event_coded_sparse_vote_authority),
         confirmation_envelope=args.confirmation_envelope,
         dense_accumulator_w7_clip=bool(args.dense_accumulator_w7_clip),
         dense_accumulator_w8_clip=bool(args.dense_accumulator_w8_clip),
