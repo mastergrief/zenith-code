@@ -1,0 +1,94 @@
+{
+  "persistent_accumulator_event_coded_live": true,
+  "step_reports": {
+    "1": {
+      "q_changed_count": 512,
+      "step_result": {
+        "global_summary": {
+          "global_rate_cap_accepted_count": 512,
+          "global_rate_cap_applied_count": 512,
+          "global_rate_cap_cap": 512,
+          "global_rate_cap_saturated": true
+        }
+      }
+    },
+    "2": {
+      "q_changed_count": 512,
+      "step_result": {
+        "global_summary": {
+          "global_rate_cap_accepted_count": 512,
+          "global_rate_cap_applied_count": 512,
+          "global_rate_cap_cap": 512,
+          "global_rate_cap_saturated": true
+        }
+      }
+    },
+    "3": {
+      "q_changed_count": 256,
+      "step_result": {
+        "global_summary": {
+          "global_rate_cap_accepted_count": 256,
+          "global_rate_cap_applied_count": 256,
+          "global_rate_cap_cap": 256,
+          "global_rate_cap_saturated": true
+        }
+      }
+    },
+    "4": {
+      "q_changed_count": 256,
+      "step_result": {
+        "global_summary": {
+          "global_rate_cap_accepted_count": 256,
+          "global_rate_cap_applied_count": 256,
+          "global_rate_cap_cap": 256,
+          "global_rate_cap_saturated": true
+        }
+      }
+    },
+    "5": {
+      "q_changed_count": 128,
+      "step_result": {
+        "global_summary": {
+          "global_rate_cap_accepted_count": 128,
+          "global_rate_cap_applied_count": 128,
+          "global_rate_cap_cap": 128,
+          "global_rate_cap_saturated": true
+        }
+      }
+    },
+    "6": {
+      "q_changed_count": 256,
+      "step_result": {
+        "global_summary": {
+          "global_rate_cap_accepted_count": 256,
+          "global_rate_cap_applied_count": 256,
+          "global_rate_cap_cap": 256,
+          "global_rate_cap_saturated": true
+        }
+      }
+    },
+    "7": {
+      "q_changed_count": 256,
+      "step_result": {
+        "global_summary": {
+          "global_rate_cap_accepted_count": 256,
+          "global_rate_cap_applied_count": 256,
+          "global_rate_cap_cap": 256,
+          "global_rate_cap_saturated": true
+        }
+      }
+    },
+    "8": {
+      "q_changed_count": 256,
+      "step_result": {
+        "global_summary": {
+          "global_rate_cap_accepted_count": 256,
+          "global_rate_cap_applied_count": 256,
+          "global_rate_cap_cap": 256,
+          "global_rate_cap_saturated": true
+        }
+      }
+    }
+  },
+  "steps_completed": 8
+}

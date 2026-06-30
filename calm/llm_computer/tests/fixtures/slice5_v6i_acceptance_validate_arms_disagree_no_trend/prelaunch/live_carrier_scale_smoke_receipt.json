@@ -1,0 +1,17 @@
+{
+  "classification": "PASS_COST_CHARACTERIZED",
+  "peak_per_step_emit_delta_seconds": 48.0,
+  "per_step_duration_delta_seconds": {
+    "1": 1.0,
+    "2": 1.0,
+    "3": 1.0,
+    "4": 48.0,
+    "5": 48.0,
+    "6": 20.0,
+    "7": 20.0,
+    "8": 26.0
+  },
+  "persistent_accumulator_event_coded_live_baseline": true,
+  "persistent_accumulator_event_coded_live_instrumented": true,
+  "schema": "hrm_text_158_slice5_live_carrier_gpu_scale_smoke_receipt/v1"
+}

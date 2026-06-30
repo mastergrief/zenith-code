@@ -1,0 +1,6 @@
+{
+  "expected_verdict": null,
+  "expect_pass": false,
+  "failure_prefix": "cap_schedule_drift_detected",
+  "not_verdict": null
+}

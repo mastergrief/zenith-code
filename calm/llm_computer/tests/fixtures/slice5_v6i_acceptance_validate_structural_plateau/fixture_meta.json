@@ -1,0 +1,6 @@
+{
+  "expected_verdict": "STRUCTURAL_PLATEAU",
+  "expect_pass": true,
+  "failure_prefix": null,
+  "not_verdict": null
+}
