@@ -1,0 +1,6 @@
+{
+  "failures": [],
+  "note": "Hot-path gating wired at 5d58114; checks bool(event_coded_sparse_vote_authority) coupling not literal True",
+  "pass": true,
+  "schema": "hrm_text_158_slice5_probe_sparse_authority_wiring_witness/v1"
+}

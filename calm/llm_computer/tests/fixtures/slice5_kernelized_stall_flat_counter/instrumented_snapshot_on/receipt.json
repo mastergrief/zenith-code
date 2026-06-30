@@ -1,0 +1,7 @@
+{
+  "bounded_delta_global_summary": {
+    "event_coded_sparse_vote_authority": true
+  },
+  "persistent_accumulator_event_coded_live": true,
+  "steps_completed": 2
+}

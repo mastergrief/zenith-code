@@ -1,0 +1,55 @@
+{
+  "classification": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED",
+  "cuda_available": true,
+  "failures": [
+    "missing_milestone_jsonl:baseline_snapshot_off:artifact_flush",
+    "missing_milestone_jsonl:instrumented_snapshot_on:live_carrier_snapshot_emit",
+    "missing_milestone_jsonl:instrumented_snapshot_on:artifact_flush"
+  ],
+  "helper_script_sha256": "a4e6d048088695086ba6a02d5a75625d00155b00221f2c2652e96c738b268304",
+  "instrumentation_invalid": [
+    {
+      "arm": "baseline_snapshot_off",
+      "reason": "missing_after_parent_complete",
+      "sub_phase_id": "post_cap_apply_sync"
+    },
+    {
+      "arm": "baseline_snapshot_off",
+      "reason": "missing_after_parent_complete",
+      "sub_phase_id": "boundary_normalize"
+    },
+    {
+      "arm": "instrumented_snapshot_on",
+      "reason": "missing_after_parent_complete",
+      "sub_phase_id": "post_cap_apply_sync"
+    },
+    {
+      "arm": "instrumented_snapshot_on",
+      "reason": "missing_after_parent_complete",
+      "sub_phase_id": "boundary_normalize"
+    }
+  ],
+  "milestone_locus": "cap_selection_cpu_copy",
+  "packet_revision": "v6c_re_m4_phase_guard_classifier_extract",
+  "pass": false,
+  "phase_guard_locus": null,
+  "probe_phase_guard_kill": false,
+  "run_id": "2189e72023",
+  "schema": "hrm_text_158_slice5_milestone_stall_classifier_receipt/v3",
+  "stall_hits": [
+    {
+      "arm": "baseline_snapshot_off",
+      "budget": 45,
+      "reason": "sub_phase_flat_counter",
+      "sub_phase_id": "cap_selection_cpu_copy"
+    },
+    {
+      "arm": "instrumented_snapshot_on",
+      "budget": 45,
+      "reason": "sub_phase_flat_counter",
+      "sub_phase_id": "cap_selection_cpu_copy"
+    }
+  ],
+  "stalled_parent_phase_id": "sparse_cap_apply",
+  "stalled_sub_phase_id": "cap_selection_cpu_copy"
+}

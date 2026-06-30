@@ -1,0 +1,36 @@
+{
+  "baseline_launch_rc": 1,
+  "classification": "LIVENESS_FAIL",
+  "classifier_classification": "LIVENESS_FAIL",
+  "emit_rows_per_step": {
+    "1": 32,
+    "2": 32,
+    "3": 32,
+    "4": 32,
+    "5": 32
+  },
+  "emit_too_expensive": false,
+  "failures": [
+    "missing_baseline_receipt",
+    "missing_instrumented_receipt",
+    "instrumented_missing_d_live_carrier_snapshot_enabled",
+    "baseline_launch_rc_1",
+    "instrumented_launch_rc_1"
+  ],
+  "helper_script_sha256": "5968f44eeb6d9083398aa40d16dfdd1efd8fe2052c271d2e8a26868bb942e086",
+  "instrumented_launch_rc": 1,
+  "m4_mode": "re_M4_phase_guard_classifier_extract",
+  "milestone_locus": null,
+  "packet_revision": "v6c_re_m4_phase_guard_classifier_extract",
+  "pass": false,
+  "peak_per_step_emit_delta_seconds": null,
+  "per_step_duration_delta_seconds": {},
+  "persistent_accumulator_event_coded_live_baseline": null,
+  "persistent_accumulator_event_coded_live_instrumented": null,
+  "phase_guard_locus": "bounded_steps",
+  "run_id": "2189e72023",
+  "schema": "hrm_text_158_slice5_live_carrier_gpu_scale_smoke_receipt/v1",
+  "stalled_parent_phase_id": null,
+  "stalled_sub_phase_id": null,
+  "total_live_carrier_snapshot_rows": 160
+}

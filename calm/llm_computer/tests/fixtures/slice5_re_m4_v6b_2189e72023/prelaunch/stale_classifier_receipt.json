@@ -1,0 +1,15 @@
+{
+  "classification": "MILESTONE_ARTIFACT_INCOMPLETE",
+  "cuda_available": true,
+  "failures": [
+    "missing_milestone_jsonl:baseline_snapshot_off:artifact_flush",
+    "missing_milestone_jsonl:instrumented_snapshot_on:artifact_flush"
+  ],
+  "instrumentation_invalid": [],
+  "packet_revision": "v6_re_m4_post_submilestone_emit",
+  "pass": false,
+  "schema": "hrm_text_158_slice5_milestone_stall_classifier_receipt/v2",
+  "stall_hits": [],
+  "stalled_parent_phase_id": null,
+  "stalled_sub_phase_id": null
+}

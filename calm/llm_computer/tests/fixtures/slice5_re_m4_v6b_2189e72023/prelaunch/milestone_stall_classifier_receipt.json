@@ -1,0 +1,17 @@
+{
+  "classification": "LIVENESS_FAIL",
+  "cuda_available": true,
+  "failures": [],
+  "helper_script_sha256": "a4e6d048088695086ba6a02d5a75625d00155b00221f2c2652e96c738b268304",
+  "instrumentation_invalid": [],
+  "milestone_locus": null,
+  "packet_revision": "v6c_re_m4_phase_guard_classifier_extract",
+  "pass": false,
+  "phase_guard_locus": "bounded_steps",
+  "probe_phase_guard_kill": true,
+  "run_id": "2189e72023",
+  "schema": "hrm_text_158_slice5_milestone_stall_classifier_receipt/v3",
+  "stall_hits": [],
+  "stalled_parent_phase_id": null,
+  "stalled_sub_phase_id": null
+}

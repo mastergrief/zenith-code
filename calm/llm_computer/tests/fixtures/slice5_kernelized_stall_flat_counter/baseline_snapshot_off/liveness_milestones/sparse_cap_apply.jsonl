@@ -1,0 +1,2 @@
+{"schema": "hrm_text_158_phase_milestone_counter/v1", "device": "cuda", "phase_id": "sparse_cap_apply", "parent_phase_id": "sparse_cap_apply", "milestone_counter": 1, "optimizer_step_index": 1, "elapsed_since_phase_enter_seconds": 1.0, "milestone_kind": "step_done"}
+{"schema": "hrm_text_158_phase_milestone_counter/v1", "device": "cuda", "phase_id": "sparse_cap_apply", "parent_phase_id": "sparse_cap_apply", "milestone_counter": 2, "optimizer_step_index": 2, "elapsed_since_phase_enter_seconds": 2.0, "milestone_kind": "step_done"}

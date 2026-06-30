@@ -17,13 +17,29 @@
       "expects_classification": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED",
       "expects_stalled_sub_phase_id": "cap_selection_cpu_copy",
       "inputs": {
-        "cap_selection_jsonl": "absent",
+        "cap_selection_jsonl": "present_flat_counter",
         "cuda_device": true,
-        "parent_sparse_cap_apply_active": true,
         "sparse_authority": true
       },
       "must_NOT_be": "SUBMILESTONE_INSTRUMENTATION_INVALID",
-      "name": "pre_first_marker_cap_selection_stall"
+      "name": "flat_counter_cap_selection_stall",
+      "requires_flat_counter_proof": true
+    },
+    {
+      "expects_classification": "LIVENESS_FAIL",
+      "expects_stalled_sub_phase_id": null,
+      "inputs": {
+        "cap_selection_jsonl": "absent",
+        "phase_guard_kill": true,
+        "post_cap_apply_sync_jsonl": "monotonic",
+        "sparse_authority": true
+      },
+      "must_NOT_emit": [
+        "stalled_sub_phase_id",
+        "milestone_locus"
+      ],
+      "name": "missing_cap_selection_with_post_cap_monotonic_not_stall",
+      "requires_flat_counter_proof": false
     },
     {
       "expects": "no_stall_no_instrumentation_invalid",
@@ -51,7 +67,7 @@
     "classifier_claim": false,
     "intent": "re-M4 GPU scale-smoke: answer (1) LIVENESS \u2014 carrier-faithful sparse-authority 10-step loop completes without dense-materialization wall; (2) Step-2a EMIT-COST \u2014 paired A/B live-carrier snapshot marginal cost at GPU scale.",
     "m4_fix_proof": "baseline steps_completed>=10 at 234881024 eligible lanes / 32 modules with cap ON AND receipt event_coded_sparse_vote_authority=true AND C8_TRANSIENT_DENSE_COMPUTE_NUMEL==0",
-    "m4_mode": "re_M4_post_submilestone_emit",
+    "m4_mode": "re_M4_phase_guard_classifier_extract",
     "science_claim": false,
     "sub2_in_vivo_claim": false,
     "terminal_questions": [
@@ -147,6 +163,16 @@
     "not_commit_pt",
     "not_sparse_planner_cpu_microbench_only"
   ],
+  "extracted_postrun_scripts": {
+    "live_carrier_scale_smoke_receipt": {
+      "path": "scripts/hrm_text_158_slice5_live_carrier_scale_smoke_receipt.py",
+      "sha256": "5968f44eeb6d9083398aa40d16dfdd1efd8fe2052c271d2e8a26868bb942e086"
+    },
+    "milestone_stall_classifier": {
+      "path": "scripts/hrm_text_158_slice5_milestone_stall_classifier.py",
+      "sha256": "a4e6d048088695086ba6a02d5a75625d00155b00221f2c2652e96c738b268304"
+    }
+  },
   "fast_training_launch_contract": {
     "entrypoint": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
     "executor": "test-operator",
@@ -282,7 +308,7 @@
   },
   "not_gpu_launch_until_plus1_launch": true,
   "packet_kind": "slice5_step2a_live_carrier_gpu_scale_smoke",
-  "packet_revision": "v6b_re_m4_head_pin_ancestor_content",
+  "packet_revision": "v6c_re_m4_phase_guard_classifier_extract",
   "packet_self_validation": {
     "classifier_before_receipt_ordering": {
       "fail_if_v5_order_preserved": true,
