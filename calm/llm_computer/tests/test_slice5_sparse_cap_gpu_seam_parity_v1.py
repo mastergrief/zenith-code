@@ -17,7 +17,10 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     GlobalRateCapTensorInput,
     tensor_offsets_for_vote_update_states,
 )
-from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import RUN_GPU_GLOBAL_RATE_CAP_ENV
+from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import (
+    RUN_GPU_GLOBAL_RATE_CAP_ENV,
+    _tensor_sha256,
+)
 from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
     apply_sparse_event_coded_cap_via_gpu_seam,
     cpu_sparse_cap_oracle,
@@ -121,15 +124,17 @@ def test_fixture_metadata_present() -> None:
 @GPU_SPARSE_CAP_PARITY
 def test_sparse_cap_gpu_seam_parity_multi_state_local_global_tensor() -> None:
     spec = _spec()
-    cuda_inputs = _multi_state_sparse_inputs("cuda")
-    offsets = tensor_offsets_for_vote_update_states(cuda_inputs)
+    cpu_lane_inputs = _multi_state_sparse_inputs("cpu")
+    offsets = tensor_offsets_for_vote_update_states(cpu_lane_inputs)
     assert offsets["state_a"] == 0
     assert offsets["state_b"] == 4
+    assert len(offsets) >= 2
+    assert offsets["state_b"] != 0
 
     cpu_inputs = _multi_state_sparse_inputs("cpu")
     cpu_result = cpu_sparse_cap_oracle(cpu_inputs, spec)
     gpu_result = apply_sparse_event_coded_cap_via_gpu_seam(
-        cap_inputs=cuda_inputs,
+        cap_inputs=cpu_lane_inputs,
         spec=spec,
     )
     witnesses = parity_witness_tensors(cpu_result, gpu_result)
@@ -139,6 +144,18 @@ def test_sparse_cap_gpu_seam_parity_multi_state_local_global_tensor() -> None:
         assert witness["deferred_local_gpu"] == witness["deferred_local_cpu"]
         assert witness["accepted_global_sha_gpu"] == witness["accepted_global_sha_cpu"]
         assert witness["q_sha_gpu"] == witness["q_sha_cpu"]
+
+    assert gpu_result.step_summary["q_changed_count"] == cpu_result.step_summary.get(
+        "q_changed_count"
+    )
+    assert gpu_result.deferred_backlog == cpu_result.deferred_backlog
+    assert set(gpu_result.accepted_flat_by_key) == {"state_a", "state_b"}
+
+    for gpu_item in gpu_result.tensor_results:
+        cpu_item = next(
+            item for item in cpu_result.tensor_results if item.state_key == gpu_item.state_key
+        )
+        assert _tensor_sha256(gpu_item.q_levels) == _tensor_sha256(cpu_item.q_levels)
 
     assert gpu_result.accepted_flat_by_key["state_b"] == tuple(
         int(row.flat_index) for row in cpu_result.accepted_rows if row.state_key == "state_b"
@@ -152,8 +169,11 @@ def test_sparse_cap_gpu_seam_parity_multi_state_local_global_tensor() -> None:
 @GPU_SPARSE_CAP_PARITY
 def test_sparse_cap_gpu_seam_uses_local_not_global_for_accepted_flat_by_key() -> None:
     spec = _spec()
-    cuda_inputs = _multi_state_sparse_inputs("cuda")
-    gpu_result = apply_sparse_event_coded_cap_via_gpu_seam(cap_inputs=cuda_inputs, spec=spec)
+    cpu_lane_inputs = _multi_state_sparse_inputs("cpu")
+    gpu_result = apply_sparse_event_coded_cap_via_gpu_seam(
+        cap_inputs=cpu_lane_inputs,
+        spec=spec,
+    )
     for state_key, local_accepted in gpu_result.accepted_flat_by_key.items():
         state_rows = gpu_result.gpu_apply.selection.rows_by_state[state_key]
         assert local_accepted == tuple(int(x) for x in state_rows.accepted_indices.tolist())

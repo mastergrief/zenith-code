@@ -58,7 +58,7 @@ def _vote_spec(*, threshold_abs: int = 8) -> VoteUpdateSpec:
     )
 
 
-def _cuda_sparse_cap_fixture():
+def _sparse_cap_fixture():
     rank_spec = default_dry_run_rank_vote_spec()
     q_a = torch.tensor([[0, 1, -1, 0]], dtype=torch.int8)
     q_b = torch.tensor([[1, 0, 0, -1]], dtype=torch.int8)
@@ -69,33 +69,12 @@ def _cuda_sparse_cap_fixture():
     sparse_b = sparse_rank_bucketed_int16_vote_events(credit, moves, rank_spec)
     spec = _vote_spec(threshold_abs=8)
     cap = GlobalRateCapSpec(cap=4, step=1, mutate_outputs=True)
-    device = "cuda:0"
-    states_cpu = {
+    states = {
         "mod.a": make_event_coded_live_tensor_state("mod.a", q_a, 0.25, demotion_band=1),
         "mod.b": make_event_coded_live_tensor_state("mod.b", q_b, 0.25, demotion_band=1),
     }
-    states = {
-        key: _event_coded_state_on_device(state, device) for key, state in states_cpu.items()
-    }
+    assert all(state.q_levels.device.type == "cpu" for state in states.values())
     return states, {"mod.a": sparse_a, "mod.b": sparse_b}, {"mod.a": spec, "mod.b": spec}, cap
-
-
-def _event_coded_state_on_device(state, device: str):
-    from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
-        BoundedDeltaTensorState,
-    )
-
-    return BoundedDeltaTensorState(
-        state_key=state.state_key,
-        q_levels=state.q_levels.to(device),
-        frozen_scale=state.frozen_scale,
-        bounded_accumulator=state.bounded_accumulator,
-        exact_accumulator_shadow=state.exact_accumulator_shadow,
-        bounded_accumulator_fresh_for_exact_shadow=state.bounded_accumulator_fresh_for_exact_shadow,
-        bounded_accumulator_rebuild_hot_exact_indices=state.bounded_accumulator_rebuild_hot_exact_indices,
-        bounded_accumulator_rebuild_cold_default_value=state.bounded_accumulator_rebuild_cold_default_value,
-        event_coded_live_carrier=state.event_coded_live_carrier,
-    )
 
 
 def _apply_with_gpu_lane(
@@ -105,7 +84,7 @@ def _apply_with_gpu_lane(
 ) -> Any:
     monkeypatch.setenv(RUN_GPU_GLOBAL_RATE_CAP_ENV, "1")
     monkeypatch.setenv(RUN_GPU_Q_ACC_APPLY_ENV, "1")
-    states, sparse_by_key, vote_specs, cap = _cuda_sparse_cap_fixture()
+    states, sparse_by_key, vote_specs, cap = _sparse_cap_fixture()
     return apply_bounded_delta_vote_step(
         states,
         None,
@@ -184,7 +163,7 @@ def test_cpu_shim_done_emitted_only_after_reference_returns(monkeypatch) -> None
         "sparse_cap_gpu_lane_enabled",
         lambda: False,
     )
-    states, sparse_by_key, vote_specs, cap = _cuda_sparse_cap_fixture()
+    states, sparse_by_key, vote_specs, cap = _sparse_cap_fixture()
     apply_bounded_delta_vote_step(
         states,
         None,

@@ -2204,35 +2204,6 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 )
             plans_by_key[state_key] = plan
             cap_state = vu.to_vote_update_state()
-            use_gpu_sparse_cap_lane = (
-                bool(event_coded_sparse_vote_authority)
-                and vu.q_levels.device.type == "cuda"
-            )
-            if use_gpu_sparse_cap_lane:
-                from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
-                    sparse_cap_gpu_lane_enabled,
-                )
-
-                use_gpu_sparse_cap_lane = sparse_cap_gpu_lane_enabled()
-            if (
-                bool(event_coded_sparse_vote_authority)
-                and vu.q_levels.device.type == "cuda"
-                and not use_gpu_sparse_cap_lane
-            ):
-                from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
-                    shape_only_accumulator_stub,
-                )
-                from calm.hrm_text_158.native_full_stack.vote_update import (
-                    VoteUpdateAccumulatorFormat,
-                    VoteUpdateState,
-                )
-
-                q_cpu = vu.q_levels.detach().cpu().contiguous()
-                cap_state = VoteUpdateState(
-                    q_levels=q_cpu,
-                    accumulators=shape_only_accumulator_stub(q_cpu),
-                    accumulator_format=VoteUpdateAccumulatorFormat.EVENT_CODED_LIVE_CARRIER,
-                )
             cap_inputs.append(
                 GlobalRateCapTensorInput(
                     state_key=state_key,
@@ -2250,10 +2221,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             sparse_cap_gpu_apply_requested = (
                 sparse_cap_gpu_lane_enabled() and bool(torch.cuda.is_available())
             )
-        q_cuda_resident = any(
-            state.q_levels.device.type == "cuda" for state in tensor_states.values()
-        )
-        use_gpu_sparse_cap_apply = bool(sparse_cap_gpu_apply_requested and q_cuda_resident)
+        use_gpu_sparse_cap_apply = bool(sparse_cap_gpu_apply_requested)
         if use_gpu_sparse_cap_apply:
             from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
                 apply_cap_tensor_result_gpu,
@@ -2274,6 +2242,9 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             summary["event_coded_live_carrier_enabled"] = True
             summary["event_coded_sparse_vote_authority"] = bool(event_coded_sparse_vote_authority)
             summary["event_coded_sparse_cap_enabled"] = bool(event_coded_sparse_vote_authority)
+            summary["transient_q_mirror_for_gpu_cap"] = True
+            summary["persistent_q_authority_device"] = "cpu"
+            summary["cuda_q_not_saved_state"] = True
             cap_boundary_transient = 0
             summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(cap_boundary_transient)
             accepted_flat_by_key = dict(gpu_cap_result.accepted_flat_by_key)
@@ -2293,8 +2264,10 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 )
 
             cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type
-            if cap_apply_device_type == "cuda" and len(gpu_cap_result.tensor_results) > 1:
-                summary["sparse_cap_apply_parallel_mode"] = "serial_cuda"
+            if len(gpu_cap_result.tensor_results) > 1:
+                summary["sparse_cap_apply_parallel_mode"] = (
+                    "serial_cuda" if cap_apply_device_type == "cuda" else "parallel_cpu"
+                )
             for item in gpu_cap_result.tensor_results:
                 state_key, carrier, q_out, stats = _apply_cap_tensor_result_gpu_bound(item)
                 carriers_by_key[state_key] = carrier
@@ -2310,11 +2283,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 event_coded_sparse_cap_enabled=bool(event_coded_sparse_vote_authority),
             )
             if bool(event_coded_sparse_vote_authority):
-                cap_selection_path = (
-                    "cpu_resident_reference"
-                    if sparse_cap_gpu_apply_requested and not q_cuda_resident
-                    else "cpu_reference"
-                )
+                cap_selection_path = "cpu_reference"
             backlog = cap_result.deferred_backlog
             summary = dict(cap_result.step_summary)
             summary["global_rate_cap_enabled"] = True

@@ -68,7 +68,12 @@ def _sparse_cap_fixture_cpu_resident_q():
     return states, {"mod.a": sparse_a, "mod.b": sparse_b}, {"mod.a": spec, "mod.b": spec}, cap
 
 
-def test_cap_selection_emits_for_cpu_resident_q_reference_path(tmp_path: Path) -> None:
+def test_cap_selection_emits_for_cpu_resident_q_reference_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP", raising=False)
+    monkeypatch.delenv("HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY", raising=False)
     states, sparse_by_key, vote_specs, cap = _sparse_cap_fixture_cpu_resident_q()
     emitter = _RecordingEmitter(tmp_path)
     result = apply_bounded_delta_vote_step(

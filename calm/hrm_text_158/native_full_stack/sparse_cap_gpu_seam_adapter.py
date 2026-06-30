@@ -104,19 +104,27 @@ def _mirror_plan_to_device(plan: VoteUpdatePlan, device: torch.device) -> VoteUp
     return mirrored
 
 
+def _cuda_cap_mirror_device() -> torch.device:
+    if not torch.cuda.is_available():
+        raise ValueError("prepare_gpu_sparse_cap_inputs requires CUDA availability")
+    return torch.device("cuda:0")
+
+
 def prepare_gpu_sparse_cap_inputs(
     cap_inputs: list[GlobalRateCapTensorInput],
 ) -> list[GlobalRateCapTensorInput]:
-    """Mirror sparse event-coded cap inputs to CUDA with materialized sparse new_acc."""
+    """Mirror persistent CPU q_levels to a transient CUDA view for the GPU cap seam."""
 
     if not cap_inputs:
         return []
-    device = cap_inputs[0].state.q_levels.device
-    if device.type != "cuda":
-        raise ValueError("prepare_gpu_sparse_cap_inputs requires CUDA q_levels")
+    device = _cuda_cap_mirror_device()
     prepared: list[GlobalRateCapTensorInput] = []
     for item in cap_inputs:
-        q_levels = item.state.q_levels
+        q_levels = (
+            item.state.q_levels.detach()
+            .to(device=device, dtype=torch.int8, non_blocking=True)
+            .contiguous()
+        )
         plan = _mirror_plan_to_device(item.plan, device)
         plan = replace(
             plan,
@@ -194,6 +202,9 @@ def adapt_device_global_rate_cap_apply_to_sparse_event_coded(
         "event_coded_sparse_vote_authority": True,
         "event_coded_sparse_cap_enabled": True,
         "sparse_cap_gpu_seam": True,
+        "transient_q_mirror_for_gpu_cap": True,
+        "persistent_q_authority_device": "cpu",
+        "cuda_q_not_saved_state": True,
         "global_rate_cap_accepted_count": accepted_count,
         "global_rate_cap_deferred_count": deferred_count,
         "global_rate_cap_applied_count": accepted_count if spec.mutate_outputs else 0,
@@ -241,18 +252,29 @@ def apply_sparse_event_coded_cap_via_gpu_seam(
     )
 
 
+def _applied_plan_position(
+    applied_flat: torch.Tensor,
+    flat_index: int,
+) -> int | None:
+    matches = (applied_flat == int(flat_index)).nonzero(as_tuple=True)[0]
+    if matches.numel() == 0:
+        return None
+    return int(matches[0].item())
+
+
 def sync_event_coded_carrier_from_gpu_cap(
     carrier: EventCodedAccLiveState,
     q_gpu: torch.Tensor,
     plan: VoteUpdatePlan,
     accepted_local_indices: Sequence[int],
     *,
+    q_persistent_cpu: torch.Tensor,
     step_index: int,
 ) -> tuple[torch.Tensor, EventCodedAccLiveState]:
-    """Sync live carrier from GPU cap q without full-numel q_levels CPU clone."""
+    """Sync live carrier from GPU cap q via accepted-index subset gather only."""
 
     updated = carrier.cow_copy()
-    q_out = q_gpu.detach().clone().to(torch.int8)
+    q_out = q_persistent_cpu.detach().cpu().clone().to(torch.int8)
     if not accepted_local_indices:
         apply_event_coded_carrier_step(updated, votes={}, step_index=int(step_index))
         return q_out.contiguous(), updated
@@ -261,18 +283,25 @@ def sync_event_coded_carrier_from_gpu_cap(
     applied_flat = plan.applied_indices.to(device=device, dtype=torch.int64).flatten()
     threshold_flat = plan.applied_thresholds.to(device=device, dtype=torch.int64).flatten()
     direction_flat = plan.applied_directions.to(device=device, dtype=torch.int16).flatten()
-    index_by_pos = {int(idx): pos for pos, idx in enumerate(applied_flat.tolist())}
+
+    flat_indices = torch.tensor(
+        [int(idx) for idx in accepted_local_indices],
+        device=device,
+        dtype=torch.int64,
+    )
+    q_subset_cpu = q_gpu.flatten().index_select(0, flat_indices).detach().cpu()
 
     cap_indices: list[int] = []
     cap_values: list[int] = []
     q_flat = q_out.flatten()
-    for flat_index in accepted_local_indices:
+    for subset_pos, flat_index in enumerate(accepted_local_indices):
         idx = int(flat_index)
-        pos = index_by_pos.get(idx)
+        pos = _applied_plan_position(applied_flat, idx)
         if pos is None:
             continue
         direction = int(direction_flat[pos].item())
-        q_val = int(q_flat[idx].item())
+        q_val = int(q_subset_cpu[int(subset_pos)].item())
+        q_flat[idx] = q_val
         updated.q_levels[idx] = q_val
         carry = int(updated.reconstruct_lane(idx))
         residual = carry - direction * int(threshold_flat[pos].item())
@@ -339,10 +368,11 @@ def apply_cap_tensor_result_gpu(
         item.q_levels,
         plan,
         accepted_flat_by_key[state_key],
+        q_persistent_cpu=vu.q_levels,
         step_index=int(local_selection_ordering_step),
     )
     stats = merge_stats_fn(dict(cap_item_stats), local_result.stats)
-    stats["sparse_cap_gpu_seam_q_source"] = "gpu_cap.tensor_results.q_levels"
+    stats["sparse_cap_gpu_seam_q_source"] = "gpu_cap.accepted_subset_gather"
     stats["sparse_cap_gpu_seam_acc_source"] = "gpu_cap.tensor_results.accumulators"
     return state_key, carrier, q_out, stats
 
