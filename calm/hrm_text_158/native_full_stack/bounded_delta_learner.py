@@ -2203,7 +2203,21 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 )
             plans_by_key[state_key] = plan
             cap_state = vu.to_vote_update_state()
-            if bool(event_coded_sparse_vote_authority) and vu.q_levels.device.type == "cuda":
+            use_gpu_sparse_cap_lane = (
+                bool(event_coded_sparse_vote_authority)
+                and vu.q_levels.device.type == "cuda"
+            )
+            if use_gpu_sparse_cap_lane:
+                from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+                    sparse_cap_gpu_lane_enabled,
+                )
+
+                use_gpu_sparse_cap_lane = sparse_cap_gpu_lane_enabled()
+            if (
+                bool(event_coded_sparse_vote_authority)
+                and vu.q_levels.device.type == "cuda"
+                and not use_gpu_sparse_cap_lane
+            ):
                 from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
                     shape_only_accumulator_stub,
                 )
@@ -2226,110 +2240,167 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     vote_inputs=inputs_by_key[state_key],
                 )
             )
-        if bool(event_coded_sparse_vote_authority) and any(
+        sparse_cuda_present = any(
             state.q_levels.device.type == "cuda" for state in tensor_states.values()
-        ):
+        )
+        use_gpu_sparse_cap_apply = False
+        if bool(event_coded_sparse_vote_authority) and sparse_cuda_present:
+            from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+                apply_cap_tensor_result_gpu,
+                apply_sparse_event_coded_cap_via_gpu_seam,
+                sparse_cap_gpu_lane_enabled,
+            )
+
+            use_gpu_sparse_cap_apply = sparse_cap_gpu_lane_enabled()
+        if use_gpu_sparse_cap_apply:
+            gpu_cap_result = apply_sparse_event_coded_cap_via_gpu_seam(
+                cap_inputs=cap_inputs,
+                spec=global_cap_spec,
+                deferred_backlog=deferred_backlog,
+                tie_rule_mode=global_cap_tie_rule_mode,
+                contract_name=global_cap_contract_name,
+            )
             cap_selection_recorded = _emit_sparse_cap_submilestone(
                 sparse_cap_submilestone_emit,
                 sub_phase_id="cap_selection_cpu_copy",
-                milestone_kind="cap_reference_cpu_shim_done",
+                milestone_kind="cap_gpu_seam_done",
                 optimizer_step_index=int(local_selection_ordering_step),
             )
-        cap_result = apply_global_rate_cap_reference(
-            cap_inputs,
-            global_cap_spec,
-            deferred_backlog=deferred_backlog,
-            tie_rule_mode=global_cap_tie_rule_mode,
-            contract_name=global_cap_contract_name,
-            event_coded_sparse_cap_enabled=bool(event_coded_sparse_vote_authority),
-        )
-        backlog = cap_result.deferred_backlog
-        summary = dict(cap_result.step_summary)
-        summary["global_rate_cap_enabled"] = True
-        summary["event_coded_live_carrier_enabled"] = True
-        summary["event_coded_sparse_vote_authority"] = bool(event_coded_sparse_vote_authority)
-        summary["event_coded_sparse_cap_enabled"] = bool(event_coded_sparse_vote_authority)
-        cap_boundary_transient = (
-            0
-            if bool(event_coded_sparse_vote_authority)
-            else int(cap_boundary_obs.transient_dense_compute_numel)
-        )
-        summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(cap_boundary_transient)
-        accepted_flat_by_key = {
-            str(item.state_key): tuple(
-                int(row.flat_index)
-                for row in cap_result.accepted_rows
-                if row.state_key == item.state_key
-            )
-            for item in cap_result.tensor_results
-        }
+            backlog = gpu_cap_result.deferred_backlog
+            summary = dict(gpu_cap_result.step_summary)
+            summary["global_rate_cap_enabled"] = True
+            summary["event_coded_live_carrier_enabled"] = True
+            summary["event_coded_sparse_vote_authority"] = bool(event_coded_sparse_vote_authority)
+            summary["event_coded_sparse_cap_enabled"] = bool(event_coded_sparse_vote_authority)
+            cap_boundary_transient = 0
+            summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(cap_boundary_transient)
+            accepted_flat_by_key = dict(gpu_cap_result.accepted_flat_by_key)
 
-        def _apply_cap_tensor_result(item: Any) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
-            state_key = str(item.state_key)
-            vu = event_states[state_key]
-            plan = plans_by_key[state_key]
-            local_result = apply_event_coded_integer_vote_update_from_plan(
-                vu,
-                inputs_by_key[state_key],
-                vote_specs_by_key[state_key],
-                plan,
-                step_index=int(local_selection_ordering_step),
-                cap_boundary_transient_dense=cap_boundary_transient,
-                lightweight_runtime_stats=bool(event_coded_sparse_vote_authority),
-            )
-            q_out, carrier = apply_event_coded_cap_mutations(
-                local_result.carrier,
-                local_result.q_levels,
-                plan,
-                accepted_flat_by_key[state_key],
-                step_index=int(local_selection_ordering_step),
-            )
-            stats = _merge_event_coded_cap_tensor_stats(
-                item.stats,
-                local_result.stats,
-            )
-            return state_key, carrier, q_out, stats
+            def _apply_cap_tensor_result_gpu_bound(item: Any) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
+                return apply_cap_tensor_result_gpu(
+                    item,
+                    event_states=event_states,
+                    plans_by_key=plans_by_key,
+                    inputs_by_key=inputs_by_key,
+                    vote_specs_by_key=vote_specs_by_key,
+                    accepted_flat_by_key=accepted_flat_by_key,
+                    local_selection_ordering_step=int(local_selection_ordering_step),
+                    cap_boundary_transient=int(cap_boundary_transient),
+                    cap_item_stats=item.stats,
+                    merge_stats_fn=_merge_event_coded_cap_tensor_stats,
+                )
 
-        if bool(event_coded_sparse_vote_authority) and len(cap_result.tensor_results) > 1:
             cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type
-            if cap_apply_device_type == "cuda":
+            if cap_apply_device_type == "cuda" and len(gpu_cap_result.tensor_results) > 1:
                 summary["sparse_cap_apply_parallel_mode"] = "serial_cuda"
+            for item in gpu_cap_result.tensor_results:
+                state_key, carrier, q_out, stats = _apply_cap_tensor_result_gpu_bound(item)
+                carriers_by_key[state_key] = carrier
+                q_by_key[state_key] = q_out
+                stats_by_key[state_key] = stats
+        else:
+            cap_result = apply_global_rate_cap_reference(
+                cap_inputs,
+                global_cap_spec,
+                deferred_backlog=deferred_backlog,
+                tie_rule_mode=global_cap_tie_rule_mode,
+                contract_name=global_cap_contract_name,
+                event_coded_sparse_cap_enabled=bool(event_coded_sparse_vote_authority),
+            )
+            if bool(event_coded_sparse_vote_authority) and sparse_cuda_present:
+                cap_selection_recorded = _emit_sparse_cap_submilestone(
+                    sparse_cap_submilestone_emit,
+                    sub_phase_id="cap_selection_cpu_copy",
+                    milestone_kind="cap_reference_cpu_shim_done",
+                    optimizer_step_index=int(local_selection_ordering_step),
+                )
+            backlog = cap_result.deferred_backlog
+            summary = dict(cap_result.step_summary)
+            summary["global_rate_cap_enabled"] = True
+            summary["event_coded_live_carrier_enabled"] = True
+            summary["event_coded_sparse_vote_authority"] = bool(event_coded_sparse_vote_authority)
+            summary["event_coded_sparse_cap_enabled"] = bool(event_coded_sparse_vote_authority)
+            cap_boundary_transient = (
+                0
+                if bool(event_coded_sparse_vote_authority)
+                else int(cap_boundary_obs.transient_dense_compute_numel)
+            )
+            summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(cap_boundary_transient)
+            accepted_flat_by_key = {
+                str(item.state_key): tuple(
+                    int(row.flat_index)
+                    for row in cap_result.accepted_rows
+                    if row.state_key == item.state_key
+                )
+                for item in cap_result.tensor_results
+            }
+
+            def _apply_cap_tensor_result(item: Any) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
+                state_key = str(item.state_key)
+                vu = event_states[state_key]
+                plan = plans_by_key[state_key]
+                local_result = apply_event_coded_integer_vote_update_from_plan(
+                    vu,
+                    inputs_by_key[state_key],
+                    vote_specs_by_key[state_key],
+                    plan,
+                    step_index=int(local_selection_ordering_step),
+                    cap_boundary_transient_dense=cap_boundary_transient,
+                    lightweight_runtime_stats=bool(event_coded_sparse_vote_authority),
+                )
+                q_out, carrier = apply_event_coded_cap_mutations(
+                    local_result.carrier,
+                    local_result.q_levels,
+                    plan,
+                    accepted_flat_by_key[state_key],
+                    step_index=int(local_selection_ordering_step),
+                )
+                stats = _merge_event_coded_cap_tensor_stats(
+                    item.stats,
+                    local_result.stats,
+                )
+                return state_key, carrier, q_out, stats
+
+            if bool(event_coded_sparse_vote_authority) and len(cap_result.tensor_results) > 1:
+                cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type
+                if cap_apply_device_type == "cuda":
+                    summary["sparse_cap_apply_parallel_mode"] = "serial_cuda"
+                    for item in cap_result.tensor_results:
+                        state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
+                        carriers_by_key[state_key] = carrier
+                        q_by_key[state_key] = q_out
+                        stats_by_key[state_key] = stats
+                else:
+                    summary["sparse_cap_apply_parallel_mode"] = "parallel_cpu"
+                    import os
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    def _init_sparse_cap_worker() -> None:
+                        torch.set_num_threads(1)
+                        try:
+                            torch.set_num_interop_threads(1)
+                        except RuntimeError:
+                            pass
+
+                    cpu_workers = os.cpu_count() or 4
+                    max_workers = min(cpu_workers, len(cap_result.tensor_results))
+                    with ThreadPoolExecutor(
+                        max_workers=max_workers,
+                        initializer=_init_sparse_cap_worker,
+                    ) as pool:
+                        for state_key, carrier, q_out, stats in pool.map(
+                            _apply_cap_tensor_result,
+                            cap_result.tensor_results,
+                        ):
+                            carriers_by_key[state_key] = carrier
+                            q_by_key[state_key] = q_out
+                            stats_by_key[state_key] = stats
+            else:
                 for item in cap_result.tensor_results:
                     state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
                     carriers_by_key[state_key] = carrier
                     q_by_key[state_key] = q_out
                     stats_by_key[state_key] = stats
-            else:
-                summary["sparse_cap_apply_parallel_mode"] = "parallel_cpu"
-                import os
-                from concurrent.futures import ThreadPoolExecutor
-
-                def _init_sparse_cap_worker() -> None:
-                    torch.set_num_threads(1)
-                    try:
-                        torch.set_num_interop_threads(1)
-                    except RuntimeError:
-                        pass
-
-                cpu_workers = os.cpu_count() or 4
-                max_workers = min(cpu_workers, len(cap_result.tensor_results))
-                with ThreadPoolExecutor(
-                    max_workers=max_workers,
-                    initializer=_init_sparse_cap_worker,
-                ) as pool:
-                    for state_key, carrier, q_out, stats in pool.map(
-                        _apply_cap_tensor_result,
-                        cap_result.tensor_results,
-                    ):
-                        carriers_by_key[state_key] = carrier
-                        q_by_key[state_key] = q_out
-                        stats_by_key[state_key] = stats
-        else:
-            for item in cap_result.tensor_results:
-                state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
-                carriers_by_key[state_key] = carrier
-                q_by_key[state_key] = q_out
-                stats_by_key[state_key] = stats
         if bool(event_coded_sparse_vote_authority):
             post_cap_sync_recorded = _emit_sparse_cap_submilestone(
                 sparse_cap_submilestone_emit,
