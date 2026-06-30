@@ -75,6 +75,20 @@ def emit_live_carrier_scale_smoke_receipt(
     else:
         classifier = json.loads(classifier_path.read_text(encoding="utf-8"))
 
+    injected_dispatch: dict[str, Any] = {}
+    injected_path = prelaunch / "launch_injected_dispatch_receipt.json"
+    witness_path = prelaunch / "launch_injected_dispatch_witness_receipt.json"
+    if not injected_path.is_file():
+        failures.append("missing_launch_injected_dispatch_receipt")
+    else:
+        injected_dispatch = json.loads(injected_path.read_text(encoding="utf-8"))
+        if not injected_dispatch.get("dispatch_msg_id"):
+            failures.append("launch_injected_dispatch_receipt_missing_id")
+    if not witness_path.is_file():
+        failures.append("missing_launch_injected_dispatch_witness_receipt")
+    elif not json.loads(witness_path.read_text(encoding="utf-8")).get("pass"):
+        failures.append("launch_injected_dispatch_witness_not_pass")
+
     classifier_classification = classifier.get("classification", "MISSING")
     stalled_sub_phase_id = classifier.get("stalled_sub_phase_id")
     stalled_parent_phase_id = classifier.get("stalled_parent_phase_id")
@@ -228,6 +242,14 @@ def emit_live_carrier_scale_smoke_receipt(
         "max_steps_hard": int(max_steps_hard),
         "sampler_non_perturbation_pass": classifier.get("sampler_non_perturbation_pass"),
         "ring_attribution_eligible": classifier.get("ring_attribution_eligible"),
+        "dispatch_msg_id_authority": packet.get("dispatch_msg_id_authority"),
+        "packet_dispatch_msg_id_sentinel": packet.get("dispatch_msg_id"),
+        "injected_dispatch_msg_id": injected_dispatch.get("dispatch_msg_id"),
+        "dispatch_run_status_at_preflight": injected_dispatch.get("dispatch_run_status"),
+        "dispatch_claim_run_root": injected_dispatch.get("marker_run_root"),
+        "dispatch_intended_run_root": injected_dispatch.get("intended_run_root"),
+        "dispatch_intended_run_id": injected_dispatch.get("intended_run_id"),
+        "dispatch_issuer": injected_dispatch.get("issuer"),
         "pass": not failures
         and classification
         in (

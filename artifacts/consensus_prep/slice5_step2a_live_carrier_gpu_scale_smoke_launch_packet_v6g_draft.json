@@ -175,7 +175,9 @@
     "phase_stack_ring_sampler_env": "HRM_TEXT_158_PHASE_STACK_RING_SAMPLER=1",
     "ring_attribution_requires_sampler_non_perturbation_pass": true
   },
-  "dispatch_msg_id": "1782816449484-bb5f2b80",
+  "dispatch_msg_id": "LAUNCH_INJECTED_BY_CLAUDE",
+  "dispatch_msg_id_authority": "launch_injected",
+  "dispatch_msg_id_launch_substitution": "{dispatch_msg_id}",
   "expected_artifacts": [
     "prelaunch/run_root_free_receipt.json",
     "prelaunch/parent_checkpoint_rehash.json",
@@ -184,6 +186,8 @@
     "prelaunch/live_carrier_emit_no_item_preflight_receipt.json",
     "prelaunch/argv_witness_receipt.json",
     "prelaunch/sub2_first_launch_gate_receipt.json",
+    "prelaunch/launch_injected_dispatch_receipt.json",
+    "prelaunch/launch_injected_dispatch_witness_receipt.json",
     "prelaunch/parent_checkpoint_rehash_after_baseline.json",
     "prelaunch/parent_checkpoint_rehash_after_instrumented.json",
     "prelaunch/live_carrier_scale_smoke_receipt.json",
@@ -379,7 +383,7 @@
   },
   "not_gpu_launch_until_plus1_launch": true,
   "packet_kind": "slice5_step2a_live_carrier_gpu_scale_smoke",
-  "packet_revision": "v6g_re_m4_slice_b_diag_outer_budget_900",
+  "packet_revision": "v6g_re_m4_slice_b_diag_outer_budget_900_launch_injected_dispatch",
   "packet_self_validation": {
     "acceptance_after_barrier_guard": {
       "rule": "launch_sequence: v6g_postrun_acceptance_validate_command after launch_arm_barrier_command and after live_carrier_scale_smoke_receipt_command"
@@ -608,6 +612,8 @@
     "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "78f7d31dd17cf7073b3dbdbc2e0f0a344036d5bb659e5816f7bb21c616f9cb65",
     "scripts/hrm_text_158_slice5_cap_selection_path_evidence.py": "9b6de8f221edc9017b8de0ada8d59e284b1124936c6a5f046409a674890bb1b4",
     "scripts/hrm_text_158_slice5_launch_arm_barrier.py": "9a1dcde0a4033d098a252c7b4c8f1f49a088fea2555a84d1f2f94f03cb491365",
+    "scripts/hrm_text_158_slice5_launch_injected_dispatch_witness.py": "bf69c830663a84407bdfa728a4ebd8cf936cd6dd6f222fdf7eb964018fee10f7",
+    "scripts/hrm_text_158_slice5_live_carrier_scale_smoke_receipt.py": "df857c5b85fea48b5eb95a41eca186ee1dbceb781e7a3b3d47e392f07370bbb9",
     "scripts/hrm_text_158_slice5_postrun_receipt_replay.py": "16fffcd88ea2d4c734380cf210ef385b9cc8476e6ca4754d181087c40b428dd3",
     "scripts/hrm_text_158_slice5_v6g_postrun_acceptance_validate.py": "6b58158da2a1223bb57860deb0806720f9d61a54a82934f327ba67d6240cac32"
   },

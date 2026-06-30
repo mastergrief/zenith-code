@@ -28,7 +28,7 @@ def test_v6g_packet_self_validate_passes_clean() -> None:
     exit_code, receipt = _run_self_validate()
     assert exit_code == 0, receipt
     assert receipt.get("pass") is True
-    assert receipt.get("packet_revision") == "v6g_re_m4_slice_b_diag_outer_budget_900"
+    assert receipt.get("packet_revision") == "v6g_re_m4_slice_b_diag_outer_budget_900_launch_injected_dispatch"
 
 
 def test_v6g_packet_self_validate_fails_on_stale_phase_timeout_300() -> None:
@@ -112,6 +112,71 @@ def test_v6g_packet_self_validate_fails_on_stale_v6f_active_reference() -> None:
     finally:
         draft["decision_contract"]["chosen_path"] = original
         DRAFT.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_v6g_dispatch_sentinel_and_authority_on_packet_surfaces() -> None:
+    draft = json.loads(DRAFT.read_text(encoding="utf-8"))
+    replay = json.loads(REPLAY.read_text(encoding="utf-8"))
+    for blob in (draft, replay):
+        assert blob["dispatch_msg_id"] == "LAUNCH_INJECTED_BY_CLAUDE"
+        assert blob["dispatch_msg_id_authority"] == "launch_injected"
+    seq = replay["launch_sequence"]
+    inj = seq.index("launch_injected_dispatch_witness_command")
+    assert inj < seq.index("baseline_gpu_command")
+    assert inj > seq.index("phase_stack_sampler_non_perturbation_gate_command")
+
+
+def test_v6g_packet_self_validate_fails_on_hardcoded_dispatch_msg_id() -> None:
+    draft = json.loads(DRAFT.read_text(encoding="utf-8"))
+    original = draft["dispatch_msg_id"]
+    draft["dispatch_msg_id"] = "1782999999999-deadbeef"
+    DRAFT.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        exit_code, receipt = _run_self_validate()
+        assert exit_code != 0
+        failures = receipt.get("failures", [])
+        assert any("hardcoded_concrete_dispatch_msg_id" in f for f in failures)
+    finally:
+        draft["dispatch_msg_id"] = original
+        DRAFT.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_v6g_packet_self_validate_fails_on_stale_dispatch_msg_id() -> None:
+    draft = json.loads(DRAFT.read_text(encoding="utf-8"))
+    original = draft["dispatch_msg_id"]
+    draft["dispatch_msg_id"] = "1782816449484-bb5f2b80"
+    DRAFT.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        exit_code, receipt = _run_self_validate()
+        assert exit_code != 0
+        failures = receipt.get("failures", [])
+        assert any(
+            f in failures
+            for f in (
+                "stale_dispatch_msg_id_in_active_blob",
+                "draft_dispatch_msg_id_not_sentinel",
+                "draft_hardcoded_concrete_dispatch_msg_id",
+            )
+        )
+    finally:
+        draft["dispatch_msg_id"] = original
+        DRAFT.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_v6g_packet_self_validate_fails_without_injected_dispatch_witness_in_sequence() -> None:
+    replay = json.loads(REPLAY.read_text(encoding="utf-8"))
+    original_seq = list(replay["launch_sequence"])
+    seq = list(original_seq)
+    seq.remove("launch_injected_dispatch_witness_command")
+    replay["launch_sequence"] = seq
+    REPLAY.write_text(json.dumps(replay, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        exit_code, receipt = _run_self_validate()
+        assert exit_code != 0
+        assert any("missing_launch_injected_dispatch_witness_command" in f for f in receipt.get("failures", []))
+    finally:
+        replay["launch_sequence"] = original_seq
+        REPLAY.write_text(json.dumps(replay, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def test_v6g_phase_timeout_900_on_all_argv_surfaces() -> None:

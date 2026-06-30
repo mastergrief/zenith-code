@@ -1,0 +1,10 @@
+{
+  "schema": "hrm_text_158_slice5_launch_injected_dispatch_receipt/v1",
+  "claimed": true,
+  "dispatch_msg_id": "1782816449484-bb5f2b80",
+  "dispatch_run_status": "claimed",
+  "intended_run_id": "2189e72027",
+  "intended_run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/slice5_step2a_re_m4_sparse_authority_gpu_scale_smoke_seed43_43_2189e72027/",
+  "issuer": "test-operator",
+  "marker_run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/slice5_step2a_re_m4_sparse_authority_gpu_scale_smoke_seed43_43_2189e72027/"
+}
