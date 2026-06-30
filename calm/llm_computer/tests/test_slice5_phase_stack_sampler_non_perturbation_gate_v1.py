@@ -28,6 +28,9 @@ def test_non_perturbation_gate_passes_with_forced_sample(tmp_path: Path) -> None
     assert receipt["duration_delta_seconds"] <= PREREG_EPSILON_SECONDS
     assert receipt["sampler_sample_count"] > 0
     assert receipt["ring_jsonl_lines"] > 0
+    assert receipt["durable_jsonl_lines_before_stop"] > 0
+    assert receipt["stack_has_real_target_frame"] is True
+    assert receipt["stack_false_green_exception_signature"] is False
     assert ring_jsonl.is_file()
     lines = [
         json.loads(line)
@@ -36,6 +39,38 @@ def test_non_perturbation_gate_passes_with_forced_sample(tmp_path: Path) -> None
     ]
     assert len(lines) == receipt["sampler_sample_count"]
     assert lines[0]["stack_text"]
+    assert "_synthetic_phase_duration" in lines[-1]["stack_text"]
+
+
+def test_non_perturbation_gate_fails_on_exception_only_stack_text(tmp_path: Path) -> None:
+    import scripts.hrm_text_158_slice5_phase_stack_sampler_non_perturbation_gate as gate_mod
+
+    class BrokenCaptureSampler(PhaseStackRingSampler):
+        def _capture_stack_text(self) -> str:
+            return (
+                "Traceback (most recent call last):\n"
+                '  File ".../phase_stack_ring_sampler.py", line 87, in _capture_sample\n'
+                "AttributeError: fileno\n"
+            )
+
+    original = gate_mod.PhaseStackRingSampler
+    gate_mod.PhaseStackRingSampler = BrokenCaptureSampler
+    try:
+        receipt = run_non_perturbation_gate(
+            epsilon_seconds=PREREG_EPSILON_SECONDS,
+            ring_jsonl=tmp_path / "ring.jsonl",
+        )
+    finally:
+        gate_mod.PhaseStackRingSampler = original
+    assert receipt["sampler_non_perturbation_pass"] is False
+    assert receipt["stack_false_green_exception_signature"] is True
+    assert any(
+        item in receipt["failures"]
+        for item in (
+            "stack_text_false_green_exception_signature",
+            "stack_text_missing_real_target_frame",
+        )
+    )
 
 
 def test_non_perturbation_gate_fails_on_slow_sampler() -> None:

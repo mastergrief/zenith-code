@@ -1,0 +1,15 @@
+{
+  "duration_delta_seconds": 0.000554,
+  "failures": [],
+  "g1_smoke_interval_seconds": 0.05,
+  "g1_smoke_phase_seconds": 0.15,
+  "off_duration_seconds": 0.150107,
+  "on_duration_seconds": 0.150661,
+  "preregistered_epsilon_seconds": 0.05,
+  "ring_jsonl_lines": 2,
+  "sampler_non_perturbation_pass": true,
+  "sampler_sample_count": 2,
+  "schema": "hrm_text_158_slice5_phase_stack_sampler_non_perturbation_gate/v1",
+  "threads_after": 1,
+  "threads_before": 1
+}

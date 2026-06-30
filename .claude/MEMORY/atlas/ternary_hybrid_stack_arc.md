@@ -10,6 +10,14 @@ Main-repo mirror (broader ternary-hybrid arc): `zenith-code` →
 
 ## Per-run / per-mechanism receipts
 
+### 2026-06-30 — Slice-5 re-M4 v6e null (run 2189e72025)
+
+- **Receipt:** `.claude/MEMORY/atlas/slice5_re_m4_v6e_null_receipt_2189e72025.md`
+- **Packet:** `v6e_re_m4_slice_b_diag_diagnostic_smoke` | **Head:** `80d5179`
+- **Verdict:** GPU seam **unreached** (both arms `cap_reference_cpu_resident_done`, marker-backed) + `BASELINE_SPARSE_CAP_STEP_STALL` (step-3 sparse_cap entry @248.9s) + `INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS` (outer `bounded_steps` @598.1s — **NOT** snapshot-emit stall)
+- **Diagnostic defects:** postrun race (stale receipts) + ring sampler false-green (exception-only stack_text, 0 durable baseline rows)
+- **Next:** B-DIAG2 harness → v6f fixed-diagnostic re-smoke; mechanism fork A/B deferred
+
 ### 2026-06-30 — Slice-5 re-M4 v6d null (run 2189e72024)
 
 - **Receipt:** `.claude/MEMORY/atlas/slice5_re_m4_v6d_null_receipt_2189e72024.md`

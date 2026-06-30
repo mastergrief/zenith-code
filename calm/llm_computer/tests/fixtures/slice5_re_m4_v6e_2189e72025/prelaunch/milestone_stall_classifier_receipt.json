@@ -1,0 +1,23 @@
+{
+  "classification": "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS",
+  "cuda_available": true,
+  "failures": [
+    "missing_milestone_jsonl:baseline_snapshot_off:sparse_vote_construction",
+    "missing_milestone_jsonl:instrumented_snapshot_on:sparse_vote_construction"
+  ],
+  "helper_script_sha256": "0361a04680a1d8a66a82b558f0d3d4eea06bac1ed95c27fadad3d9c06b7f1fff",
+  "instrumentation_invalid": [],
+  "max_steps_hard": 3,
+  "milestone_locus": null,
+  "packet_revision": "v6e_re_m4_slice_b_diag_diagnostic_smoke",
+  "pass": false,
+  "phase_guard_locus": "sparse_cap_apply",
+  "probe_phase_guard_kill": true,
+  "ring_attribution_eligible": true,
+  "run_id": "2189e72025",
+  "sampler_non_perturbation_pass": true,
+  "schema": "hrm_text_158_slice5_milestone_stall_classifier_receipt/v4",
+  "stall_hits": [],
+  "stalled_parent_phase_id": null,
+  "stalled_sub_phase_id": null
+}

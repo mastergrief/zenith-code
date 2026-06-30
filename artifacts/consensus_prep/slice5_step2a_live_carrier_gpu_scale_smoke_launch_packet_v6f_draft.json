@@ -1,0 +1,670 @@
+{
+  "ancestor_chain": [
+    "e5298b638a1b478cb832fd15c9465f7bef1a4f7c",
+    "848edfb0c7098205df1185d051745f31f070a3bf",
+    "0d39d850b0755a21bb6a76cc4d30cbb606d01de3",
+    "82cfdc6d261f3e4a7a659a7ab707184ff466fc5b",
+    "e4f75ae41bd2473f86b19c0d20d1518ec808507d",
+    "0feb7bc7362cb40734d80dd8a577da77fea595cd",
+    "541efbd875793a1211e320f9f84b7a7cb6c93119"
+  ],
+  "artifact_tree_note": "All run artifacts under credit/science tree run_root; NOT repo commits",
+  "bounded_steps_budget": {
+    "mutation_in_slice": false,
+    "note": "Budget change is a separate launch-plan gate; this re-smoke uses existing 300s phase guards.",
+    "requires_triage_class": "WRAPPER_BUDGET_TOO_TIGHT",
+    "symbolic_formula": "max_steps_hard * max(measured_per_step_total_seconds)"
+  },
+  "canonical_lane": "test-operator_gpu_scale_smoke",
+  "cap_selection_path_evidence": {
+    "executable_routes": [
+      "PATH_GPU_SEAM_EXERCISED",
+      "PATH_CPU_RESIDENT_CAP_REFERENCE",
+      "SUBMILESTONE_INSTRUMENTATION_INVALID"
+    ],
+    "receipt": "prelaunch/cap_selection_path_evidence_receipt.json",
+    "script": "scripts/hrm_text_158_slice5_cap_selection_path_evidence.py",
+    "sha256": "9b6de8f221edc9017b8de0ada8d59e284b1124936c6a5f046409a674890bb1b4"
+  },
+  "carrier_authority_revision": {
+    "fix": "Measured arms MUST use --persistent-accumulator-event-coded-live + --persistent-q-ternary-base3-codec; MUST NOT use --dense-accumulator-w8-clip or HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION.",
+    "issue": "rev0 incorrectly used W8 clip row; persistent_accumulator_event_coded_live is mutually exclusive with W7/W8 clip (probe.py:6419-6426). Step-2a snapshot emitter only records EventCodedAccLiveState (d_recompute_window_live_carrier_snapshot.py:20-24).",
+    "w8_comparison": "Out of scope for this smoke \u2014 W8 row cannot host Step-2a live-carrier snapshot rows."
+  },
+  "classifier_counter_cases": [
+    {
+      "expects_classification": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED",
+      "expects_stalled_sub_phase_id": "cap_selection_cpu_copy",
+      "inputs": {
+        "cap_selection_jsonl": "present_flat_counter",
+        "cuda_device": true,
+        "sparse_authority": true
+      },
+      "must_NOT_be": "SUBMILESTONE_INSTRUMENTATION_INVALID",
+      "name": "flat_counter_cap_selection_stall",
+      "requires_flat_counter_proof": true
+    },
+    {
+      "expects_classification": "LIVENESS_FAIL",
+      "expects_stalled_sub_phase_id": null,
+      "inputs": {
+        "cap_selection_jsonl": "absent",
+        "phase_guard_kill": true,
+        "post_cap_apply_sync_jsonl": "monotonic",
+        "sparse_authority": true
+      },
+      "must_NOT_emit": [
+        "stalled_sub_phase_id",
+        "milestone_locus"
+      ],
+      "name": "missing_cap_selection_with_post_cap_monotonic_not_stall",
+      "requires_flat_counter_proof": false
+    },
+    {
+      "expects": "no_stall_no_instrumentation_invalid",
+      "inputs": {
+        "cap_selection_jsonl": "absent",
+        "cuda_device": false,
+        "sparse_authority": true
+      },
+      "name": "cpu_missing_cap_selection_expected"
+    }
+  ],
+  "co_lead_revise_msg_id": "1782766412389",
+  "cpu_m4_witness": {
+    "c8_transient_dense_compute_numel": 0,
+    "gpu_liveness_fix_head": "0d39d850b0755a21bb6a76cc4d30cbb606d01de3",
+    "head": "82cfdc6d261f3e4a7a659a7ab707184ff466fc5b",
+    "m2_total_seconds_carrier_faithful": "20-24",
+    "m2_total_seconds_prior_svp1": 421.75,
+    "probe_cli_arg_head": "848edfb0c7098205df1185d051745f31f070a3bf",
+    "test": "test_cap_on_module_loop_under_budget (7.34M x32)"
+  },
+  "decision_contract": {
+    "chosen_path": "re-M4 v6f post-B-DIAG2: fixed-diagnostic 3-step smoke with barrier + replay repair",
+    "classifier_claim": false,
+    "intent": "Bounded fixed-diagnostic smoke: durable ring capture, postrun barrier, superseding receipt replay; NO budget mutation.",
+    "m4_mode": "re_M4_slice_b_diag2_fixed_diagnostic_smoke",
+    "path_evidence_routing": {
+      "cap_gpu_seam_done": "PATH_GPU_SEAM_EXERCISED \u2014 GPU seam exercised",
+      "cap_reference_cpu_resident_done": "PATH_CPU_RESIDENT_CAP_REFERENCE \u2014 NOT GPU-seam-validated",
+      "cap_reference_cpu_shim_done": "PATH_CPU_RESIDENT_CAP_REFERENCE \u2014 NOT GPU-seam-validated",
+      "marker_absent_after_sparse_cap_complete": "SUBMILESTONE_INSTRUMENTATION_INVALID",
+      "marker_path_mismatch": "SUBMILESTONE_INSTRUMENTATION_INVALID (fail-closed)"
+    },
+    "path_evidence_surfaces": {
+      "jsonl_milestone_kind_values": [
+        "cap_gpu_seam_done",
+        "cap_reference_cpu_resident_done",
+        "cap_reference_cpu_shim_done"
+      ],
+      "note": "Route on JSONL milestone_kind; summary path is cross-check only \u2014 cpu_resident_reference/cpu_reference are NOT jsonl kinds.",
+      "summary_path_labels": [
+        "gpu_seam",
+        "cpu_resident_reference",
+        "cpu_reference"
+      ]
+    },
+    "science_claim": false,
+    "sub2_in_vivo_claim": false,
+    "terminal_questions": [
+      "PATH: cap_selection_cpu_copy.jsonl milestone_kind proves route (cap_gpu_seam_done vs cap_reference_cpu_resident_done); summary sparse_cap_submilestone_cap_selection_path cross-checks only?",
+      "LIVENESS: sparse_cap_apply completes scale_smoke.max_steps_hard steps without 300s C2PhaseTimeout?",
+      "TRIAGE: bounded_steps_triage_class == WRAPPER_BUDGET_TOO_TIGHT live (symbolic budget only \u2014 no mutation)?",
+      "DIAG: ring attribution eligible ONLY if sampler_non_perturbation_pass=true?"
+    ]
+  },
+  "decision_thresholds": {
+    "feasible_peak_seconds": 5.0,
+    "forbidden_mislabel": "baseline liveness failure must NOT classify as EMIT_PATH_TOO_EXPENSIVE",
+    "next_step_routing": {
+      "EMIT_FEASIBLE_FOR_STEP2B_SCALE_SMOKE": "unpark Step-2b scale-smoke planning (still NOT sub-2 readiness)",
+      "EMIT_PATH_TOO_EXPENSIVE": "Step-2a emit optimization slice before Step-2b",
+      "LIVENESS_FAIL": "classify dense regression vs GPU-specific bottleneck; may route M4_GPU_PERF_SLICE or revert sparse authority",
+      "LIVENESS_FAIL_KERNELIZED_BUT_STALLED": "classify stalled phase_id + milestone_kind; route GPU hot-loop perf slice or native-kernel hang triage (NOT emit-cost)",
+      "LIVENESS_FAIL_TOTAL_TIMEOUT": "outer wall breach \u2014 widen budgets only with evidence; may overlap dense regression",
+      "PROBE_CLI_SPARSE_AUTHORITY_FLAG_MISSING": "UNREACHABLE at 848edfb",
+      "PROBE_SPARSE_AUTHORITY_NOT_WIRED": "UNREACHABLE at 848edfb",
+      "SMOKE_INVALID_NO_EVENT_CODED_CARRIER": "carrier authority misconfig \u2014 halt, fix argv/carrier row"
+    },
+    "terminal_classification_matrix": {
+      "BASELINE_SPARSE_CAP_STEP_STALL": "baseline sparse_cap_apply step stall before max_steps_hard",
+      "EMIT_FEASIBLE_FOR_STEP2B_SCALE_SMOKE": "both arms clean AND peak_delta<=5.0s AND jsonl rows>0",
+      "EMIT_PATH_TOO_EXPENSIVE": "both arms clean AND peak_per_step_emit_delta>5.0s",
+      "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS": "instrumented steps_completed>=scale_smoke.max_steps_hard AND outer bounded_steps phase_guard_kill",
+      "LIVENESS_FAIL": "baseline launch_rc!=0 OR steps_completed<scale_smoke.max_steps_hard OR C8_TRANSIENT_DENSE_COMPUTE_NUMEL>0 OR event_coded_sparse_vote_authority!=true OR generic phase_budget_exceeded without milestone artifact",
+      "LIVENESS_FAIL_KERNELIZED_BUT_STALLED": "active budgeted phase on DEVICE (cuda allocated / process alive) BUT per-phase milestone_counter in {scratch}/liveness_milestones/{phase_id}.jsonl did not advance within phase budget_seconds; stack-sample + kill; DISTINCT from LIVENESS_FAIL_TOTAL_TIMEOUT",
+      "LIVENESS_FAIL_TOTAL_TIMEOUT": "gpu_arm_per_probe total_timeout_seconds exceeded without milestone-stall signature; DISTINCT from kernelized-but-stalled",
+      "PASS_COST_CHARACTERIZED": "both arms clean, rows>0, delta between bands (descriptive fallback)",
+      "PATH_CPU_RESIDENT_CAP_REFERENCE": "cap_selection JSONL milestone_kind=cap_reference_cpu_resident_done (or cap_reference_cpu_shim_done) per cap_selection_path_evidence_receipt \u2014 NOT GPU-seam-validated",
+      "PATH_GPU_SEAM_EXERCISED": "cap_selection marker milestone_kind=cap_gpu_seam_done \u2014 GPU seam path exercised",
+      "PROBE_CLI_SPARSE_AUTHORITY_FLAG_MISSING": "UNREACHABLE at 848edfb \u2014 argparse --event-coded-sparse-vote-authority wired at 848edfb",
+      "PROBE_SPARSE_AUTHORITY_NOT_WIRED": "UNREACHABLE at 848edfb \u2014 hot-path gating wired; retained only as historical preflight branch",
+      "SMOKE_INSTRUMENTED_TIMEOUT_POSSIBLE_EMIT_OVERHEAD": "baseline clean BUT instrumented launch_rc!=0 OR steps_completed<scale_smoke.max_steps_hard",
+      "SMOKE_INVALID_NO_EVENT_CODED_CARRIER": "instrumented jsonl row_count==0 OR per-step rows<1"
+    },
+    "terminal_precedence": [
+      "BASELINE_SPARSE_CAP_STEP_STALL",
+      "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS",
+      "PATH_GPU_SEAM_EXERCISED",
+      "PATH_CPU_RESIDENT_CAP_REFERENCE",
+      "LIVENESS_FAIL_KERNELIZED_BUT_STALLED",
+      "LIVENESS_FAIL_TOTAL_TIMEOUT",
+      "SUBMILESTONE_INSTRUMENTATION_INVALID",
+      "LIVENESS_FAIL",
+      "SMOKE_INVALID_NO_EVENT_CODED_CARRIER",
+      "SMOKE_INSTRUMENTED_TIMEOUT_POSSIBLE_EMIT_OVERHEAD",
+      "EMIT_PATH_TOO_EXPENSIVE",
+      "EMIT_FEASIBLE_FOR_STEP2B_SCALE_SMOKE",
+      "PASS_COST_CHARACTERIZED"
+    ],
+    "unreachable_preflight_branches_at_848edfb": [
+      "PROBE_CLI_SPARSE_AUTHORITY_FLAG_MISSING",
+      "PROBE_SPARSE_AUTHORITY_NOT_WIRED"
+    ]
+  },
+  "design_only": true,
+  "diagnostic_harness": {
+    "bounded_steps_triage_script": "scripts/hrm_text_158_slice5_bounded_steps_triage.py",
+    "g1_prelaunch_script": "scripts/hrm_text_158_slice5_phase_stack_sampler_non_perturbation_gate.py",
+    "non_perturbation_gate_required": true,
+    "phase_stack_ring_sampler_env": "HRM_TEXT_158_PHASE_STACK_RING_SAMPLER=1",
+    "ring_attribution_requires_sampler_non_perturbation_pass": true
+  },
+  "dispatch_msg_id": "1782816449484-bb5f2b80",
+  "expected_artifacts": [
+    "prelaunch/run_root_free_receipt.json",
+    "prelaunch/parent_checkpoint_rehash.json",
+    "prelaunch/head_pin_witness.json",
+    "prelaunch/file_content_pin_witness.json",
+    "prelaunch/live_carrier_emit_no_item_preflight_receipt.json",
+    "prelaunch/argv_witness_receipt.json",
+    "prelaunch/sub2_first_launch_gate_receipt.json",
+    "prelaunch/parent_checkpoint_rehash_after_baseline.json",
+    "prelaunch/parent_checkpoint_rehash_after_instrumented.json",
+    "prelaunch/live_carrier_scale_smoke_receipt.json",
+    "baseline_snapshot_off/receipt.json",
+    "instrumented_snapshot_on/receipt.json",
+    "instrumented_snapshot_on/d_recompute_window_diagnostic/live_carrier_snapshot.jsonl",
+    "prelaunch/gpu_device_preflight_receipt.json",
+    "prelaunch/probe_sparse_authority_wiring_witness.json",
+    "baseline_snapshot_off/liveness_milestones/step_forward_backward.jsonl",
+    "baseline_snapshot_off/liveness_milestones/sparse_vote_construction.jsonl",
+    "baseline_snapshot_off/liveness_milestones/sparse_cap_apply.jsonl",
+    "baseline_snapshot_off/liveness_milestones/artifact_flush.jsonl",
+    "instrumented_snapshot_on/liveness_milestones/step_forward_backward.jsonl",
+    "instrumented_snapshot_on/liveness_milestones/sparse_vote_construction.jsonl",
+    "instrumented_snapshot_on/liveness_milestones/sparse_cap_apply.jsonl",
+    "instrumented_snapshot_on/liveness_milestones/live_carrier_snapshot_emit.jsonl",
+    "instrumented_snapshot_on/liveness_milestones/artifact_flush.jsonl",
+    "prelaunch/milestone_emit_contract_witness.json",
+    "{arm}/liveness_milestones/stall_classifier_receipt.json",
+    "prelaunch/probe_cli_sparse_authority_flag_witness.json",
+    "prelaunch/submilestone_emit_contract_witness.json",
+    "prelaunch/milestone_stall_classifier_receipt.json",
+    "baseline_snapshot_off/liveness_milestones/sparse_cap_apply_cap_selection_cpu_copy.jsonl",
+    "baseline_snapshot_off/liveness_milestones/sparse_cap_apply_post_cap_apply_sync.jsonl",
+    "baseline_snapshot_off/liveness_milestones/sparse_cap_apply_boundary_normalize.jsonl",
+    "instrumented_snapshot_on/liveness_milestones/sparse_cap_apply_cap_selection_cpu_copy.jsonl",
+    "instrumented_snapshot_on/liveness_milestones/sparse_cap_apply_post_cap_apply_sync.jsonl",
+    "instrumented_snapshot_on/liveness_milestones/sparse_cap_apply_boundary_normalize.jsonl",
+    "prelaunch/phase_stack_sampler_non_perturbation_gate.json",
+    "prelaunch/bounded_steps_triage_receipt.json",
+    "{arm}/liveness_stack_ring_samples.jsonl",
+    "prelaunch/cap_selection_path_evidence_receipt.json"
+  ],
+  "explicit_non_claims": [
+    "not_representative_step2b_science_run",
+    "not_w8_production_row_comparison",
+    "not_classifier_step2c",
+    "not_sub2_or_in_vivo_proof",
+    "not_commit_pt",
+    "not_sparse_planner_cpu_microbench_only"
+  ],
+  "extracted_postrun_scripts": {
+    "bounded_steps_triage": {
+      "path": "scripts/hrm_text_158_slice5_bounded_steps_triage.py",
+      "sha256": "a21584b98a22f0dcee54d489688c0da8dc044156c3c03f6b0d5408ee765e2339"
+    },
+    "live_carrier_scale_smoke_receipt": {
+      "path": "scripts/hrm_text_158_slice5_live_carrier_scale_smoke_receipt.py",
+      "sha256": "00a4d295292c28c3ff66428b42a174bf31b575dfa70760b994bd2a97381d89a1"
+    },
+    "milestone_stall_classifier": {
+      "path": "scripts/hrm_text_158_slice5_milestone_stall_classifier.py",
+      "sha256": "0361a04680a1d8a66a82b558f0d3d4eea06bac1ed95c27fadad3d9c06b7f1fff"
+    }
+  },
+  "fast_training_launch_contract": {
+    "entrypoint": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+    "executor": "test-operator",
+    "executor_variant": "haiku",
+    "gpu_device": "cuda:0 (4070 local; 1070 box is audit lane only)",
+    "schema": "hrm_text_158_slice5_step2a_re_m4_sparse_authority_gpu_scale_smoke_launch/v1"
+  },
+  "file_content_pins_historical_pre_slice_b": {
+    "active": false,
+    "note": "Historical pin set at 82cfdc6d pre-Slice-B; NOT active at launch. Use source_pins_at_launch only.",
+    "pins": {
+      "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "729e849df5e5445869e4e18c3cef587093084b38e3e95f82ae780669554aa2ac",
+      "calm/hrm_text_158/native_full_stack/d_recompute_window_live_carrier_snapshot.py": "72ed46e4b8764804f71948c2de96cfc0d06aa82f0cb52df609c70dc3357b93d8",
+      "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "691a85505b0f7135f4984725c8fb30e9d86e9d8152ced913d8dacc124e445a38",
+      "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "e59d946b560b933097150f99e7642c86aca6e9509824396ee2f0e5219d86779e",
+      "calm/hrm_text_158/native_full_stack/global_rate_cap.py": "46bb9db87cb426937278bcfa508b6b5c3a4bc3e20fc1a509a72ac5b51554ec70",
+      "calm/hrm_text_158/native_full_stack/vote_update.py": "f50037f3d00fff08e6d65c1e59ccb4ad1621d1d6dc019242367b9e95c3eb22cc",
+      "calm/hrm_text_158/native_full_stack/vote_update_emit_routing.py": "8d4ae4c1dc1d909a596e4c10a0c81ad91d09f870c7d9e385794221629d7afea2",
+      "calm/llm_computer/tests/test_d_recompute_window_live_carrier_snapshot_v0.py": "5f485f08be079639587994737da144ca1dc2c4415b0fa6f3830283adc456ec8f",
+      "calm/llm_computer/tests/test_m4_probe_sparse_vote_ingress_v0.py": "d6cc4a86c0f57959d7ea7c6841c50f52be9822605f6f212df36ca88c23850fc5",
+      "calm/llm_computer/tests/test_probe_event_coded_sparse_vote_authority_wiring_v0.py": "d90cc4fdab2281c93698daf1866e37b2c847a5319cff7765e2fc1cde380178ae",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "1a7799737f3581f6b48116ef754266835798dbd183f3e4f191b14d6cccfae1e4",
+      "scripts/hrm_text_158_d_recompute_live_carrier_cost_receipt.py": "c96d475d7e5137d509a1639e0d660b2c6ec8f71f8ff8ad88e6fedc83dbca98ad"
+    }
+  },
+  "forbidden_scope": [
+    "representative_step2b_confirmation_run",
+    "step2c_classifier_fold",
+    "pt_commit",
+    "sub2_in_vivo_claim",
+    "source_edit",
+    "d_recompute_window_instrumentation_on",
+    "dense_accumulator_w8_clip_on_measured_arms",
+    "synthetic_268435456_logical_numel_cpu_receipt_scale"
+  ],
+  "gpu_hold": true,
+  "head_pin_policy": "ancestor_plus_content_not_exact_sha",
+  "launch_checkout_head": "commit_sha_agnostic",
+  "m4_gpu_sparse_cap_liveness_commit": "0d39d850b0755a21bb6a76cc4d30cbb606d01de3",
+  "m4_probe_cli_arg_commit": "848edfb0c7098205df1185d051745f31f070a3bf",
+  "m4_probe_gpu_wire_commit": "5d581141e759ca8551b257039585578b57beb082",
+  "m4_sparse_vote_ingress": {
+    "learner_support": "event_coded_sparse_vote_authority + sparse cap + submilestone emit (82cfdc6d)",
+    "preflight_witnesses": {
+      "milestone_emit_contract_witness": "PASS at 82cfdc6d",
+      "probe_cli_sparse_authority_flag_witness": "PASS at 82cfdc6d",
+      "probe_sparse_authority_wiring_witness": "PASS at 82cfdc6d",
+      "submilestone_emit_contract_witness": "PASS at 82cfdc6d"
+    },
+    "status_at_82cfdc6d": "FULLY_WIRED_ALL_FOUR_WITNESSES_PASS"
+  },
+  "m4_sparse_vote_ingress_commit": "848edfb0c7098205df1185d051745f31f070a3bf",
+  "m4_v6_submilestone_emit_commit": "82cfdc6d261f3e4a7a659a7ab707184ff466fc5b",
+  "measured_outputs": {
+    "eligible_module_count_live": "receipt.eligible_module_count",
+    "hot_exact_bytes_by_step": "max/median hot_exact_bytes per step from jsonl",
+    "peak_per_step_emit_cost_seconds": "max duration delta",
+    "per_step_duration_delta_seconds": "instrumented - baseline duration_seconds per step",
+    "per_step_emit_rows": "live_carrier_snapshot.jsonl rows grouped by step (must be >0)",
+    "persistent_accumulator_event_coded_live_receipt": "must be true on both arms"
+  },
+  "milestone_based_liveness": {
+    "artifact_root_per_arm": "{scratch}/liveness_milestones/",
+    "authority": "co_lead fold 1782750988745",
+    "hard_packet_gate": true,
+    "heartbeat_role": "supplementary_telemetry_only \u2014 MUST NOT be sole liveness signal; watch-wrap heartbeat lines do NOT satisfy phase liveness",
+    "last_active_phase_role": "phase LABEL + guard timing only; NOT sufficient alone \u2014 milestone jsonl is authoritative progress gate",
+    "not_heartbeat_based": true,
+    "phases": [
+      {
+        "artifact_rel": "liveness_milestones/step_forward_backward.jsonl",
+        "budget_seconds": 90,
+        "milestone_counter_field": "optimizer_step_index",
+        "milestone_kind": "forward_backward_complete",
+        "phase_id": "step_forward_backward",
+        "probe_phase_name": "step_forward_backward"
+      },
+      {
+        "artifact_rel": "liveness_milestones/sparse_vote_construction.jsonl",
+        "budget_seconds": 120,
+        "milestone_counter_field": "modules_completed",
+        "milestone_kind": "module_sparse_events_built",
+        "note": "nested under step_update via progress.phase; one milestone record per step (O(1)/phase, not per-module)",
+        "phase_id": "sparse_vote_construction",
+        "probe_phase_name": "sparse_vote_construction"
+      },
+      {
+        "artifact_rel": "liveness_milestones/sparse_cap_apply.jsonl",
+        "budget_seconds": 180,
+        "milestone_counter_field": "modules_completed",
+        "milestone_kind": "module_cap_apply_complete",
+        "note": "nested under step_update via progress.phase; one milestone record per step (O(1)/phase)",
+        "phase_id": "sparse_cap_apply",
+        "probe_phase_name": "sparse_cap_apply"
+      },
+      {
+        "artifact_rel": "liveness_milestones/live_carrier_snapshot_emit.jsonl",
+        "budget_seconds": 60,
+        "instrumented_arm_only": true,
+        "milestone_counter_field": "emit_row_count",
+        "milestone_kind": "snapshot_rows_emitted",
+        "phase_id": "live_carrier_snapshot_emit",
+        "probe_phase_name": "live_carrier_snapshot_emit"
+      },
+      {
+        "artifact_rel": "liveness_milestones/artifact_flush.jsonl",
+        "budget_seconds": 60,
+        "milestone_counter_field": "flush_stage",
+        "milestone_kind": "artifact_bytes_flushed",
+        "phase_id": "artifact_flush",
+        "probe_phase_name": "receipt_write"
+      }
+    ],
+    "probe_implementation_note": "Wired at 5d58114: PhaseMilestoneEmitter on phase exit; phases match MILESTONE_BUDGETED_PHASE_IDS (step_forward_backward, sparse_vote_construction, sparse_cap_apply, live_carrier_snapshot_emit[instrumented], artifact_flush terminal).",
+    "record_requirements": {
+      "append_only_jsonl": true,
+      "fields": [
+        "schema",
+        "phase_id",
+        "optimizer_step_index",
+        "milestone_counter",
+        "milestone_kind",
+        "device",
+        "elapsed_since_phase_enter_seconds"
+      ],
+      "monotonic_counter_required": true,
+      "replayable": "postrun classifier replays jsonl monotonicity without probe stdout",
+      "watcher_observable": true
+    },
+    "schema": "hrm_text_158_phase_milestone_counter/v1",
+    "watcher_contract": {
+      "distinct_from_total_timeout": true,
+      "poll_interval_seconds": 15,
+      "stall_detection": "if active phase (last_active_phase.json phase_id) matches budgeted phase AND milestone_counter unchanged for >= phase budget_seconds while process alive \u2192 classify LIVENESS_FAIL_KERNELIZED_BUT_STALLED, stack-sample + kill",
+      "total_timeout_branch": "LIVENESS_FAIL_TOTAL_TIMEOUT \u2014 process still running but outer arm wall exceeded without milestone stall signature"
+    }
+  },
+  "not_gpu_launch_until_plus1_launch": true,
+  "packet_kind": "slice5_step2a_live_carrier_gpu_scale_smoke",
+  "packet_revision": "v6f_re_m4_slice_b_diag2_fixed_diagnostic_smoke",
+  "packet_self_validation": {
+    "active_pin_set_guard": {
+      "rule": "source_pins_at_launch is the only active pin set; file_content_pins must be absent or marked historical only"
+    },
+    "classifier_before_receipt_ordering": {
+      "fail_if_v5_order_preserved": true,
+      "receipt_reads_classifier_artifact": "prelaunch/milestone_stall_classifier_receipt.json",
+      "rule": "launch_sequence index(milestone_stall_classifier_command) < index(live_carrier_scale_smoke_receipt_command)"
+    },
+    "head_pin_contradiction_guard": {
+      "forbidden_fields_at_source_base_value": [
+        "required_head",
+        "head_pin"
+      ],
+      "required_policy": "ancestor_plus_content_not_exact_sha",
+      "rule": "forbid exact-HEAD pin equal to source_base_head when launch is commit-SHA-agnostic"
+    },
+    "prelaunch_dry_run_guard": {
+      "forbidden_pattern": "PINS = { {",
+      "rule": "packet_self_validate v5 must execute (not compile-only) run_root_free_assert, file_content_pin_witness, head_pin_witness, argv_witness on temp run_root; fail on non-zero exit"
+    },
+    "source_base_head_parity_guard": {
+      "rule": "draft.source_base_head must equal replay.source_base_head"
+    },
+    "step_bound_consistency_guard": {
+      "forbidden_active_patterns": [
+        "steps_completed<10",
+        "10 GPU steps",
+        "max_steps_hard (10)"
+      ],
+      "rule": "when scale_smoke.max_steps_hard==3, active verdict/threshold surfaces must reference scale_smoke.steps or scale_smoke.max_steps_hard; stale steps_completed<10 / hard_step_bound:10 active criteria forbidden",
+      "symbolic_refs": [
+        "scale_smoke.steps",
+        "scale_smoke.max_steps_hard"
+      ]
+    }
+  },
+  "phase_budgets_and_watcher": {
+    "convention": "MILESTONE-based first-milestone per-phase wall budgets (co_lead fold 1782750988745); heartbeat supplementary only",
+    "device_vs_hot_loop_residency": {
+      "DEVICE_residency": "cuda:0 from probe --device cuda through process exit (includes load/build_model)",
+      "HOT_LOOP_residency": "bounded_steps phase only: step_forward_backward + step_update (+ optional two_tier_grad_proxy_ingress if enabled)",
+      "receipt_contract": "terminal receipt MUST report device_name, hot_loop_step_count, per-phase max wall seconds observed"
+    },
+    "emit_marginal_budget_seconds_per_step": 60,
+    "first_milestone_phases": [
+      {
+        "budget_seconds": 90,
+        "id": "step_forward_backward",
+        "producer": "progress.phase step_forward_backward"
+      },
+      {
+        "budget_seconds": 120,
+        "id": "sparse_vote_construction",
+        "producer": "step_update vote build (_weighted_grads_to_science_arm_votes sparse_construction_only)"
+      },
+      {
+        "budget_seconds": 180,
+        "id": "sparse_cap_apply",
+        "producer": "apply_bounded_delta_vote_step event_coded_sparse_vote_authority"
+      },
+      {
+        "budget_seconds": 60,
+        "id": "live_carrier_snapshot_emit",
+        "producer": "--d-live-carrier-snapshot instrumented arm only"
+      },
+      {
+        "budget_seconds": 60,
+        "id": "artifact_flush",
+        "producer": "receipt.json + jsonl flush"
+      }
+    ],
+    "global_silent_phase_seconds_default": 300,
+    "gpu_device": "cuda:0 RTX 4070 Laptop local WSL; GTX-1070 box is audit lane only \u2014 preflight fail-closed on 1070",
+    "heartbeat_interval_seconds": 30,
+    "heartbeat_supplementary_only": true,
+    "liveness_rule": "active-phase wall exceed OR total-timeout OR max-steps-hard \u2192 stack-sample + kill + classify",
+    "milestone_authoritative": true,
+    "named_risk": "emit:503 step-73 class \u2014 full-population .item()/GPU materialization in hot loop; preflight forbids .item( in snapshot/carrier hot functions",
+    "per_phase_seconds_max": {
+      "artifact_flush_terminal": 60,
+      "build_model": 600,
+      "gpu_arm_per_probe": 3600,
+      "live_carrier_snapshot_emit": 60,
+      "load": 600,
+      "prelaunch": 300,
+      "sparse_cap_apply": 180,
+      "sparse_vote_construction": 120,
+      "step_forward_backward": 90,
+      "step_update": 180
+    },
+    "phase_timeout_seconds": 300,
+    "stop_conditions": [
+      "steps_completed >= scale_smoke.max_steps_hard",
+      "total_timeout_seconds exceeded",
+      "phase_timeout_seconds exceeded on active phase",
+      "C8_TRANSIENT_DENSE_COMPUTE_NUMEL > 0 on baseline receipt",
+      "event_coded_sparse_vote_authority != true on baseline receipt",
+      "live_carrier_snapshot.jsonl row_count==0 on instrumented arm",
+      "probe exit code non-zero after pipefail capture",
+      "parent checkpoint sha256 mismatch pre/post arm",
+      "gpu device is GTX 1070 (audit lane)",
+      "milestone_counter stall within active phase budget (LIVENESS_FAIL_KERNELIZED_BUT_STALLED)",
+      "milestone jsonl missing for active budgeted phase after step 1"
+    ],
+    "total_timeout_seconds_per_arm": 3600,
+    "watcher_liveness_fail_regex": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|phase_budget_exceeded|active_phase_wall_exceeded|LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL",
+    "watcher_milestone_regex": "\"schema\": \"hrm_text_158_phase_milestone_counter/v1\"",
+    "watcher_producer_regex": "liveness_milestones/|hrm_text_158_phase_milestone_counter|bounded_delta_steps: step [0-9]+/"
+  },
+  "prior_failed_run": {
+    "classification": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED",
+    "note": "v5 run 2189e72022 at 848edfb: sparse_cap_apply milestone flat ~270s; pre-submilestone attribution",
+    "run_ids": [
+      "2189e72022"
+    ],
+    "stalled_parent_phase_id": "sparse_cap_apply"
+  },
+  "prior_null_runs": {
+    "v6d_classification": "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS + BASELINE_SPARSE_CAP_STEP_STALL",
+    "v6d_path_unconfirmed": true,
+    "v6d_run_id": "2189e72024"
+  },
+  "replay_commands_artifact": "artifacts/consensus_prep/slice5_step2a_live_carrier_gpu_scale_smoke_launch_packet_v6f_replay_commands.json",
+  "representative_step2b_config": {
+    "carrier_authority": "v4_event_coded_live",
+    "eligible_module_count_derivation": "32 modules from eligible-scope all-bitlinear on parent 9b4e311a (v4 phase_a 2189e72004 manifest; r4_1 tensorwide per-module rows). Live: receipt.eligible_module_count.",
+    "eligible_module_count_expected": 32,
+    "eligible_scope": "all-bitlinear",
+    "eligible_weight_numel_derivation": "eligible_weight_numel = sum(q_levels.numel()) over eligible-scope all-bitlinear modules on parent 9b4e311a. This is independent of carrier clip boundary (W8 vs V4): same parent+scope \u2192 same weight tensor lanes. Witnesses: r4_1/r5_1 tensorwide lane_sum=234881024; v4 phase_a manifest 2189e72004 eligible_module_count=32 on same parent+all-bitlinear. Live postrun: sum receipt.r4v_per_module_acc_rows[].logical_numel when persistent_accumulator_event_coded_live=true.",
+    "eligible_weight_numel_expected": 234881024,
+    "forbidden_argv_on_measured_arms": [
+      "--dense-accumulator-w8-clip",
+      "--dense-accumulator-w7-clip",
+      "--persistent-accumulator-w5-byte-packed",
+      "--persistent-accumulator-w6-byte-packed"
+    ],
+    "forbidden_env_on_measured_arms": [
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION=1",
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION=1"
+    ],
+    "future_re_m4_hard_step_bound_non_claim": 10,
+    "hard_step_bound": "scale_smoke.max_steps_hard",
+    "instrumentation_isolation": "ONLY --d-live-carrier-snapshot (Step-2a). --d-recompute-window-instrumentation OFF.",
+    "parent_checkpoint": {
+      "banked_pt_read_only": true,
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+      "rehash_before_and_after_each_arm": true,
+      "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+    },
+    "prior_reference_run_id": "2189e72004",
+    "prior_step_duration_reference": "v4 phase_a all-bitlinear steps 1-10: ~77-163s/step_update (2189e72004); NOT W8 ~8s/step (2189e72015)",
+    "probe_phase": "d-recompute-window-feasibility",
+    "required_argv": [
+      "--persistent-q-ternary-base3-codec",
+      "--persistent-accumulator-event-coded-live",
+      "--event-coded-live-demotion-band",
+      "1",
+      "--event-coded-sparse-vote-authority"
+    ],
+    "seeds": {
+      "curriculum_seed": 43,
+      "support_order_seed": 43
+    },
+    "why_representative": "Step-2b max_live_acc_carrier_bpw vs 0.4 acc_budget is on the V4 event-coded-live persistent carrier (EventCodedAccLiveState), not W8 clip boundaries. Uses all-bitlinear eligible scope on banked parent 9b4e311a, seeds 43/43, canonical_t10_prereg_v24 \u2014 same eligible-weight surface (234881024 lanes) as tensor-wide witnesses. NOT the Step-2a CPU cost receipt synthetic 268435456 upper bound."
+  },
+  "required_ancestor": "0feb7bc7362cb40734d80dd8a577da77fea595cd",
+  "run_id": "2189e72026",
+  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72023/2189e72024",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/slice5_step2a_re_m4_sparse_authority_gpu_scale_smoke_seed43_43_2189e72026/",
+  "scale_smoke": {
+    "arms": {
+      "baseline_snapshot_off": {
+        "d_live_carrier_snapshot": false,
+        "description": "V4 event-coded-live Step-2b argv without snapshot (timing control)",
+        "persistent_accumulator_event_coded_live": true,
+        "scratch_subdir": "baseline_snapshot_off"
+      },
+      "instrumented_snapshot_on": {
+        "d_live_carrier_snapshot": true,
+        "description": "Identical V4 argv + --d-live-carrier-snapshot (Step-2a emit path under test)",
+        "persistent_accumulator_event_coded_live": true,
+        "scratch_subdir": "instrumented_snapshot_on"
+      }
+    },
+    "gate_name": "slice5_live_carrier_snapshot_gpu_emit_cost",
+    "jsonl_row_requirements": {
+      "instrumented_arm_min_rows_per_completed_step": 1,
+      "instrumented_arm_min_total_rows": 1,
+      "note": "Emitter skips states without EventCodedAccLiveState; zero rows means wrong carrier authority (e.g. W8-only arm)",
+      "zero_rows_terminal": "SMOKE_INVALID_NO_EVENT_CODED_CARRIER"
+    },
+    "max_steps_hard": 3,
+    "paired_ab_required": true,
+    "scratch_artifacts": {
+      "live_carrier_snapshot_jsonl": "{scratch}/d_recompute_window_diagnostic/live_carrier_snapshot.jsonl",
+      "receipt_json": "{scratch}/receipt.json",
+      "run_log": "{scratch}/run.log"
+    },
+    "steps": 3
+  },
+  "schema_version": "hrm_text_158_slice5_step2a_live_carrier_gpu_scale_smoke_launch_packet/v1",
+  "slice_b_commit": "0feb7bc7362cb40734d80dd8a577da77fea595cd",
+  "slice_b_diag_commit": "541efbd875793a1211e320f9f84b7a7cb6c93119",
+  "slice_b_gpu_cap_seam": {
+    "env_gates": [
+      "HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP",
+      "HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY"
+    ],
+    "prior_null_run_id": "2189e72023"
+  },
+  "source_base_head": "80d517995486af561f7963d083e6c84a63e6b5ec",
+  "source_pins_at_launch": {
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ba587e0dbd696771590ded54c6116702c81032c1e4610583d6d7f04a1d2110f8",
+    "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "e59d946b560b933097150f99e7642c86aca6e9509824396ee2f0e5219d86779e",
+    "calm/hrm_text_158/native_full_stack/phase_stack_ring_sampler.py": "6bbe01c0dbfb7e254970c6849ba80271dbad882d2e464aa3725e532a1cc88d3b",
+    "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py": "d526b3cb2fec487451bd54d507ea40c9c2965a3a4cf4230e8b443134ac1f530d",
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": "78f7d31dd17cf7073b3dbdbc2e0f0a344036d5bb659e5816f7bb21c616f9cb65",
+    "scripts/hrm_text_158_slice5_cap_selection_path_evidence.py": "9b6de8f221edc9017b8de0ada8d59e284b1124936c6a5f046409a674890bb1b4",
+    "scripts/hrm_text_158_slice5_launch_arm_barrier.py": "9a1dcde0a4033d098a252c7b4c8f1f49a088fea2555a84d1f2f94f03cb491365",
+    "scripts/hrm_text_158_slice5_postrun_receipt_replay.py": "16fffcd88ea2d4c734380cf210ef385b9cc8476e6ca4754d181087c40b428dd3"
+  },
+  "sparse_cap_apply_submilestone_liveness": {
+    "authority": "co_lead REVISE 1782765351774 + slice-1 commit 82cfdc6d",
+    "parent_coarse_rollup": "liveness_milestones/sparse_cap_apply.jsonl",
+    "schema": "hrm_text_158_phase_milestone_counter/v1",
+    "sub_phases": [
+      {
+        "artifact_rel": "liveness_milestones/sparse_cap_apply_cap_selection_cpu_copy.jsonl",
+        "budget_seconds": 120,
+        "milestone_kind_jsonl_values": [
+          "cap_gpu_seam_done",
+          "cap_reference_cpu_resident_done",
+          "cap_reference_cpu_shim_done"
+        ],
+        "parent_phase_id": "sparse_cap_apply",
+        "sub_phase_id": "cap_selection_cpu_copy",
+        "summary_path_labels": [
+          "gpu_seam",
+          "cpu_resident_reference",
+          "cpu_reference"
+        ]
+      },
+      {
+        "artifact_rel": "liveness_milestones/sparse_cap_apply_post_cap_apply_sync.jsonl",
+        "budget_seconds": 120,
+        "milestone_kind": "module_cap_sync_done",
+        "parent_phase_id": "sparse_cap_apply",
+        "sub_phase_id": "post_cap_apply_sync"
+      },
+      {
+        "artifact_rel": "liveness_milestones/sparse_cap_apply_boundary_normalize.jsonl",
+        "budget_seconds": 45,
+        "milestone_kind": "module_boundary_normalize_done",
+        "parent_phase_id": "sparse_cap_apply",
+        "sub_phase_id": "boundary_normalize"
+      }
+    ]
+  },
+  "sparse_planner_commit": "e5298b638a1b478cb832fd15c9465f7bef1a4f7c",
+  "step2a_commit": "82cfdc6d261f3e4a7a659a7ab707184ff466fc5b",
+  "sub2_first_launch_gate": {
+    "checker": "full_sub2_runtime_ready_for_science",
+    "does_not_count_as": [
+      "sub2_complete",
+      "readiness_flip",
+      "in_vivo_proof",
+      "step2b_science_run"
+    ],
+    "exception_justification": "This packet is a bounded <=3-step (steps_hard=3) diagnostic re-smoke WITH ring sampler + G1 non-perturbation gate \u2014 precursor to (not equal to) the eventual 10-step re-M4. Primary new criterion: cap_selection marker must prove which path ran. Does NOT mutate bounded_steps budget. NOT sub-2 completion/readiness/science.",
+    "executable_runtime_class": "pre_full_stack_diagnostic",
+    "fixture": "pre_full_stack_diagnostic",
+    "resolution": "named_pre_full_stack_diagnostic_exception"
+  },
+  "witness_verification_at_82cfdc6d": {
+    "milestone_emit_contract_witness": {
+      "exit_code": 0,
+      "pass": true
+    },
+    "probe_cli_sparse_authority_flag_witness": {
+      "exit_code": 0,
+      "pass": true
+    },
+    "probe_sparse_authority_wiring_witness": {
+      "exit_code": 0,
+      "pass": true
+    },
+    "submilestone_emit_contract_witness": {
+      "exit_code": 0,
+      "pass": true
+    }
+  }
+}

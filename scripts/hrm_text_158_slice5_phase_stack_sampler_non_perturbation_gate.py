@@ -12,14 +12,16 @@ from typing import Any
 
 from calm.hrm_text_158.native_full_stack.phase_stack_ring_sampler import (
     PhaseStackRingSampler,
+    is_false_green_stack_text,
+    stack_text_contains_target_frame,
 )
 
 GATE_SCHEMA = "hrm_text_158_slice5_phase_stack_sampler_non_perturbation_gate/v1"
 PREREG_EPSILON_SECONDS = 0.050
-# Production default is 30s; G1 smoke uses a shortened interval so >=1 sample fires.
 G1_SMOKE_INTERVAL_SECONDS = 0.05
 G1_SMOKE_PHASE_SECONDS = 0.15
 PREREG_RING_CAPACITY = 10
+G1_TARGET_FRAME = "_synthetic_phase_duration"
 
 
 def _synthetic_phase_duration(
@@ -27,16 +29,18 @@ def _synthetic_phase_duration(
     sampler: PhaseStackRingSampler | None,
     phase_seconds: float,
     ring_jsonl: Path | None = None,
-) -> float:
+) -> tuple[float, int]:
+    durable_before_stop = 0
     if sampler is not None:
-        sampler.start("synthetic_budgeted_phase")
+        sampler.start("synthetic_budgeted_phase", flush_path=ring_jsonl)
     start = time.perf_counter()
     time.sleep(float(phase_seconds))
     if sampler is not None:
+        durable_before_stop = sampler.durable_jsonl_line_count()
         sampler.stop()
         if ring_jsonl is not None:
             sampler.flush_jsonl(ring_jsonl)
-    return time.perf_counter() - start
+    return time.perf_counter() - start, int(durable_before_stop)
 
 
 def run_non_perturbation_gate(
@@ -48,12 +52,12 @@ def run_non_perturbation_gate(
 ) -> dict[str, Any]:
     failures: list[str] = []
     threads_before = threading.active_count()
-    off_duration = _synthetic_phase_duration(sampler=None, phase_seconds=phase_seconds)
+    off_duration, _ = _synthetic_phase_duration(sampler=None, phase_seconds=phase_seconds)
     sampler = PhaseStackRingSampler(
         ring_capacity=PREREG_RING_CAPACITY,
         interval_seconds=float(interval_seconds),
     )
-    on_duration = _synthetic_phase_duration(
+    on_duration, durable_before_stop = _synthetic_phase_duration(
         sampler=sampler,
         phase_seconds=phase_seconds,
         ring_jsonl=ring_jsonl,
@@ -73,10 +77,30 @@ def run_non_perturbation_gate(
             f"thread_count_increased:{threads_before}->{threads_after}"
         )
     ring_lines = 0
+    stack_has_real_target_frame = False
+    stack_false_green = False
     if ring_jsonl is not None and ring_jsonl.is_file():
-        ring_lines = sum(1 for line in ring_jsonl.read_text(encoding="utf-8").splitlines() if line.strip())
+        lines = [
+            json.loads(line)
+            for line in ring_jsonl.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        ring_lines = len(lines)
+        if lines:
+            last_stack = str(lines[-1].get("stack_text", ""))
+            stack_false_green = is_false_green_stack_text(last_stack)
+            stack_has_real_target_frame = stack_text_contains_target_frame(
+                last_stack,
+                G1_TARGET_FRAME,
+            )
     if ring_jsonl is not None and ring_lines <= 0:
         failures.append("ring_jsonl_missing_or_empty")
+    if durable_before_stop <= 0:
+        failures.append("durable_jsonl_lines_before_stop_zero")
+    if stack_false_green:
+        failures.append("stack_text_false_green_exception_signature")
+    if sampler.sample_count > 0 and not stack_has_real_target_frame:
+        failures.append("stack_text_missing_real_target_frame")
     return {
         "schema": GATE_SCHEMA,
         "sampler_non_perturbation_pass": not failures,
@@ -90,6 +114,10 @@ def run_non_perturbation_gate(
         "duration_delta_seconds": round(delta, 6),
         "sampler_sample_count": int(sampler.sample_count),
         "ring_jsonl_lines": int(ring_lines),
+        "durable_jsonl_lines_before_stop": int(durable_before_stop),
+        "stack_has_real_target_frame": bool(stack_has_real_target_frame),
+        "stack_false_green_exception_signature": bool(stack_false_green),
+        "g1_target_frame": G1_TARGET_FRAME,
         "failures": failures,
     }
 

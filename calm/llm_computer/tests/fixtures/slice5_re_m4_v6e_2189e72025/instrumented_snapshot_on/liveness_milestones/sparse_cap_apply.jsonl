@@ -1,0 +1,3 @@
+{"device": "cuda", "elapsed_since_phase_enter_seconds": 138.422676, "milestone_counter": 1, "milestone_kind": "phase_complete", "optimizer_step_index": 1, "phase_id": "sparse_cap_apply", "schema": "hrm_text_158_phase_milestone_counter/v1"}
+{"device": "cuda", "elapsed_since_phase_enter_seconds": 126.117905, "milestone_counter": 2, "milestone_kind": "phase_complete", "optimizer_step_index": 2, "phase_id": "sparse_cap_apply", "schema": "hrm_text_158_phase_milestone_counter/v1"}
+{"device": "cuda", "elapsed_since_phase_enter_seconds": 172.188518, "milestone_counter": 3, "milestone_kind": "phase_complete", "optimizer_step_index": 3, "phase_id": "sparse_cap_apply", "schema": "hrm_text_158_phase_milestone_counter/v1"}

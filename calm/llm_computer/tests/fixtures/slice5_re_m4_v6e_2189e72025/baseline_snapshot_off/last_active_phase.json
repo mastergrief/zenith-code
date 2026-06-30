@@ -1,0 +1,22 @@
+{
+  "active_phase_elapsed_seconds": 4.4050029828213155e-06,
+  "breach_after_silent_seconds": 300.0,
+  "budget_seconds": 300.0,
+  "device": "cuda",
+  "elapsed_since_start_seconds": 248.93917921799948,
+  "event": "active_phase_guard",
+  "fail_closed_termination": "faulthandler_exit_true",
+  "failure_class": "LIVENESS_FAILURE",
+  "guard_event": "enter",
+  "phase": "sparse_cap_apply",
+  "pid": 189633,
+  "resource_snapshot": {
+    "pid": 189633,
+    "process_cpu_system_seconds": 64.21,
+    "process_cpu_user_seconds": 191.46,
+    "rss_kib": 13702572
+  },
+  "schema": "hrm_text_158_c2p2_phase_telemetry/v0",
+  "stack_source": "faulthandler.dump_traceback_later",
+  "step": 3
+}

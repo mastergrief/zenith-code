@@ -1,0 +1,2 @@
+{"device": "cuda", "elapsed_since_phase_enter_seconds": 90.657074, "milestone_counter": 1, "milestone_kind": "phase_complete", "optimizer_step_index": 1, "phase_id": "sparse_cap_apply", "schema": "hrm_text_158_phase_milestone_counter/v1"}
+{"device": "cuda", "elapsed_since_phase_enter_seconds": 123.060946, "milestone_counter": 2, "milestone_kind": "phase_complete", "optimizer_step_index": 2, "phase_id": "sparse_cap_apply", "schema": "hrm_text_158_phase_milestone_counter/v1"}

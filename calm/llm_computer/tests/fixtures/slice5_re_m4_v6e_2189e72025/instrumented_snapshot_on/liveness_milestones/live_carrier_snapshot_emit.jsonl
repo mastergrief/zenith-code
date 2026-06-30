@@ -1,0 +1,3 @@
+{"device": "cuda", "elapsed_since_phase_enter_seconds": 15.784794, "milestone_counter": 1, "milestone_kind": "phase_complete", "optimizer_step_index": 1, "phase_id": "live_carrier_snapshot_emit", "schema": "hrm_text_158_phase_milestone_counter/v1"}
+{"device": "cuda", "elapsed_since_phase_enter_seconds": 33.24399, "milestone_counter": 2, "milestone_kind": "phase_complete", "optimizer_step_index": 2, "phase_id": "live_carrier_snapshot_emit", "schema": "hrm_text_158_phase_milestone_counter/v1"}
+{"device": "cuda", "elapsed_since_phase_enter_seconds": 36.205849, "milestone_counter": 3, "milestone_kind": "phase_complete", "optimizer_step_index": 3, "phase_id": "live_carrier_snapshot_emit", "schema": "hrm_text_158_phase_milestone_counter/v1"}

@@ -2290,7 +2290,7 @@ class PhaseProgress:
             self._cancel_faulthandler_timer()
             raise
         if self._ring_sampler is not None:
-            self._ring_sampler.start(str(phase))
+            self._ring_sampler.start(str(phase), flush_path=self._ring_jsonl_path)
 
     def _pop_phase_from_stack(self, phase: str) -> None:
         if self._phase_stack and self._phase_stack[-1]["phase"] == str(phase):
@@ -2311,7 +2311,10 @@ class PhaseProgress:
         if self._phase_stack:
             self._arm_current_phase(self._phase_stack[-1], guard_event="resume")
             if self._ring_sampler is not None:
-                self._ring_sampler.start(str(self._phase_stack[-1]["phase"]))
+                self._ring_sampler.start(
+                    str(self._phase_stack[-1]["phase"]),
+                    flush_path=self._ring_jsonl_path,
+                )
         elif self._ring_sampler is not None and self._ring_jsonl_path is not None:
             self._ring_sampler.flush_jsonl(self._ring_jsonl_path)
 

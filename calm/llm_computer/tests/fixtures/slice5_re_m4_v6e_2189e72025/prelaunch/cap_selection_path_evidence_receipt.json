@@ -1,0 +1,43 @@
+{
+  "failures": [
+    "instrumented_snapshot_on:cap_selection_marker_absent"
+  ],
+  "jsonl_marker_kinds_observed": [
+    "cap_gpu_seam_done",
+    "cap_reference_cpu_resident_done",
+    "cap_reference_cpu_shim_done"
+  ],
+  "overall_terminal_route": "PATH_CPU_RESIDENT_CAP_REFERENCE",
+  "pass": false,
+  "per_arm": [
+    {
+      "arm": "baseline_snapshot_off",
+      "cap_selection_jsonl_milestone_kind": "cap_reference_cpu_resident_done",
+      "cap_selection_jsonl_present": true,
+      "failures": [],
+      "pass": true,
+      "sparse_cap_phase_complete_count": 1,
+      "summary_cap_selection_path": null,
+      "terminal_route": "PATH_CPU_RESIDENT_CAP_REFERENCE"
+    },
+    {
+      "arm": "instrumented_snapshot_on",
+      "cap_selection_jsonl_milestone_kind": null,
+      "cap_selection_jsonl_present": false,
+      "failures": [
+        "cap_selection_marker_absent"
+      ],
+      "pass": false,
+      "sparse_cap_phase_complete_count": 0,
+      "summary_cap_selection_path": null,
+      "terminal_route": "SUBMILESTONE_INSTRUMENTATION_INVALID"
+    }
+  ],
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/slice5_step2a_re_m4_sparse_authority_gpu_scale_smoke_seed43_43_2189e72025",
+  "schema": "hrm_text_158_slice5_cap_selection_path_evidence/v1",
+  "summary_path_labels": [
+    "gpu_seam",
+    "cpu_resident_reference",
+    "cpu_reference"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "baseline_sparse_cap_step_stall": true,
+  "bounded_steps_triage_class": "PER_STEP_STALL_CONFIRMED",
+  "evidence": [
+    {
+      "arm": "baseline",
+      "phase": "sparse_cap_apply",
+      "reason": "sparse_cap_apply_step_stall",
+      "steps_completed": 1
+    }
+  ],
+  "instrumented_outer_timeout_after_max_steps": false,
+  "max_steps_hard": 3,
+  "per_arm": {
+    "baseline": {
+      "elapsed_since_start_seconds": 100.46695374299816,
+      "phase_guard_failure": "LIVENESS_FAILURE",
+      "phase_guard_phase": "sparse_cap_apply",
+      "steps_completed": 1
+    },
+    "instrumented": {
+      "elapsed_since_start_seconds": 8.370449748999818,
+      "phase_guard_failure": "LIVENESS_FAILURE",
+      "phase_guard_phase": "sparse_cap_apply",
+      "steps_completed": 0
+    }
+  },
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/slice5_step2a_re_m4_sparse_authority_gpu_scale_smoke_seed43_43_2189e72025",
+  "schema": "hrm_text_158_slice5_bounded_steps_triage_receipt/v1"
+}
