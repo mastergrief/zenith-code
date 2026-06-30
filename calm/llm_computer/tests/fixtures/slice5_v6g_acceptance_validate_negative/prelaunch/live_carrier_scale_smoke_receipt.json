@@ -1,0 +1,10 @@
+{
+  "classification": "LIVENESS_FAIL",
+  "per_step_duration_delta_seconds": {
+    "1": 1.0,
+    "2": 2.0
+  },
+  "persistent_accumulator_event_coded_live_baseline": true,
+  "persistent_accumulator_event_coded_live_instrumented": true,
+  "schema": "hrm_text_158_slice5_live_carrier_gpu_scale_smoke_receipt/v1"
+}
