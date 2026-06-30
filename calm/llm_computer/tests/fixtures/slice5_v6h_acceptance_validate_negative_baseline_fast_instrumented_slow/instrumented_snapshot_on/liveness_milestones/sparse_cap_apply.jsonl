@@ -1,0 +1,3 @@
+{"elapsed_since_phase_enter_seconds": 99.0, "milestone_kind": "phase_complete", "optimizer_step_index": 1, "phase_id": "sparse_cap_apply", "schema": "hrm_text_158_phase_milestone_counter/v1"}
+{"elapsed_since_phase_enter_seconds": 102.6, "milestone_kind": "phase_complete", "optimizer_step_index": 2, "phase_id": "sparse_cap_apply", "schema": "hrm_text_158_phase_milestone_counter/v1"}
+{"elapsed_since_phase_enter_seconds": 128.4, "milestone_kind": "phase_complete", "optimizer_step_index": 3, "phase_id": "sparse_cap_apply", "schema": "hrm_text_158_phase_milestone_counter/v1"}

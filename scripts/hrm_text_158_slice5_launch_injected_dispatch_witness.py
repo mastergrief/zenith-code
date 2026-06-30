@@ -11,7 +11,6 @@ from typing import Any
 
 WITNESS_SCHEMA = "hrm_text_158_slice5_launch_injected_dispatch_witness_receipt/v1"
 OP_RECEIPT_SCHEMA = "hrm_text_158_slice5_launch_injected_dispatch_receipt/v1"
-FROZEN_RUN_ID = "2189e72027"
 STALE_DISPATCH_MSG_ID = "1782816449484-bb5f2b80"
 ROOM_MSG_ID_RE = re.compile(r"^\d+-[0-9a-f]+$")
 TERMINAL_STATUSES = frozenset({"completed", "blocked", "aborted"})
@@ -22,12 +21,17 @@ def _normalize_run_root(path: Path | str) -> str:
     return str(path).rstrip("/") + "/"
 
 
+def _derive_run_id_from_run_root(run_root: Path | str) -> str:
+    return str(run_root).rstrip("/").rsplit("_", 1)[-1]
+
+
 def validate_launch_injected_dispatch_receipt(
     *,
     run_root: Path,
     op_receipt: dict[str, Any],
 ) -> dict[str, Any]:
     failures: list[str] = []
+    expected_run_id = _derive_run_id_from_run_root(run_root)
 
     dispatch_msg_id = str(op_receipt.get("dispatch_msg_id") or "").strip()
     if not dispatch_msg_id:
@@ -53,7 +57,7 @@ def validate_launch_injected_dispatch_receipt(
         failures.append(f"unexpected_dispatch_run_status:{status}")
 
     intended_run_id = str(op_receipt.get("intended_run_id") or "")
-    if intended_run_id != FROZEN_RUN_ID:
+    if intended_run_id != expected_run_id:
         failures.append(f"intended_run_id_mismatch:{intended_run_id!r}")
 
     intended_run_root = op_receipt.get("intended_run_root")
@@ -67,15 +71,15 @@ def validate_launch_injected_dispatch_receipt(
             failures.append(
                 f"marker_run_root_mismatch:{marker_run_root}!={intended_run_root}"
             )
-    if intended_run_root and not str(intended_run_root).rstrip("/").endswith(FROZEN_RUN_ID):
+    if intended_run_root and not str(intended_run_root).rstrip("/").endswith(expected_run_id):
         failures.append(f"intended_run_root_suffix_mismatch:{intended_run_root!r}")
-    if not str(run_root).rstrip("/").endswith(FROZEN_RUN_ID):
+    if not str(run_root).rstrip("/").endswith(expected_run_id):
         failures.append(f"run_root_suffix_mismatch:{run_root}")
 
     return {
         "schema": WITNESS_SCHEMA,
         "op_receipt_schema": op_receipt.get("schema", OP_RECEIPT_SCHEMA),
-        "run_id": FROZEN_RUN_ID,
+        "run_id": expected_run_id,
         "run_root": str(run_root),
         "dispatch_msg_id": dispatch_msg_id,
         "issuer": issuer,
@@ -94,11 +98,11 @@ def emit_launch_injected_dispatch_witness_receipt(
     run_root: Path,
     op_receipt_path: Path,
 ) -> dict[str, Any]:
-    failures: list[str] = []
+    expected_run_id = _derive_run_id_from_run_root(run_root)
     if not op_receipt_path.is_file():
         witness = {
             "schema": WITNESS_SCHEMA,
-            "run_id": FROZEN_RUN_ID,
+            "run_id": expected_run_id,
             "run_root": str(run_root),
             "pass": False,
             "failures": ["missing_launch_injected_dispatch_receipt"],
@@ -110,7 +114,7 @@ def emit_launch_injected_dispatch_witness_receipt(
     except (OSError, json.JSONDecodeError) as exc:
         return {
             "schema": WITNESS_SCHEMA,
-            "run_id": FROZEN_RUN_ID,
+            "run_id": expected_run_id,
             "run_root": str(run_root),
             "pass": False,
             "failures": [f"op_receipt_read_error:{exc}"],

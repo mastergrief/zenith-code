@@ -1,0 +1,4 @@
+{
+  "bounded_steps_triage_class": "PER_STEP_STALL_CONFIRMED",
+  "instrumented_outer_timeout_after_max_steps": false
+}

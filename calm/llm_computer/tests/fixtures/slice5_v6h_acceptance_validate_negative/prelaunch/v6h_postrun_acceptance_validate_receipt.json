@@ -1,0 +1,118 @@
+{
+  "aggregate_receipt_path": "prelaunch/live_carrier_scale_smoke_receipt.json",
+  "checks": {
+    "aggregate_receipt_schema": null,
+    "baseline_launch_rc": 0,
+    "baseline_sparse_cap_apply_elapsed_by_step": {
+      "1": 60.0,
+      "2": 60.0,
+      "3": 60.0
+    },
+    "baseline_sparse_cap_subphase_elapsed_totals": {},
+    "bounded_steps_triage_class": "PER_STEP_STALL_CONFIRMED",
+    "cap_selection_path_evidence_overall_route": "PATH_CPU_RESIDENT_CAP_REFERENCE",
+    "cap_selection_path_evidence_per_arm": [
+      {
+        "arm": "baseline_snapshot_off",
+        "pass": true,
+        "terminal_route": "PATH_CPU_RESIDENT_CAP_REFERENCE"
+      },
+      {
+        "arm": "instrumented_snapshot_on",
+        "pass": true,
+        "terminal_route": "PATH_CPU_RESIDENT_CAP_REFERENCE"
+      }
+    ],
+    "instrumented_launch_rc": 0,
+    "instrumented_sparse_cap_apply_elapsed_by_step": {
+      "1": 60.0,
+      "2": 60.0,
+      "3": 60.0
+    },
+    "instrumented_sparse_cap_subphase_elapsed_totals": {},
+    "material_speedup_ratio_threshold": 0.5,
+    "parent_pt_sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "peak_per_step_emit_delta_seconds": null,
+    "peak_per_step_emit_delta_seconds_max_allowed": 49.5,
+    "per_step_duration_delta_seconds": null,
+    "persistent_accumulator_event_coded_live_baseline": null,
+    "persistent_accumulator_event_coded_live_instrumented": null,
+    "sparse_cap_cost_shift_report": {
+      "baseline": {
+        "cost_shift_failures": [],
+        "nesting_failures": [],
+        "subphase_elapsed_by_step": {}
+      },
+      "instrumented": {
+        "cost_shift_failures": [],
+        "nesting_failures": [],
+        "subphase_elapsed_by_step": {}
+      }
+    },
+    "sparse_cap_speedup_vs_v6g_cpu_baseline": {
+      "baseline": {
+        "1": {
+          "elapsed_seconds": 60.0,
+          "material_win": false,
+          "ratio_to_v6g_cpu": 0.6060606060606061,
+          "v6g_cpu_baseline_seconds": 99.0
+        },
+        "2": {
+          "elapsed_seconds": 60.0,
+          "material_win": false,
+          "ratio_to_v6g_cpu": 0.584795321637427,
+          "v6g_cpu_baseline_seconds": 102.6
+        },
+        "3": {
+          "elapsed_seconds": 60.0,
+          "material_win": true,
+          "ratio_to_v6g_cpu": 0.4672897196261682,
+          "v6g_cpu_baseline_seconds": 128.4
+        }
+      },
+      "instrumented": {
+        "1": {
+          "elapsed_seconds": 60.0,
+          "material_win": false,
+          "ratio_to_v6g_cpu": 0.6060606060606061,
+          "v6g_cpu_baseline_seconds": 99.0
+        },
+        "2": {
+          "elapsed_seconds": 60.0,
+          "material_win": false,
+          "ratio_to_v6g_cpu": 0.584795321637427,
+          "v6g_cpu_baseline_seconds": 102.6
+        },
+        "3": {
+          "elapsed_seconds": 60.0,
+          "material_win": true,
+          "ratio_to_v6g_cpu": 0.4672897196261682,
+          "v6g_cpu_baseline_seconds": 128.4
+        }
+      }
+    },
+    "v6g_cpu_sparse_cap_baseline_seconds_by_step": {
+      "1": 99.0,
+      "2": 102.6,
+      "3": 128.4
+    }
+  },
+  "expected_path_route": "PATH_GPU_SEAM_EXERCISED",
+  "failures": [
+    "aggregate_smoke_receipt_schema_missing",
+    "persistent_accumulator_event_coded_live_baseline_null",
+    "persistent_accumulator_event_coded_live_instrumented_null",
+    "aggregate_per_step_duration_delta_seconds_missing",
+    "aggregate_peak_per_step_emit_delta_seconds_null",
+    "unexpected_cap_selection_path_route:PATH_CPU_RESIDENT_CAP_REFERENCE",
+    "arm_not_gpu_seam:baseline_snapshot_off:PATH_CPU_RESIDENT_CAP_REFERENCE",
+    "arm_not_gpu_seam:instrumented_snapshot_on:PATH_CPU_RESIDENT_CAP_REFERENCE",
+    "sparse_cap_not_materially_faster_baseline_step_1:60.000s_vs_v6g_99.000s_ratio_0.606",
+    "sparse_cap_not_materially_faster_baseline_step_2:60.000s_vs_v6g_102.600s_ratio_0.585",
+    "sparse_cap_not_materially_faster_instrumented_step_1:60.000s_vs_v6g_99.000s_ratio_0.606",
+    "sparse_cap_not_materially_faster_instrumented_step_2:60.000s_vs_v6g_102.600s_ratio_0.585"
+  ],
+  "pass": false,
+  "run_root": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/llm_computer/tests/fixtures/slice5_v6h_acceptance_validate_negative",
+  "schema": "hrm_text_158_slice5_v6h_postrun_acceptance_validate/v1"
+}

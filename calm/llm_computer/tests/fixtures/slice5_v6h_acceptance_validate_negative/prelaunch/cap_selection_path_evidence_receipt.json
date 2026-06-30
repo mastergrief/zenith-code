@@ -1,0 +1,16 @@
+{
+  "overall_terminal_route": "PATH_CPU_RESIDENT_CAP_REFERENCE",
+  "per_arm": [
+    {
+      "arm": "baseline_snapshot_off",
+      "pass": true,
+      "terminal_route": "PATH_CPU_RESIDENT_CAP_REFERENCE"
+    },
+    {
+      "arm": "instrumented_snapshot_on",
+      "pass": true,
+      "terminal_route": "PATH_CPU_RESIDENT_CAP_REFERENCE"
+    }
+  ],
+  "schema": "hrm_text_158_slice5_cap_selection_path_evidence/v1"
+}
