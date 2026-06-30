@@ -194,6 +194,6 @@ def test_cpu_shim_done_emitted_only_after_reference_returns(monkeypatch) -> None
         event_coded_sparse_vote_authority=True,
         sparse_cap_submilestone_emit=_CpuShimEmitter(),
     )
-    assert ("cap_selection_cpu_copy", "cap_reference_cpu_shim_done") in cpu_emitter_records
+    assert ("cap_selection_cpu_copy", "cap_reference_cpu_resident_done") in cpu_emitter_records
     assert reference_order == ["reference_enter", "reference_return"]
     assert reference_order.index("reference_return") < len(cpu_emitter_records)

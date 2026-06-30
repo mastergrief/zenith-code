@@ -1,0 +1,28 @@
+{
+  "design_only": true,
+  "packet_revision": "v6e_re_m4_slice_b_diag_diagnostic_smoke",
+  "run_id": "2189e72025",
+  "scale_smoke": {
+    "steps": 3,
+    "max_steps_hard": 3
+  },
+  "decision_contract": {
+    "m4_mode": "re_M4_slice_b_diag_diagnostic_smoke",
+    "note": "design draft only; requires diagnostic harness from Slice B-DIAG + separate launch gate"
+  },
+  "terminal_classification_matrix": {
+    "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS": "instrumented steps_completed>=scale_smoke.max_steps_hard AND outer bounded_steps phase_guard_kill",
+    "BASELINE_SPARSE_CAP_STEP_STALL": "baseline sparse_cap_apply step stall before max_steps_hard",
+    "SUBMILESTONE_INSTRUMENTATION_INVALID": "cap_selection contract fail after B2 fix"
+  },
+  "bounded_steps_budget": {
+    "symbolic_formula": "max_steps_hard * max(measured_per_step_total_seconds)",
+    "mutation_in_slice": false,
+    "requires_triage_class": "WRAPPER_BUDGET_TOO_TIGHT"
+  },
+  "diagnostic_harness": {
+    "phase_stack_ring_sampler_env": "HRM_TEXT_158_PHASE_STACK_RING_SAMPLER=1",
+    "non_perturbation_gate_required": true,
+    "ring_attribution_requires_sampler_non_perturbation_pass": true
+  }
+}

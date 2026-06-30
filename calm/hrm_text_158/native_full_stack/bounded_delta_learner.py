@@ -2178,6 +2178,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
     cap_selection_recorded = False
     post_cap_sync_recorded = False
     boundary_normalize_recorded = False
+    cap_selection_path: str | None = None
 
     if global_cap_spec is not None:
         if bool(event_coded_sparse_vote_authority):
@@ -2240,19 +2241,25 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     vote_inputs=inputs_by_key[state_key],
                 )
             )
-        sparse_cuda_present = any(
-            state.q_levels.device.type == "cuda" for state in tensor_states.values()
-        )
-        use_gpu_sparse_cap_apply = False
-        if bool(event_coded_sparse_vote_authority) and sparse_cuda_present:
+        sparse_cap_gpu_apply_requested = False
+        if bool(event_coded_sparse_vote_authority):
             from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
-                apply_cap_tensor_result_gpu,
-                apply_sparse_event_coded_cap_via_gpu_seam,
                 sparse_cap_gpu_lane_enabled,
             )
 
-            use_gpu_sparse_cap_apply = sparse_cap_gpu_lane_enabled()
+            sparse_cap_gpu_apply_requested = (
+                sparse_cap_gpu_lane_enabled() and bool(torch.cuda.is_available())
+            )
+        q_cuda_resident = any(
+            state.q_levels.device.type == "cuda" for state in tensor_states.values()
+        )
+        use_gpu_sparse_cap_apply = bool(sparse_cap_gpu_apply_requested and q_cuda_resident)
         if use_gpu_sparse_cap_apply:
+            from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+                apply_cap_tensor_result_gpu,
+                apply_sparse_event_coded_cap_via_gpu_seam,
+            )
+
             gpu_cap_result = apply_sparse_event_coded_cap_via_gpu_seam(
                 cap_inputs=cap_inputs,
                 spec=global_cap_spec,
@@ -2260,12 +2267,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 tie_rule_mode=global_cap_tie_rule_mode,
                 contract_name=global_cap_contract_name,
             )
-            cap_selection_recorded = _emit_sparse_cap_submilestone(
-                sparse_cap_submilestone_emit,
-                sub_phase_id="cap_selection_cpu_copy",
-                milestone_kind="cap_gpu_seam_done",
-                optimizer_step_index=int(local_selection_ordering_step),
-            )
+            cap_selection_path = "gpu_seam"
             backlog = gpu_cap_result.deferred_backlog
             summary = dict(gpu_cap_result.step_summary)
             summary["global_rate_cap_enabled"] = True
@@ -2307,12 +2309,11 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 contract_name=global_cap_contract_name,
                 event_coded_sparse_cap_enabled=bool(event_coded_sparse_vote_authority),
             )
-            if bool(event_coded_sparse_vote_authority) and sparse_cuda_present:
-                cap_selection_recorded = _emit_sparse_cap_submilestone(
-                    sparse_cap_submilestone_emit,
-                    sub_phase_id="cap_selection_cpu_copy",
-                    milestone_kind="cap_reference_cpu_shim_done",
-                    optimizer_step_index=int(local_selection_ordering_step),
+            if bool(event_coded_sparse_vote_authority):
+                cap_selection_path = (
+                    "cpu_resident_reference"
+                    if sparse_cap_gpu_apply_requested and not q_cuda_resident
+                    else "cpu_reference"
                 )
             backlog = cap_result.deferred_backlog
             summary = dict(cap_result.step_summary)
@@ -2402,6 +2403,19 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     q_by_key[state_key] = q_out
                     stats_by_key[state_key] = stats
         if bool(event_coded_sparse_vote_authority):
+            if cap_selection_path is not None:
+                cap_selection_kind_by_path = {
+                    "gpu_seam": "cap_gpu_seam_done",
+                    "cpu_shim": "cap_reference_cpu_shim_done",
+                    "cpu_resident_reference": "cap_reference_cpu_resident_done",
+                    "cpu_reference": "cap_reference_cpu_resident_done",
+                }
+                cap_selection_recorded = _emit_sparse_cap_submilestone(
+                    sparse_cap_submilestone_emit,
+                    sub_phase_id="cap_selection_cpu_copy",
+                    milestone_kind=cap_selection_kind_by_path[str(cap_selection_path)],
+                    optimizer_step_index=int(local_selection_ordering_step),
+                )
             post_cap_sync_recorded = _emit_sparse_cap_submilestone(
                 sparse_cap_submilestone_emit,
                 sub_phase_id="post_cap_apply_sync",
@@ -2488,6 +2502,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
         summary["sparse_cap_submilestone_cap_selection_recorded"] = bool(
             cap_selection_recorded
         )
+        summary["sparse_cap_submilestone_cap_selection_path"] = cap_selection_path
         summary["sparse_cap_submilestone_post_cap_sync_recorded"] = bool(
             post_cap_sync_recorded
         )

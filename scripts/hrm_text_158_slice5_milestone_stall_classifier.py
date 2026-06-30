@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-CLASSIFIER_RECEIPT_SCHEMA = "hrm_text_158_slice5_milestone_stall_classifier_receipt/v3"
+CLASSIFIER_RECEIPT_SCHEMA = "hrm_text_158_slice5_milestone_stall_classifier_receipt/v4"
 PHASES = (
     "step_forward_backward",
     "sparse_vote_construction",
@@ -206,7 +206,9 @@ def _analyze_sub_phases(
     for sub_id, jsonl_name, sub_budget in SUB_PHASES:
         sub_path = scratch / "liveness_milestones" / jsonl_name
         if not sub_path.is_file():
-            if _has_monotonic_progress_after_sub(scratch, sub_id):
+            if sub_id != "cap_selection_cpu_copy" and _has_monotonic_progress_after_sub(
+                scratch, sub_id
+            ):
                 continue
             if not parent_sparse_cap_complete:
                 continue
@@ -273,6 +275,77 @@ def _derive_milestone_locus(stall_hits: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def _max_steps_hard(packet: dict[str, Any]) -> int:
+    scale = packet.get("scale_smoke") or {}
+    if scale.get("max_steps_hard") is not None:
+        return int(scale["max_steps_hard"])
+    if scale.get("steps") is not None:
+        return int(scale["steps"])
+    return 10
+
+
+def _steps_completed(scratch: Path) -> int:
+    receipt = _read_json(scratch / "receipt.json")
+    if receipt.get("steps_completed") is not None:
+        return int(receipt["steps_completed"])
+    sparse_cap = _read_jsonl(scratch / "liveness_milestones" / "sparse_cap_apply.jsonl")
+    return len(
+        [
+            row
+            for row in sparse_cap
+            if row.get("milestone_kind") == "phase_complete"
+        ]
+    )
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _sampler_non_perturbation_pass(run_root: Path) -> bool | None:
+    gate_path = run_root / "prelaunch" / "phase_stack_sampler_non_perturbation_gate.json"
+    if not gate_path.is_file():
+        return None
+    gate = _read_json(gate_path)
+    return bool(gate.get("sampler_non_perturbation_pass"))
+
+
+def _split_arm_terminal_classification(
+    *,
+    run_root: Path,
+    packet: dict[str, Any],
+    probe_phase_guard_kill: bool,
+) -> str | None:
+    if not probe_phase_guard_kill:
+        return None
+    max_steps = _max_steps_hard(packet)
+    baseline = run_root / "baseline_snapshot_off"
+    instrumented = run_root / "instrumented_snapshot_on"
+    steps_base = _steps_completed(baseline)
+    steps_instr = _steps_completed(instrumented)
+    guard_base = _detect_phase_guard_kill(baseline)
+    guard_instr = _detect_phase_guard_kill(instrumented)
+    instr_outer = steps_instr >= max_steps and guard_instr == "bounded_steps"
+    base_sparse_stall = guard_base == "sparse_cap_apply" and steps_base < max_steps
+    both_bounded_steps_saturated = (
+        guard_base == "bounded_steps"
+        and guard_instr == "bounded_steps"
+        and steps_base >= max_steps
+        and steps_instr >= max_steps
+    )
+    if both_bounded_steps_saturated:
+        return None
+    if instr_outer and base_sparse_stall:
+        return "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS"
+    if base_sparse_stall:
+        return "BASELINE_SPARSE_CAP_STEP_STALL"
+    if instr_outer:
+        return "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS"
+    return None
+
+
 def classify_milestone_stall(
     *,
     run_root: Path,
@@ -335,14 +408,24 @@ def classify_milestone_stall(
     milestone_locus = _derive_milestone_locus(stall_hits)
 
     classification = "PASS_MILESTONE_REPLAY"
-    if instrumentation_invalid and not stall_hits:
-        classification = "SUBMILESTONE_INSTRUMENTATION_INVALID"
-    elif stall_hits:
+    if stall_hits:
         classification = "LIVENESS_FAIL_KERNELIZED_BUT_STALLED"
     elif probe_phase_guard_kill:
-        classification = "LIVENESS_FAIL"
+        split_arm = _split_arm_terminal_classification(
+            run_root=run_root,
+            packet=packet,
+            probe_phase_guard_kill=probe_phase_guard_kill,
+        )
+        classification = split_arm or "LIVENESS_FAIL"
+    elif instrumentation_invalid:
+        classification = "SUBMILESTONE_INSTRUMENTATION_INVALID"
     elif failures:
         classification = "MILESTONE_ARTIFACT_INCOMPLETE"
+
+    sampler_pass = _sampler_non_perturbation_pass(run_root)
+    ring_attribution_eligible = sampler_pass is True
+    if milestone_locus and not ring_attribution_eligible:
+        milestone_locus = None if not stall_hits else milestone_locus
 
     return {
         "schema": CLASSIFIER_RECEIPT_SCHEMA,
@@ -358,6 +441,9 @@ def classify_milestone_stall(
         "milestone_locus": milestone_locus,
         "probe_phase_guard_kill": probe_phase_guard_kill,
         "cuda_available": cuda,
+        "sampler_non_perturbation_pass": sampler_pass,
+        "ring_attribution_eligible": ring_attribution_eligible,
+        "max_steps_hard": _max_steps_hard(packet),
         "pass": classification == "PASS_MILESTONE_REPLAY",
         "failures": failures,
     }

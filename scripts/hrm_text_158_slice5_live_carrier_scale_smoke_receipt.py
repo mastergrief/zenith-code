@@ -20,8 +20,19 @@ LIVENESS_TERMINALS = frozenset(
         "SUBMILESTONE_INSTRUMENTATION_INVALID",
         "LIVENESS_FAIL",
         "LIVENESS_FAIL_TOTAL_TIMEOUT",
+        "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS",
+        "BASELINE_SPARSE_CAP_STEP_STALL",
     }
 )
+
+
+def _max_steps_hard(packet: dict[str, Any]) -> int:
+    scale = packet.get("scale_smoke") or {}
+    if scale.get("max_steps_hard") is not None:
+        return int(scale["max_steps_hard"])
+    if scale.get("steps") is not None:
+        return int(scale["steps"])
+    return 10
 
 
 def helper_script_sha256() -> str:
@@ -144,10 +155,11 @@ def emit_live_carrier_scale_smoke_receipt(
     peak_emit_delta = max(deltas.values()) if deltas else None
     emit_too_expensive = peak_emit_delta is not None and peak_emit_delta > FEASIBLE_PEAK
 
+    max_steps_hard = _max_steps_hard(packet)
     steps_completed_base = int(base.get("steps_completed") or 0)
     steps_completed_instr = int(instr.get("steps_completed") or 0)
-    baseline_clean = (baseline_rc in (0, None)) and steps_completed_base >= 10
-    instrumented_clean = (instr_rc in (0, None)) and steps_completed_instr >= 10
+    baseline_clean = (baseline_rc in (0, None)) and steps_completed_base >= max_steps_hard
+    instrumented_clean = (instr_rc in (0, None)) and steps_completed_instr >= max_steps_hard
     if baseline_rc not in (0, None):
         failures.append(f"baseline_launch_rc_{baseline_rc}")
     if instr_rc not in (0, None):
@@ -159,6 +171,10 @@ def emit_live_carrier_scale_smoke_receipt(
         classification = "SUBMILESTONE_INSTRUMENTATION_INVALID"
     elif classifier_classification == "LIVENESS_FAIL_TOTAL_TIMEOUT":
         classification = "LIVENESS_FAIL_TOTAL_TIMEOUT"
+    elif classifier_classification == "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS":
+        classification = "INSTRUMENTED_OUTER_BOUNDED_STEPS_TIMEOUT_AFTER_MAX_STEPS"
+    elif classifier_classification == "BASELINE_SPARSE_CAP_STEP_STALL":
+        classification = "BASELINE_SPARSE_CAP_STEP_STALL"
     elif classifier_classification == "LIVENESS_FAIL":
         classification = "LIVENESS_FAIL"
     elif not baseline_clean or c8_baseline > 0 or (
@@ -209,6 +225,9 @@ def emit_live_carrier_scale_smoke_receipt(
         "peak_per_step_emit_delta_seconds": peak_emit_delta,
         "classification": classification,
         "emit_too_expensive": bool(emit_too_expensive),
+        "max_steps_hard": int(max_steps_hard),
+        "sampler_non_perturbation_pass": classifier.get("sampler_non_perturbation_pass"),
+        "ring_attribution_eligible": classifier.get("ring_attribution_eligible"),
         "pass": not failures
         and classification
         in (

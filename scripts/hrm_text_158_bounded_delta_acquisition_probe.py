@@ -1927,6 +1927,46 @@ class PhaseMilestoneEmitter:
         with out_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
 
+    def ensure_sparse_cap_subphase_contract(
+        self,
+        *,
+        optimizer_step_index: int,
+        required_sub_phase_ids: tuple[str, ...] = (
+            "cap_selection_cpu_copy",
+            "post_cap_apply_sync",
+            "boundary_normalize",
+        ),
+    ) -> dict[str, Any]:
+        """Post-step validator: record which sparse_cap subphase jsonl are present."""
+        if not self.enabled:
+            return {"pass": True, "skipped": True}
+        present: dict[str, bool] = {}
+        for sub_phase in required_sub_phase_ids:
+            jsonl_name = SPARSE_CAP_SUB_PHASE_JSONL_NAMES[str(sub_phase)]
+            path = self.root / "liveness_milestones" / jsonl_name
+            rows = []
+            if path.is_file():
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        rows.append(json.loads(line))
+            step_rows = [
+                row
+                for row in rows
+                if int(row.get("optimizer_step_index", -1)) == int(optimizer_step_index)
+            ]
+            present[str(sub_phase)] = bool(step_rows)
+        contract_path = self.root / "liveness_milestones" / "sparse_cap_subphase_contract.jsonl"
+        contract_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "schema": "hrm_text_158_sparse_cap_subphase_contract/v1",
+            "optimizer_step_index": int(optimizer_step_index),
+            "present": present,
+            "pass": all(present.values()),
+        }
+        with contract_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+        return record
+
 
 def run_submilestone_emit_contract_witness() -> dict[str, Any]:
     """Static preflight: sub-phase milestone hooks present and O(1)-safe."""
@@ -2110,6 +2150,19 @@ class PhaseProgress:
         self._phase_stack: list[dict[str, Any]] = []
         self._last_active_phase_payload: dict[str, Any] | None = None
         self._live_heartbeat_threads: list[threading.Thread] = []
+        self._ring_sampler = None
+        self._ring_jsonl_path: Path | None = None
+        if last_active_phase_path is not None:
+            from calm.hrm_text_158.native_full_stack.phase_stack_ring_sampler import (
+                PhaseStackRingSampler,
+                phase_stack_ring_sampler_enabled,
+            )
+
+            if phase_stack_ring_sampler_enabled():
+                self._ring_sampler = PhaseStackRingSampler()
+                self._ring_jsonl_path = (
+                    Path(last_active_phase_path).parent / "liveness_stack_ring.jsonl"
+                )
 
     @property
     def active(self) -> bool:
@@ -2236,6 +2289,8 @@ class PhaseProgress:
             self._phase_stack.pop()
             self._cancel_faulthandler_timer()
             raise
+        if self._ring_sampler is not None:
+            self._ring_sampler.start(str(phase))
 
     def _pop_phase_from_stack(self, phase: str) -> None:
         if self._phase_stack and self._phase_stack[-1]["phase"] == str(phase):
@@ -2249,10 +2304,16 @@ class PhaseProgress:
     def _exit_phase_stack(self, phase: str) -> None:
         # Nested exit cancels the inner faulthandler timer before re-arming the
         # parent phase guard (resume), so no stale dump_traceback_later survives.
+        if self._ring_sampler is not None:
+            self._ring_sampler.stop()
         self._pop_phase_from_stack(phase)
         self._cancel_faulthandler_timer()
         if self._phase_stack:
             self._arm_current_phase(self._phase_stack[-1], guard_event="resume")
+            if self._ring_sampler is not None:
+                self._ring_sampler.start(str(self._phase_stack[-1]["phase"]))
+        elif self._ring_sampler is not None and self._ring_jsonl_path is not None:
+            self._ring_sampler.flush_jsonl(self._ring_jsonl_path)
 
     @property
     def live_heartbeat_thread_count(self) -> int:
@@ -6226,6 +6287,13 @@ def run_bounded_delta_steps(
                     step_result = materialization.value
                 else:
                     step_result = _invoke_bounded_delta_vote_step_materialize()
+                if (
+                    bool(event_coded_sparse_vote_authority)
+                    and progress.milestone_emitter is not None
+                ):
+                    progress.milestone_emitter.ensure_sparse_cap_subphase_contract(
+                        optimizer_step_index=int(step),
+                    )
                 states = step_result.tensor_states
                 if carrier_growth_collector is not None:
                     from calm.hrm_text_158.native_full_stack.carrier_growth_summary import (
