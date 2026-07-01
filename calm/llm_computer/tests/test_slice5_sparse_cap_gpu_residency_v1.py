@@ -19,7 +19,7 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapSpe
 from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import RUN_GPU_GLOBAL_RATE_CAP_ENV
 from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
     apply_sparse_event_coded_cap_via_gpu_seam,
-    prepare_gpu_sparse_cap_inputs,
+    prepare_sparse_cap_selection_inputs,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     RUN_GPU_Q_ACC_APPLY_ENV,
@@ -127,11 +127,10 @@ def test_sparse_cap_gpu_residency_no_full_q_levels_d2h(monkeypatch) -> None:
     observed: list[tuple[str, int]] = []
     _install_cuda_q_transfer_guards(monkeypatch, forbidden, observed=observed)
 
-    prepared = prepare_gpu_sparse_cap_inputs(cpu_inputs)
-    assert all(item.state.q_levels.device.type == "cuda" for item in prepared)
-    assert all(item.plan.new_acc_i32.device.type == "cuda" for item in prepared)
+    prepared = prepare_sparse_cap_selection_inputs(cpu_inputs)
+    assert all(item.state.q_levels.device.type == "cpu" for item in prepared)
+    assert all(item.plan.applied_indices.device.type == "cuda" for item in prepared)
     assert all(item.state.q_levels.device.type == "cpu" for item in cpu_inputs)
-    assert {int(item.state.q_levels.numel()) for item in prepared} == {4}
 
     with mock.patch(
         "calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter."

@@ -596,6 +596,55 @@ def _local_selection_order_active(
     )
 
 
+def event_coded_new_acc_values_at_device(
+    plan: VoteUpdatePlan,
+    flat_indices: torch.Tensor,
+    device: torch.device,
+    *,
+    fail_closed: bool = False,
+) -> torch.Tensor:
+    """Sparse event-coded new_acc lookup at flat indices on the given device."""
+
+    indices = flat_indices.detach().to(device=device, dtype=torch.int64).flatten()
+    if indices.numel() == 0:
+        return torch.empty(0, dtype=torch.int32, device=device)
+    if (
+        plan.event_coded_sparse_active_idx is None
+        or plan.event_coded_sparse_post_active_i32 is None
+    ):
+        if fail_closed:
+            raise ValueError(
+                "event-coded sparse abs_new_acc lookup requires sparse plan backing"
+            )
+        if plan.new_acc_i32 is None:
+            return torch.zeros(indices.numel(), dtype=torch.int32, device=device)
+        flat_new_acc = plan.new_acc_i32.detach().to(device=device, dtype=torch.int32).flatten()
+        return flat_new_acc[indices]
+    active_idx = plan.event_coded_sparse_active_idx.detach().to(
+        device=device,
+        dtype=torch.int64,
+    )
+    post_active = plan.event_coded_sparse_post_active_i32.detach().to(
+        device=device,
+        dtype=torch.int32,
+    )
+    positions = torch.searchsorted(active_idx, indices)
+    in_bounds = positions < active_idx.numel()
+    matched = torch.zeros(indices.numel(), dtype=torch.bool, device=device)
+    if bool(in_bounds.any().item()):
+        matched[in_bounds] = active_idx[positions[in_bounds]] == indices[in_bounds]
+    if fail_closed and not bool(matched.all().item()):
+        missing = indices[~matched].detach().cpu().tolist()
+        raise ValueError(
+            "event-coded sparse abs_new_acc lookup miss: flat_index not in "
+            f"event_coded_sparse_active_idx (missing={missing})"
+        )
+    out = torch.zeros(indices.numel(), dtype=torch.int32, device=device)
+    if bool(matched.any().item()):
+        out[matched] = post_active[positions[matched]]
+    return out
+
+
 def event_coded_new_acc_values_at(
     plan: VoteUpdatePlan,
     flat_indices: torch.Tensor | Sequence[int],

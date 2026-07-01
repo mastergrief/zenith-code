@@ -20,7 +20,9 @@ from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import 
     apply_event_coded_integer_vote_update_from_plan,
     assert_c8_runtime_guards,
     c8_runtime_guard_stats,
+    event_coded_new_acc_values_at,
     measure_persistent_dense_accumulator_materialized_numel,
+    shape_only_accumulator_stub,
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     EXACT_GLOBAL_CAP_TIE_RULE_MODE,
@@ -35,9 +37,12 @@ from calm.hrm_text_158.native_full_stack.global_rate_cap import (
 )
 from calm.hrm_text_158.native_full_stack.global_rate_cap_gpu import (
     DeviceGlobalRateCapApplyResult,
+    DeviceGlobalRateCapStateRows,
+    GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
     RUN_GPU_GLOBAL_RATE_CAP_ENV,
+    _selection_with_cpu_telemetry,
     _tensor_sha256,
-    apply_global_rate_cap_torch_cuda_reference_under_margin,
+    select_global_rate_cap_rows_torch_cuda_reference,
 )
 from calm.hrm_text_158.native_full_stack.vote_update import (
     RUN_GPU_Q_ACC_APPLY_ENV,
@@ -45,6 +50,7 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     VoteUpdatePlan,
     VoteUpdateSpec,
     VoteUpdateState,
+    _apply_threshold_residual_in_place,
 )
 
 
@@ -108,6 +114,57 @@ def _cuda_cap_mirror_device() -> torch.device:
     if not torch.cuda.is_available():
         raise ValueError("prepare_gpu_sparse_cap_inputs requires CUDA availability")
     return torch.device("cuda:0")
+
+
+def _mirror_plan_row_tensors_to_device(
+    plan: VoteUpdatePlan,
+    device: torch.device,
+) -> VoteUpdatePlan:
+    """Mirror only cap-row plan tensors to CUDA; no dense new_acc materialization."""
+
+    sparse_active = plan.event_coded_sparse_active_idx
+    sparse_post = plan.event_coded_sparse_post_active_i32
+    return replace(
+        plan,
+        candidate_indices=plan.candidate_indices.to(device),
+        pre_veto_selected_indices=plan.pre_veto_selected_indices.to(device),
+        applied_indices=plan.applied_indices.to(device),
+        applied_directions=plan.applied_directions.to(device),
+        applied_thresholds=plan.applied_thresholds.to(device),
+        replay_ce_veto_indices=plan.replay_ce_veto_indices.to(device),
+        replay_veto_directions=plan.replay_veto_directions.to(device),
+        replay_veto_thresholds=plan.replay_veto_thresholds.to(device),
+        pc_aux_negative_indices=plan.pc_aux_negative_indices.to(device),
+        pc_aux_veto_indices=plan.pc_aux_veto_indices.to(device),
+        event_coded_sparse_active_idx=(
+            None if sparse_active is None else sparse_active.to(device)
+        ),
+        event_coded_sparse_post_active_i32=(
+            None if sparse_post is None else sparse_post.to(device)
+        ),
+    )
+
+
+def prepare_sparse_cap_selection_inputs(
+    cap_inputs: list[GlobalRateCapTensorInput],
+) -> list[GlobalRateCapTensorInput]:
+    """CPU q authority with CUDA row tensors for sparse global-cap selection."""
+
+    if not cap_inputs:
+        return []
+    device = _cuda_cap_mirror_device()
+    prepared: list[GlobalRateCapTensorInput] = []
+    for item in cap_inputs:
+        plan = _mirror_plan_row_tensors_to_device(item.plan, device)
+        prepared.append(
+            GlobalRateCapTensorInput(
+                state_key=item.state_key,
+                state=item.state,
+                plan=plan,
+                vote_inputs=item.vote_inputs,
+            )
+        )
+    return prepared
 
 
 def prepare_gpu_sparse_cap_inputs(
@@ -221,6 +278,85 @@ def adapt_device_global_rate_cap_apply_to_sparse_event_coded(
     )
 
 
+def apply_sparse_event_coded_cap_rows_on_device(
+    item: GlobalRateCapTensorInput,
+    state_rows: DeviceGlobalRateCapStateRows,
+    spec: GlobalRateCapSpec,
+    *,
+    scope: str = GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
+) -> GlobalRateCapTensorResult:
+    """Apply accepted/replay cap rows on one state without dense new_acc_i32."""
+
+    q_cpu = item.state.q_levels.detach().cpu().contiguous()
+    plan = item.plan
+
+    accepted = state_rows.accepted_indices.detach().cpu().to(torch.int64)
+    accepted_dirs = state_rows.accepted_directions.detach().cpu().to(torch.int16)
+    accepted_thresholds = state_rows.accepted_thresholds.detach().cpu().to(torch.int32)
+    replay = plan.replay_ce_veto_indices.detach().cpu().to(torch.int64).flatten()
+    replay_dirs = plan.replay_veto_directions.detach().cpu().to(torch.int16).flatten()
+    replay_thresholds = plan.replay_veto_thresholds.detach().cpu().to(torch.int32).flatten()
+
+    if not bool(spec.mutate_outputs):
+        q_out = q_cpu.detach().clone().contiguous()
+        acc_out = item.state.accumulators.detach().cpu().clone().contiguous()
+    else:
+        q_i16 = q_cpu.flatten().to(torch.int16).clone()
+        if accepted.numel() > 0:
+            q_i16[accepted] = (q_i16[accepted] + accepted_dirs.to(torch.int16)).clamp(-1, 1)
+            from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+                event_coded_new_acc_values_at,
+            )
+
+            acc_accepted = event_coded_new_acc_values_at(
+                plan,
+                accepted,
+                fail_closed=True,
+            )
+            _apply_threshold_residual_in_place(
+                acc_accepted,
+                indices=torch.arange(int(accepted.numel()), dtype=torch.int64),
+                directions=accepted_dirs,
+                thresholds=accepted_thresholds,
+            )
+        if replay.numel() > 0:
+            from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+                event_coded_new_acc_values_at,
+            )
+
+            acc_replay = event_coded_new_acc_values_at(
+                plan,
+                replay,
+                fail_closed=True,
+            )
+            _apply_threshold_residual_in_place(
+                acc_replay,
+                indices=torch.arange(int(replay.numel()), dtype=torch.int64),
+                directions=replay_dirs,
+                thresholds=replay_thresholds,
+            )
+        q_out = q_i16.view_as(q_cpu).to(torch.int8).contiguous()
+        acc_out = shape_only_accumulator_stub(q_out)
+
+    q_changed = int((q_out != q_cpu).sum().item())
+    stats = {
+        **dict(item.plan.stats),
+        "event_coded_sparse_gpu_cap_apply_bypass": True,
+        "dense_new_acc_materialized_numel": 0,
+        "q_changed_count": q_changed,
+        "accepted_count": int(accepted.numel()),
+        "replay_veto_count": int(replay.numel()),
+        "scope": scope,
+        "sparse_cap_apply_device": "cpu_row_bypass",
+    }
+    return GlobalRateCapTensorResult(
+        state_key=item.state_key,
+        q_levels=q_out,
+        accumulators=acc_out,
+        stats=stats,
+    )
+
+
 def apply_sparse_event_coded_cap_via_gpu_seam(
     *,
     cap_inputs: list[GlobalRateCapTensorInput],
@@ -237,12 +373,41 @@ def apply_sparse_event_coded_cap_via_gpu_seam(
             f"{RUN_GPU_GLOBAL_RATE_CAP_ENV}=1 and {RUN_GPU_Q_ACC_APPLY_ENV}=1 required"
         )
     offsets = tensor_offsets or tensor_offsets_for_vote_update_states(cap_inputs)
-    gpu_inputs = prepare_gpu_sparse_cap_inputs(cap_inputs)
-    gpu_apply = apply_global_rate_cap_torch_cuda_reference_under_margin(
-        gpu_inputs,
+    selection_inputs = prepare_sparse_cap_selection_inputs(cap_inputs)
+    selection = select_global_rate_cap_rows_torch_cuda_reference(
+        selection_inputs,
         spec,
         tensor_offsets=offsets,
         deferred_backlog=deferred_backlog,
+        materialize_cpu_telemetry=False,
+        event_coded_sparse_cap_enabled=True,
+    )
+    selection = _selection_with_cpu_telemetry(
+        selection,
+        spec,
+        deferred_backlog=deferred_backlog,
+        cpu_telemetry_timing="after_sparse_event_coded_gpu_cap_apply_bypass",
+    )
+    tensor_results: list[GlobalRateCapTensorResult] = []
+    total_q_changed = 0
+    for item in cap_inputs:
+        state_rows = selection.rows_by_state[item.state_key]
+        result = apply_sparse_event_coded_cap_rows_on_device(
+            item,
+            state_rows,
+            spec,
+        )
+        tensor_results.append(result)
+        total_q_changed += int(result.stats.get("q_changed_count", 0))
+    gpu_apply = DeviceGlobalRateCapApplyResult(
+        tensor_results=tensor_results,
+        selection=selection,
+        stats={
+            **dict(selection.stats),
+            "q_changed_count": total_q_changed,
+            "event_coded_sparse_gpu_cap_apply_bypass": True,
+            "dense_new_acc_materialized_numel": 0,
+        },
     )
     return adapt_device_global_rate_cap_apply_to_sparse_event_coded(
         gpu_apply,

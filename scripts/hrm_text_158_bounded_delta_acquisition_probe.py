@@ -310,6 +310,17 @@ PROBE_PHASE_TO_MILESTONE_PHASE_ID = {
     "live_carrier_snapshot_emit": "live_carrier_snapshot_emit",
     "receipt_write": "artifact_flush",
 }
+PROFILE_HOST_RSS_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS"
+PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
+PROFILE_HOST_RSS_PHASES = frozenset({
+    "step_forward_backward",
+    "step_update",
+    "sparse_vote_construction",
+    "sparse_cap_apply",
+    "live_carrier_snapshot_emit",
+    "receipt_write",
+})
+HOST_RSS_PROFILE_JSONL_NAME = "host_rss_profile.jsonl"
 C2P2_DEVICE_GUARD_SCHEMA_VERSION = "hrm_text_158_c2p2_device_guard/v0"
 C2P2_FAULTHANDLER_SCHEMA_VERSION = "hrm_text_158_faulthandler_guard/v0"
 B1_PRIOR_AUDIT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_audit/v0"
@@ -1751,6 +1762,27 @@ def register_probe_faulthandler(
     return report
 
 
+def profile_host_rss_enabled() -> bool:
+    return os.environ.get(PROFILE_HOST_RSS_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _proc_kib_field(path: Path, key_prefix: str) -> int | None:
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith(key_prefix):
+                parts = line.split()
+                if len(parts) >= 2:
+                    return int(parts[1])
+    except Exception:
+        return None
+    return None
+
+
 def _proc_self_resource_snapshot() -> dict[str, Any]:
     snapshot: dict[str, Any] = {"pid": int(os.getpid())}
     try:
@@ -1760,16 +1792,28 @@ def _proc_self_resource_snapshot() -> dict[str, Any]:
     except Exception as exc:
         snapshot["process_cpu_error"] = f"{type(exc).__name__}: {exc}"
     try:
-        status = Path("/proc/self/status").read_text(encoding="utf-8", errors="replace")
-        for line in status.splitlines():
-            if line.startswith("VmRSS:"):
-                parts = line.split()
-                if len(parts) >= 2:
-                    snapshot["rss_kib"] = int(parts[1])
-                break
+        status_path = Path("/proc/self/status")
+        snapshot["rss_kib"] = _proc_kib_field(status_path, "VmRSS:")
+        snapshot["hwm_kib"] = _proc_kib_field(status_path, "VmHWM:")
     except Exception as exc:
         snapshot["rss_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        rollup_path = Path("/proc/self/smaps_rollup")
+        snapshot["pss_kib"] = _proc_kib_field(rollup_path, "Pss:")
+        private_clean = _proc_kib_field(rollup_path, "Private_Clean:")
+        private_dirty = _proc_kib_field(rollup_path, "Private_Dirty:")
+        if private_clean is not None and private_dirty is not None:
+            snapshot["uss_kib"] = int(private_clean) + int(private_dirty)
+    except Exception as exc:
+        snapshot["memory_rollup_error"] = f"{type(exc).__name__}: {exc}"
     return snapshot
+
+
+def _append_host_rss_profile_mark(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(dict(payload), sort_keys=True))
+        handle.write("\n")
 
 
 def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
@@ -2127,6 +2171,7 @@ class PhaseProgress:
         phase_timeout_exemptions: frozenset[str] | set[str] | None = None,
         phase_timeout_exemption_contract: str = PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
         milestone_emitter: PhaseMilestoneEmitter | None = None,
+        host_rss_profile_path: Path | None = None,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         self.enabled = bool(enabled)
@@ -2144,6 +2189,9 @@ class PhaseProgress:
             str(phase) for phase in (phase_timeout_exemptions or ())
         )
         self.milestone_emitter = milestone_emitter
+        self.host_rss_profile_path = (
+            Path(host_rss_profile_path) if host_rss_profile_path is not None else None
+        )
         self.clock = clock
         self.started_at = float(self.clock())
         self.events: list[dict[str, Any]] = []
@@ -2180,6 +2228,30 @@ class PhaseProgress:
         if str(phase) in self.phase_timeout_exemptions:
             return None
         return self.phase_timeout_seconds
+
+    def _emit_host_rss_profile_mark(
+        self,
+        phase: str,
+        event: str,
+        fields: Mapping[str, Any],
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if str(phase) not in PROFILE_HOST_RSS_PHASES:
+            return
+        resource_snapshot = _proc_self_resource_snapshot()
+        mark = {
+            "schema": PROFILE_HOST_RSS_SCHEMA,
+            "phase": str(phase),
+            "event": str(event),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+        }
+        for key in ("step",):
+            if key in fields:
+                mark[key] = fields[key]
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
     def mark(self, phase: str, event: str, **fields: Any) -> dict[str, Any]:
         payload = {
@@ -2408,6 +2480,7 @@ class PhaseProgress:
         phase_start = float(self.clock())
         self._enter_phase(phase, phase_start, fields)
         self.mark(phase, "start", **fields)
+        self._emit_host_rss_profile_mark(phase, "enter", fields)
         stop_event = threading.Event()
         heartbeat_thread: threading.Thread | None = None
         if (
@@ -2471,6 +2544,7 @@ class PhaseProgress:
             end_fields["phase_timeout_exempted"] = True
             end_fields["scalar_phase_timeout_seconds"] = self.phase_timeout_seconds
         self.mark(phase, "end", duration_seconds=duration, **end_fields)
+        self._emit_host_rss_profile_mark(phase, "exit", end_fields)
         if self.milestone_emitter is not None:
             milestone_phase_id = PROBE_PHASE_TO_MILESTONE_PHASE_ID.get(str(phase))
             if milestone_phase_id is not None:
@@ -7115,6 +7189,11 @@ def run_c2p1_probe(
             enabled=bool(event_coded_sparse_vote_authority),
             device=torch_device,
         )
+        host_rss_profile_path = (
+            scratch_root / HOST_RSS_PROFILE_JSONL_NAME
+            if profile_host_rss_enabled()
+            else None
+        )
         phase_progress = PhaseProgress(
             enabled=bool(emit_progress),
             device=torch_device,
@@ -7126,6 +7205,7 @@ def run_c2p1_probe(
             phase_timeout_exemptions=phase_timeout_exemptions,
             phase_timeout_exemption_contract=str(phase_timeout_exemption_contract),
             milestone_emitter=milestone_emitter,
+            host_rss_profile_path=host_rss_profile_path,
         )
         if torch_device.type == "cuda":
             with phase_progress.phase("cuda_memory_reset"):

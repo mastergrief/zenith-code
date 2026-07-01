@@ -510,12 +510,37 @@ def _stable_lexicographic_margin_order(
     return global_order[abs_order]
 
 
+def inputs_use_event_coded_sparse_cap(
+    inputs: list[GlobalRateCapTensorInput],
+) -> bool:
+    if not inputs:
+        return False
+    for item in inputs:
+        if (
+            item.plan.event_coded_sparse_active_idx is None
+            or item.plan.event_coded_sparse_post_active_i32 is None
+        ):
+            return False
+    return True
+
+
+def _sparse_selection_cuda_device() -> torch.device:
+    if not torch.cuda.is_available():
+        raise ValueError("sparse event-coded GPU cap selection requires CUDA availability")
+    return torch.device("cuda:0")
+
+
 def _device_row_tensors(
     inputs: list[GlobalRateCapTensorInput],
     *,
     tensor_offsets: dict[str, int],
     device: torch.device,
+    event_coded_sparse_cap_enabled: bool = False,
 ) -> dict[str, torch.Tensor]:
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        event_coded_new_acc_values_at_device,
+    )
+
     state_ids: list[torch.Tensor] = []
     flat_indices: list[torch.Tensor] = []
     local_positions: list[torch.Tensor] = []
@@ -533,12 +558,21 @@ def _device_row_tensors(
         offset = int(tensor_offsets[item.state_key])
         if offset < 0:
             raise ValueError(f"tensor offset for {item.state_key!r} must be >= 0, got {offset}")
-        flat_acc = item.plan.new_acc_i32.flatten().to(device=device, dtype=torch.int64)
+        if event_coded_sparse_cap_enabled:
+            abs_values = event_coded_new_acc_values_at_device(
+                item.plan,
+                indices,
+                device,
+                fail_closed=True,
+            )
+        else:
+            flat_acc = item.plan.new_acc_i32.flatten().to(device=device, dtype=torch.int64)
+            abs_values = flat_acc[indices]
         state_ids.append(torch.full((count,), state_id, dtype=torch.int64, device=device))
         flat_indices.append(indices)
         local_positions.append(torch.arange(count, dtype=torch.int64, device=device))
         global_indices.append(indices + offset)
-        abs_new_acc.append(flat_acc[indices].abs().to(torch.int64))
+        abs_new_acc.append(abs_values.abs().to(torch.int64))
         thresholds.append(item.plan.applied_thresholds.flatten().to(device=device, dtype=torch.int64))
         directions.append(item.plan.applied_directions.flatten().to(device=device, dtype=torch.int16))
 
@@ -713,15 +747,32 @@ def select_global_rate_cap_rows_torch_cuda_reference(
     deferred_backlog: dict[str, dict[int, dict[str, int]]] | None = None,
     materialize_cpu_telemetry: bool = True,
     scope: str = GLOBAL_RATE_CAP_TORCH_CUDA_REFERENCE_SCOPE,
+    event_coded_sparse_cap_enabled: bool = False,
 ) -> DeviceGlobalRateCapSelectionResult:
     """Select MARGIN global-cap rows on CUDA and emit device row tensors."""
 
     _validate_margin_only_spec(spec)
     _require_gpu_global_rate_cap_enabled()
-    validate_global_rate_cap_inputs(inputs)
-    device = _common_cuda_device(inputs)
+    sparse_enabled = bool(event_coded_sparse_cap_enabled)
+    if sparse_enabled and not inputs_use_event_coded_sparse_cap(inputs):
+        raise ValueError(
+            "event_coded_sparse_cap_enabled requires sparse backing on every input"
+        )
+    validate_global_rate_cap_inputs(
+        inputs,
+        event_coded_sparse_cap_enabled=sparse_enabled,
+    )
+    if sparse_enabled:
+        device = _sparse_selection_cuda_device()
+    else:
+        device = _common_cuda_device(inputs)
     offsets = tensor_offsets or tensor_offsets_for_vote_update_states(inputs)
-    rows = _device_row_tensors(inputs, tensor_offsets=offsets, device=device)
+    rows = _device_row_tensors(
+        inputs,
+        tensor_offsets=offsets,
+        device=device,
+        event_coded_sparse_cap_enabled=sparse_enabled,
+    )
     order = _stable_lexicographic_margin_order(
         abs_new_acc=rows["abs_new_acc"],
         global_flat_indices=rows["global_indices"],
