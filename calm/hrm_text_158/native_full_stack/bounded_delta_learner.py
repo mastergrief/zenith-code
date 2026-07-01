@@ -2147,6 +2147,31 @@ def _emit_allocator_native_boundary(
     )
 
 
+def _emit_triangulation_boundary(
+    emit: Callable[..., None] | None,
+    *,
+    event: str,
+    sub_phase_id: str,
+    allocation_site_id: str,
+    optimizer_step_index: int,
+    state_index: int | None = None,
+    state_bucket: int | None = None,
+) -> None:
+    if emit is None:
+        return
+    triangulation_emit = getattr(emit, "triangulation_emit", None)
+    if triangulation_emit is None:
+        return
+    triangulation_emit(
+        str(event),
+        sub_phase_id=str(sub_phase_id),
+        optimizer_step_index=int(optimizer_step_index),
+        allocation_site_id=str(allocation_site_id),
+        state_index=state_index,
+        state_bucket=state_bucket,
+    )
+
+
 def _emit_allocator_host_cache_diag(
     emit: Callable[..., None] | None,
     *,
@@ -2439,6 +2464,13 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 allocation_site_id="C3_exit",
                 optimizer_step_index=step_index,
             )
+            _emit_triangulation_boundary(
+                rss_emit,
+                event="triangulation_C3_exit",
+                sub_phase_id="C3_gpu_cap_selection",
+                allocation_site_id="C3_exit",
+                optimizer_step_index=step_index,
+            )
             _emit_allocator_native_boundary(
                 rss_emit,
                 event="allocator_C3_exit",
@@ -2479,6 +2511,13 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             _emit_allocator_native_boundary(
                 rss_emit,
                 event="allocator_C4_enter",
+                sub_phase_id="C4_gpu_cap_apply_sync",
+                allocation_site_id="C4_enter",
+                optimizer_step_index=step_index,
+            )
+            _emit_triangulation_boundary(
+                rss_emit,
+                event="triangulation_C4_enter",
                 sub_phase_id="C4_gpu_cap_apply_sync",
                 allocation_site_id="C4_enter",
                 optimizer_step_index=step_index,
@@ -2559,6 +2598,15 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                             state_index=int(state_index),
                             state_bucket=int(state_index) // 4,
                         )
+                        _emit_triangulation_boundary(
+                            rss_emit,
+                            event="triangulation_C4_after_state",
+                            sub_phase_id="C4_gpu_cap_apply_sync",
+                            allocation_site_id="C4_after_state",
+                            optimizer_step_index=step_index,
+                            state_index=int(state_index),
+                            state_bucket=int(state_index) // 4,
+                        )
                 _emit_torch_cpu_census_boundary(
                     rss_emit,
                     event="census_C4_exit",
@@ -2569,6 +2617,13 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 _emit_allocator_native_boundary(
                     rss_emit,
                     event="allocator_C4_exit",
+                    sub_phase_id="C4_gpu_cap_apply_sync",
+                    allocation_site_id="C4_exit",
+                    optimizer_step_index=step_index,
+                )
+                _emit_triangulation_boundary(
+                    rss_emit,
+                    event="triangulation_C4_exit",
                     sub_phase_id="C4_gpu_cap_apply_sync",
                     allocation_site_id="C4_exit",
                     optimizer_step_index=step_index,

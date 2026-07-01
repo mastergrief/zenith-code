@@ -668,6 +668,100 @@ def diff_vma_entries(
     }
 
 
+def capture_debugmallocstats_fd2() -> tuple[str | None, str | None]:
+    """Capture sys._debugmallocstats() via fd-2 dup2 (C-level stderr)."""
+    import os
+    import sys
+    import tempfile
+
+    if not hasattr(sys, "_debugmallocstats"):
+        return None, "debugmallocstats_not_exported"
+    saved_fd = os.dup(2)
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w+b", delete=False) as tmp:
+            tmp_path = tmp.name
+        capture_fd = os.open(tmp_path, os.O_RDWR | os.O_CREAT | os.O_TRUNC)
+        os.dup2(capture_fd, 2)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        sys._debugmallocstats()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(saved_fd, 2)
+        os.close(capture_fd)
+        text = Path(tmp_path).read_text(encoding="utf-8", errors="replace")
+        if not text.strip():
+            return None, "debugmallocstats_empty_capture"
+        return text, None
+    except Exception as exc:
+        try:
+            os.dup2(saved_fd, 2)
+        except Exception:
+            pass
+        return None, f"{type(exc).__name__}: {exc}"
+    finally:
+        try:
+            os.close(saved_fd)
+        except Exception:
+            pass
+        if tmp_path:
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+_DEBUGMALLOC_ARENA_CURRENT_RE = re.compile(r"# arenas allocated current\s*=\s*(\d+)")
+_DEBUGMALLOC_ARENA_TOTAL_BYTES_RE = re.compile(
+    r"(\d+) arenas \* \d+ bytes/arena\s*=\s*([\d,]+)"
+)
+
+
+def parse_debugmallocstats(text: str) -> dict[str, Any]:
+    out: dict[str, Any] = {"raw_line_count": len(text.splitlines())}
+    current_match = _DEBUGMALLOC_ARENA_CURRENT_RE.search(text)
+    if current_match:
+        out["arena_count"] = int(current_match.group(1))
+    total_match = _DEBUGMALLOC_ARENA_TOTAL_BYTES_RE.search(text)
+    if total_match:
+        out["arena_bytes"] = int(total_match.group(2).replace(",", ""))
+        if "arena_count" not in out:
+            out["arena_count"] = int(total_match.group(1))
+    if "arena_count" in out or "arena_bytes" in out:
+        out["parse_ok"] = True
+    else:
+        out["parse_ok"] = False
+        out["unavailable_reason"] = "debugmallocstats_unparseable"
+    return out
+
+
+def read_debugmallocstats() -> dict[str, Any]:
+    text, err = capture_debugmallocstats_fd2()
+    if err or not text:
+        return {
+            "available": False,
+            "unavailable_reason": err or "debugmallocstats_capture_failed",
+        }
+    parsed = parse_debugmallocstats(text)
+    if not parsed.get("parse_ok"):
+        return {
+            "available": False,
+            "unavailable_reason": parsed.get("unavailable_reason"),
+            "raw_preview": text[:200],
+        }
+    return {"available": True, **parsed}
+
+
+def preflight_debugmallocstats_self_test() -> dict[str, Any]:
+    result = read_debugmallocstats()
+    return {
+        "status": "ok" if result.get("available") else "unavailable",
+        "capture_method": "os.dup2_fd2_tempfile",
+        "debugmallocstats": result,
+    }
+
+
 def snapshot_allocator_probe(
     *,
     exclude_hook_vmas: Sequence[tuple[int, int]] | None = None,

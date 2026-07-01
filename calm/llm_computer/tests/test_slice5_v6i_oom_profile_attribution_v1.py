@@ -290,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v8")
+    assert receipt["schema"].endswith("/v9")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -1607,4 +1607,258 @@ def test_classify_vma_name_fd_reuse_stale_fd_fail_closed_unknown_fd() -> None:
     assert result["source_tier"] == "C"
     assert result["status"] == "INCONCLUSIVE"
     assert "unknown_fd_classification" in result.get("fail_reasons", [])
+
+
+def _c4_subphase_marks(delta_gib: float, *, step: int = 1) -> list[dict[str, Any]]:
+    enter_kib = 1000 * 1024
+    exit_kib = enter_kib + int(delta_gib * 1024 * 1024)
+    return [
+        {
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "step": step,
+            "event": "enter",
+            "measurement_perturbed": False,
+            "resource_snapshot": {"rss_kib": enter_kib},
+        },
+        {
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "step": step,
+            "event": "exit",
+            "measurement_perturbed": False,
+            "resource_snapshot": {"rss_kib": exit_kib},
+        },
+    ]
+
+
+def _triangulation_pair(
+    *,
+    current_delta: int,
+    peak_delta: int,
+    arena_base: int = 0,
+    arena_exit: int = 0,
+) -> list[dict[str, Any]]:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_HOST_RSS_TRIANGULATION_SCHEMA,
+    )
+
+    base_current = 100_000_000
+    return [
+        {
+            "schema": PROFILE_HOST_RSS_TRIANGULATION_SCHEMA,
+            "event": "triangulation_C3_exit",
+            "tracemalloc": {
+                "enabled": True,
+                "traced_current_bytes": base_current,
+                "traced_peak_bytes": base_current,
+                "top_frames": [],
+            },
+            "debugmallocstats": {
+                "available": True,
+                "arena_bytes": arena_base,
+                "arena_count": 1,
+            },
+        },
+        {
+            "schema": PROFILE_HOST_RSS_TRIANGULATION_SCHEMA,
+            "event": "triangulation_C4_exit",
+            "tracemalloc": {
+                "enabled": True,
+                "traced_current_bytes": base_current + current_delta,
+                "traced_peak_bytes": base_current + peak_delta,
+                "top_frames": [
+                    {
+                        "size_bytes": current_delta,
+                        "traceback_key": "line1|line2|line3",
+                        "traceback": ["line1", "line2", "line3"],
+                    }
+                ],
+            },
+            "debugmallocstats": {
+                "available": True,
+                "arena_bytes": arena_exit,
+                "arena_count": 2,
+            },
+        },
+    ]
+
+
+def test_triangulation_denominator_invalid_inconclusive() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_python_allocator_triangulation,
+    )
+
+    delta = TOTAL_C4_REFERENCE_GIB + 2.0
+    marks = _c4_subphase_marks(delta)
+    result = attribute_python_allocator_triangulation(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+    )
+    assert result["fail_closed_terminal"] == "DENOMINATOR_INVALID_INCONCLUSIVE"
+
+
+def test_triangulation_cross_run_denominator_inconclusive() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_python_allocator_triangulation,
+    )
+
+    marks_a = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    marks_a_prime = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB + 3.0)
+    result = attribute_python_allocator_triangulation(
+        marks_a=marks_a,
+        marks_a_prime=marks_a_prime,
+        marks_b=marks_a,
+    )
+    assert result["fail_closed_terminal"] == "INCONCLUSIVE_CROSS_RUN_DENOMINATOR"
+
+
+def test_triangulation_perturbation_adversary() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_python_allocator_triangulation,
+    )
+
+    marks_a = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    marks_b = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB + 3.0)
+    result = attribute_python_allocator_triangulation(
+        marks_a=marks_a,
+        marks_a_prime=marks_a,
+        marks_b=marks_b,
+        debugmallocstats_preflight={"status": "ok"},
+    )
+    assert result["fail_closed_terminal"] == "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
+
+
+def test_triangulation_b_incomplete_tracemalloc_perturbed() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_python_allocator_triangulation,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    partial_b = _triangulation_pair(
+        current_delta=0,
+        peak_delta=0,
+    )[:1]
+    result = attribute_python_allocator_triangulation(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + partial_b,
+        debugmallocstats_preflight={"status": "ok"},
+    )
+    assert result["fail_closed_terminal"] == "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
+    assert result.get("b_run_incomplete") is True
+
+
+def test_triangulation_arena_stats_unavailable() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_python_allocator_triangulation,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    tri = _triangulation_pair(
+        current_delta=BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        peak_delta=BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        arena_base=0,
+        arena_exit=0,
+    )
+    tri[0]["debugmallocstats"] = {"available": False}
+    tri[1]["debugmallocstats"] = {"available": False}
+    result = attribute_python_allocator_triangulation(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + tri,
+        debugmallocstats_preflight={"status": "unavailable"},
+    )
+    assert result["fail_closed_terminal"] == "ARENA_STATS_UNAVAILABLE_INCONCLUSIVE"
+
+
+def test_triangulation_branch1_rewrite_candidates() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_python_allocator_triangulation,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    tri = _triangulation_pair(
+        current_delta=BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        peak_delta=BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        arena_base=100,
+        arena_exit=100,
+    )
+    result = attribute_python_allocator_triangulation(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + tri,
+        debugmallocstats_preflight={"status": "ok"},
+    )
+    assert result["classifier_branch"] == "LIVE_PYTHON_OBJECT_CHURN"
+    assert result["rewrite_candidate_frames"]
+    assert result["fail_closed_terminal"] is None
+
+
+def test_triangulation_branch2_pymalloc_retention() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_python_allocator_triangulation,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    peak = BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES
+    current = int(peak * 0.10)
+    tri = _triangulation_pair(
+        current_delta=current,
+        peak_delta=peak,
+        arena_base=0,
+        arena_exit=int(peak * 0.6),
+    )
+    result = attribute_python_allocator_triangulation(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + tri,
+        debugmallocstats_preflight={"status": "ok"},
+    )
+    assert result["classifier_branch"] == "PYMALLOC_HIGH_WATER_RETENTION"
+    assert result["rewrite_candidate_frames"] is None
+
+
+def test_triangulation_branch3_untraced_extension() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_python_allocator_triangulation,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    current = int(BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES * 0.10)
+    tri = _triangulation_pair(
+        current_delta=current,
+        peak_delta=current,
+        arena_base=1000,
+        arena_exit=2_000_000,
+    )
+    result = attribute_python_allocator_triangulation(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + tri,
+        debugmallocstats_preflight={"status": "ok"},
+    )
+    assert result["classifier_branch"] == "UNTRACED_PYMEMP_C_EXTENSION"
+    assert result["rewrite_candidate_frames"] is None
+
+
+def test_debugmallocstats_preflight_parseable() -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        preflight_debugmallocstats_self_test,
+    )
+
+    result = preflight_debugmallocstats_self_test()
+    assert result["capture_method"] == "os.dup2_fd2_tempfile"
+    assert result["status"] == "ok"
 

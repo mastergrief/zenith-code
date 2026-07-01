@@ -316,6 +316,7 @@ PROFILE_TORCH_CPU_CENSUS_ENV = "HRM_TEXT_158_PROFILE_TORCH_CPU_CENSUS"
 PROFILE_ALLOCATOR_NATIVE_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_NATIVE"
 PROFILE_ALLOCATOR_HOST_CACHE_DIAG_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_HOST_CACHE_DIAG"
 PROFILE_ALLOC_HOOK_ENV = "HRM_TEXT_158_PROFILE_ALLOC_HOOK"
+PROFILE_TRACEMALLOC_ENV = "HRM_TEXT_158_PROFILE_TRACEMALLOC"
 PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
 PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
@@ -323,6 +324,7 @@ PROFILE_HOST_RSS_CENSUS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v3"
 PROFILE_HOST_RSS_ALLOCATOR_SCHEMA = "hrm_text_158_profile_host_rss_mark/v4"
 PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v5"
 PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA = "hrm_text_158_profile_host_rss_mark/v6"
+PROFILE_HOST_RSS_TRIANGULATION_SCHEMA = "hrm_text_158_profile_host_rss_mark/v7"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
@@ -1810,6 +1812,14 @@ def profile_torch_cpu_census_enabled() -> bool:
     }
 
 
+def profile_tracemalloc_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        profile_tracemalloc_enabled as _enabled,
+    )
+
+    return _enabled()
+
+
 def profile_allocator_native_enabled() -> bool:
     from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
         profile_allocator_native_enabled as _enabled,
@@ -2544,6 +2554,50 @@ class PhaseProgress:
             mark["allocation_dims"] = dict(allocation_dims)
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
+    def _emit_triangulation_boundary_mark(
+        self,
+        event: str,
+        *,
+        fields: Mapping[str, Any],
+        measurement_perturbed: bool = False,
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_tracemalloc_enabled():
+            return
+        from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+            read_debugmallocstats,
+        )
+        from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+            ensure_tracemalloc_started,
+            snapshot_tracemalloc,
+        )
+
+        ensure_tracemalloc_started(depth=25)
+        mark: dict[str, Any] = {
+            "schema": PROFILE_HOST_RSS_TRIANGULATION_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "parent_phase": "sparse_cap_apply",
+            "event": str(event),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": _proc_self_resource_snapshot(),
+            "measurement_perturbed": bool(measurement_perturbed),
+            "tracemalloc": snapshot_tracemalloc(),
+            "debugmallocstats": read_debugmallocstats(),
+        }
+        for key in (
+            "step",
+            "optimizer_step_index",
+            "state_index",
+            "state_bucket",
+            "allocation_site_id",
+            "sub_phase_id",
+        ):
+            if key in fields:
+                mark[key] = fields[key]
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
     def make_host_rss_subphase_emitter(
         self,
         *,
@@ -2666,6 +2720,38 @@ class PhaseProgress:
             )
 
         emit.site_emit = site_emit  # type: ignore[attr-defined]
+
+        def triangulation_emit(
+            event: str,
+            *,
+            sub_phase_id: str,
+            optimizer_step_index: int,
+            allocation_site_id: str,
+            state_index: int | None = None,
+            state_bucket: int | None = None,
+        ) -> None:
+            self._emit_triangulation_boundary_mark(
+                str(event),
+                fields={
+                    "step": int(step),
+                    "optimizer_step_index": int(optimizer_step_index),
+                    "sub_phase_id": str(sub_phase_id),
+                    "allocation_site_id": str(allocation_site_id),
+                    **(
+                        {"state_index": int(state_index)}
+                        if state_index is not None
+                        else {}
+                    ),
+                    **(
+                        {"state_bucket": int(state_bucket)}
+                        if state_bucket is not None
+                        else {}
+                    ),
+                },
+                measurement_perturbed=True,
+            )
+
+        emit.triangulation_emit = triangulation_emit  # type: ignore[attr-defined]
         return emit
 
     def mark(self, phase: str, event: str, **fields: Any) -> dict[str, Any]:
@@ -7770,11 +7856,16 @@ def run_c2p1_probe(
             )
     
         with phase_progress.phase("forward_fidelity"):
-            if profile_alloc_hook_enabled():
+            if profile_alloc_hook_enabled() or profile_tracemalloc_enabled():
+                skip_reason = (
+                    "alloc_hook_attribution_fixture"
+                    if profile_alloc_hook_enabled()
+                    else "tracemalloc_attribution_fixture"
+                )
                 forward_init_fidelity = {
                     "schema": "hrm_text_158_c2p1_weight_level_init_fidelity/v0",
                     "skipped": True,
-                    "skip_reason": "alloc_hook_attribution_fixture",
+                    "skip_reason": skip_reason,
                 }
             else:
                 forward_init_fidelity = compute_forward_level_init_fidelity(

@@ -30,10 +30,12 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB,
     PROFILE_HOST_RSS_LIVE_RESIDENT_ENV,
     PROFILE_HOST_RSS_SUBPHASE_IDS,
+    PROFILE_HOST_RSS_TRIANGULATION_SCHEMA,
     PROFILE_TORCH_CPU_CENSUS_ENV,
+    PROFILE_TRACEMALLOC_ENV,
 )
 
-ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v8"
+ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v9"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
@@ -118,6 +120,16 @@ ALLOCATOR_PER_STATE_SLOPE_MIN = 0.75
 ALLOCATOR_PER_STATE_SLOPE_MAX = 1.25
 ALLOCATOR_TIER_B_SITE_FRACTION = 0.50
 HOST_CACHE_CONFIRM_DROP_GIB = 1.0
+
+BANKED_REFERENCE_COMMIT = "0698608"
+BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES = 4470079488
+BANKED_NON_GLIBC_MMAP_REFERENCE_GIB = 4.1630859375
+TOTAL_C4_REFERENCE_GIB = 7.6359100341796875
+GUARD_STABILITY_FRAC = 0.25
+GUARD_ENVELOPE_MIN_GIB = 0.25
+PERTURBATION_MIN_GIB = 0.5
+PERTURBATION_NOISE_K = 2.0
+C4_SUBPHASE = "C4_gpu_cap_apply_sync"
 
 
 def _is_allocator_mark(row: Mapping[str, Any]) -> bool:
@@ -938,6 +950,319 @@ def _is_subphase_mark(row: Mapping[str, Any]) -> bool:
     return row.get("sub_phase") is not None
 
 
+def _is_triangulation_mark(row: Mapping[str, Any]) -> bool:
+    return str(row.get("schema", "")) == PROFILE_HOST_RSS_TRIANGULATION_SCHEMA
+
+
+def _c4_subphase_delta_gib(marks: list[dict[str, Any]]) -> float | None:
+    unperturbed = [
+        row
+        for row in marks
+        if _is_subphase_mark(row)
+        and not bool(row.get("measurement_perturbed", False))
+        and str(row.get("sub_phase")) == C4_SUBPHASE
+    ]
+    deltas = _compute_phase_deltas(
+        unperturbed,
+        key_fn=_subphase_key,
+        phase_filter=lambda row: str(row.get("sub_phase")) == C4_SUBPHASE,
+    )
+    if not deltas:
+        return None
+    value = deltas[0].get("delta_rss_gib")
+    return float(value) if value is not None else None
+
+
+def _triangulation_mark(
+    marks: list[dict[str, Any]],
+    event: str,
+) -> dict[str, Any] | None:
+    for row in marks:
+        if _is_triangulation_mark(row) and str(row.get("event")) == str(event):
+            return row
+    return None
+
+
+def _banked_reference_paths() -> dict[str, Any]:
+    return {
+        "banked_reference_commit": BANKED_REFERENCE_COMMIT,
+        "banked_non_glibc_mmap_reference_bytes": BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        "banked_non_glibc_mmap_reference_gib": BANKED_NON_GLIBC_MMAP_REFERENCE_GIB,
+        "total_c4_reference_gib": TOTAL_C4_REFERENCE_GIB,
+        "banked_path_mmap_net_bytes": (
+            "alloc_hook_attribution.allocator_type_partition.mmap_net_bytes"
+        ),
+        "banked_path_mmap_net_gib": (
+            "alloc_hook_attribution.allocator_type_partition.mmap_net_gib"
+        ),
+        "banked_path_c4_subphase_delta_rss_gib": (
+            "alloc_hook_attribution.allocator_type_partition.c4_subphase_delta_rss_gib"
+        ),
+        "denominator_source": "banked_cross_run",
+        "cross_run_reconcile_caveat": True,
+    }
+
+
+def attribute_python_allocator_triangulation(
+    *,
+    marks_a: list[dict[str, Any]],
+    marks_a_prime: list[dict[str, Any]],
+    marks_b: list[dict[str, Any]],
+    debugmallocstats_preflight: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        BRANCH1_CONCENTRATION,
+        BRANCH1_RECONCILE_MAX,
+        BRANCH1_RECONCILE_MIN,
+        BRANCH2_CURRENT_VS_PEAK,
+        BRANCH2_PEAK_FRAC,
+        BRANCH3_CURRENT_FRAC,
+        classify_branch1_concentration,
+        diff_traceback_frames,
+    )
+
+    banked = _banked_reference_paths()
+    c4_a = _c4_subphase_delta_gib(marks_a)
+    c4_a_prime = _c4_subphase_delta_gib(marks_a_prime)
+    c4_b = _c4_subphase_delta_gib(marks_b)
+
+    noise_floor: float | None = None
+    if c4_a is not None and c4_a_prime is not None:
+        noise_floor = abs(float(c4_a_prime) - float(c4_a))
+
+    run_stability_threshold = GUARD_STABILITY_FRAC * TOTAL_C4_REFERENCE_GIB
+    denominator_variance_threshold = (
+        GUARD_STABILITY_FRAC * BANKED_NON_GLIBC_MMAP_REFERENCE_GIB
+    )
+    envelope_tolerance = (
+        max(float(noise_floor), GUARD_ENVELOPE_MIN_GIB)
+        if noise_floor is not None
+        else GUARD_ENVELOPE_MIN_GIB
+    )
+    total_c4_envelope_delta = (
+        abs(float(c4_a) - TOTAL_C4_REFERENCE_GIB) if c4_a is not None else None
+    )
+
+    guards: dict[str, Any] = {
+        "noise_floor_gib": noise_floor,
+        "run_stability_threshold_gib": run_stability_threshold,
+        "denominator_variance_threshold_gib": denominator_variance_threshold,
+        "total_c4_envelope_tolerance_gib": envelope_tolerance,
+        "total_c4_envelope_delta_gib": total_c4_envelope_delta,
+        "c4_rss_delta_gib_same_run": {
+            "A": c4_a,
+            "A_prime": c4_a_prime,
+            "B": c4_b,
+        },
+    }
+
+    if noise_floor is None:
+        guards["run_stability_ok"] = False
+        guards["denominator_variance_ok"] = False
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "INCONCLUSIVE_PENDING_NOISE_FLOOR",
+            "classifier_branch": None,
+            "rewrite_candidate_frames": None,
+        }
+
+    guards["run_stability_ok"] = noise_floor <= run_stability_threshold
+    guards["denominator_variance_ok"] = noise_floor <= denominator_variance_threshold
+    guards["total_c4_envelope_ok"] = (
+        total_c4_envelope_delta is not None
+        and total_c4_envelope_delta <= envelope_tolerance
+    )
+
+    if not guards["total_c4_envelope_ok"]:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "DENOMINATOR_INVALID_INCONCLUSIVE",
+            "classifier_branch": None,
+            "rewrite_candidate_frames": None,
+        }
+    if not guards["run_stability_ok"] or not guards["denominator_variance_ok"]:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "INCONCLUSIVE_CROSS_RUN_DENOMINATOR",
+            "classifier_branch": None,
+            "rewrite_candidate_frames": None,
+        }
+
+    perturbation_delta = (
+        abs(float(c4_b) - float(c4_a))
+        if c4_a is not None and c4_b is not None
+        else None
+    )
+    perturbation_threshold = max(
+        PERTURBATION_MIN_GIB,
+        PERTURBATION_NOISE_K * float(noise_floor),
+    )
+    guards["perturbation_delta_gib"] = perturbation_delta
+    guards["perturbation_threshold_gib"] = perturbation_threshold
+    guards["tracemalloc_perturbed"] = (
+        perturbation_delta is not None
+        and perturbation_delta > perturbation_threshold
+    )
+    if guards["tracemalloc_perturbed"]:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "TRACEMALLOC_PERTURBED_INCONCLUSIVE",
+            "classifier_branch": None,
+            "rewrite_candidate_frames": None,
+        }
+
+    baseline_mark = _triangulation_mark(marks_b, "triangulation_C3_exit")
+    exit_mark = _triangulation_mark(marks_b, "triangulation_C4_exit")
+    if baseline_mark is None or exit_mark is None:
+        has_tracemalloc_marks = any(_is_triangulation_mark(row) for row in marks_b)
+        if has_tracemalloc_marks:
+            return {
+                **banked,
+                "guards": guards,
+                "fail_closed_terminal": "TRACEMALLOC_PERTURBED_INCONCLUSIVE",
+                "classifier_branch": None,
+                "rewrite_candidate_frames": None,
+                "b_run_incomplete": True,
+                "b_incomplete_reason": "missing_triangulation_C4_exit",
+            }
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "INCONCLUSIVE_MISSING_TRIANGULATION_MARKS",
+            "classifier_branch": None,
+            "rewrite_candidate_frames": None,
+        }
+
+    preflight = dict(debugmallocstats_preflight or {})
+    arena_preflight_ok = str(preflight.get("status")) == "ok"
+    baseline_stats = dict(baseline_mark.get("debugmallocstats") or {})
+    exit_stats = dict(exit_mark.get("debugmallocstats") or {})
+    arena_stats_ok = (
+        arena_preflight_ok
+        and baseline_stats.get("available")
+        and exit_stats.get("available")
+    )
+    guards["arena_stats_preflight_ok"] = arena_preflight_ok
+    guards["arena_stats_available"] = arena_stats_ok
+
+    baseline_tm = dict(baseline_mark.get("tracemalloc") or {})
+    exit_tm = dict(exit_mark.get("tracemalloc") or {})
+    diff = diff_traceback_frames(baseline_tm, exit_tm)
+    current_delta = int(diff.get("current_delta_bytes") or 0)
+    peak_delta = int(diff.get("peak_delta_bytes") or 0)
+    denom = int(BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES)
+
+    reconcile_ratio = float(current_delta) / float(denom) if denom > 0 else 0.0
+    peak_ratio = float(peak_delta) / float(denom) if denom > 0 else 0.0
+    current_vs_peak = (
+        float(current_delta) / float(peak_delta) if peak_delta > 0 else 0.0
+    )
+
+    dual_report: dict[str, Any] = {
+        "primary_current_delta_bytes": current_delta,
+        "primary_peak_delta_bytes": peak_delta,
+        "banked_denominator_bytes": denom,
+        "primary_reconcile_ratio": reconcile_ratio,
+        "peak_reconcile_ratio": peak_ratio,
+        "c4_rss_delta_gib_same_run_B": c4_b,
+    }
+    diff["dual_report"] = dual_report
+
+    arena_growth = None
+    arena_retained_fraction = None
+    if arena_stats_ok:
+        base_arena = int(baseline_stats.get("arena_bytes") or 0)
+        exit_arena = int(exit_stats.get("arena_bytes") or 0)
+        arena_growth = exit_arena - base_arena
+        if peak_delta > 0:
+            arena_retained_fraction = float(exit_arena - base_arena) / float(peak_delta)
+
+    branch1_ok = (
+        BRANCH1_RECONCILE_MIN <= reconcile_ratio <= BRANCH1_RECONCILE_MAX
+        and classify_branch1_concentration(diff)
+    )
+    branch2_ok = (
+        arena_stats_ok
+        and peak_ratio >= BRANCH2_PEAK_FRAC
+        and current_vs_peak < BRANCH2_CURRENT_VS_PEAK
+        and arena_retained_fraction is not None
+        and arena_retained_fraction >= 0.50
+    )
+    branch3_ok = (
+        reconcile_ratio < BRANCH3_CURRENT_FRAC
+        and arena_stats_ok
+        and arena_growth is not None
+        and arena_growth > 0
+    )
+
+    if not arena_stats_ok:
+        return {
+            **banked,
+            "guards": guards,
+            "tracemalloc_diff": diff,
+            "fail_closed_terminal": "ARENA_STATS_UNAVAILABLE_INCONCLUSIVE",
+            "classifier_branch": None,
+            "rewrite_candidate_frames": None,
+        }
+
+    ranked: list[dict[str, Any]] = []
+    if branch1_ok:
+        ranked.append(
+            {
+                "branch": "LIVE_PYTHON_OBJECT_CHURN",
+                "rank": 1,
+                "reconcile_ratio": reconcile_ratio,
+                "top_concentration_fraction": diff.get("top_concentration_fraction"),
+            }
+        )
+    if branch2_ok:
+        ranked.append(
+            {
+                "branch": "PYMALLOC_HIGH_WATER_RETENTION",
+                "rank": len(ranked) + 1,
+                "peak_ratio": peak_ratio,
+                "arena_retained_fraction": arena_retained_fraction,
+            }
+        )
+    if branch3_ok:
+        ranked.append(
+            {
+                "branch": "UNTRACED_PYMEMP_C_EXTENSION",
+                "rank": len(ranked) + 1,
+                "reconcile_ratio": reconcile_ratio,
+                "arena_growth_bytes": arena_growth,
+            }
+        )
+
+    rewrite_candidates: list[dict[str, Any]] | None = None
+    classifier_branch: str | None = None
+    if branch1_ok:
+        classifier_branch = "LIVE_PYTHON_OBJECT_CHURN"
+        rewrite_candidates = list(diff.get("top_delta_frames") or [])[:16]
+    elif branch2_ok:
+        classifier_branch = "PYMALLOC_HIGH_WATER_RETENTION"
+    elif branch3_ok:
+        classifier_branch = "UNTRACED_PYMEMP_C_EXTENSION"
+    elif ranked:
+        classifier_branch = str(ranked[0]["branch"])
+
+    return {
+        **banked,
+        "guards": guards,
+        "tracemalloc_diff": diff,
+        "arena_growth_bytes": arena_growth,
+        "arena_retained_fraction": arena_retained_fraction,
+        "ranked_classification": ranked,
+        "classifier_branch": classifier_branch,
+        "rewrite_candidate_frames": rewrite_candidates,
+        "fail_closed_terminal": None if classifier_branch else "CLASSIFIER_INCONCLUSIVE",
+    }
+
+
 def _compute_phase_deltas(
     marks: list[dict[str, Any]],
     *,
@@ -1575,12 +1900,12 @@ def build_attribution_receipt(
     return receipt
 
 
-def _fixture_probe_argv(scratch_root: Path) -> list[str]:
+def _fixture_probe_argv(scratch_root: Path, *, tracemalloc: bool = False) -> list[str]:
     parent = (
         "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_"
         "rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt"
     )
-    return [
+    cmd = [
         sys.executable,
         "-u",
         "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
@@ -1630,6 +1955,14 @@ def _fixture_probe_argv(scratch_root: Path) -> list[str]:
         "--scratch-root",
         str(scratch_root),
     ]
+    if tracemalloc:
+        cmd.extend(
+            [
+                "--max-silent-phase-seconds",
+                "900",
+            ]
+        )
+    return cmd
 
 
 def run_fixture_live_resident_diagnostic(out_root: Path) -> dict[str, Any]:
@@ -2138,6 +2471,170 @@ def run_fixture(out_root: Path) -> dict[str, Any]:
     return receipt
 
 
+def _fixture_triangulation_env(*, tracemalloc: bool) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    env["HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP"] = "1"
+    env["HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY"] = "1"
+    env["HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"] = "1"
+    env["HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"] = "1"
+    env[PROFILE_HOST_RSS_ENV] = "1"
+    if tracemalloc:
+        env[PROFILE_TRACEMALLOC_ENV] = "1"
+    return env
+
+
+def _run_fixture_triangulation_probe(
+    out_root: Path,
+    *,
+    scratch_name: str,
+    tracemalloc: bool,
+) -> dict[str, Any]:
+    out_root.mkdir(parents=True, exist_ok=True)
+    scratch = out_root / scratch_name
+    scratch.mkdir(parents=True, exist_ok=True)
+    lane_holding: dict[str, Any] | None = None
+    lane_release: dict[str, Any] | None = None
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_acquire import acquire_resource_lane
+
+        lane_holding = acquire_resource_lane(out_root)
+    except Exception as exc:
+        lane_holding = {"acquire_error": f"{type(exc).__name__}: {exc}"}
+
+    env = _fixture_triangulation_env(tracemalloc=tracemalloc)
+    cmd = _fixture_probe_argv(scratch, tracemalloc=tracemalloc)
+    proc = subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=1200 if tracemalloc else 600,
+    )
+    profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
+    marks = _read_jsonl(profile_path) if profile_path.is_file() else []
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane
+
+        lane_release = release_resource_lane(out_root)
+    except Exception as exc:
+        lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
+
+    return {
+        "scratch_root": str(scratch),
+        "profile_path": str(profile_path),
+        "command": cmd,
+        "exit_code": int(proc.returncode),
+        "stdout_tail": "\n".join(proc.stdout.splitlines()[-20:]),
+        "stderr_tail": "\n".join(proc.stderr.splitlines()[-20:]),
+        "resource_lane_holding": lane_holding,
+        "resource_lane_release": lane_release,
+        "profile_mark_count": len(marks),
+        "c4_rss_delta_gib": _c4_subphase_delta_gib(marks),
+        "triangulation_mark_count": sum(1 for row in marks if _is_triangulation_mark(row)),
+        "marks": marks,
+    }
+
+
+def run_fixture_allocator_triangulation_ab(out_root: Path) -> dict[str, Any]:
+    payload = _run_fixture_triangulation_probe(
+        out_root,
+        scratch_name="allocator_triangulation_ab",
+        tracemalloc=False,
+    )
+    payload["fixture_mode"] = "fixture_allocator_triangulation_ab"
+    payload.pop("marks", None)
+    return payload
+
+
+def run_fixture_allocator_triangulation_ab_replicate(out_root: Path) -> dict[str, Any]:
+    payload = _run_fixture_triangulation_probe(
+        out_root,
+        scratch_name="allocator_triangulation_ab_replicate",
+        tracemalloc=False,
+    )
+    payload["fixture_mode"] = "fixture_allocator_triangulation_ab_replicate"
+    payload.pop("marks", None)
+    return payload
+
+
+def run_fixture_allocator_triangulation_tracemalloc(out_root: Path) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        preflight_debugmallocstats_self_test,
+    )
+
+    preflight = preflight_debugmallocstats_self_test()
+    payload = _run_fixture_triangulation_probe(
+        out_root,
+        scratch_name="allocator_triangulation_tracemalloc",
+        tracemalloc=True,
+    )
+    payload["fixture_mode"] = "fixture_allocator_triangulation_tracemalloc"
+    payload["debugmallocstats_preflight"] = preflight
+    payload.pop("marks", None)
+    return payload
+
+
+def run_fixture_allocator_triangulation_combined(out_root: Path) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        preflight_debugmallocstats_self_test,
+    )
+
+    run_a = _run_fixture_triangulation_probe(
+        out_root,
+        scratch_name="allocator_triangulation_ab",
+        tracemalloc=False,
+    )
+    run_a_prime = _run_fixture_triangulation_probe(
+        out_root,
+        scratch_name="allocator_triangulation_ab_replicate",
+        tracemalloc=False,
+    )
+    preflight = preflight_debugmallocstats_self_test()
+    run_b = _run_fixture_triangulation_probe(
+        out_root,
+        scratch_name="allocator_triangulation_tracemalloc",
+        tracemalloc=True,
+    )
+
+    triangulation = attribute_python_allocator_triangulation(
+        marks_a=list(run_a.pop("marks", [])),
+        marks_a_prime=list(run_a_prime.pop("marks", [])),
+        marks_b=list(run_b.pop("marks", [])),
+        debugmallocstats_preflight=preflight,
+    )
+
+    exit_codes = [
+        int(run_a.get("exit_code", 1)),
+        int(run_a_prime.get("exit_code", 1)),
+        int(run_b.get("exit_code", 1)),
+    ]
+    payload: dict[str, Any] = {
+        "schema": ATTRIBUTION_SCHEMA,
+        "fixture_mode": "fixture_allocator_triangulation_combined",
+        "exit_code": max(exit_codes),
+        "runs": {
+            "A": {k: v for k, v in run_a.items() if k != "marks"},
+            "A_prime": {k: v for k, v in run_a_prime.items() if k != "marks"},
+            "B": {k: v for k, v in run_b.items() if k != "marks"},
+        },
+        "debugmallocstats_preflight": preflight,
+        "alloc_hook_attribution": {
+            "allocator_type_partition": {
+                "mmap_net_bytes": BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+                "mmap_net_gib": BANKED_NON_GLIBC_MMAP_REFERENCE_GIB,
+                "c4_subphase_delta_rss_gib": TOTAL_C4_REFERENCE_GIB,
+            }
+        },
+        "python_allocator_triangulation": triangulation,
+        "classifier_branch": triangulation.get("classifier_branch"),
+        "fail_closed_terminal": triangulation.get("fail_closed_terminal"),
+    }
+    return payload
+
+
 def run_fixture_non_glibc_mmap_source(out_root: Path) -> dict[str, Any]:
     """Same-run allocator_type + non_glibc_mmap source tracing (frozen plan F1-F4)."""
     payload = run_fixture_allocator_type(out_root)
@@ -2163,6 +2660,10 @@ def main() -> int:
             "fixture_alloc_hook",
             "fixture_allocator_type",
             "fixture_non_glibc_mmap_source",
+            "fixture_allocator_triangulation_ab",
+            "fixture_allocator_triangulation_ab_replicate",
+            "fixture_allocator_triangulation_tracemalloc",
+            "fixture_allocator_triangulation_combined",
         ),
         required=True,
     )
@@ -2244,6 +2745,14 @@ def main() -> int:
         payload = run_fixture_allocator_type(args.run_root)
     elif args.mode == "fixture_non_glibc_mmap_source":
         payload = run_fixture_non_glibc_mmap_source(args.run_root)
+    elif args.mode == "fixture_allocator_triangulation_ab":
+        payload = run_fixture_allocator_triangulation_ab(args.run_root)
+    elif args.mode == "fixture_allocator_triangulation_ab_replicate":
+        payload = run_fixture_allocator_triangulation_ab_replicate(args.run_root)
+    elif args.mode == "fixture_allocator_triangulation_tracemalloc":
+        payload = run_fixture_allocator_triangulation_tracemalloc(args.run_root)
+    elif args.mode == "fixture_allocator_triangulation_combined":
+        payload = run_fixture_allocator_triangulation_combined(args.run_root)
     else:
         payload = run_fixture(args.run_root)
 
@@ -2258,6 +2767,10 @@ def main() -> int:
         "fixture_alloc_hook",
         "fixture_allocator_type",
         "fixture_non_glibc_mmap_source",
+        "fixture_allocator_triangulation_ab",
+        "fixture_allocator_triangulation_ab_replicate",
+        "fixture_allocator_triangulation_tracemalloc",
+        "fixture_allocator_triangulation_combined",
     } and int(payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))) != 0:
         return 1
     return 0
