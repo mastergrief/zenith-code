@@ -318,6 +318,7 @@ PROFILE_ALLOCATOR_HOST_CACHE_DIAG_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_HOST_CAC
 PROFILE_ALLOC_HOOK_ENV = "HRM_TEXT_158_PROFILE_ALLOC_HOOK"
 PROFILE_TRACEMALLOC_ENV = "HRM_TEXT_158_PROFILE_TRACEMALLOC"
 PROFILE_DEBUGMALLOCSTATS_ENV = "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS"
+PROFILE_OBMALLOC_SITE_BRACKETS_ENV = "HRM_TEXT_158_PROFILE_OBMALLOC_SITE_BRACKETS"
 PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
 PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
@@ -327,6 +328,7 @@ PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v5"
 PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA = "hrm_text_158_profile_host_rss_mark/v6"
 PROFILE_HOST_RSS_TRIANGULATION_SCHEMA = "hrm_text_158_profile_host_rss_mark/v7"
 PROFILE_HOST_RSS_OBMALLOC_SCHEMA = "hrm_text_158_profile_host_rss_mark/v8"
+PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v9"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
@@ -1830,6 +1832,17 @@ def profile_debugmallocstats_enabled() -> bool:
     return _enabled()
 
 
+def profile_obmalloc_site_brackets_enabled() -> bool:
+    if not profile_debugmallocstats_enabled():
+        return False
+    return os.environ.get(PROFILE_OBMALLOC_SITE_BRACKETS_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def assert_profile_tracemalloc_debugmallocstats_mutual_exclusion() -> None:
     if profile_tracemalloc_enabled() and profile_debugmallocstats_enabled():
         payload = {
@@ -2512,6 +2525,44 @@ class PhaseProgress:
                 mark[key] = fields[key]
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
+    def _emit_obmalloc_site_bracket_mark(
+        self,
+        *,
+        site_id: str,
+        event_suffix: str,
+        origin_file: str,
+        origin_line: int,
+        fields: Mapping[str, Any],
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_obmalloc_site_brackets_enabled():
+            return
+        from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+            read_debugmallocstats,
+        )
+
+        resource_snapshot = _proc_self_resource_snapshot()
+        mark: dict[str, Any] = {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": f"obmalloc_site_{site_id}_{event_suffix}",
+            "site_id": str(site_id),
+            "origin_file": str(origin_file),
+            "origin_line": int(origin_line),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+            "measurement_perturbed": True,
+            "debugmallocstats": read_debugmallocstats(),
+        }
+        for key in ("step", "optimizer_step_index", "state_index"):
+            if key in fields:
+                mark[key] = fields[key]
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
     def _emit_alloc_hook_mark(
         self,
         *,
@@ -2766,16 +2817,24 @@ class PhaseProgress:
             optimizer_step_index: int,
             state_index: int,
         ) -> None:
+            site_fields = {
+                "step": int(step),
+                "optimizer_step_index": int(optimizer_step_index),
+                "state_index": int(state_index),
+            }
             self._emit_allocator_site_mark(
                 site_id=str(site_id),
                 event_suffix=str(event_suffix),
                 origin_file=str(origin_file),
                 origin_line=int(origin_line),
-                fields={
-                    "step": int(step),
-                    "optimizer_step_index": int(optimizer_step_index),
-                    "state_index": int(state_index),
-                },
+                fields=site_fields,
+            )
+            self._emit_obmalloc_site_bracket_mark(
+                site_id=str(site_id),
+                event_suffix=str(event_suffix),
+                origin_file=str(origin_file),
+                origin_line=int(origin_line),
+                fields=site_fields,
             )
 
         emit.site_emit = site_emit  # type: ignore[attr-defined]

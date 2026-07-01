@@ -290,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v10")
+    assert receipt["schema"].endswith("/v11")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -2172,4 +2172,179 @@ def test_measure_debugmallocstats_self_footprint_ok() -> None:
     assert result["status"] in {"ok", "exceeded", "unavailable"}
     if result["status"] == "ok":
         assert int(result["debugmallocstats_self_footprint_bytes"] or 0) <= DEBUGMALLOC_SELF_FOOTPRINT_MAX_BYTES
+
+
+def _obmalloc_site_bracket_marks(
+    *,
+    window_entry_arena: int,
+    window_exit_arena: int,
+    leaf_deltas: dict[str, int],
+    s2_pre_arena: int | None = None,
+) -> list[dict[str, Any]]:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        OBMALLOC_SITE_LEAF_SITES,
+    )
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+    )
+
+    def _stats(arena: int) -> dict[str, Any]:
+        return {
+            "available": True,
+            "parse_ok": True,
+            "arenas_allocated_current": 1,
+            "arena_bytes": arena,
+            "bytes_in_allocated_blocks": 0,
+        }
+
+    marks: list[dict[str, Any]] = []
+    base = 10_000_000
+
+    marks.append(
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+            "event": "obmalloc_site_C4.S1_pre",
+            "site_id": "C4.S1",
+            "state_index": 0,
+            "measurement_perturbed": True,
+            "debugmallocstats": _stats(window_entry_arena),
+        }
+    )
+    s1_delta = int(leaf_deltas.get("C4.S1", 0))
+    marks.append(
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+            "event": "obmalloc_site_C4.S1_post",
+            "site_id": "C4.S1",
+            "state_index": 0,
+            "measurement_perturbed": True,
+            "debugmallocstats": _stats(window_entry_arena + s1_delta),
+        }
+    )
+
+    for site_id in OBMALLOC_SITE_LEAF_SITES:
+        if site_id in {"C4.S1", "C4.S2"}:
+            continue
+        delta = int(leaf_deltas.get(site_id, 0))
+        marks.extend(
+            [
+                {
+                    "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+                    "event": f"obmalloc_site_{site_id}_pre",
+                    "site_id": site_id,
+                    "state_index": 0,
+                    "measurement_perturbed": True,
+                    "debugmallocstats": _stats(base),
+                },
+                {
+                    "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+                    "event": f"obmalloc_site_{site_id}_post",
+                    "site_id": site_id,
+                    "state_index": 0,
+                    "measurement_perturbed": True,
+                    "debugmallocstats": _stats(base + delta),
+                },
+            ]
+        )
+
+    if s2_pre_arena is not None:
+        marks.append(
+            {
+                "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+                "event": "obmalloc_site_C4.S2_pre",
+                "site_id": "C4.S2",
+                "state_index": 0,
+                "measurement_perturbed": True,
+                "debugmallocstats": _stats(s2_pre_arena),
+            }
+        )
+    marks.append(
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+            "event": "obmalloc_site_C4.S2_post",
+            "site_id": "C4.S2",
+            "state_index": 0,
+            "measurement_perturbed": True,
+            "debugmallocstats": _stats(window_exit_arena),
+        }
+    )
+    return marks
+
+
+def test_obmalloc_site_brackets_leaf_sum_excludes_aggregate_parent() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        OBMALLOC_SITE_LEAF_SITES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_site_brackets,
+    )
+
+    window_entry = 100_000_000
+    state0_local = 1_000_000_000
+    window_exit = window_entry + state0_local
+    leaf_deltas = {
+        "C4.S1": 600_000_000,
+        "C4.S2a": 150_000_000,
+        "C4.S2b": 150_000_000,
+        "C4.S2c": 100_000_000,
+    }
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    site_marks = _obmalloc_site_bracket_marks(
+        window_entry_arena=window_entry,
+        window_exit_arena=window_exit,
+        leaf_deltas=leaf_deltas,
+        s2_pre_arena=window_entry + leaf_deltas["C4.S1"],
+    )
+    result = attribute_obmalloc_site_brackets(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + site_marks,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    localization = result["localization"]
+    leaf_sum = sum(int(localization["leaf_deltas_bytes"][site]) for site in OBMALLOC_SITE_LEAF_SITES)
+    aggregate_s2 = int(localization["aggregate_s2_delta_bytes"])
+    assert localization["leaf_sum_bytes"] == leaf_sum
+    assert localization["leaf_sum_bytes"] == state0_local
+    assert aggregate_s2 == sum(
+        leaf_deltas[site] for site in ("C4.S2a", "C4.S2b", "C4.S2c")
+    )
+    assert localization["leaf_sum_bytes"] + aggregate_s2 > state0_local
+    assert localization["unattributed_remainder_bytes"] == 0
+    assert result["classifier_terminal"] == "DOMINANT_BRACKET_C4.S1"
+    assert result["slice8_rewrite_authorized"] is False
+
+
+def test_obmalloc_site_brackets_q_loop_growth_lands_in_remainder() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_site_brackets,
+    )
+
+    state0_local = 800_000_000
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    site_marks = _obmalloc_site_bracket_marks(
+        window_entry_arena=2_000_000,
+        window_exit_arena=2_000_000 + state0_local,
+        leaf_deltas={
+            "C4.S1": 0,
+            "C4.S2a": 0,
+            "C4.S2b": 0,
+            "C4.S2c": 0,
+        },
+    )
+    result = attribute_obmalloc_site_brackets(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + site_marks,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    localization = result["localization"]
+    assert localization["leaf_sum_bytes"] == 0
+    assert localization["unattributed_remainder_bytes"] == state0_local
+    assert localization["next_lane_rank1_carrier_audit"] is True
+    assert result["fail_closed_terminal"] == "BRACKET_REMAINDER_TOO_LARGE"
+    assert result["classifier_terminal"] is None
+    assert result["slice8_rewrite_authorized"] is False
 
