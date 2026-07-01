@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -289,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v3")
+    assert receipt["schema"].endswith("/v4")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -404,3 +405,125 @@ def test_attribute_host_rss_profile_merges_diagnostic_verdict() -> None:
     assert result["live_vs_resident_diagnostic"]["trim_delta_rss_gib"] == pytest.approx(
         2.4414, rel=1e-3
     )
+
+
+def test_profile_torch_cpu_census_default_off(monkeypatch) -> None:
+    monkeypatch.delenv(probe.PROFILE_HOST_RSS_ENV, raising=False)
+    monkeypatch.delenv(probe.PROFILE_TORCH_CPU_CENSUS_ENV, raising=False)
+    from calm.hrm_text_158.native_full_stack.host_torch_census import (
+        profile_torch_cpu_census_enabled,
+    )
+
+    assert profile_torch_cpu_census_enabled() is False
+    monkeypatch.setenv(probe.PROFILE_HOST_RSS_ENV, "1")
+    monkeypatch.setenv(probe.PROFILE_TORCH_CPU_CENSUS_ENV, "1")
+    assert profile_torch_cpu_census_enabled() is True
+
+
+def test_torch_cpu_census_dedupes_shared_storage_views() -> None:
+    from calm.hrm_text_158.native_full_stack.host_torch_census import (
+        torch_cpu_tensor_census,
+    )
+
+    base = torch.zeros(1024, dtype=torch.float32)
+    view_a = base[:512]
+    view_b = base[512:]
+    census = torch_cpu_tensor_census(top_k=5)
+    assert census["n_cpu_tensors"] >= 2
+    assert census["logical_tensor_bytes"] >= int(base.numel() * 4)
+    assert census["unique_storage_bytes"] <= census["logical_tensor_bytes"]
+    del view_a, view_b, base
+
+
+def test_attribute_torch_census_resolved_when_unique_storage_reconciles() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_torch_census_profile,
+    )
+
+    def _mark(event: str, unique_bytes: int, group: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "schema": probe.PROFILE_HOST_RSS_CENSUS_SCHEMA,
+            "event": event,
+            "torch_census": {
+                "unique_storage_bytes": unique_bytes,
+                "top_groups": [group],
+            },
+        }
+
+    group = {
+        "device": "cpu",
+        "dtype": "torch.float32",
+        "shape": [1000, 1000],
+        "unique_storage_bytes": 8_000_000_000,
+        "unique_storage_count": 32,
+        "logical_tensor_bytes": 8_000_000_000,
+        "tensor_count": 32,
+    }
+    marks = [
+        _mark("census_C3_exit", 1_000_000_000, group),
+        _mark("census_C4_enter", 1_500_000_000, group),
+        _mark("census_C4_exit", 9_000_000_000, group),
+    ]
+    result = attribute_torch_census_profile(marks, c4_delta_rss_gib=7.5)
+    assert result["dimensional_reconciliation_unique_storage"]["status"] == "PASS"
+    assert result["mechanism_owner_status"] == "RESOLVED"
+    assert result["culprit_class"] == "C"
+    assert result["dominant_allocation"]["dtype"] == "torch.float32"
+
+
+def test_attribute_torch_census_unmapped_when_reconciliation_fails() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_torch_census_profile,
+    )
+
+    marks = [
+        {
+            "schema": probe.PROFILE_HOST_RSS_CENSUS_SCHEMA,
+            "event": "census_C3_exit",
+            "torch_census": {"unique_storage_bytes": 1000, "top_groups": []},
+        },
+        {
+            "schema": probe.PROFILE_HOST_RSS_CENSUS_SCHEMA,
+            "event": "census_C4_enter",
+            "torch_census": {"unique_storage_bytes": 2000, "top_groups": []},
+        },
+        {
+            "schema": probe.PROFILE_HOST_RSS_CENSUS_SCHEMA,
+            "event": "census_C4_exit",
+            "torch_census": {"unique_storage_bytes": 3000, "top_groups": []},
+        },
+    ]
+    result = attribute_torch_census_profile(marks, c4_delta_rss_gib=7.5)
+    assert result["mechanism_owner_status"] == "UNMAPPED_OR_UNRESOLVED"
+    assert result["culprit_class"] is None
+    assert result["next_probe_route"] == "allocator_native_smaps_anonymous"
+
+
+def test_census_boundary_marks_merge_handoff_and_loop_bytes() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_torch_census_profile,
+    )
+
+    marks = [
+        {
+            "schema": probe.PROFILE_HOST_RSS_CENSUS_SCHEMA,
+            "event": "census_C3_exit",
+            "torch_census": {"unique_storage_bytes": 1_000_000_000, "top_groups": []},
+        },
+        {
+            "schema": probe.PROFILE_HOST_RSS_CENSUS_SCHEMA,
+            "event": "census_C4_enter",
+            "torch_census": {"unique_storage_bytes": 6_000_000_000, "top_groups": []},
+        },
+        {
+            "schema": probe.PROFILE_HOST_RSS_CENSUS_SCHEMA,
+            "event": "census_C4_exit",
+            "torch_census": {"unique_storage_bytes": 6_500_000_000, "top_groups": []},
+        },
+    ]
+    result = attribute_torch_census_profile(marks, c4_delta_rss_gib=7.5)
+    boundaries = result["census_boundaries"]
+    assert boundaries["handoff_unique_storage_bytes"] == 5_000_000_000
+    assert boundaries["loop_unique_storage_bytes"] == 500_000_000
+    assert result["mechanism_owner_status"] == "UNMAPPED_OR_UNRESOLVED"
+

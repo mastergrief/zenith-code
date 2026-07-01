@@ -2101,6 +2101,29 @@ def _emit_live_resident_diagnostic_marks(
     )
 
 
+def _emit_torch_cpu_census_boundary(
+    emit: Callable[..., None] | None,
+    *,
+    event: str,
+    sub_phase_id: str,
+    allocation_site_id: str,
+    optimizer_step_index: int,
+    state_index: int | None = None,
+    state_bucket: int | None = None,
+) -> None:
+    if emit is None:
+        return
+    emit(
+        str(event),
+        sub_phase_id=str(sub_phase_id),
+        optimizer_step_index=int(optimizer_step_index),
+        allocation_site_id=str(allocation_site_id),
+        measurement_perturbed=True,
+        state_index=state_index,
+        state_bucket=state_bucket,
+    )
+
+
 @contextmanager
 def _host_rss_subphase_scope(
     emit: Callable[..., None] | None,
@@ -2343,6 +2366,13 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     tie_rule_mode=global_cap_tie_rule_mode,
                     contract_name=global_cap_contract_name,
                 )
+            _emit_torch_cpu_census_boundary(
+                rss_emit,
+                event="census_C3_exit",
+                sub_phase_id="C3_gpu_cap_selection",
+                allocation_site_id="C3_exit",
+                optimizer_step_index=step_index,
+            )
             with _host_rss_subphase_scope(
                 rss_emit,
                 sub_phase_id="C6_deferred_backlog_telemetry",
@@ -2365,6 +2395,14 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 cap_boundary_transient = 0
                 summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(cap_boundary_transient)
                 accepted_flat_by_key = dict(gpu_cap_result.accepted_flat_by_key)
+
+            _emit_torch_cpu_census_boundary(
+                rss_emit,
+                event="census_C4_enter",
+                sub_phase_id="C4_gpu_cap_apply_sync",
+                allocation_site_id="C4_enter",
+                optimizer_step_index=step_index,
+            )
 
             def _apply_cap_tensor_result_gpu_bound(item: Any) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
                 return apply_cap_tensor_result_gpu(
@@ -2402,11 +2440,30 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     ),
                 },
             ):
-                for item in gpu_cap_result.tensor_results:
+                for state_index, item in enumerate(gpu_cap_result.tensor_results):
                     state_key, carrier, q_out, stats = _apply_cap_tensor_result_gpu_bound(item)
                     carriers_by_key[state_key] = carrier
                     q_by_key[state_key] = q_out
                     stats_by_key[state_key] = stats
+                    if (int(state_index) + 1) % 4 == 0 or (
+                        int(state_index) + 1
+                    ) == len(gpu_cap_result.tensor_results):
+                        _emit_torch_cpu_census_boundary(
+                            rss_emit,
+                            event="census_C4_after_state",
+                            sub_phase_id="C4_gpu_cap_apply_sync",
+                            allocation_site_id="C4_after_state",
+                            optimizer_step_index=step_index,
+                            state_index=int(state_index),
+                            state_bucket=int(state_index) // 4,
+                        )
+                _emit_torch_cpu_census_boundary(
+                    rss_emit,
+                    event="census_C4_exit",
+                    sub_phase_id="C4_gpu_cap_apply_sync",
+                    allocation_site_id="C4_exit",
+                    optimizer_step_index=step_index,
+                )
                 _emit_live_resident_diagnostic_marks(
                     rss_emit,
                     optimizer_step_index=step_index,

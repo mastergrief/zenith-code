@@ -312,9 +312,11 @@ PROBE_PHASE_TO_MILESTONE_PHASE_ID = {
 }
 PROFILE_HOST_RSS_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS"
 PROFILE_HOST_RSS_LIVE_RESIDENT_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS_LIVE_RESIDENT"
+PROFILE_TORCH_CPU_CENSUS_ENV = "HRM_TEXT_158_PROFILE_TORCH_CPU_CENSUS"
 PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
 PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
+PROFILE_HOST_RSS_CENSUS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v3"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
@@ -1791,6 +1793,17 @@ def profile_host_rss_live_resident_enabled() -> bool:
     }
 
 
+def profile_torch_cpu_census_enabled() -> bool:
+    return profile_host_rss_enabled() and os.environ.get(
+        PROFILE_TORCH_CPU_CENSUS_ENV, ""
+    ).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def gc_collect_and_malloc_trim() -> None:
     import gc
 
@@ -2318,6 +2331,45 @@ class PhaseProgress:
             mark["allocation_dims"] = dict(allocation_dims)
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
+    def _emit_torch_cpu_census_subphase_mark(
+        self,
+        *,
+        parent_phase: str,
+        sub_phase_id: str,
+        event: str,
+        fields: Mapping[str, Any],
+        allocation_site_id: str,
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_torch_cpu_census_enabled():
+            return
+        if str(sub_phase_id) not in PROFILE_HOST_RSS_SUBPHASE_IDS:
+            return
+        from calm.hrm_text_158.native_full_stack.host_torch_census import (
+            torch_cpu_tensor_census,
+        )
+
+        resource_snapshot = _proc_self_resource_snapshot()
+        census = torch_cpu_tensor_census(top_k=10)
+        mark: dict[str, Any] = {
+            "schema": PROFILE_HOST_RSS_CENSUS_SCHEMA,
+            "phase": str(parent_phase),
+            "parent_phase": str(parent_phase),
+            "sub_phase": str(sub_phase_id),
+            "event": str(event),
+            "allocation_site_id": str(allocation_site_id),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+            "measurement_perturbed": True,
+            "torch_census": census,
+        }
+        for key in ("step", "optimizer_step_index", "state_index", "state_bucket"):
+            if key in fields:
+                mark[key] = fields[key]
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
     def make_host_rss_subphase_emitter(
         self,
         *,
@@ -2333,7 +2385,34 @@ class PhaseProgress:
             optimizer_step_index: int,
             allocation_dims: Mapping[str, Any] | None = None,
             measurement_perturbed: bool = False,
+            allocation_site_id: str | None = None,
+            state_index: int | None = None,
+            state_bucket: int | None = None,
         ) -> None:
+            if str(event).startswith("census_"):
+                if allocation_site_id is None:
+                    return
+                self._emit_torch_cpu_census_subphase_mark(
+                    parent_phase="sparse_cap_apply",
+                    sub_phase_id=str(sub_phase_id),
+                    event=str(event),
+                    fields={
+                        "step": int(step),
+                        "optimizer_step_index": int(optimizer_step_index),
+                        **(
+                            {"state_index": int(state_index)}
+                            if state_index is not None
+                            else {}
+                        ),
+                        **(
+                            {"state_bucket": int(state_bucket)}
+                            if state_bucket is not None
+                            else {}
+                        ),
+                    },
+                    allocation_site_id=str(allocation_site_id),
+                )
+                return
             self._emit_host_rss_subphase_mark(
                 parent_phase="sparse_cap_apply",
                 sub_phase_id=str(sub_phase_id),

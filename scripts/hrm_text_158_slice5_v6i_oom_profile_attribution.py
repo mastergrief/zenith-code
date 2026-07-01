@@ -19,13 +19,15 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     HOST_RSS_PROFILE_JSONL_NAME,
+    PROFILE_HOST_RSS_CENSUS_SCHEMA,
     PROFILE_HOST_RSS_ENV,
     PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB,
     PROFILE_HOST_RSS_LIVE_RESIDENT_ENV,
     PROFILE_HOST_RSS_SUBPHASE_IDS,
+    PROFILE_TORCH_CPU_CENSUS_ENV,
 )
 
-ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v3"
+ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v4"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
@@ -83,6 +85,202 @@ SUBPHASE_MECHANISM_HINTS: dict[str, str] = {
     "C5_next_state_materialize": "next_state_q_materialization",
     "C6_deferred_backlog_telemetry": "deferred_backlog_copy",
 }
+
+ALLOCATION_SITE_ORIGINS: dict[str, tuple[str, str]] = {
+    "C3_exit": (
+        "sparse_cap_gpu_seam_adapter.py:391-401",
+        "tensor_results_all_states_materialized",
+    ),
+    "C4_enter": (
+        "bounded_delta_learner.py:2367-2405",
+        "handoff_after_c6_before_apply_loop",
+    ),
+    "C4_after_state": (
+        "bounded_delta_learner.py:2407-2408",
+        "q_by_key_carriers_accumulation",
+    ),
+    "C4_exit": (
+        "bounded_delta_learner.py:2409-2413",
+        "post_apply_loop_residency",
+    ),
+}
+
+CENSUS_RECONCILE_RATIO_MIN = 0.8
+CENSUS_RECONCILE_RATIO_MAX = 1.2
+
+
+def _is_census_mark(row: Mapping[str, Any]) -> bool:
+    return str(row.get("schema", "")) == PROFILE_HOST_RSS_CENSUS_SCHEMA
+
+
+def _census_unique_bytes(row: Mapping[str, Any] | None) -> int | None:
+    if row is None:
+        return None
+    census = row.get("torch_census") or {}
+    value = census.get("unique_storage_bytes")
+    return int(value) if value is not None else None
+
+
+def _group_key_from_row(group: Mapping[str, Any]) -> tuple[str, str, tuple[int, ...]]:
+    return (
+        str(group.get("device")),
+        str(group.get("dtype")),
+        tuple(int(dim) for dim in (group.get("shape") or [])),
+    )
+
+
+def _top_group_map(row: Mapping[str, Any] | None) -> dict[tuple[str, str, tuple[int, ...]], int]:
+    if row is None:
+        return {}
+    census = row.get("torch_census") or {}
+    out: dict[tuple[str, str, tuple[int, ...]], int] = {}
+    for group in census.get("top_groups") or []:
+        key = _group_key_from_row(group)
+        out[key] = int(group.get("unique_storage_bytes") or 0)
+    return out
+
+
+def attribute_torch_census_profile(
+    census_marks: list[dict[str, Any]],
+    *,
+    c4_delta_rss_gib: float | None,
+) -> dict[str, Any]:
+    marks = [row for row in census_marks if _is_census_mark(row)]
+    by_event: dict[str, dict[str, Any]] = {}
+    for row in marks:
+        by_event[str(row.get("event"))] = row
+
+    c3_exit = by_event.get("census_C3_exit")
+    c4_enter = by_event.get("census_C4_enter")
+    c4_exit = by_event.get("census_C4_exit")
+
+    c3_bytes = _census_unique_bytes(c3_exit)
+    c4_enter_bytes = _census_unique_bytes(c4_enter)
+    c4_exit_bytes = _census_unique_bytes(c4_exit)
+
+    handoff_unique_bytes = None
+    loop_unique_bytes = None
+    total_c4_unique_bytes = None
+    if c3_bytes is not None and c4_enter_bytes is not None:
+        handoff_unique_bytes = int(c4_enter_bytes) - int(c3_bytes)
+    if c4_enter_bytes is not None and c4_exit_bytes is not None:
+        loop_unique_bytes = int(c4_exit_bytes) - int(c4_enter_bytes)
+    if c3_bytes is not None and c4_exit_bytes is not None:
+        total_c4_unique_bytes = int(c4_exit_bytes) - int(c3_bytes)
+
+    enter_groups = _top_group_map(c4_enter)
+    exit_groups = _top_group_map(c4_exit)
+    group_growth: list[dict[str, Any]] = []
+    for key, exit_unique in sorted(exit_groups.items(), key=lambda item: item[1], reverse=True):
+        enter_unique = int(enter_groups.get(key, 0))
+        growth = int(exit_unique) - enter_unique
+        device, dtype, shape = key
+        group_growth.append(
+            {
+                "device": device,
+                "dtype": dtype,
+                "shape": list(shape),
+                "unique_storage_bytes_at_enter": enter_unique,
+                "unique_storage_bytes_at_exit": int(exit_unique),
+                "unique_storage_growth_bytes": growth,
+            }
+        )
+
+    dominant_group = group_growth[0] if group_growth else None
+    dominant_growth = (
+        int(dominant_group["unique_storage_growth_bytes"]) if dominant_group is not None else None
+    )
+
+    observed_rss_bytes = (
+        int(float(c4_delta_rss_gib) * (1024.0**3))
+        if c4_delta_rss_gib is not None
+        else None
+    )
+    reconcile_bytes = loop_unique_bytes
+    reconcile_source = "loop_unique_storage_c4_enter_to_exit"
+    if reconcile_bytes is None:
+        reconcile_bytes = total_c4_unique_bytes
+        reconcile_source = "total_unique_storage_c3_exit_to_c4_exit"
+
+    ratio = None
+    status = "UNMAPPED_OR_UNRESOLVED"
+    if observed_rss_bytes is not None and reconcile_bytes is not None and observed_rss_bytes > 0:
+        ratio = float(reconcile_bytes) / float(observed_rss_bytes)
+        if CENSUS_RECONCILE_RATIO_MIN <= ratio <= CENSUS_RECONCILE_RATIO_MAX:
+            status = "PASS"
+        else:
+            status = "FAIL"
+
+    mechanism_owner_status = "UNMAPPED_OR_UNRESOLVED"
+    culprit_class: str | None = None
+    culprit_class_status = "UNRESOLVED"
+    dominant_allocation: dict[str, Any] | None = None
+    allocation_site_id: str | None = None
+    next_probe_route: str | None = "allocator_native_smaps_anonymous"
+
+    if status == "PASS" and dominant_group is not None:
+        if handoff_unique_bytes is not None and loop_unique_bytes is not None:
+            if abs(int(handoff_unique_bytes)) > abs(int(loop_unique_bytes)):
+                allocation_site_id = "C4_enter"
+            else:
+                allocation_site_id = "C4_after_state"
+        else:
+            allocation_site_id = "C4_exit"
+        origin_file_line, origin_label = ALLOCATION_SITE_ORIGINS.get(
+            str(allocation_site_id),
+            ("unknown", "unknown"),
+        )
+        shape = dominant_group["shape"]
+        element_count = 1
+        for dim in shape:
+            element_count *= int(dim)
+        dtype = str(dominant_group["dtype"])
+        bytes_per_element = 4 if "float32" in dtype else 2 if "int16" in dtype else 1
+        dominant_allocation = {
+            "site_id": allocation_site_id,
+            "origin_file_line": origin_file_line,
+            "origin_label": origin_label,
+            "dtype": dtype,
+            "shape": shape,
+            "element_count": int(element_count),
+            "bytes_per_storage_instance": int(dominant_group["unique_storage_bytes_at_exit"]),
+            "instance_count": int(dominant_group.get("unique_storage_count") or 1),
+            "unique_storage_growth_bytes": int(dominant_growth or 0),
+            "unique_storage_bytes_at_exit": int(dominant_group["unique_storage_bytes_at_exit"]),
+        }
+        mechanism_owner_status = "RESOLVED"
+        culprit_class = "C"
+        culprit_class_status = "RESOLVED"
+        next_probe_route = None
+
+    return {
+        "census_mark_count": len(marks),
+        "census_events_seen": sorted(by_event.keys()),
+        "census_boundaries": {
+            "c3_exit_unique_storage_bytes": c3_bytes,
+            "c4_enter_unique_storage_bytes": c4_enter_bytes,
+            "c4_exit_unique_storage_bytes": c4_exit_bytes,
+            "handoff_unique_storage_bytes": handoff_unique_bytes,
+            "loop_unique_storage_bytes": loop_unique_bytes,
+            "total_c4_unique_storage_bytes": total_c4_unique_bytes,
+        },
+        "group_growth_top": group_growth[:10],
+        "dominant_group_growth": dominant_group,
+        "dimensional_reconciliation_unique_storage": {
+            "observed_c4_delta_rss_bytes": observed_rss_bytes,
+            "reconcile_unique_storage_bytes": reconcile_bytes,
+            "reconcile_source": reconcile_source,
+            "ratio": round(ratio, 4) if ratio is not None else None,
+            "status": status,
+        },
+        "dominant_allocation": dominant_allocation,
+        "mechanism_owner_status": mechanism_owner_status,
+        "mechanism_allocation_id": allocation_site_id,
+        "culprit_class": culprit_class,
+        "culprit_class_status": culprit_class_status,
+        "next_probe_route": next_probe_route,
+        "measurement_perturbed": True,
+    }
 
 
 def _phase_class_candidate_hint(phase_name: str) -> str | None:
@@ -521,6 +719,7 @@ def attribute_host_rss_profile(
     *,
     wall_totals: Mapping[str, float] | None = None,
     diagnostic_marks: list[dict[str, Any]] | None = None,
+    census_marks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     parent_marks = [row for row in marks if _is_parent_phase_mark(row)]
     phase_deltas = _compute_phase_deltas(
@@ -583,6 +782,30 @@ def attribute_host_rss_profile(
         if verdict in {"ALLOCATOR_RETENTION", "LIVE_ALLOCATION", "INCONCLUSIVE"}:
             mechanism["live_vs_resident_classification"] = verdict
 
+    c4_delta = None
+    for row in subphase_attribution.get("subphase_deltas") or []:
+        if str(row.get("phase")) == "C4_gpu_cap_apply_sync":
+            c4_delta = row.get("delta_rss_gib")
+            break
+
+    census_attribution: dict[str, Any] | None = None
+    if census_marks:
+        census_attribution = attribute_torch_census_profile(
+            census_marks,
+            c4_delta_rss_gib=float(c4_delta) if c4_delta is not None else parent_sparse_cap_delta,
+        )
+        if census_attribution.get("mechanism_owner_status") == "RESOLVED":
+            mechanism["mechanism_owner_status"] = "RESOLVED"
+            mechanism["mechanism_allocation_id"] = census_attribution.get("mechanism_allocation_id")
+            mechanism["culprit_class"] = census_attribution.get("culprit_class")
+            mechanism["culprit_class_status"] = census_attribution.get("culprit_class_status")
+            mechanism["dominant_allocation"] = census_attribution.get("dominant_allocation")
+        elif census_attribution.get("mechanism_owner_status") == "UNMAPPED_OR_UNRESOLVED":
+            mechanism["mechanism_owner_status"] = "UNMAPPED_OR_UNRESOLVED"
+            mechanism["culprit_class"] = None
+            mechanism["culprit_class_status"] = "UNRESOLVED"
+            mechanism["next_probe_route"] = census_attribution.get("next_probe_route")
+
     has_subphase_marks = any(_is_subphase_mark(row) for row in marks)
     if not has_subphase_marks:
         mechanism["mechanism_owner_status"] = "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -608,6 +831,7 @@ def attribute_host_rss_profile(
         "parent_sparse_cap_delta_rss_gib": parent_sparse_cap_delta,
         "subphase_attribution": subphase_attribution,
         "reconciliation": reconciliation,
+        "census_attribution": census_attribution,
         **mechanism,
     }
 
@@ -618,10 +842,14 @@ def build_attribution_receipt(
     profile_path: Path,
     extract_report: Mapping[str, Any] | None = None,
     diagnostic_profile_path: Path | None = None,
+    census_profile_path: Path | None = None,
 ) -> dict[str, Any]:
     marks = _read_jsonl(profile_path)
     diagnostic_marks = (
         _read_jsonl(diagnostic_profile_path) if diagnostic_profile_path is not None else None
+    )
+    census_marks = (
+        _read_jsonl(census_profile_path) if census_profile_path is not None else None
     )
     wall_totals: dict[str, float] = {}
     if extract_report is None and run_root.is_dir():
@@ -636,6 +864,7 @@ def build_attribution_receipt(
         marks,
         wall_totals=wall_totals or None,
         diagnostic_marks=diagnostic_marks,
+        census_marks=census_marks,
     )
     receipt: dict[str, Any] = {
         "schema": ATTRIBUTION_SCHEMA,
@@ -649,6 +878,9 @@ def build_attribution_receipt(
     if diagnostic_profile_path is not None:
         receipt["diagnostic_profile_path"] = str(diagnostic_profile_path)
         receipt["diagnostic_mark_count"] = len(diagnostic_marks or [])
+    if census_profile_path is not None:
+        receipt["census_profile_path"] = str(census_profile_path)
+        receipt["census_mark_count"] = len(census_marks or [])
     if attribution["dominant_phase_owner"] is None:
         receipt["rss_phase_owner_status"] = "UNRESOLVED"
     else:
@@ -769,6 +1001,61 @@ def run_fixture_live_resident_diagnostic(out_root: Path) -> dict[str, Any]:
     }
 
 
+def run_fixture_torch_census(out_root: Path) -> dict[str, Any]:
+    out_root.mkdir(parents=True, exist_ok=True)
+    scratch = out_root / "torch_census_fixture_n1"
+    scratch.mkdir(parents=True, exist_ok=True)
+    lane_holding: dict[str, Any] | None = None
+    lane_release: dict[str, Any] | None = None
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_acquire import acquire_resource_lane
+
+        lane_holding = acquire_resource_lane(out_root)
+    except Exception as exc:
+        lane_holding = {"acquire_error": f"{type(exc).__name__}: {exc}"}
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    env["HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP"] = "1"
+    env["HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY"] = "1"
+    env["HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"] = "1"
+    env["HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"] = "1"
+    env[PROFILE_HOST_RSS_ENV] = "1"
+    env[PROFILE_TORCH_CPU_CENSUS_ENV] = "1"
+    cmd = _fixture_probe_argv(scratch)
+    proc = subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=600,
+    )
+    profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
+    census_marks = [row for row in _read_jsonl(profile_path) if _is_census_mark(row)]
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane
+
+        lane_release = release_resource_lane(out_root)
+    except Exception as exc:
+        lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
+
+    return {
+        "scratch_root": str(scratch),
+        "profile_path": str(profile_path),
+        "command": cmd,
+        "exit_code": int(proc.returncode),
+        "stdout_tail": "\n".join(proc.stdout.splitlines()[-20:]),
+        "stderr_tail": "\n".join(proc.stderr.splitlines()[-20:]),
+        "resource_lane_holding": lane_holding,
+        "resource_lane_release": lane_release,
+        "census_mark_count": len(census_marks),
+        "census_events_seen": sorted({str(row.get("event")) for row in census_marks}),
+        "measurement_perturbed": True,
+    }
+
+
 def run_fixture(out_root: Path) -> dict[str, Any]:
     out_root.mkdir(parents=True, exist_ok=True)
     scratch = out_root / "baseline_fixture_n1"
@@ -825,7 +1112,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=("extract", "attribute", "fixture", "fixture_live_resident"),
+        choices=("extract", "attribute", "fixture", "fixture_live_resident", "fixture_torch_census"),
         required=True,
     )
     parser.add_argument("--run-root", type=Path, required=True)
@@ -846,6 +1133,12 @@ def main() -> int:
         type=Path,
         default=None,
         help="Optional live-resident diagnostic host_rss_profile.jsonl for attribute mode",
+    )
+    parser.add_argument(
+        "--census-profile-path",
+        type=Path,
+        default=None,
+        help="Optional torch CPU census host_rss_profile.jsonl for attribute mode",
     )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
@@ -870,18 +1163,21 @@ def main() -> int:
             profile_path=profile_path,
             extract_report=extract_report,
             diagnostic_profile_path=args.diagnostic_profile_path,
+            census_profile_path=args.census_profile_path,
         )
         if args.aborted_run_root is not None:
             payload["aborted_run_root"] = str(args.aborted_run_root)
     elif args.mode == "fixture_live_resident":
         payload = run_fixture_live_resident_diagnostic(args.run_root)
+    elif args.mode == "fixture_torch_census":
+        payload = run_fixture_torch_census(args.run_root)
     else:
         payload = run_fixture(args.run_root)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"out": str(args.out), "mode": args.mode}, indent=2))
-    if args.mode in {"fixture", "fixture_live_resident"} and int(
+    if args.mode in {"fixture", "fixture_live_resident", "fixture_torch_census"} and int(
         payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))
     ) != 0:
         return 1
