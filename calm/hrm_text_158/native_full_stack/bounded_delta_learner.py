@@ -2068,6 +2068,68 @@ def _emit_sparse_cap_submilestone(
     return True
 
 
+def _emit_live_resident_diagnostic_marks(
+    emit: Callable[..., None] | None,
+    *,
+    optimizer_step_index: int,
+) -> None:
+    if emit is None:
+        return
+    import os
+
+    if os.environ.get("HRM_TEXT_158_PROFILE_HOST_RSS_LIVE_RESIDENT", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import gc_collect_and_malloc_trim
+
+    emit(
+        "live_resident_pre_trim",
+        sub_phase_id="C4_gpu_cap_apply_sync",
+        optimizer_step_index=int(optimizer_step_index),
+        measurement_perturbed=True,
+    )
+    gc_collect_and_malloc_trim()
+    emit(
+        "live_resident_post_trim",
+        sub_phase_id="C4_gpu_cap_apply_sync",
+        optimizer_step_index=int(optimizer_step_index),
+        measurement_perturbed=True,
+    )
+
+
+@contextmanager
+def _host_rss_subphase_scope(
+    emit: Callable[..., None] | None,
+    *,
+    sub_phase_id: str,
+    optimizer_step_index: int,
+    enter_allocation_dims: Mapping[str, Any] | None = None,
+    exit_allocation_dims_fn: Callable[[], Mapping[str, Any] | None] | None = None,
+):
+    if emit is not None:
+        emit(
+            "enter",
+            sub_phase_id=str(sub_phase_id),
+            optimizer_step_index=int(optimizer_step_index),
+            allocation_dims=enter_allocation_dims,
+        )
+    try:
+        yield
+    finally:
+        exit_dims = exit_allocation_dims_fn() if exit_allocation_dims_fn is not None else None
+        if emit is not None:
+            emit(
+                "exit",
+                sub_phase_id=str(sub_phase_id),
+                optimizer_step_index=int(optimizer_step_index),
+                allocation_dims=exit_dims,
+            )
+
+
 def _apply_bounded_delta_vote_step_event_coded_live(
     tensor_states: Mapping[str, BoundedDeltaTensorState],
     votes_by_key: Mapping[str, torch.Tensor] | None,
@@ -2083,6 +2145,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
     candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None = None,
     event_coded_sparse_vote_authority: bool = False,
     sparse_cap_submilestone_emit: Any = None,
+    host_rss_subphase_emit: Callable[..., None] | None = None,
 ) -> BoundedDeltaLearnerStepResult:
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         C8StepObservation,
@@ -2101,76 +2164,94 @@ def _apply_bounded_delta_vote_step_event_coded_live(
     event_states: dict[str, EventCodedVoteUpdateState] = {}
     inputs_by_key: dict[str, VoteUpdateInputs] = {}
     plans_by_key: dict[str, VoteUpdatePlan] = {}
+    step_index = int(local_selection_ordering_step)
+    rss_emit = host_rss_subphase_emit
 
-    for state_key, state in sorted(tensor_states.items()):
-        vu = state.vote_update_state()
-        if not isinstance(vu, EventCodedVoteUpdateState):
-            raise ValueError(f"{state_key} missing event_coded_live_carrier on V4 path")
-        if bool(event_coded_sparse_vote_authority):
-            if candidate_sparse_vote_events_by_key is None:
-                raise ValueError(
-                    "event_coded_sparse_vote_authority requires candidate_sparse_vote_events_by_key"
-                )
-            sparse_events = candidate_sparse_vote_events_by_key.get(state_key)
-            if sparse_events is None:
-                raise ValueError(
-                    f"missing sparse vote events for {state_key!r} on sparse authority path"
-                )
-            carrier = state.event_coded_live_carrier
-            if carrier is None:
-                raise ValueError(f"{state_key} missing event_coded_live_carrier on sparse authority path")
-            validate_event_coded_sparse_cap_cold_default(
-                carrier,
-                vote_specs_by_key[state_key],
-            )
-            sparse_obj = (
-                sparse_events
-                if isinstance(sparse_events, SparseVoteEvents)
-                else SparseVoteEvents.from_dict(sparse_events)
-            )
-            votes = _shape_stub_int16_votes(vu.q_levels)
-            vote_active_idx = sparse_obj.indices.detach().cpu().to(torch.int64)
-            inputs = VoteUpdateInputs(
-                votes=votes,
-                vote_active_flat_indices=vote_active_idx,
-                sparse_vote_events=sparse_obj,
-            )
-        else:
-            if votes_by_key is None:
-                raise ValueError("votes_by_key is required unless event_coded_sparse_vote_authority=True")
-            votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
-            sparse_events = (
-                candidate_sparse_vote_events_by_key.get(state_key)
-                if candidate_sparse_vote_events_by_key is not None
+    with _host_rss_subphase_scope(
+        rss_emit,
+        sub_phase_id="C1_vote_plan_build",
+        optimizer_step_index=step_index,
+        enter_allocation_dims={"n_states": len(tensor_states)},
+        exit_allocation_dims_fn=lambda: {
+            "n_states": len(tensor_states),
+            "n_plans": len(plans_by_key),
+            "total_q_numel": sum(int(vu.q_levels.numel()) for vu in event_states.values()),
+            "dtype_q_levels": (
+                str(next(iter(event_states.values())).q_levels.dtype)
+                if event_states
                 else None
-            )
-            vote_active_idx = _vote_active_flat_indices_for_event_coded_inputs(
-                votes,
-                sparse_events,
-            )
-            sparse_obj = None
-            if sparse_events is not None:
+            ),
+        },
+    ):
+        for state_key, state in sorted(tensor_states.items()):
+            vu = state.vote_update_state()
+            if not isinstance(vu, EventCodedVoteUpdateState):
+                raise ValueError(f"{state_key} missing event_coded_live_carrier on V4 path")
+            if bool(event_coded_sparse_vote_authority):
+                if candidate_sparse_vote_events_by_key is None:
+                    raise ValueError(
+                        "event_coded_sparse_vote_authority requires candidate_sparse_vote_events_by_key"
+                    )
+                sparse_events = candidate_sparse_vote_events_by_key.get(state_key)
+                if sparse_events is None:
+                    raise ValueError(
+                        f"missing sparse vote events for {state_key!r} on sparse authority path"
+                    )
+                carrier = state.event_coded_live_carrier
+                if carrier is None:
+                    raise ValueError(f"{state_key} missing event_coded_live_carrier on sparse authority path")
+                validate_event_coded_sparse_cap_cold_default(
+                    carrier,
+                    vote_specs_by_key[state_key],
+                )
                 sparse_obj = (
                     sparse_events
                     if isinstance(sparse_events, SparseVoteEvents)
                     else SparseVoteEvents.from_dict(sparse_events)
                 )
-            inputs = VoteUpdateInputs(
-                votes=votes,
-                vote_active_flat_indices=vote_active_idx,
-                sparse_vote_events=sparse_obj,
+                votes = _shape_stub_int16_votes(vu.q_levels)
+                vote_active_idx = sparse_obj.indices.detach().cpu().to(torch.int64)
+                inputs = VoteUpdateInputs(
+                    votes=votes,
+                    vote_active_flat_indices=vote_active_idx,
+                    sparse_vote_events=sparse_obj,
+                )
+            else:
+                if votes_by_key is None:
+                    raise ValueError("votes_by_key is required unless event_coded_sparse_vote_authority=True")
+                votes = votes_by_key[state_key].detach().cpu().to(torch.int16).contiguous()
+                sparse_events = (
+                    candidate_sparse_vote_events_by_key.get(state_key)
+                    if candidate_sparse_vote_events_by_key is not None
+                    else None
+                )
+                vote_active_idx = _vote_active_flat_indices_for_event_coded_inputs(
+                    votes,
+                    sparse_events,
+                )
+                sparse_obj = None
+                if sparse_events is not None:
+                    sparse_obj = (
+                        sparse_events
+                        if isinstance(sparse_events, SparseVoteEvents)
+                        else SparseVoteEvents.from_dict(sparse_events)
+                    )
+                inputs = VoteUpdateInputs(
+                    votes=votes,
+                    vote_active_flat_indices=vote_active_idx,
+                    sparse_vote_events=sparse_obj,
+                )
+            plan = plan_event_coded_integer_vote_update(
+                vu,
+                inputs,
+                vote_specs_by_key[state_key],
+                local_selection_ordering_mode=str(local_selection_ordering_mode),
+                local_selection_ordering_seed=int(local_selection_ordering_seed),
+                local_selection_ordering_step=int(local_selection_ordering_step),
             )
-        plan = plan_event_coded_integer_vote_update(
-            vu,
-            inputs,
-            vote_specs_by_key[state_key],
-            local_selection_ordering_mode=str(local_selection_ordering_mode),
-            local_selection_ordering_seed=int(local_selection_ordering_seed),
-            local_selection_ordering_step=int(local_selection_ordering_step),
-        )
-        event_states[state_key] = vu
-        inputs_by_key[state_key] = inputs
-        plans_by_key[state_key] = plan
+            event_states[state_key] = vu
+            inputs_by_key[state_key] = inputs
+            plans_by_key[state_key] = plan
 
     carriers_by_key: dict[str, EventCodedAccLiveState] = {}
     q_by_key: dict[str, torch.Tensor] = {}
@@ -2190,28 +2271,49 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 )
         cap_boundary_obs = C8StepObservation()
         cap_inputs: list[GlobalRateCapTensorInput] = []
-        for state_key, vu in sorted(event_states.items()):
-            if bool(event_coded_sparse_vote_authority):
-                plan = prepare_event_coded_plan_for_sparse_cap(
-                    plans_by_key[state_key],
-                    vu.q_levels,
+        with _host_rss_subphase_scope(
+            rss_emit,
+            sub_phase_id="C2_cap_input_assembly",
+            optimizer_step_index=step_index,
+            enter_allocation_dims={"n_states": len(event_states)},
+            exit_allocation_dims_fn=lambda: {
+                "n_cap_inputs": len(cap_inputs),
+                "shape_stub_dtype": "int16",
+                "shape_stub_element_count": sum(
+                    int(vu.q_levels.numel()) for vu in event_states.values()
+                ),
+                "shape_stub_instance_count": len(cap_inputs),
+                "expected_raw_bytes_shape_stub": sum(
+                    int(vu.q_levels.numel()) for vu in event_states.values()
                 )
-            else:
-                plan = densify_new_acc_i32_at_cap_boundary(
-                    plans_by_key[state_key],
-                    vu.q_levels,
-                    cap_boundary_obs,
+                * 2,
+                "allocation_site": (
+                    "event_coded_vote_update_adapter.shape_only_accumulator_stub"
+                ),
+            },
+        ):
+            for state_key, vu in sorted(event_states.items()):
+                if bool(event_coded_sparse_vote_authority):
+                    plan = prepare_event_coded_plan_for_sparse_cap(
+                        plans_by_key[state_key],
+                        vu.q_levels,
+                    )
+                else:
+                    plan = densify_new_acc_i32_at_cap_boundary(
+                        plans_by_key[state_key],
+                        vu.q_levels,
+                        cap_boundary_obs,
+                    )
+                plans_by_key[state_key] = plan
+                cap_state = vu.to_vote_update_state()
+                cap_inputs.append(
+                    GlobalRateCapTensorInput(
+                        state_key=state_key,
+                        state=cap_state,
+                        plan=plan,
+                        vote_inputs=inputs_by_key[state_key],
+                    )
                 )
-            plans_by_key[state_key] = plan
-            cap_state = vu.to_vote_update_state()
-            cap_inputs.append(
-                GlobalRateCapTensorInput(
-                    state_key=state_key,
-                    state=cap_state,
-                    plan=plan,
-                    vote_inputs=inputs_by_key[state_key],
-                )
-            )
         sparse_cap_gpu_apply_requested = False
         if bool(event_coded_sparse_vote_authority):
             from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
@@ -2228,26 +2330,41 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 apply_sparse_event_coded_cap_via_gpu_seam,
             )
 
-            gpu_cap_result = apply_sparse_event_coded_cap_via_gpu_seam(
-                cap_inputs=cap_inputs,
-                spec=global_cap_spec,
-                deferred_backlog=deferred_backlog,
-                tie_rule_mode=global_cap_tie_rule_mode,
-                contract_name=global_cap_contract_name,
-            )
-            cap_selection_path = "gpu_seam"
-            backlog = gpu_cap_result.deferred_backlog
-            summary = dict(gpu_cap_result.step_summary)
-            summary["global_rate_cap_enabled"] = True
-            summary["event_coded_live_carrier_enabled"] = True
-            summary["event_coded_sparse_vote_authority"] = bool(event_coded_sparse_vote_authority)
-            summary["event_coded_sparse_cap_enabled"] = bool(event_coded_sparse_vote_authority)
-            summary["transient_q_mirror_for_gpu_cap"] = True
-            summary["persistent_q_authority_device"] = "cpu"
-            summary["cuda_q_not_saved_state"] = True
-            cap_boundary_transient = 0
-            summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(cap_boundary_transient)
-            accepted_flat_by_key = dict(gpu_cap_result.accepted_flat_by_key)
+            with _host_rss_subphase_scope(
+                rss_emit,
+                sub_phase_id="C3_gpu_cap_selection",
+                optimizer_step_index=step_index,
+                enter_allocation_dims={"n_cap_inputs": len(cap_inputs)},
+            ):
+                gpu_cap_result = apply_sparse_event_coded_cap_via_gpu_seam(
+                    cap_inputs=cap_inputs,
+                    spec=global_cap_spec,
+                    deferred_backlog=deferred_backlog,
+                    tie_rule_mode=global_cap_tie_rule_mode,
+                    contract_name=global_cap_contract_name,
+                )
+            with _host_rss_subphase_scope(
+                rss_emit,
+                sub_phase_id="C6_deferred_backlog_telemetry",
+                optimizer_step_index=step_index,
+                exit_allocation_dims_fn=lambda: {
+                    "deferred_backlog_n_states": len(gpu_cap_result.deferred_backlog),
+                    "allocation_site": "global_rate_cap_gpu.deferred_backlog_copy",
+                },
+            ):
+                cap_selection_path = "gpu_seam"
+                backlog = gpu_cap_result.deferred_backlog
+                summary = dict(gpu_cap_result.step_summary)
+                summary["global_rate_cap_enabled"] = True
+                summary["event_coded_live_carrier_enabled"] = True
+                summary["event_coded_sparse_vote_authority"] = bool(event_coded_sparse_vote_authority)
+                summary["event_coded_sparse_cap_enabled"] = bool(event_coded_sparse_vote_authority)
+                summary["transient_q_mirror_for_gpu_cap"] = True
+                summary["persistent_q_authority_device"] = "cpu"
+                summary["cuda_q_not_saved_state"] = True
+                cap_boundary_transient = 0
+                summary[C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY] = int(cap_boundary_transient)
+                accepted_flat_by_key = dict(gpu_cap_result.accepted_flat_by_key)
 
             def _apply_cap_tensor_result_gpu_bound(item: Any) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
                 return apply_cap_tensor_result_gpu(
@@ -2268,11 +2385,32 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 summary["sparse_cap_apply_parallel_mode"] = (
                     "serial_cuda" if cap_apply_device_type == "cuda" else "parallel_cpu"
                 )
-            for item in gpu_cap_result.tensor_results:
-                state_key, carrier, q_out, stats = _apply_cap_tensor_result_gpu_bound(item)
-                carriers_by_key[state_key] = carrier
-                q_by_key[state_key] = q_out
-                stats_by_key[state_key] = stats
+            with _host_rss_subphase_scope(
+                rss_emit,
+                sub_phase_id="C4_gpu_cap_apply_sync",
+                optimizer_step_index=step_index,
+                exit_allocation_dims_fn=lambda: {
+                    "n_q_held": len(q_by_key),
+                    "total_q_bytes": sum(
+                        int(q.element_size() * q.numel()) for q in q_by_key.values()
+                    ),
+                    "dtype_q": (
+                        str(next(iter(q_by_key.values())).dtype) if q_by_key else None
+                    ),
+                    "expected_raw_bytes_q_tensors": sum(
+                        int(q.element_size() * q.numel()) for q in q_by_key.values()
+                    ),
+                },
+            ):
+                for item in gpu_cap_result.tensor_results:
+                    state_key, carrier, q_out, stats = _apply_cap_tensor_result_gpu_bound(item)
+                    carriers_by_key[state_key] = carrier
+                    q_by_key[state_key] = q_out
+                    stats_by_key[state_key] = stats
+                _emit_live_resident_diagnostic_marks(
+                    rss_emit,
+                    optimizer_step_index=step_index,
+                )
         else:
             cap_result = apply_global_rate_cap_reference(
                 cap_inputs,
@@ -2417,49 +2555,67 @@ def _apply_bounded_delta_vote_step_event_coded_live(
 
     next_states: dict[str, BoundedDeltaTensorState] = {}
     tensor_stats: dict[str, dict[str, Any]] = {}
-    for state_key, prior_state in sorted(tensor_states.items()):
-        next_state = make_live_event_coded_tensor_state(
-            prior_state,
-            q_by_key[state_key],
-            carriers_by_key[state_key],
-        )
-        next_states[state_key] = next_state
-        persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
-            exact_accumulator_shadow=next_state.exact_accumulator_shadow,
-            event_coded_live_carrier=next_state.event_coded_live_carrier,
-            eligible_numel=int(next_state.q_levels.numel()),
-        )
-        if persistent_dense != 0:
-            raise ValueError(
-                "C8 outbound guard failed: V4 next_states must not carry dense persistent "
-                "accumulator authority"
+    with _host_rss_subphase_scope(
+        rss_emit,
+        sub_phase_id="C5_next_state_materialize",
+        optimizer_step_index=step_index,
+        exit_allocation_dims_fn=lambda: {
+            "n_next_states": len(next_states),
+            "total_q_numel": sum(int(s.q_levels.numel()) for s in next_states.values()),
+            "dtype_q_levels": (
+                str(next(iter(next_states.values())).q_levels.dtype)
+                if next_states
+                else None
+            ),
+            "expected_raw_bytes_float32_q": sum(
+                int(s.q_levels.numel()) for s in next_states.values()
             )
-        stats_out = {
-            **stats_by_key[state_key],
-            "state_key": state_key,
-            "projection_law": S1_PROJECTION_LAW,
-            "vote_law": S1_RANK_BUCKET_VOTE_LAW,
-            "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
-            "q_sha256_before": tensor_sha256(prior_state.q_levels),
-            "q_sha256_after": tensor_sha256(q_by_key[state_key]),
-            "event_coded_live_carrier_content_sha256_after": stats_by_key[state_key].get(
-                "event_coded_live_carrier_content_sha256_after"
-            ),
-            "bounded_accumulator_fresh_for_exact_shadow": False,
-            "bounded_accumulator_rebuilt_for_parity": False,
-            "bounded_decode_parity_checked": False,
-            C8_PERSISTENT_AUTHORITY_SCOPE_KEY: stats_by_key[state_key].get(
-                C8_PERSISTENT_AUTHORITY_SCOPE_KEY
-            ),
-            C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY: stats_by_key[state_key].get(
-                C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY
-            ),
-            EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY: stats_by_key[state_key].get(
-                EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY
-            ),
-            "dense_accumulator_materialized_numel": int(persistent_dense),
-        }
-        tensor_stats[state_key] = stats_out
+            * 4,
+        },
+    ):
+        for state_key, prior_state in sorted(tensor_states.items()):
+            next_state = make_live_event_coded_tensor_state(
+                prior_state,
+                q_by_key[state_key],
+                carriers_by_key[state_key],
+            )
+            next_states[state_key] = next_state
+            persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
+                exact_accumulator_shadow=next_state.exact_accumulator_shadow,
+                event_coded_live_carrier=next_state.event_coded_live_carrier,
+                eligible_numel=int(next_state.q_levels.numel()),
+            )
+            if persistent_dense != 0:
+                raise ValueError(
+                    "C8 outbound guard failed: V4 next_states must not carry dense persistent "
+                    "accumulator authority"
+                )
+            stats_out = {
+                **stats_by_key[state_key],
+                "state_key": state_key,
+                "projection_law": S1_PROJECTION_LAW,
+                "vote_law": S1_RANK_BUCKET_VOTE_LAW,
+                "bounded_update_attribution": BOUNDED_UPDATE_ATTRIBUTION,
+                "q_sha256_before": tensor_sha256(prior_state.q_levels),
+                "q_sha256_after": tensor_sha256(q_by_key[state_key]),
+                "event_coded_live_carrier_content_sha256_after": stats_by_key[state_key].get(
+                    "event_coded_live_carrier_content_sha256_after"
+                ),
+                "bounded_accumulator_fresh_for_exact_shadow": False,
+                "bounded_accumulator_rebuilt_for_parity": False,
+                "bounded_decode_parity_checked": False,
+                C8_PERSISTENT_AUTHORITY_SCOPE_KEY: stats_by_key[state_key].get(
+                    C8_PERSISTENT_AUTHORITY_SCOPE_KEY
+                ),
+                C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY: stats_by_key[state_key].get(
+                    C8_TRANSIENT_DENSE_COMPUTE_NUMEL_KEY
+                ),
+                EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY: stats_by_key[state_key].get(
+                    EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY
+                ),
+                "dense_accumulator_materialized_numel": int(persistent_dense),
+            }
+            tensor_stats[state_key] = stats_out
 
     if bool(event_coded_sparse_vote_authority) and global_cap_spec is not None:
         boundary_normalize_recorded = _emit_sparse_cap_submilestone(
@@ -2517,6 +2673,7 @@ def apply_bounded_delta_vote_step(
     local_selection_ordering_step: int = 0,
     candidate_global_cap_production_seam_enabled: bool = False,
     sparse_cap_submilestone_emit: Any = None,
+    host_rss_subphase_emit: Callable[..., None] | None = None,
 ) -> BoundedDeltaLearnerStepResult:
     expected_keys = set(tensor_states)
     _validate_sparse_vote_authority_only_gate(
@@ -2601,6 +2758,7 @@ def apply_bounded_delta_vote_step(
             candidate_sparse_vote_events_by_key=candidate_sparse_vote_events_by_key,
             event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
             sparse_cap_submilestone_emit=sparse_cap_submilestone_emit,
+            host_rss_subphase_emit=host_rss_subphase_emit,
         )
     if candidate_mode is not None:
         if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:

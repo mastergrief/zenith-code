@@ -311,7 +311,18 @@ PROBE_PHASE_TO_MILESTONE_PHASE_ID = {
     "receipt_write": "artifact_flush",
 }
 PROFILE_HOST_RSS_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS"
+PROFILE_HOST_RSS_LIVE_RESIDENT_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS_LIVE_RESIDENT"
+PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
+PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
+PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
+    "C1_vote_plan_build",
+    "C2_cap_input_assembly",
+    "C3_gpu_cap_selection",
+    "C4_gpu_cap_apply_sync",
+    "C5_next_state_materialize",
+    "C6_deferred_backlog_telemetry",
+})
 PROFILE_HOST_RSS_PHASES = frozenset({
     "step_forward_backward",
     "step_update",
@@ -1771,6 +1782,27 @@ def profile_host_rss_enabled() -> bool:
     }
 
 
+def profile_host_rss_live_resident_enabled() -> bool:
+    return os.environ.get(PROFILE_HOST_RSS_LIVE_RESIDENT_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def gc_collect_and_malloc_trim() -> None:
+    import gc
+
+    gc.collect()
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
 def _proc_kib_field(path: Path, key_prefix: str) -> int | None:
     try:
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -2252,6 +2284,69 @@ class PhaseProgress:
             if key in fields:
                 mark[key] = fields[key]
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
+    def _emit_host_rss_subphase_mark(
+        self,
+        *,
+        parent_phase: str,
+        sub_phase_id: str,
+        event: str,
+        fields: Mapping[str, Any],
+        allocation_dims: Mapping[str, Any] | None = None,
+        measurement_perturbed: bool = False,
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if str(sub_phase_id) not in PROFILE_HOST_RSS_SUBPHASE_IDS:
+            return
+        resource_snapshot = _proc_self_resource_snapshot()
+        mark: dict[str, Any] = {
+            "schema": PROFILE_HOST_RSS_SUBPHASE_SCHEMA,
+            "phase": str(parent_phase),
+            "parent_phase": str(parent_phase),
+            "sub_phase": str(sub_phase_id),
+            "event": str(event),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+            "measurement_perturbed": bool(measurement_perturbed),
+        }
+        for key in ("step", "optimizer_step_index"):
+            if key in fields:
+                mark[key] = fields[key]
+        if allocation_dims:
+            mark["allocation_dims"] = dict(allocation_dims)
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
+    def make_host_rss_subphase_emitter(
+        self,
+        *,
+        step: int,
+    ) -> Callable[..., None] | None:
+        if self.host_rss_profile_path is None:
+            return None
+
+        def emit(
+            event: str,
+            *,
+            sub_phase_id: str,
+            optimizer_step_index: int,
+            allocation_dims: Mapping[str, Any] | None = None,
+            measurement_perturbed: bool = False,
+        ) -> None:
+            self._emit_host_rss_subphase_mark(
+                parent_phase="sparse_cap_apply",
+                sub_phase_id=str(sub_phase_id),
+                event=str(event),
+                fields={
+                    "step": int(step),
+                    "optimizer_step_index": int(optimizer_step_index),
+                },
+                allocation_dims=allocation_dims,
+                measurement_perturbed=bool(measurement_perturbed),
+            )
+
+        return emit
 
     def mark(self, phase: str, event: str, **fields: Any) -> dict[str, Any]:
         payload = {
@@ -6272,6 +6367,9 @@ def run_bounded_delta_steps(
                             if bool(event_coded_sparse_vote_authority)
                             and progress.milestone_emitter is not None
                             else None
+                        ),
+                        host_rss_subphase_emit=progress.make_host_rss_subphase_emitter(
+                            step=int(step),
                         ),
                         **two_tier_vote_step_kwargs,
                         **resolve_r7_deferred_backlog_vote_step_kwargs(

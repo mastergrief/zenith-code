@@ -4,13 +4,20 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 import torch
 
 import scripts.hrm_text_158_bounded_delta_acquisition_probe as probe
 from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+    SUBPHASE_RESOLVE_FRACTION,
+    SUBPHASE_UNMAPPED_FRACTION,
     attribute_host_rss_profile,
+    attribute_subphase_rss_profile,
     build_attribution_receipt,
+    classify_live_vs_resident_diagnostic,
     extract_run_root,
+    reconcile_parent_subphases,
+    resolve_mechanism_owner,
 )
 
 
@@ -27,6 +34,15 @@ def test_proc_self_resource_snapshot_includes_rss_fields() -> None:
     snap = probe._proc_self_resource_snapshot()
     assert "pid" in snap
     assert "rss_kib" in snap or "rss_error" in snap
+
+
+def test_make_host_rss_subphase_emitter_default_off(tmp_path: Path) -> None:
+    progress = probe.PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        host_rss_profile_path=None,
+    )
+    assert progress.make_host_rss_subphase_emitter(step=1) is None
 
 
 def test_phase_progress_emits_host_rss_profile_marks(tmp_path: Path, monkeypatch) -> None:
@@ -47,7 +63,40 @@ def test_phase_progress_emits_host_rss_profile_marks(tmp_path: Path, monkeypatch
     assert len(rows) == 2
     assert {row["event"] for row in rows} == {"enter", "exit"}
     assert all(row["phase"] == "sparse_cap_apply" for row in rows)
+    assert all("sub_phase" not in row for row in rows)
     assert all("resource_snapshot" in row for row in rows)
+
+
+def test_subphase_emitter_emits_paired_marks(tmp_path: Path) -> None:
+    profile_path = tmp_path / probe.HOST_RSS_PROFILE_JSONL_NAME
+    progress = probe.PhaseProgress(
+        enabled=False,
+        device=torch.device("cpu"),
+        host_rss_profile_path=profile_path,
+    )
+    emit = progress.make_host_rss_subphase_emitter(step=1)
+    assert emit is not None
+    emit(
+        "enter",
+        sub_phase_id="C1_vote_plan_build",
+        optimizer_step_index=1,
+        allocation_dims={"n_states": 32},
+    )
+    emit(
+        "exit",
+        sub_phase_id="C1_vote_plan_build",
+        optimizer_step_index=1,
+        allocation_dims={"n_states": 32, "total_q_numel": 1000},
+    )
+    rows = [
+        json.loads(line)
+        for line in profile_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(rows) == 2
+    assert {row["event"] for row in rows} == {"enter", "exit"}
+    assert all(row["sub_phase"] == "C1_vote_plan_build" for row in rows)
+    assert rows[0]["schema"].endswith("/v2")
 
 
 def test_phase_progress_skips_non_profiled_phases(tmp_path: Path, monkeypatch) -> None:
@@ -101,7 +150,120 @@ def test_attribute_host_rss_profile_picks_sparse_cap_delta() -> None:
     assert result["phase_class_candidate_hint"] == "A"
     assert result["falsified_mechanism"] == "A"
     assert result["next_candidate_class"] == "C"
+    assert result["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
     assert result["dominant_wall_owner"]["phase"] == "sparse_cap_apply"
+
+
+def test_parent_only_marks_do_not_resolve_mechanism_owner() -> None:
+    marks = [
+        {
+            "phase": "sparse_cap_apply",
+            "step": 1,
+            "event": "enter",
+            "resource_snapshot": {"rss_kib": 1000 * 1024},
+        },
+        {
+            "phase": "sparse_cap_apply",
+            "step": 1,
+            "event": "exit",
+            "resource_snapshot": {"rss_kib": 9000 * 1024},
+        },
+    ]
+    result = attribute_host_rss_profile(marks)
+    assert result["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
+    assert result["culprit_class"] is None
+    assert result["dominant_subphase_owner"] is None
+
+
+def test_subphase_reconciliation_resolved_when_dominant_and_plausible() -> None:
+    parent_delta = 8.0
+    sub_marks = [
+        {
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "step": 1,
+            "event": "enter",
+            "resource_snapshot": {"rss_kib": 2000 * 1024},
+        },
+        {
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "step": 1,
+            "event": "exit",
+            "resource_snapshot": {"rss_kib": 8800 * 1024},
+            "allocation_dims": {
+                "expected_raw_bytes_q_tensors": int(7.5 * (1024**3)),
+                "dtype_q": "torch.int8",
+                "n_q_held": 32,
+            },
+        },
+        {
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C2_cap_input_assembly",
+            "step": 1,
+            "event": "enter",
+            "resource_snapshot": {"rss_kib": 8800 * 1024},
+        },
+        {
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C2_cap_input_assembly",
+            "step": 1,
+            "event": "exit",
+            "resource_snapshot": {"rss_kib": 8900 * 1024},
+            "allocation_dims": {"expected_raw_bytes_shape_stub": 50_000_000},
+        },
+    ]
+    parent_marks = [
+        {
+            "phase": "sparse_cap_apply",
+            "step": 1,
+            "event": "enter",
+            "resource_snapshot": {"rss_kib": 1000 * 1024},
+        },
+        {
+            "phase": "sparse_cap_apply",
+            "step": 1,
+            "event": "exit",
+            "resource_snapshot": {"rss_kib": 9000 * 1024},
+        },
+    ]
+    result = attribute_host_rss_profile(parent_marks + sub_marks)
+    assert result["dominant_subphase_owner"] == "C4_gpu_cap_apply_sync"
+    assert result["mechanism_owner_status"] == "RESOLVED"
+    assert result["culprit_class"] == "C"
+    assert result["reconciliation"]["unmapped_remainder_rss_gib"] is not None
+
+
+def test_subphase_reconciliation_unmapped_when_remainder_too_large() -> None:
+    subphase = attribute_subphase_rss_profile(
+        [
+            {
+                "sub_phase": "C1_vote_plan_build",
+                "step": 1,
+                "event": "enter",
+                "resource_snapshot": {"rss_kib": 1000 * 1024},
+            },
+            {
+                "sub_phase": "C1_vote_plan_build",
+                "step": 1,
+                "event": "exit",
+                "resource_snapshot": {"rss_kib": 1500 * 1024},
+                "allocation_dims": {"expected_raw_bytes_shape_stub": 1_000},
+            },
+        ]
+    )
+    recon = reconcile_parent_subphases(
+        parent_delta_rss_gib=8.0,
+        subphase_attribution=subphase,
+    )
+    assert recon["reconciliation_status"] == "UNMAPPED_OR_UNRESOLVED"
+    mechanism = resolve_mechanism_owner(
+        parent_delta_rss_gib=8.0,
+        subphase_attribution=subphase,
+        reconciliation=recon,
+    )
+    assert mechanism["mechanism_owner_status"] == "UNMAPPED_OR_UNRESOLVED"
+    assert mechanism["culprit_class"] is None
 
 
 def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
@@ -127,7 +289,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v2")
+    assert receipt["schema"].endswith("/v3")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -157,3 +319,88 @@ def test_build_attribution_receipt_unresolved_without_profile(tmp_path: Path) ->
     assert receipt["rss_phase_owner_status"] == "UNRESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
     assert receipt["dominant_rss_owner"] is None
+
+
+def test_profile_host_rss_live_resident_default_off(monkeypatch) -> None:
+    monkeypatch.delenv(probe.PROFILE_HOST_RSS_LIVE_RESIDENT_ENV, raising=False)
+    assert probe.profile_host_rss_live_resident_enabled() is False
+    monkeypatch.setenv(probe.PROFILE_HOST_RSS_LIVE_RESIDENT_ENV, "1")
+    assert probe.profile_host_rss_live_resident_enabled() is True
+
+
+def test_classify_live_vs_resident_allocator_retention() -> None:
+    marks = [
+        {
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": "live_resident_pre_trim",
+            "measurement_perturbed": True,
+            "resource_snapshot": {"rss_kib": 10_000 * 1024},
+        },
+        {
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": "live_resident_post_trim",
+            "measurement_perturbed": True,
+            "resource_snapshot": {"rss_kib": 7_500 * 1024},
+        },
+    ]
+    result = classify_live_vs_resident_diagnostic(marks)
+    assert result["live_vs_resident_classification"] == "ALLOCATOR_RETENTION"
+    assert result["next_fix_type"] == "allocator_trim"
+    assert result["trim_delta_rss_gib"] == pytest.approx(2.4414, rel=1e-3)
+    assert result["measurement_perturbed"] is True
+
+
+def test_classify_live_vs_resident_live_allocation() -> None:
+    marks = [
+        {
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": "live_resident_pre_trim",
+            "measurement_perturbed": True,
+            "resource_snapshot": {"rss_kib": 10_000 * 1024},
+        },
+        {
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": "live_resident_post_trim",
+            "measurement_perturbed": True,
+            "resource_snapshot": {"rss_kib": 9_900 * 1024},
+        },
+    ]
+    result = classify_live_vs_resident_diagnostic(marks)
+    assert result["live_vs_resident_classification"] == "LIVE_ALLOCATION"
+    assert result["next_fix_type"] == "materialization_shape"
+
+
+def test_attribute_host_rss_profile_merges_diagnostic_verdict() -> None:
+    primary = [
+        {
+            "phase": "sparse_cap_apply",
+            "step": 1,
+            "event": "enter",
+            "resource_snapshot": {"rss_kib": 1000 * 1024},
+        },
+        {
+            "phase": "sparse_cap_apply",
+            "step": 1,
+            "event": "exit",
+            "resource_snapshot": {"rss_kib": 9000 * 1024},
+        },
+    ]
+    diagnostic = [
+        {
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": "live_resident_pre_trim",
+            "measurement_perturbed": True,
+            "resource_snapshot": {"rss_kib": 9000 * 1024},
+        },
+        {
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": "live_resident_post_trim",
+            "measurement_perturbed": True,
+            "resource_snapshot": {"rss_kib": 6500 * 1024},
+        },
+    ]
+    result = attribute_host_rss_profile(primary, diagnostic_marks=diagnostic)
+    assert result["live_vs_resident_classification"] == "ALLOCATOR_RETENTION"
+    assert result["live_vs_resident_diagnostic"]["trim_delta_rss_gib"] == pytest.approx(
+        2.4414, rel=1e-3
+    )
