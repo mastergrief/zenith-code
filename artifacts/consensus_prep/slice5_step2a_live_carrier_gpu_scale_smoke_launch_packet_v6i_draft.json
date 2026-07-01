@@ -14,12 +14,25 @@
   "artifact_tree_note": "All run artifacts under credit/science tree run_root; NOT repo commits",
   "bounded_steps_budget": {
     "changed_field": "--phase-timeout-seconds",
+    "fixed_overhead_seconds": 200,
+    "formula": "per_step_budget_seconds * max_steps_hard + fixed_overhead_seconds",
+    "formula_total": "phase_timeout_seconds(N) + startup_budget_seconds + total_margin_seconds",
     "inner_silent_guard_seconds": 300,
+    "max_steps_hard": 8,
     "mutation_in_slice": true,
-    "new_value_seconds": 900,
-    "note": "Outer scalar phase exit bound raised 300\u2192900 so 3-step smoke can finish receipt_write; inner --max-silent-phase-seconds unchanged (GPU default 300).",
-    "prior_value_seconds": 300,
-    "requires_triage_class_not": "WRAPPER_BUDGET_TOO_TIGHT"
+    "new_phase_timeout_seconds_at_n8": 2280,
+    "new_total_timeout_seconds_at_n8": 5400,
+    "note": "Parametric bounded_steps wrapper: per_step_baseline 200 + per_step_snapshot_premium 60 folded into phase (live_carrier_snapshot_emit in-loop probe :6472). Fixes v6i run 2189e72029 WRAPPER_BUDGET_TOO_TIGHT at 953.4s > 900s.",
+    "per_step_baseline_seconds": 200,
+    "per_step_budget_seconds": 260,
+    "per_step_snapshot_premium_seconds": 60,
+    "phase_timeout_seconds_at_n8": 2280,
+    "prior_failed_run_id": "2189e72029",
+    "prior_value_seconds": 900,
+    "requires_triage_class_not": "WRAPPER_BUDGET_TOO_TIGHT",
+    "startup_budget_seconds": 1200,
+    "total_margin_seconds": 600,
+    "total_timeout_seconds_at_n8": 5400
   },
   "canonical_lane": "test-operator_gpu_scale_smoke",
   "cap_selection_path_evidence": {
@@ -433,7 +446,10 @@
       "rule": "run_id==run_root suffix; no active v6e/v6f/2189e72025/2189e72026 refs; phase-timeout-seconds 900 on shared_probe_argv + both gpu commands; no --max-silent-phase-seconds override"
     },
     "v6h_coherence_guard": {
-      "rule": "run_id==run_root suffix 2189e72029; no active v6e/v6f/v6g/2189e72023-27 refs; phase-timeout-seconds 900 on shared_probe_argv + both gpu commands; both arms carry HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP=1 and HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY=1; source_base_head==3ee73541"
+      "rule": "historical v6h reference only \u2014 superseded by v6i_budget_fix_coherence_guard for active packet"
+    },
+    "v6i_budget_fix_coherence_guard": {
+      "rule": "run_id==run_root suffix 2189e7202a; no active 2189e72029 refs except prior_failed_run_id; phase-timeout-seconds 2280 on shared_probe_argv + both gpu commands; total-timeout-seconds 5400 on shared_probe_argv + both gpu commands; bounded_steps_budget has per_step_baseline_seconds, per_step_snapshot_premium_seconds, per_step_budget_seconds, fixed_overhead_seconds"
     }
   },
   "phase_budgets_and_watcher": {
@@ -481,7 +497,7 @@
     "per_phase_seconds_max": {
       "artifact_flush_terminal": 60,
       "build_model": 600,
-      "gpu_arm_per_probe": 3600,
+      "gpu_arm_per_probe": 5400,
       "live_carrier_snapshot_emit": 60,
       "load": 600,
       "prelaunch": 300,
@@ -490,7 +506,7 @@
       "step_forward_backward": 90,
       "step_update": 180
     },
-    "phase_timeout_seconds": 900,
+    "phase_timeout_seconds": 2280,
     "stop_conditions": [
       "steps_completed >= scale_smoke.max_steps_hard",
       "total_timeout_seconds exceeded",
@@ -504,7 +520,7 @@
       "milestone_counter stall within active phase budget (LIVENESS_FAIL_KERNELIZED_BUT_STALLED)",
       "milestone jsonl missing for active budgeted phase after step 1"
     ],
-    "total_timeout_seconds_per_arm": 3600,
+    "total_timeout_seconds_per_arm": 5400,
     "watcher_liveness_fail_regex": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|phase_budget_exceeded|active_phase_wall_exceeded|LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL",
     "watcher_milestone_regex": "\"schema\": \"hrm_text_158_phase_milestone_counter/v1\"",
     "watcher_producer_regex": "liveness_milestones/|hrm_text_158_phase_milestone_counter|bounded_delta_steps: step [0-9]+/"
@@ -529,7 +545,9 @@
       "1": 99.0,
       "2": 102.6,
       "3": 128.4
-    }
+    },
+    "v6i_classification": "WRAPPER_BUDGET_TOO_TIGHT \u2014 baseline 8/8 inner steps then outer bounded_steps @953.4s > 900s; instrumented arm not run (fail-close)",
+    "v6i_run_id": "2189e72029"
   },
   "replay_commands_artifact": "artifacts/consensus_prep/slice5_step2a_live_carrier_gpu_scale_smoke_launch_packet_v6i_replay_commands.json",
   "representative_step2b_config": {
@@ -575,9 +593,9 @@
     "why_representative": "Step-2b max_live_acc_carrier_bpw vs 0.4 acc_budget is on the V4 event-coded-live persistent carrier (EventCodedAccLiveState), not W8 clip boundaries. Uses all-bitlinear eligible scope on banked parent 9b4e311a, seeds 43/43, canonical_t10_prereg_v24 \u2014 same eligible-weight surface (234881024 lanes) as tensor-wide witnesses. NOT the Step-2a CPU cost receipt synthetic 268435456 upper bound."
   },
   "required_ancestor": "0feb7bc7362cb40734d80dd8a577da77fea595cd",
-  "run_id": "2189e72029",
-  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72028 or earlier",
-  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/slice5_step2a_re_m4_sparse_authority_gpu_scale_smoke_seed43_43_2189e72029/",
+  "run_id": "2189e7202a",
+  "run_id_policy": "FREE \u2014 do NOT reuse 2189e72029 or earlier",
+  "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/slice5_step2a_re_m4_sparse_authority_gpu_scale_smoke_seed43_43_2189e7202a/",
   "scale_smoke": {
     "arms": {
       "baseline_snapshot_off": {
@@ -683,7 +701,7 @@
       "in_vivo_proof",
       "step2b_science_run"
     ],
-    "exception_justification": "Bounded 8-step (steps_hard=8) CLASSIFIER_ONLY diagnostic re-smoke with outer phase-timeout 900s. NOT sub-2 completion/readiness/science.",
+    "exception_justification": "Bounded 8-step (steps_hard=8) CLASSIFIER_ONLY diagnostic re-smoke with outer phase-timeout 2280s. NOT sub-2 completion/readiness/science.",
     "executable_runtime_class": "pre_full_stack_diagnostic",
     "fixture": "pre_full_stack_diagnostic",
     "resolution": "named_pre_full_stack_diagnostic_exception"

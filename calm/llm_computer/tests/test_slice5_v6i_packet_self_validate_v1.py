@@ -36,8 +36,21 @@ def test_v6i_draft_classifier_only_and_steps() -> None:
     assert draft["classifier_only"] is True
     assert draft["source_base_head"] == "3ee73541bb125071b48e46eec5f8d58e833f7e82"
     assert draft["validator_packet_head"] == "fde2051039e80b63aed723e579c8e78419fa17b2"
-    assert draft["run_id"] == "2189e72029"
+    assert draft["run_id"] == "2189e7202a"
     assert draft["scale_smoke"]["max_steps_hard"] == 8
+    budget = draft["bounded_steps_budget"]
+    assert budget["per_step_baseline_seconds"] == 200
+    assert budget["per_step_snapshot_premium_seconds"] == 60
+    assert budget["per_step_budget_seconds"] == 260
+    assert budget["fixed_overhead_seconds"] == 200
+    assert budget["phase_timeout_seconds_at_n8"] == 2280
+    assert budget["total_timeout_seconds_at_n8"] == 5400
+    assert budget["prior_failed_run_id"] == "2189e72029"
+    replay = json.loads(REPLAY.read_text(encoding="utf-8"))
+    for key in ("shared_probe_argv", "baseline_gpu_command", "instrumented_gpu_command"):
+        text = replay[key]
+        assert "--phase-timeout-seconds 2280" in text
+        assert "--total-timeout-seconds 5400" in text
 
 
 def test_v6i_packet_self_validate_fails_on_stale_run_id() -> None:
@@ -167,6 +180,44 @@ def test_v6i_packet_self_validate_fails_when_v6h_dependency_missing_from_pins() 
     finally:
         draft["source_pins_at_launch"] = original_pins
         DRAFT.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_v6i_packet_self_validate_fails_on_stale_phase_timeout_900() -> None:
+    replay = json.loads(REPLAY.read_text(encoding="utf-8"))
+    original = replay["shared_probe_argv"]
+    replay["shared_probe_argv"] = original.replace(
+        "--phase-timeout-seconds 2280", "--phase-timeout-seconds 900"
+    )
+    REPLAY.write_text(json.dumps(replay, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        exit_code, receipt = _run_self_validate()
+        assert exit_code != 0
+        assert any(
+            "stale_phase_timeout_900" in f or "missing_phase_timeout_2280" in f
+            for f in receipt.get("failures", [])
+        )
+    finally:
+        replay["shared_probe_argv"] = original
+        REPLAY.write_text(json.dumps(replay, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def test_v6i_packet_self_validate_fails_on_stale_total_timeout_3600() -> None:
+    replay = json.loads(REPLAY.read_text(encoding="utf-8"))
+    original = replay["shared_probe_argv"]
+    replay["shared_probe_argv"] = original.replace(
+        "--total-timeout-seconds 5400", "--total-timeout-seconds 3600"
+    )
+    REPLAY.write_text(json.dumps(replay, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        exit_code, receipt = _run_self_validate()
+        assert exit_code != 0
+        assert any(
+            "stale_total_timeout_3600" in f or "missing_total_timeout_5400" in f
+            for f in receipt.get("failures", [])
+        )
+    finally:
+        replay["shared_probe_argv"] = original
+        REPLAY.write_text(json.dumps(replay, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def test_v6i_source_pins_include_both_v6i_authority_and_v6h_dependency() -> None:
