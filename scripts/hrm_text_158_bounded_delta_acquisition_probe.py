@@ -313,10 +313,14 @@ PROBE_PHASE_TO_MILESTONE_PHASE_ID = {
 PROFILE_HOST_RSS_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS"
 PROFILE_HOST_RSS_LIVE_RESIDENT_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS_LIVE_RESIDENT"
 PROFILE_TORCH_CPU_CENSUS_ENV = "HRM_TEXT_158_PROFILE_TORCH_CPU_CENSUS"
+PROFILE_ALLOCATOR_NATIVE_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_NATIVE"
+PROFILE_ALLOCATOR_HOST_CACHE_DIAG_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_HOST_CACHE_DIAG"
 PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
 PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
 PROFILE_HOST_RSS_CENSUS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v3"
+PROFILE_HOST_RSS_ALLOCATOR_SCHEMA = "hrm_text_158_profile_host_rss_mark/v4"
+PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v5"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
@@ -1804,6 +1808,22 @@ def profile_torch_cpu_census_enabled() -> bool:
     }
 
 
+def profile_allocator_native_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        profile_allocator_native_enabled as _enabled,
+    )
+
+    return _enabled()
+
+
+def profile_allocator_host_cache_diag_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        profile_allocator_host_cache_diag_enabled as _enabled,
+    )
+
+    return _enabled()
+
+
 def gc_collect_and_malloc_trim() -> None:
     import gc
 
@@ -2370,6 +2390,87 @@ class PhaseProgress:
                 mark[key] = fields[key]
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
+    def _emit_allocator_native_subphase_mark(
+        self,
+        *,
+        parent_phase: str,
+        sub_phase_id: str,
+        event: str,
+        fields: Mapping[str, Any],
+        allocation_site_id: str,
+        allocation_dims: Mapping[str, Any] | None = None,
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_allocator_native_enabled():
+            return
+        if str(sub_phase_id) not in PROFILE_HOST_RSS_SUBPHASE_IDS:
+            return
+        from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+            snapshot_allocator_probe,
+        )
+
+        resource_snapshot = _proc_self_resource_snapshot()
+        probe_snapshot = snapshot_allocator_probe()
+        mark: dict[str, Any] = {
+            "schema": PROFILE_HOST_RSS_ALLOCATOR_SCHEMA,
+            "phase": str(parent_phase),
+            "parent_phase": str(parent_phase),
+            "sub_phase": str(sub_phase_id),
+            "event": str(event),
+            "allocation_site_id": str(allocation_site_id),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+            "measurement_perturbed": True,
+            "allocator_probe": probe_snapshot,
+        }
+        for key in ("step", "optimizer_step_index", "state_index", "state_bucket"):
+            if key in fields:
+                mark[key] = fields[key]
+        if allocation_dims is not None:
+            mark["allocation_dims"] = dict(allocation_dims)
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
+    def _emit_allocator_site_mark(
+        self,
+        *,
+        site_id: str,
+        event_suffix: str,
+        origin_file: str,
+        origin_line: int,
+        fields: Mapping[str, Any],
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_allocator_native_enabled():
+            return
+        from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+            snapshot_allocator_probe,
+        )
+
+        resource_snapshot = _proc_self_resource_snapshot()
+        probe_snapshot = snapshot_allocator_probe()
+        mark: dict[str, Any] = {
+            "schema": PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": f"allocator_site_{site_id}_{event_suffix}",
+            "site_id": str(site_id),
+            "origin_file": str(origin_file),
+            "origin_line": int(origin_line),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+            "measurement_perturbed": True,
+            "allocator_probe": probe_snapshot,
+        }
+        for key in ("step", "optimizer_step_index", "state_index"):
+            if key in fields:
+                mark[key] = fields[key]
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
     def make_host_rss_subphase_emitter(
         self,
         *,
@@ -2413,6 +2514,31 @@ class PhaseProgress:
                     allocation_site_id=str(allocation_site_id),
                 )
                 return
+            if str(event).startswith("allocator_"):
+                if allocation_site_id is None:
+                    return
+                self._emit_allocator_native_subphase_mark(
+                    parent_phase="sparse_cap_apply",
+                    sub_phase_id=str(sub_phase_id),
+                    event=str(event),
+                    fields={
+                        "step": int(step),
+                        "optimizer_step_index": int(optimizer_step_index),
+                        **(
+                            {"state_index": int(state_index)}
+                            if state_index is not None
+                            else {}
+                        ),
+                        **(
+                            {"state_bucket": int(state_bucket)}
+                            if state_bucket is not None
+                            else {}
+                        ),
+                    },
+                    allocation_site_id=str(allocation_site_id),
+                    allocation_dims=allocation_dims,
+                )
+                return
             self._emit_host_rss_subphase_mark(
                 parent_phase="sparse_cap_apply",
                 sub_phase_id=str(sub_phase_id),
@@ -2425,6 +2551,28 @@ class PhaseProgress:
                 measurement_perturbed=bool(measurement_perturbed),
             )
 
+        def site_emit(
+            site_id: str,
+            event_suffix: str,
+            *,
+            origin_file: str,
+            origin_line: int,
+            optimizer_step_index: int,
+            state_index: int,
+        ) -> None:
+            self._emit_allocator_site_mark(
+                site_id=str(site_id),
+                event_suffix=str(event_suffix),
+                origin_file=str(origin_file),
+                origin_line=int(origin_line),
+                fields={
+                    "step": int(step),
+                    "optimizer_step_index": int(optimizer_step_index),
+                    "state_index": int(state_index),
+                },
+            )
+
+        emit.site_emit = site_emit  # type: ignore[attr-defined]
         return emit
 
     def mark(self, phase: str, event: str, **fields: Any) -> dict[str, Any]:

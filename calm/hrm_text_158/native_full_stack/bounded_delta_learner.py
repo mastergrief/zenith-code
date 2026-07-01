@@ -2124,6 +2124,72 @@ def _emit_torch_cpu_census_boundary(
     )
 
 
+def _emit_allocator_native_boundary(
+    emit: Callable[..., None] | None,
+    *,
+    event: str,
+    sub_phase_id: str,
+    allocation_site_id: str,
+    optimizer_step_index: int,
+    state_index: int | None = None,
+    state_bucket: int | None = None,
+) -> None:
+    if emit is None:
+        return
+    emit(
+        str(event),
+        sub_phase_id=str(sub_phase_id),
+        optimizer_step_index=int(optimizer_step_index),
+        allocation_site_id=str(allocation_site_id),
+        measurement_perturbed=True,
+        state_index=state_index,
+        state_bucket=state_bucket,
+    )
+
+
+def _emit_allocator_host_cache_diag(
+    emit: Callable[..., None] | None,
+    *,
+    optimizer_step_index: int,
+) -> None:
+    import os
+
+    if emit is None:
+        return
+    if os.environ.get("HRM_TEXT_158_PROFILE_ALLOCATOR_HOST_CACHE_DIAG", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        empty_cuda_host_and_device_cache,
+    )
+
+    emit(
+        "allocator_host_cache_pre_empty",
+        sub_phase_id="C4_gpu_cap_apply_sync",
+        optimizer_step_index=int(optimizer_step_index),
+        measurement_perturbed=True,
+        allocation_site_id="C4_host_cache_diag_pre",
+    )
+    diag = empty_cuda_host_and_device_cache()
+    emit(
+        "allocator_host_cache_post_empty",
+        sub_phase_id="C4_gpu_cap_apply_sync",
+        optimizer_step_index=int(optimizer_step_index),
+        measurement_perturbed=True,
+        allocation_site_id="C4_host_cache_diag_post",
+        allocation_dims={
+            "host_cache_diag": {
+                "trim_delta_rss_kib": diag.get("trim_delta_rss_kib"),
+                "status": diag.get("status"),
+            }
+        },
+    )
+
+
 @contextmanager
 def _host_rss_subphase_scope(
     emit: Callable[..., None] | None,
@@ -2373,6 +2439,13 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 allocation_site_id="C3_exit",
                 optimizer_step_index=step_index,
             )
+            _emit_allocator_native_boundary(
+                rss_emit,
+                event="allocator_C3_exit",
+                sub_phase_id="C3_gpu_cap_selection",
+                allocation_site_id="C3_exit",
+                optimizer_step_index=step_index,
+            )
             with _host_rss_subphase_scope(
                 rss_emit,
                 sub_phase_id="C6_deferred_backlog_telemetry",
@@ -2403,8 +2476,23 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 allocation_site_id="C4_enter",
                 optimizer_step_index=step_index,
             )
+            _emit_allocator_native_boundary(
+                rss_emit,
+                event="allocator_C4_enter",
+                sub_phase_id="C4_gpu_cap_apply_sync",
+                allocation_site_id="C4_enter",
+                optimizer_step_index=step_index,
+            )
 
-            def _apply_cap_tensor_result_gpu_bound(item: Any) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
+            host_allocator_site_emit = (
+                getattr(rss_emit, "site_emit", None) if rss_emit is not None else None
+            )
+
+            def _apply_cap_tensor_result_gpu_bound(
+                item: Any,
+                *,
+                state_index: int,
+            ) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
                 return apply_cap_tensor_result_gpu(
                     item,
                     event_states=event_states,
@@ -2416,6 +2504,8 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     cap_boundary_transient=int(cap_boundary_transient),
                     cap_item_stats=item.stats,
                     merge_stats_fn=_merge_event_coded_cap_tensor_stats,
+                    state_index=int(state_index),
+                    host_allocator_site_emit=host_allocator_site_emit,
                 )
 
             cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type
@@ -2441,7 +2531,10 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 },
             ):
                 for state_index, item in enumerate(gpu_cap_result.tensor_results):
-                    state_key, carrier, q_out, stats = _apply_cap_tensor_result_gpu_bound(item)
+                    state_key, carrier, q_out, stats = _apply_cap_tensor_result_gpu_bound(
+                        item,
+                        state_index=int(state_index),
+                    )
                     carriers_by_key[state_key] = carrier
                     q_by_key[state_key] = q_out
                     stats_by_key[state_key] = stats
@@ -2457,11 +2550,31 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                             state_index=int(state_index),
                             state_bucket=int(state_index) // 4,
                         )
+                        _emit_allocator_native_boundary(
+                            rss_emit,
+                            event="allocator_C4_after_state",
+                            sub_phase_id="C4_gpu_cap_apply_sync",
+                            allocation_site_id="C4_after_state",
+                            optimizer_step_index=step_index,
+                            state_index=int(state_index),
+                            state_bucket=int(state_index) // 4,
+                        )
                 _emit_torch_cpu_census_boundary(
                     rss_emit,
                     event="census_C4_exit",
                     sub_phase_id="C4_gpu_cap_apply_sync",
                     allocation_site_id="C4_exit",
+                    optimizer_step_index=step_index,
+                )
+                _emit_allocator_native_boundary(
+                    rss_emit,
+                    event="allocator_C4_exit",
+                    sub_phase_id="C4_gpu_cap_apply_sync",
+                    allocation_site_id="C4_exit",
+                    optimizer_step_index=step_index,
+                )
+                _emit_allocator_host_cache_diag(
+                    rss_emit,
                     optimizer_step_index=step_index,
                 )
                 _emit_live_resident_diagnostic_marks(

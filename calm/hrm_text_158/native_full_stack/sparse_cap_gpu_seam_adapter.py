@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 import os
 from dataclasses import dataclass, replace
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -435,13 +435,32 @@ def sync_event_coded_carrier_from_gpu_cap(
     *,
     q_persistent_cpu: torch.Tensor,
     step_index: int,
+    host_allocator_site_emit: Callable[..., None] | None = None,
+    optimizer_step_index: int | None = None,
+    state_index: int | None = None,
 ) -> tuple[torch.Tensor, EventCodedAccLiveState]:
     """Sync live carrier from GPU cap q via accepted-index subset gather only."""
 
+    def _site(site_id: str, suffix: str, line: int) -> None:
+        if host_allocator_site_emit is None or state_index is None or int(state_index) != 0:
+            return
+        host_allocator_site_emit(
+            site_id,
+            suffix,
+            origin_file="sparse_cap_gpu_seam_adapter.py",
+            origin_line=int(line),
+            optimizer_step_index=int(optimizer_step_index or step_index),
+            state_index=0,
+        )
+
+    _site("C4.S2", "pre", 531)
     updated = carrier.cow_copy()
+    _site("C4.S2a", "pre", 441)
     q_out = q_persistent_cpu.detach().cpu().clone().to(torch.int8)
+    _site("C4.S2a", "post", 442)
     if not accepted_local_indices:
         apply_event_coded_carrier_step(updated, votes={}, step_index=int(step_index))
+        _site("C4.S2", "post", 538)
         return q_out.contiguous(), updated
 
     device = q_gpu.device
@@ -454,7 +473,9 @@ def sync_event_coded_carrier_from_gpu_cap(
         device=device,
         dtype=torch.int64,
     )
+    _site("C4.S2b", "pre", 457)
     q_subset_cpu = q_gpu.flatten().index_select(0, flat_indices).detach().cpu()
+    _site("C4.S2b", "post", 457)
 
     cap_indices: list[int] = []
     cap_values: list[int] = []
@@ -474,6 +495,7 @@ def sync_event_coded_carrier_from_gpu_cap(
         cap_values.append(int(residual))
 
     if cap_indices:
+        _site("C4.S2c", "pre", 477)
         cap_idx = np.array(cap_indices, dtype=np.int32)
         cap_val = np.array(cap_values, dtype=np.int16)
         hot_idx, hot_val = merge_hot_table_arrays(
@@ -485,6 +507,7 @@ def sync_event_coded_carrier_from_gpu_cap(
         )
         updated._hot.replace_arrays(hot_idx, hot_val)
         updated._invalidate_packed_caches()
+        _site("C4.S2c", "post", 486)
 
     apply_event_coded_carrier_step(updated, votes={}, step_index=int(step_index))
     observation = C8StepObservation()
@@ -498,6 +521,7 @@ def sync_event_coded_carrier_from_gpu_cap(
         observation=observation,
         persistent_dense_accumulator_materialized_numel=persistent_dense,
     )
+    _site("C4.S2", "post", 538)
     return q_out.contiguous(), updated
 
 
@@ -513,12 +537,23 @@ def apply_cap_tensor_result_gpu(
     cap_boundary_transient: int,
     cap_item_stats: Mapping[str, Any],
     merge_stats_fn: Any,
+    state_index: int = -1,
+    host_allocator_site_emit: Callable[..., None] | None = None,
 ) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
     """Apply one GPU cap tensor result through the sparse event-coded carrier path."""
 
     state_key = str(item.state_key)
     vu = event_states[state_key]
     plan = plans_by_key[state_key]
+    if host_allocator_site_emit is not None and int(state_index) == 0:
+        host_allocator_site_emit(
+            "C4.S1",
+            "pre",
+            origin_file="sparse_cap_gpu_seam_adapter.py",
+            origin_line=522,
+            optimizer_step_index=int(local_selection_ordering_step),
+            state_index=0,
+        )
     local_result = apply_event_coded_integer_vote_update_from_plan(
         vu,
         inputs_by_key[state_key],
@@ -528,6 +563,15 @@ def apply_cap_tensor_result_gpu(
         cap_boundary_transient_dense=int(cap_boundary_transient),
         lightweight_runtime_stats=True,
     )
+    if host_allocator_site_emit is not None and int(state_index) == 0:
+        host_allocator_site_emit(
+            "C4.S1",
+            "post",
+            origin_file="sparse_cap_gpu_seam_adapter.py",
+            origin_line=530,
+            optimizer_step_index=int(local_selection_ordering_step),
+            state_index=0,
+        )
     q_out, carrier = sync_event_coded_carrier_from_gpu_cap(
         local_result.carrier,
         item.q_levels,
@@ -535,6 +579,9 @@ def apply_cap_tensor_result_gpu(
         accepted_flat_by_key[state_key],
         q_persistent_cpu=vu.q_levels,
         step_index=int(local_selection_ordering_step),
+        host_allocator_site_emit=host_allocator_site_emit,
+        optimizer_step_index=int(local_selection_ordering_step),
+        state_index=int(state_index),
     )
     stats = merge_stats_fn(dict(cap_item_stats), local_result.stats)
     stats["sparse_cap_gpu_seam_q_source"] = "gpu_cap.accepted_subset_gather"

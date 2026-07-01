@@ -290,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v4")
+    assert receipt["schema"].endswith("/v5")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -527,3 +527,240 @@ def test_census_boundary_marks_merge_handoff_and_loop_bytes() -> None:
     assert boundaries["loop_unique_storage_bytes"] == 500_000_000
     assert result["mechanism_owner_status"] == "UNMAPPED_OR_UNRESOLVED"
 
+
+def test_profile_allocator_native_default_off(monkeypatch) -> None:
+    monkeypatch.delenv(probe.PROFILE_ALLOCATOR_NATIVE_ENV, raising=False)
+    assert probe.profile_allocator_native_enabled() is False
+
+
+def _allocator_mark(
+    event: str,
+    *,
+    rss_kib: int,
+    anonymous_kb: int | None = None,
+    uordblks: int | None = None,
+    host_active: int | None = None,
+    state_index: int | None = None,
+    state_bucket: int | None = None,
+) -> dict[str, Any]:
+    probe_payload: dict[str, Any] = {
+        "smaps_rollup": {"anonymous_kb": anonymous_kb},
+        "mallinfo2": {"uordblks_bytes": uordblks},
+        "cuda_allocator": {
+            "host_memory_stats_available": host_active is not None,
+            "cuda_gpu_allocated_bytes": 1_000_000_000,
+            "cuda_gpu_stats_role": "negative_control_not_host_rss_contributor",
+        },
+    }
+    if host_active is not None:
+        probe_payload["cuda_allocator"]["cuda_host_active_bytes_all_current"] = host_active
+    mark: dict[str, Any] = {
+        "schema": probe.PROFILE_HOST_RSS_ALLOCATOR_SCHEMA,
+        "event": event,
+        "resource_snapshot": {"rss_kib": rss_kib},
+        "allocator_probe": probe_payload,
+        "measurement_perturbed": True,
+    }
+    if state_index is not None:
+        mark["state_index"] = state_index
+    if state_bucket is not None:
+        mark["state_bucket"] = state_bucket
+    return mark
+
+
+def test_allocator_dominance_resolves_cuda_host() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_native_profile,
+    )
+
+    marks = [
+        _allocator_mark("allocator_C4_enter", rss_kib=2_000_000, anonymous_kb=1000, host_active=100),
+        _allocator_mark(
+            "allocator_C4_after_state",
+            rss_kib=3_000_000,
+            anonymous_kb=1100,
+            host_active=900_000_000,
+            state_index=3,
+            state_bucket=0,
+        ),
+        _allocator_mark(
+            "allocator_C4_after_state",
+            rss_kib=4_000_000,
+            anonymous_kb=1200,
+            host_active=1_800_000_000,
+            state_index=7,
+            state_bucket=1,
+        ),
+    ]
+    result = attribute_allocator_native_profile(marks, c4_delta_rss_gib=7.5)
+    assert result["mechanism_owner_status"] == "RESOLVED"
+    assert result["allocation_source"] == "cuda_host_caching_allocator"
+    assert result["overlap_accounting"]["remainder_status"] == "overlap_unknown"
+
+
+def test_allocator_unmapped_when_no_dominance() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_native_profile,
+    )
+
+    marks = [
+        _allocator_mark("allocator_C4_enter", rss_kib=2_000_000, anonymous_kb=1000),
+        _allocator_mark(
+            "allocator_C4_after_state",
+            rss_kib=2_100_000,
+            anonymous_kb=1050,
+            state_index=3,
+            state_bucket=0,
+        ),
+    ]
+    result = attribute_allocator_native_profile(marks, c4_delta_rss_gib=0.1)
+    assert result["mechanism_owner_status"] == "UNMAPPED_OR_UNRESOLVED"
+
+
+def test_allocator_site_tier_b_no_overclaim_from_bucket_only() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_native_profile,
+    )
+
+    marks = [
+        _allocator_mark("allocator_C4_enter", rss_kib=2_000_000),
+        _allocator_mark(
+            "allocator_C4_after_state",
+            rss_kib=3_000_000,
+            host_active=500_000_000,
+            state_index=3,
+            state_bucket=0,
+        ),
+    ]
+    result = attribute_allocator_native_profile(marks, c4_delta_rss_gib=1.0)
+    assert result["call_site_status"] == "UNRESOLVED"
+
+
+def test_host_cache_empty_diagnostic_classification() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        classify_host_cache_empty_diagnostic,
+    )
+
+    post = _allocator_mark("allocator_host_cache_post_empty", rss_kib=2_500_000)
+    post["allocation_dims"] = {"host_cache_diag": {"status": "ok"}}
+    marks = [
+        _allocator_mark("allocator_host_cache_pre_empty", rss_kib=4_000_000),
+        post,
+    ]
+    result = classify_host_cache_empty_diagnostic(marks)
+    assert result["classification"] == "CUDA_HOST_CACHE_CONFIRMED"
+    assert result["empty_cache_status"] == "ok"
+
+
+def _allocator_site_mark(
+    site_id: str,
+    suffix: str,
+    *,
+    rss_kib: int,
+    state_index: int,
+) -> dict[str, Any]:
+    return {
+        "schema": probe.PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA,
+        "event": f"allocator_site_{site_id}_{suffix}",
+        "site_id": site_id,
+        "origin_file": "sparse_cap_gpu_seam_adapter.py",
+        "origin_line": 522,
+        "state_index": state_index,
+        "resource_snapshot": {"rss_kib": rss_kib},
+        "allocator_probe": {},
+        "measurement_perturbed": True,
+    }
+
+
+def test_empty_cache_status_preserved_from_allocation_dims() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        classify_host_cache_empty_diagnostic,
+    )
+
+    post = _allocator_mark("allocator_host_cache_post_empty", rss_kib=3_000_000)
+    post["allocation_dims"] = {"host_cache_diag": {"status": "ok", "trim_delta_rss_kib": 2}}
+    marks = [
+        _allocator_mark("allocator_host_cache_pre_empty", rss_kib=3_010_000),
+        post,
+    ]
+    result = classify_host_cache_empty_diagnostic(marks)
+    assert result["empty_cache_status"] == "ok"
+    assert result["classification"] == "LIVE_RESIDENT"
+    assert result["cache_falsified"] is True
+
+
+def test_host_cache_live_resident_requires_successful_empty_cache() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        classify_host_cache_empty_diagnostic,
+    )
+
+    post = _allocator_mark("allocator_host_cache_post_empty", rss_kib=3_000_000)
+    post["allocation_dims"] = {"host_cache_diag": {"status": "RuntimeError: unavailable"}}
+    marks = [
+        _allocator_mark("allocator_host_cache_pre_empty", rss_kib=3_001_000),
+        post,
+    ]
+    result = classify_host_cache_empty_diagnostic(marks)
+    assert result["classification"] == "INCONCLUSIVE"
+    assert result.get("cache_falsified") is False
+
+
+def test_state_index_zero_site_parsing() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_native_profile,
+    )
+
+    marks = [
+        _allocator_mark("allocator_C4_enter", rss_kib=2_000_000),
+        _allocator_site_mark("C4.S1", "pre", rss_kib=2_100_000, state_index=0),
+        _allocator_site_mark("C4.S1", "post", rss_kib=2_200_000, state_index=0),
+        _allocator_mark(
+            "allocator_C4_after_state",
+            rss_kib=3_000_000,
+            anonymous_kb=1200,
+            state_index=3,
+            state_bucket=0,
+        ),
+    ]
+    result = attribute_allocator_native_profile(marks, c4_delta_rss_gib=1.0)
+    assert len(result["intra_state_site_deltas"]) == 1
+    assert result["intra_state_site_deltas"][0]["site_id"] == "C4.S1"
+
+
+def test_first_bucket_states_in_bucket_is_four() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_native_profile,
+    )
+
+    marks = [
+        _allocator_mark("allocator_C4_enter", rss_kib=2_000_000, anonymous_kb=1000),
+        _allocator_mark(
+            "allocator_C4_after_state",
+            rss_kib=3_000_000,
+            anonymous_kb=1100,
+            state_index=3,
+            state_bucket=0,
+        ),
+    ]
+    result = attribute_allocator_native_profile(marks, c4_delta_rss_gib=1.0)
+    assert result["allocator_bucket_series"][0]["states_in_bucket"] == 4
+
+
+def test_tier_c_anonymous_only_no_call_site_overclaim() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_native_profile,
+    )
+
+    marks = [
+        _allocator_mark("allocator_C4_enter", rss_kib=2_000_000, anonymous_kb=1000),
+        _allocator_mark(
+            "allocator_C4_after_state",
+            rss_kib=3_000_000,
+            anonymous_kb=2000,
+            state_index=3,
+            state_bucket=0,
+        ),
+    ]
+    result = attribute_allocator_native_profile(marks, c4_delta_rss_gib=1.0)
+    assert result["mechanism_owner_status"] == "UNMAPPED_OR_UNRESOLVED"
+    assert result["call_site_status"] == "UNRESOLVED"

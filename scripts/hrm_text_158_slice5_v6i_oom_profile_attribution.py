@@ -19,6 +19,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     HOST_RSS_PROFILE_JSONL_NAME,
+    PROFILE_ALLOCATOR_HOST_CACHE_DIAG_ENV,
+    PROFILE_ALLOCATOR_NATIVE_ENV,
+    PROFILE_HOST_RSS_ALLOCATOR_SCHEMA,
+    PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA,
     PROFILE_HOST_RSS_CENSUS_SCHEMA,
     PROFILE_HOST_RSS_ENV,
     PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB,
@@ -27,7 +31,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     PROFILE_TORCH_CPU_CENSUS_ENV,
 )
 
-ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v4"
+ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v5"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
@@ -107,6 +111,321 @@ ALLOCATION_SITE_ORIGINS: dict[str, tuple[str, str]] = {
 
 CENSUS_RECONCILE_RATIO_MIN = 0.8
 CENSUS_RECONCILE_RATIO_MAX = 1.2
+ALLOCATOR_TIER_A_DOMINANCE = 0.80
+ALLOCATOR_PER_STATE_SLOPE_MIN = 0.75
+ALLOCATOR_PER_STATE_SLOPE_MAX = 1.25
+ALLOCATOR_TIER_B_SITE_FRACTION = 0.50
+HOST_CACHE_CONFIRM_DROP_GIB = 1.0
+
+
+def _is_allocator_mark(row: Mapping[str, Any]) -> bool:
+    return str(row.get("schema", "")) == PROFILE_HOST_RSS_ALLOCATOR_SCHEMA
+
+
+def _is_allocator_site_mark(row: Mapping[str, Any]) -> bool:
+    return str(row.get("schema", "")) == PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA
+
+
+def _probe_nested(probe: Mapping[str, Any], *keys: str) -> Any:
+    current: Any = probe
+    for key in keys:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _allocator_source_scalars(probe: Mapping[str, Any]) -> dict[str, Any]:
+    cuda = dict(probe.get("cuda_allocator") or {})
+    mallinfo = dict(probe.get("mallinfo2") or {})
+    rollup = dict(probe.get("smaps_rollup") or {})
+    categories = dict(probe.get("smaps_categories") or {})
+    host_active = None
+    for key, value in cuda.items():
+        if key.startswith("cuda_host_active_bytes"):
+            host_active = int(value)
+            break
+    if host_active is None:
+        for key, value in cuda.items():
+            if key.startswith("cuda_host_allocated_bytes"):
+                host_active = int(value)
+                break
+    return {
+        "anonymous_kb": rollup.get("anonymous_kb"),
+        "private_dirty_kb": rollup.get("private_dirty_kb"),
+        "heap_kb": categories.get("heap_kb"),
+        "glibc_uordblks_bytes": mallinfo.get("uordblks_bytes"),
+        "cuda_host_active_bytes": host_active,
+        "host_memory_stats_available": bool(cuda.get("host_memory_stats_available")),
+        "cuda_gpu_allocated_bytes": cuda.get("cuda_gpu_allocated_bytes"),
+        "cuda_gpu_stats_role": cuda.get("cuda_gpu_stats_role"),
+    }
+
+
+def _mark_rss_kib(mark: Mapping[str, Any]) -> int | None:
+    snap = dict(mark.get("resource_snapshot") or {})
+    value = snap.get("rss_kib")
+    return int(value) if value is not None else None
+
+
+def _delta_gib(curr: int | None, prev: int | None, *, kib: bool = False) -> float | None:
+    if curr is None or prev is None:
+        return None
+    if kib:
+        return (float(curr) - float(prev)) / (1024.0 * 1024.0)
+    return (float(curr) - float(prev)) / (1024.0**3)
+
+
+def _mark_state_index(row: Mapping[str, Any], *, default: int | None = None) -> int | None:
+    if "state_index" not in row:
+        return default
+    return int(row["state_index"])
+
+
+def attribute_allocator_native_profile(
+    allocator_marks: list[dict[str, Any]],
+    *,
+    c4_delta_rss_gib: float | None,
+) -> dict[str, Any]:
+    marks = [row for row in allocator_marks if _is_allocator_mark(row)]
+    site_marks = [row for row in allocator_marks if _is_allocator_site_mark(row)]
+    by_event: dict[str, dict[str, Any]] = {}
+    for row in marks:
+        by_event[str(row.get("event"))] = row
+
+    bucket_marks = sorted(
+        [row for row in marks if str(row.get("event")) == "allocator_C4_after_state"],
+        key=lambda row: _mark_state_index(row, default=-1) or 0,
+    )
+    c4_enter = by_event.get("allocator_C4_enter")
+    series: list[dict[str, Any]] = []
+    prev = c4_enter
+    for row in bucket_marks:
+        if prev is None:
+            prev = row
+            continue
+        prev_rss = _mark_rss_kib(prev)
+        curr_rss = _mark_rss_kib(row)
+        prev_sources = _allocator_source_scalars(dict(prev.get("allocator_probe") or {}))
+        curr_sources = _allocator_source_scalars(dict(row.get("allocator_probe") or {}))
+        prev_idx = _mark_state_index(prev, default=-1)
+        curr_idx = _mark_state_index(row)
+        if curr_idx is None:
+            continue
+        states = int(curr_idx) - int(prev_idx if prev_idx is not None else -1)
+        if states <= 0:
+            states = 4
+        delta_rss_gib = _delta_gib(curr_rss, prev_rss, kib=True)
+        source_deltas: dict[str, float | None] = {}
+        for name, curr_val, prev_val, kib in (
+            ("anonymous", curr_sources.get("anonymous_kb"), prev_sources.get("anonymous_kb"), True),
+            (
+                "private_dirty",
+                curr_sources.get("private_dirty_kb"),
+                prev_sources.get("private_dirty_kb"),
+                True,
+            ),
+            (
+                "glibc_uordblks",
+                curr_sources.get("glibc_uordblks_bytes"),
+                prev_sources.get("glibc_uordblks_bytes"),
+                False,
+            ),
+            (
+                "cuda_host_active",
+                curr_sources.get("cuda_host_active_bytes"),
+                prev_sources.get("cuda_host_active_bytes"),
+                False,
+            ),
+        ):
+            source_deltas[name] = _delta_gib(
+                int(curr_val) if curr_val is not None else None,
+                int(prev_val) if prev_val is not None else None,
+                kib=kib,
+            )
+        dominance: dict[str, float | None] = {}
+        if delta_rss_gib is not None and abs(delta_rss_gib) > 1e-9:
+            for name, delta in source_deltas.items():
+                dominance[name] = (
+                    abs(float(delta)) / abs(float(delta_rss_gib))
+                    if delta is not None
+                    else None
+                )
+        per_state: dict[str, float | None] = {}
+        if delta_rss_gib is not None:
+            per_state["rss_gib_per_state"] = float(delta_rss_gib) / float(states)
+            for name, delta in source_deltas.items():
+                if delta is not None:
+                    per_state[f"{name}_gib_per_state"] = float(delta) / float(states)
+        series.append(
+            {
+                "state_index_end": int(curr_idx),
+                "state_bucket": int(row.get("state_bucket") or 0),
+                "states_in_bucket": int(states),
+                "delta_rss_gib": delta_rss_gib,
+                "source_deltas_gib": source_deltas,
+                "dominance_ratios_vs_rss": dominance,
+                "per_state_slopes_gib": per_state,
+            }
+        )
+        prev = row
+
+    avg_rss_per_state = None
+    if series:
+        slopes = [
+            float(row["per_state_slopes_gib"]["rss_gib_per_state"])
+            for row in series
+            if row.get("per_state_slopes_gib", {}).get("rss_gib_per_state") is not None
+        ]
+        if slopes:
+            avg_rss_per_state = sum(slopes) / len(slopes)
+
+    source_avg_dominance: dict[str, float] = {}
+    for source_name in ("anonymous", "private_dirty", "glibc_uordblks", "cuda_host_active"):
+        ratios = [
+            float(row["dominance_ratios_vs_rss"][source_name])
+            for row in series
+            if row.get("dominance_ratios_vs_rss", {}).get(source_name) is not None
+        ]
+        if ratios:
+            source_avg_dominance[source_name] = sum(ratios) / len(ratios)
+
+    dominant_source = None
+    dominant_dominance = 0.0
+    for name, avg in source_avg_dominance.items():
+        if avg > dominant_dominance:
+            dominant_dominance = avg
+            dominant_source = name
+
+    mechanism_owner_status = "UNMAPPED_OR_UNRESOLVED"
+    allocation_source: str | None = None
+    call_site_status = "UNRESOLVED"
+    call_site_id: str | None = None
+    call_site_origin: str | None = None
+    remainder_status = "overlap_unknown"
+    next_probe_route: str | None = "alloc_hook_proc_maps_diff"
+
+    if dominant_source is not None and dominant_dominance >= ALLOCATOR_TIER_A_DOMINANCE:
+        mechanism_owner_status = "RESOLVED"
+        allocation_source = str(dominant_source)
+        if dominant_source == "cuda_host_active":
+            allocation_source = "cuda_host_caching_allocator"
+        elif dominant_source == "glibc_uordblks":
+            allocation_source = "glibc_malloc_arena"
+        elif dominant_source in {"anonymous", "private_dirty"}:
+            allocation_source = f"smaps_{dominant_source}_symptom_only"
+            mechanism_owner_status = "UNMAPPED_OR_UNRESOLVED"
+            next_probe_route = "alloc_hook_proc_maps_diff"
+
+    site_deltas: list[dict[str, Any]] = []
+    sampled = [
+        row
+        for row in site_marks
+        if _mark_state_index(row, default=-1) == 0
+    ]
+    by_site: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in sampled:
+        by_site[str(row.get("site_id"))].append(row)
+    for site_id, rows in sorted(by_site.items()):
+        pre = next((row for row in rows if str(row.get("event", "")).endswith("_pre")), None)
+        post = next((row for row in rows if str(row.get("event", "")).endswith("_post")), None)
+        if pre is None or post is None:
+            continue
+        delta = _delta_gib(_mark_rss_kib(post), _mark_rss_kib(pre), kib=True)
+        site_deltas.append(
+            {
+                "site_id": site_id,
+                "origin_file": post.get("origin_file"),
+                "origin_line": post.get("origin_line"),
+                "delta_rss_gib": delta,
+            }
+        )
+    positive_site = [row for row in site_deltas if row.get("delta_rss_gib") is not None and row["delta_rss_gib"] > 0]
+    if positive_site:
+        top_site = max(positive_site, key=lambda row: float(row["delta_rss_gib"]))
+        total_positive = sum(float(row["delta_rss_gib"]) for row in positive_site)
+        if total_positive > 0 and float(top_site["delta_rss_gib"]) / total_positive >= ALLOCATOR_TIER_B_SITE_FRACTION:
+            call_site_status = "RESOLVED"
+            call_site_id = str(top_site["site_id"])
+            call_site_origin = f"{top_site.get('origin_file')}:{top_site.get('origin_line')}"
+
+    host_cache_diag = classify_host_cache_empty_diagnostic(marks)
+
+    if mechanism_owner_status == "UNMAPPED_OR_UNRESOLVED":
+        call_site_status = "UNRESOLVED"
+        call_site_id = None
+        call_site_origin = None
+
+    return {
+        "allocator_bucket_series": series,
+        "avg_rss_per_state_gib": avg_rss_per_state,
+        "source_avg_dominance_ratios": source_avg_dominance,
+        "dominant_allocator_source": dominant_source,
+        "dominant_allocator_dominance_ratio": round(dominant_dominance, 4),
+        "mechanism_owner_status": mechanism_owner_status,
+        "allocation_source": allocation_source,
+        "call_site_status": call_site_status,
+        "call_site_id": call_site_id,
+        "call_site_origin_file_line": call_site_origin,
+        "intra_state_site_deltas": site_deltas,
+        "overlap_accounting": {
+            "remainder_status": remainder_status,
+            "exclusive_host_source_model": False,
+            "note": "individual source deltas reported; NOT naively summed (FOLD D)",
+            "cuda_gpu_allocated_role": "negative_control_not_host_rss_contributor",
+        },
+        "host_cache_empty_diagnostic": host_cache_diag,
+        "next_probe_route": next_probe_route,
+        "c4_delta_rss_gib_reference": c4_delta_rss_gib,
+    }
+
+
+def classify_host_cache_empty_diagnostic(
+    marks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    pre = next(
+        (row for row in marks if str(row.get("event")) == "allocator_host_cache_pre_empty"),
+        None,
+    )
+    post = next(
+        (row for row in marks if str(row.get("event")) == "allocator_host_cache_post_empty"),
+        None,
+    )
+    if pre is None or post is None:
+        return {
+            "classification": "NOT_RUN",
+            "measurement_perturbed": True,
+        }
+    pre_rss = _rss_gib(dict(pre.get("resource_snapshot") or {}))
+    post_rss = _rss_gib(dict(post.get("resource_snapshot") or {}))
+    trim_delta = None
+    if pre_rss is not None and post_rss is not None:
+        trim_delta = float(pre_rss) - float(post_rss)
+    post_dims = dict(post.get("allocation_dims") or {}).get("host_cache_diag") or {}
+    empty_cache_status = post_dims.get("status")
+    status_ok = str(empty_cache_status or "").lower() in {"ok", "success"}
+
+    classification = "INCONCLUSIVE"
+    if empty_cache_status is None:
+        classification = "API_UNAVAILABLE"
+    elif not status_ok:
+        classification = "INCONCLUSIVE"
+    elif trim_delta is not None:
+        if trim_delta >= HOST_CACHE_CONFIRM_DROP_GIB:
+            classification = "CUDA_HOST_CACHE_CONFIRMED"
+        elif trim_delta <= 0.25:
+            classification = "LIVE_RESIDENT"
+    return {
+        "classification": classification,
+        "measurement_perturbed": True,
+        "pre_rss_gib": pre_rss,
+        "post_rss_gib": post_rss,
+        "trim_delta_rss_gib": round(trim_delta, 4) if trim_delta is not None else None,
+        "empty_cache_status": empty_cache_status,
+        "cache_falsified": bool(
+            status_ok and trim_delta is not None and trim_delta <= 0.25
+        ),
+    }
 
 
 def _is_census_mark(row: Mapping[str, Any]) -> bool:
@@ -720,6 +1039,7 @@ def attribute_host_rss_profile(
     wall_totals: Mapping[str, float] | None = None,
     diagnostic_marks: list[dict[str, Any]] | None = None,
     census_marks: list[dict[str, Any]] | None = None,
+    allocator_marks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     parent_marks = [row for row in marks if _is_parent_phase_mark(row)]
     phase_deltas = _compute_phase_deltas(
@@ -806,6 +1126,29 @@ def attribute_host_rss_profile(
             mechanism["culprit_class_status"] = "UNRESOLVED"
             mechanism["next_probe_route"] = census_attribution.get("next_probe_route")
 
+    allocator_attribution: dict[str, Any] | None = None
+    if allocator_marks:
+        allocator_attribution = attribute_allocator_native_profile(
+            allocator_marks,
+            c4_delta_rss_gib=float(c4_delta) if c4_delta is not None else parent_sparse_cap_delta,
+        )
+        if allocator_attribution.get("mechanism_owner_status") == "RESOLVED":
+            mechanism["mechanism_owner_status"] = "RESOLVED"
+            mechanism["allocation_source"] = allocator_attribution.get("allocation_source")
+            mechanism["culprit_class"] = "C"
+            mechanism["culprit_class_status"] = "RESOLVED"
+            mechanism["call_site_status"] = allocator_attribution.get("call_site_status")
+            mechanism["call_site_id"] = allocator_attribution.get("call_site_id")
+            mechanism["call_site_origin_file_line"] = allocator_attribution.get(
+                "call_site_origin_file_line"
+            )
+        elif allocator_attribution.get("mechanism_owner_status") == "UNMAPPED_OR_UNRESOLVED":
+            mechanism["mechanism_owner_status"] = "UNMAPPED_OR_UNRESOLVED"
+            mechanism["next_probe_route"] = allocator_attribution.get("next_probe_route")
+        mechanism["host_cache_empty_diagnostic"] = allocator_attribution.get(
+            "host_cache_empty_diagnostic"
+        )
+
     has_subphase_marks = any(_is_subphase_mark(row) for row in marks)
     if not has_subphase_marks:
         mechanism["mechanism_owner_status"] = "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -832,6 +1175,7 @@ def attribute_host_rss_profile(
         "subphase_attribution": subphase_attribution,
         "reconciliation": reconciliation,
         "census_attribution": census_attribution,
+        "allocator_attribution": allocator_attribution,
         **mechanism,
     }
 
@@ -843,6 +1187,7 @@ def build_attribution_receipt(
     extract_report: Mapping[str, Any] | None = None,
     diagnostic_profile_path: Path | None = None,
     census_profile_path: Path | None = None,
+    allocator_profile_path: Path | None = None,
 ) -> dict[str, Any]:
     marks = _read_jsonl(profile_path)
     diagnostic_marks = (
@@ -850,6 +1195,9 @@ def build_attribution_receipt(
     )
     census_marks = (
         _read_jsonl(census_profile_path) if census_profile_path is not None else None
+    )
+    allocator_marks = (
+        _read_jsonl(allocator_profile_path) if allocator_profile_path is not None else None
     )
     wall_totals: dict[str, float] = {}
     if extract_report is None and run_root.is_dir():
@@ -865,6 +1213,7 @@ def build_attribution_receipt(
         wall_totals=wall_totals or None,
         diagnostic_marks=diagnostic_marks,
         census_marks=census_marks,
+        allocator_marks=allocator_marks,
     )
     receipt: dict[str, Any] = {
         "schema": ATTRIBUTION_SCHEMA,
@@ -881,6 +1230,9 @@ def build_attribution_receipt(
     if census_profile_path is not None:
         receipt["census_profile_path"] = str(census_profile_path)
         receipt["census_mark_count"] = len(census_marks or [])
+    if allocator_profile_path is not None:
+        receipt["allocator_profile_path"] = str(allocator_profile_path)
+        receipt["allocator_mark_count"] = len(allocator_marks or [])
     if attribution["dominant_phase_owner"] is None:
         receipt["rss_phase_owner_status"] = "UNRESOLVED"
     else:
@@ -1056,6 +1408,66 @@ def run_fixture_torch_census(out_root: Path) -> dict[str, Any]:
     }
 
 
+def run_fixture_allocator_native(out_root: Path) -> dict[str, Any]:
+    out_root.mkdir(parents=True, exist_ok=True)
+    scratch = out_root / "allocator_native_fixture_n1"
+    scratch.mkdir(parents=True, exist_ok=True)
+    lane_holding: dict[str, Any] | None = None
+    lane_release: dict[str, Any] | None = None
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_acquire import acquire_resource_lane
+
+        lane_holding = acquire_resource_lane(out_root)
+    except Exception as exc:
+        lane_holding = {"acquire_error": f"{type(exc).__name__}: {exc}"}
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    env["HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP"] = "1"
+    env["HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY"] = "1"
+    env["HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"] = "1"
+    env["HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"] = "1"
+    env[PROFILE_HOST_RSS_ENV] = "1"
+    env[PROFILE_ALLOCATOR_NATIVE_ENV] = "1"
+    env[PROFILE_ALLOCATOR_HOST_CACHE_DIAG_ENV] = "1"
+    cmd = _fixture_probe_argv(scratch)
+    proc = subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=600,
+    )
+    profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
+    allocator_marks = [
+        row
+        for row in _read_jsonl(profile_path)
+        if _is_allocator_mark(row) or _is_allocator_site_mark(row)
+    ]
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane
+
+        lane_release = release_resource_lane(out_root)
+    except Exception as exc:
+        lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
+
+    return {
+        "scratch_root": str(scratch),
+        "profile_path": str(profile_path),
+        "command": cmd,
+        "exit_code": int(proc.returncode),
+        "stdout_tail": "\n".join(proc.stdout.splitlines()[-20:]),
+        "stderr_tail": "\n".join(proc.stderr.splitlines()[-20:]),
+        "resource_lane_holding": lane_holding,
+        "resource_lane_release": lane_release,
+        "allocator_mark_count": len(allocator_marks),
+        "allocator_events_seen": sorted({str(row.get("event")) for row in allocator_marks}),
+        "measurement_perturbed": True,
+    }
+
+
 def run_fixture(out_root: Path) -> dict[str, Any]:
     out_root.mkdir(parents=True, exist_ok=True)
     scratch = out_root / "baseline_fixture_n1"
@@ -1112,7 +1524,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--mode",
-        choices=("extract", "attribute", "fixture", "fixture_live_resident", "fixture_torch_census"),
+        choices=(
+            "extract",
+            "attribute",
+            "fixture",
+            "fixture_live_resident",
+            "fixture_torch_census",
+            "fixture_allocator_native",
+        ),
         required=True,
     )
     parser.add_argument("--run-root", type=Path, required=True)
@@ -1133,6 +1552,12 @@ def main() -> int:
         type=Path,
         default=None,
         help="Optional live-resident diagnostic host_rss_profile.jsonl for attribute mode",
+    )
+    parser.add_argument(
+        "--allocator-profile-path",
+        type=Path,
+        default=None,
+        help="Optional allocator-native host_rss_profile.jsonl for attribute mode",
     )
     parser.add_argument(
         "--census-profile-path",
@@ -1164,6 +1589,7 @@ def main() -> int:
             extract_report=extract_report,
             diagnostic_profile_path=args.diagnostic_profile_path,
             census_profile_path=args.census_profile_path,
+            allocator_profile_path=args.allocator_profile_path,
         )
         if args.aborted_run_root is not None:
             payload["aborted_run_root"] = str(args.aborted_run_root)
@@ -1171,15 +1597,20 @@ def main() -> int:
         payload = run_fixture_live_resident_diagnostic(args.run_root)
     elif args.mode == "fixture_torch_census":
         payload = run_fixture_torch_census(args.run_root)
+    elif args.mode == "fixture_allocator_native":
+        payload = run_fixture_allocator_native(args.run_root)
     else:
         payload = run_fixture(args.run_root)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"out": str(args.out), "mode": args.mode}, indent=2))
-    if args.mode in {"fixture", "fixture_live_resident", "fixture_torch_census"} and int(
-        payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))
-    ) != 0:
+    if args.mode in {
+        "fixture",
+        "fixture_live_resident",
+        "fixture_torch_census",
+        "fixture_allocator_native",
+    } and int(payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))) != 0:
         return 1
     return 0
 
