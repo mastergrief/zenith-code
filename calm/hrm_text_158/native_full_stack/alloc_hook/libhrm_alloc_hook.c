@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 #define HRM_HOOK_MAGIC 0x48524d414c4c484bULL
-#define HRM_HOOK_VERSION 1
+#define HRM_HOOK_VERSION 2
 #define HRM_OWNERSHIP_SLOTS (1u << 22) /* 4M */
 #define HRM_FRAME_NET_SLOTS (1u << 16)
 #define HRM_RING_SLOTS (1u << 20) /* 1M */
@@ -26,6 +26,10 @@ typedef struct {
     uint64_t size;
     uint64_t owner_frame;
     uint32_t flags;
+    int32_t mmap_fd;
+    int32_t mmap_prot;
+    int64_t mmap_offset;
+    uint32_t is_mmap;
     uint32_t valid;
 } hrm_owner_slot_t;
 
@@ -61,6 +65,8 @@ typedef struct {
     uint64_t unknown_free_unmeasured_count;
     uint32_t unknown_free_bytes_bounded;
     uint64_t lost_owner_count;
+    uint64_t partial_munmap_ambiguity_count;
+    uint64_t unclassified_munmap_bytes;
     uint64_t window_net_bytes;
     uint64_t positive_control_hits;
     struct {
@@ -205,7 +211,8 @@ static void frame_net_add(uint64_t owner_frame, int64_t delta, uint64_t alloc_in
     }
 }
 
-static bool owner_insert(uintptr_t key, uintptr_t key_end, uint64_t size, uint64_t owner_frame) {
+static bool owner_insert_mmap(uintptr_t key, uintptr_t key_end, uint64_t size, uint64_t owner_frame,
+                              int32_t fd, int32_t prot, uint32_t flags, int64_t offset) {
     uint32_t h = owner_hash(key);
     for (uint32_t i = 0; i < HRM_OWNERSHIP_SLOTS; ++i) {
         uint32_t idx = (h + i) % HRM_OWNERSHIP_SLOTS;
@@ -219,6 +226,11 @@ static bool owner_insert(uintptr_t key, uintptr_t key_end, uint64_t size, uint64
                 slot->key_end = key_end;
                 slot->size = size;
                 slot->owner_frame = owner_frame;
+                slot->flags = flags;
+                slot->mmap_fd = fd;
+                slot->mmap_prot = prot;
+                slot->mmap_offset = offset;
+                slot->is_mmap = 1;
                 slot->valid = 1;
                 return true;
             }
@@ -259,6 +271,24 @@ static void ring_push(uint32_t op, uint64_t size, uintptr_t frames[HRM_FRAME_DEP
     memcpy(rec->frames, frames, sizeof(rec->frames));
 }
 
+static void record_mmap_alloc(void *ptr, uint64_t size, uintptr_t frames[HRM_FRAME_DEPTH], int32_t fd,
+                              int32_t prot, uint32_t flags, int64_t offset) {
+    if (!ptr || !size || !hook_should_run()) return;
+    if (!record_lock_try()) {
+        if (g_stats) g_stats->lock_contention_drop_count++;
+        return;
+    }
+    uint64_t owner = attribute_frame(frames);
+    uintptr_t key = (uintptr_t)ptr;
+    uintptr_t key_end = key + (uintptr_t)size;
+    if (owner_insert_mmap(key, key_end, size, owner, fd, prot, flags, offset)) {
+        frame_net_add(owner, (int64_t)size, size, 0);
+        if (g_stats) g_stats->window_net_bytes += size;
+        ring_push(10, size, frames);
+    }
+    record_unlock();
+}
+
 static void record_alloc(uint32_t op, void *ptr, uint64_t size, uintptr_t frames[HRM_FRAME_DEPTH]) {
     if (!ptr || !size || !hook_should_run()) return;
     if (!record_lock_try()) {
@@ -266,7 +296,7 @@ static void record_alloc(uint32_t op, void *ptr, uint64_t size, uintptr_t frames
         return;
     }
     uint64_t owner = attribute_frame(frames);
-    if (owner_insert((uintptr_t)ptr, (uintptr_t)ptr + (uintptr_t)size, size, owner)) {
+    if (owner_insert_mmap((uintptr_t)ptr, (uintptr_t)ptr + (uintptr_t)size, size, owner, -1, 0, 0, 0)) {
         frame_net_add(owner, (int64_t)size, size, 0);
         if (g_stats) g_stats->window_net_bytes += size;
         ring_push(op, size, frames);
@@ -295,21 +325,44 @@ static void record_free_ptr(void *ptr) {
     record_unlock();
 }
 
+static hrm_owner_slot_t *owner_lookup_containing(uintptr_t key) {
+    for (uint32_t i = 0; i < HRM_OWNERSHIP_SLOTS; ++i) {
+        hrm_owner_slot_t *slot = &g_owner_table[i];
+        if (!slot->valid || !slot->is_mmap) continue;
+        if (key >= slot->key && key < slot->key_end) return slot;
+    }
+    return NULL;
+}
+
 static void record_munmap(void *ptr, size_t len) {
     if (!ptr || !hook_should_run()) return;
     if (!record_lock_try()) {
         if (g_stats) g_stats->lock_contention_drop_count++;
         return;
     }
-    hrm_owner_slot_t *slot = owner_lookup((uintptr_t)ptr);
+    uintptr_t key = (uintptr_t)ptr;
+    hrm_owner_slot_t *slot = owner_lookup(key);
+    if (!slot) {
+        slot = owner_lookup_containing(key);
+    }
     if (slot) {
-        frame_net_add(slot->owner_frame, -(int64_t)slot->size, 0, slot->size);
-        if (g_stats) g_stats->window_net_bytes -= slot->size;
-        owner_remove((uintptr_t)ptr);
+        uint64_t release = slot->size;
+        if (len < slot->size) {
+            if (g_stats) g_stats->partial_munmap_ambiguity_count++;
+            release = (uint64_t)len;
+            slot->key = key + (uintptr_t)len;
+            slot->size -= (uint64_t)len;
+            slot->key_end = slot->key + (uintptr_t)slot->size;
+        } else {
+            owner_remove(slot->key);
+        }
+        frame_net_add(slot->owner_frame, -(int64_t)release, 0, release);
+        if (g_stats) g_stats->window_net_bytes -= release;
         record_unlock();
         return;
     }
     if (g_stats) {
+        g_stats->unclassified_munmap_bytes += (uint64_t)len;
         g_stats->unknown_free_bytes += (uint64_t)len;
         g_stats->unknown_free_bytes_bounded = 1;
     }
@@ -411,10 +464,11 @@ static bool should_intercept_mmap(void) {
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset) {
     if (!real_mmap) resolve_reals();
     void *ptr = real_mmap(addr, length, prot, flags, fd, offset);
-    if (ptr != MAP_FAILED && fd == -1 && should_intercept_mmap()) {
+    if (ptr != MAP_FAILED && should_intercept_mmap()) {
         uintptr_t frames[HRM_FRAME_DEPTH];
         capture_frames(frames);
-        record_alloc(10, ptr, (uint64_t)length, frames);
+        record_mmap_alloc(ptr, (uint64_t)length, frames, (int32_t)fd, (int32_t)prot,
+                          (uint32_t)flags, (int64_t)offset);
     }
     return ptr;
 }
@@ -552,14 +606,16 @@ int hrm_alloc_hook_flush_stats_json(const char *path) {
             "\"table_overflow_count\":%" PRIu64 ","
             "\"table_eviction_count\":%" PRIu64 ",\"unknown_free_bytes\":%" PRIu64 ","
             "\"unknown_free_unmeasured_count\":%" PRIu64 ",\"unknown_free_bytes_bounded\":%u,"
-            "\"lost_owner_count\":%" PRIu64 ",\"window_net_bytes\":%" PRIu64 ",\"top_sites\":[",
+            "\"lost_owner_count\":%" PRIu64 ",\"partial_munmap_ambiguity_count\":%" PRIu64 ","
+            "\"unclassified_munmap_bytes\":%" PRIu64 ",\"window_net_bytes\":%" PRIu64 ",\"top_sites\":[",
             g_stats->magic, g_stats->version, g_stats->enabled, g_stats->prefault_done,
             g_stats->hook_table_start, g_stats->hook_table_end, g_stats->hook_ring_start,
             g_stats->hook_ring_end, g_stats->ring_drop_count, g_stats->lock_contention_drop_count,
             g_stats->table_overflow_count,
             g_stats->table_eviction_count, g_stats->unknown_free_bytes,
             g_stats->unknown_free_unmeasured_count, g_stats->unknown_free_bytes_bounded,
-            g_stats->lost_owner_count, g_stats->window_net_bytes);
+            g_stats->lost_owner_count, g_stats->partial_munmap_ambiguity_count,
+            g_stats->unclassified_munmap_bytes, g_stats->window_net_bytes);
     for (int i = 0; i < HRM_TOP_SITES; ++i) {
         if (!g_stats->top[i].owner_frame) continue;
         fprintf(f, "%s{\"owner_frame\":\"0x%llx\",\"net_bytes\":%lld,\"gross_alloc\":%" PRIu64 ",\"gross_free\":%" PRIu64 "}",
@@ -567,6 +623,39 @@ int hrm_alloc_hook_flush_stats_json(const char *path) {
                 (unsigned long long)g_stats->top[i].owner_frame,
                 (long long)g_stats->top[i].net_bytes,
                 g_stats->top[i].gross_alloc, g_stats->top[i].gross_free);
+    }
+    fprintf(f, "]}\n");
+    fclose(f);
+    pthread_mutex_unlock(&g_record_lock);
+    return 0;
+}
+
+int hrm_alloc_hook_flush_live_ranges_json(const char *path) {
+    if (!hook_should_run() || !g_stats || !path || !g_owner_table) return -1;
+    pthread_mutex_lock(&g_record_lock);
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        pthread_mutex_unlock(&g_record_lock);
+        return -1;
+    }
+    fprintf(f, "{\"version\":%u,\"live_ranges\":[", HRM_HOOK_VERSION);
+    bool first = true;
+    for (uint32_t i = 0; i < HRM_OWNERSHIP_SLOTS; ++i) {
+        hrm_owner_slot_t *slot = &g_owner_table[i];
+        if (!slot->valid || !slot->is_mmap || slot->size == 0) continue;
+        fprintf(f, "%s{\"addr\":\"0x%llx\",\"addr_end\":\"0x%llx\",\"len\":%" PRIu64 ","
+                "\"fd\":%d,\"flags\":%u,\"prot\":%d,\"offset\":%" PRId64 ","
+                "\"owner_frame\":\"0x%llx\"}",
+                first ? "" : ",",
+                (unsigned long long)slot->key,
+                (unsigned long long)slot->key_end,
+                slot->size,
+                (int)slot->mmap_fd,
+                (unsigned)slot->flags,
+                (int)slot->mmap_prot,
+                (int64_t)slot->mmap_offset,
+                (unsigned long long)slot->owner_frame);
+        first = false;
     }
     fprintf(f, "]}\n");
     fclose(f);

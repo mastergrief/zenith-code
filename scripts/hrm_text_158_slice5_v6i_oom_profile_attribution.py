@@ -33,7 +33,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     PROFILE_TORCH_CPU_CENSUS_ENV,
 )
 
-ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v7"
+ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v8"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
@@ -1522,6 +1522,13 @@ def build_attribution_receipt(
         hook_path = alloc_hook_profile_path or profile_path
         receipt["alloc_hook_profile_path"] = str(hook_path)
         receipt["alloc_hook_mark_count"] = len(alloc_hook_marks)
+        receipt["positive_control"] = {
+            "kind": "hook_self_control_cpu",
+            "note": (
+                "CPU hook self-control only (malloc/torch_cpu/aligned); "
+                "CUDA guardrail is the separate N=1 GPU fixture reaching C4 clean."
+            ),
+        }
     effective_allocator_marks = allocator_marks
     if effective_allocator_marks is None:
         effective_allocator_marks = [row for row in marks if _is_allocator_mark(row)] or None
@@ -1540,6 +1547,16 @@ def build_attribution_receipt(
         )
         receipt["allocator_type_attribution"] = type_attr
         receipt["call_site_status"] = "UNRESOLVED"
+        from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+            attribute_non_glibc_mmap_source,
+        )
+
+        partition = dict(type_attr.get("partition") or {})
+        receipt["non_glibc_mmap_source_attribution"] = attribute_non_glibc_mmap_source(
+            alloc_hook_marks,
+            non_glibc_mmap_target_bytes=partition.get("non_glibc_mmap_bytes"),
+            allocator_type_attribution=type_attr,
+        )
     alloc_hook_attr = attribution.get("alloc_hook_attribution")
     if isinstance(alloc_hook_attr, Mapping):
         classified_null = alloc_hook_attr.get("classified_null")
@@ -2121,6 +2138,17 @@ def run_fixture(out_root: Path) -> dict[str, Any]:
     return receipt
 
 
+def run_fixture_non_glibc_mmap_source(out_root: Path) -> dict[str, Any]:
+    """Same-run allocator_type + non_glibc_mmap source tracing (frozen plan F1-F4)."""
+    payload = run_fixture_allocator_type(out_root)
+    out_path = out_root / "v6i_non_glibc_mmap_source_combined_attribution.json"
+    if payload.get("combined_attribution_path"):
+        out_path = Path(str(payload["combined_attribution_path"]))
+    payload["fixture_mode"] = "fixture_non_glibc_mmap_source"
+    payload["combined_attribution_path"] = str(out_path)
+    return payload
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -2134,6 +2162,7 @@ def main() -> int:
             "fixture_allocator_native",
             "fixture_alloc_hook",
             "fixture_allocator_type",
+            "fixture_non_glibc_mmap_source",
         ),
         required=True,
     )
@@ -2213,6 +2242,8 @@ def main() -> int:
         payload = run_fixture_alloc_hook(args.run_root)
     elif args.mode == "fixture_allocator_type":
         payload = run_fixture_allocator_type(args.run_root)
+    elif args.mode == "fixture_non_glibc_mmap_source":
+        payload = run_fixture_non_glibc_mmap_source(args.run_root)
     else:
         payload = run_fixture(args.run_root)
 
@@ -2226,6 +2257,7 @@ def main() -> int:
         "fixture_allocator_native",
         "fixture_alloc_hook",
         "fixture_allocator_type",
+        "fixture_non_glibc_mmap_source",
     } and int(payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))) != 0:
         return 1
     return 0

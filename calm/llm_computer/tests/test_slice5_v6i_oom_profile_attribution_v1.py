@@ -290,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v7")
+    assert receipt["schema"].endswith("/v8")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -1407,4 +1407,204 @@ def test_measure_malloc_info_self_footprint_total_rest_exceeded_inconclusive(mon
     footprint = measure_malloc_info_self_footprint(samples=2)
     assert footprint["malloc_info_self_footprint_bytes"] == 5_000_000
     assert footprint["malloc_info_self_footprint_status"] == "exceeded"
+
+
+def test_join_tracked_ranges_file_backed_rss_lt_len_no_rss_inflate() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        join_tracked_ranges_to_vmas,
+    )
+
+    live_ranges = [
+        {
+            "addr": "0x10000000",
+            "addr_end": "0x20000000",
+            "len": 268_435_456,
+            "fd": 7,
+            "owner_frame": "0x54c5b3",
+        }
+    ]
+    vma_entries = [
+        {
+            "start": 0x10000000,
+            "end": 0x20000000,
+            "name": "/dev/nvidia0",
+            "size_kb": 262144,
+            "rss_kb": 4096,
+            "private_dirty_kb": 4096,
+            "anonymous_kb": 0,
+            "referenced_kb": 4096,
+            "excluded_hook_vma": False,
+        }
+    ]
+    join = join_tracked_ranges_to_vmas(live_ranges, vma_entries)
+    cuda = join["buckets"]["cuda_driver"]
+    assert cuda["va_bytes"] == 268_435_456
+    assert cuda["rss_bytes"] == 4096 * 1024
+    assert cuda["rss_bytes"] < cuda["va_bytes"]
+
+
+def test_attribute_non_glibc_mmap_source_unclassified_over_tolerance_inconclusive() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        attribute_non_glibc_mmap_source,
+    )
+
+    target = 1_000_000_000
+    hook_marks = [
+        {
+            "event": "alloc_hook_C4_enter",
+            "allocator_probe": {"vma_entries": []},
+        },
+        {
+            "event": "alloc_hook_C4_exit",
+            "alloc_hook_stats": {
+                "window_net_bytes": target,
+                "ring_drop_count": 0,
+                "table_overflow_count": 0,
+                "lost_owner_count": 0,
+                "partial_munmap_ambiguity_count": 0,
+                "lock_contention_drop_count": 0,
+            },
+            "live_ranges": [
+                {
+                    "addr": "0x1000",
+                    "addr_end": "0x20000000",
+                    "len": 500_000_000,
+                    "fd": -1,
+                    "owner_frame": "0x54c5b3",
+                }
+            ],
+            "allocator_probe": {"vma_entries": []},
+        },
+    ]
+    result = attribute_non_glibc_mmap_source(
+        hook_marks,
+        non_glibc_mmap_target_bytes=target,
+    )
+    assert result["source_tier"] == "C"
+    assert result["status"] == "INCONCLUSIVE"
+    assert "unclassified_over_tolerance" in result["fail_reasons"]
+    assert result["call_site_status"] == "UNRESOLVED"
+
+
+def test_attribute_non_glibc_mmap_source_call_site_unresolved_when_unmapped() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        attribute_non_glibc_mmap_source,
+    )
+
+    hook_marks = [
+        {"event": "alloc_hook_C4_enter", "allocator_probe": {"vma_entries": []}},
+        {
+            "event": "alloc_hook_C4_exit",
+            "alloc_hook_stats": {
+                "window_net_bytes": 0,
+                "ring_drop_count": 0,
+                "table_overflow_count": 0,
+                "lost_owner_count": 0,
+                "partial_munmap_ambiguity_count": 0,
+                "lock_contention_drop_count": 0,
+            },
+            "live_ranges": [],
+            "allocator_probe": {"vma_entries": []},
+        },
+    ]
+    result = attribute_non_glibc_mmap_source(hook_marks, non_glibc_mmap_target_bytes=1)
+    assert result["call_site_status"] == "UNRESOLVED"
+    assert result["source_tier"] != "A"
+
+
+def test_classify_vma_name_fd_positive_blank_name_unknown_fd_not_file_backed() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import classify_vma_name
+
+    assert classify_vma_name("", fd=7) == "unknown_fd"
+    assert classify_vma_name("[anon:0x0]", fd=3) == "unknown_fd"
+    assert classify_vma_name("", fd=-1) == "anonymous_private"
+
+
+def test_classify_vma_name_fd_close_before_flush_uses_smaps_name_not_fd() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        classify_vma_name,
+        join_tracked_ranges_to_vmas,
+    )
+
+    # Stale/reused fd after close; smaps name still identifies CUDA driver mapping.
+    assert classify_vma_name("/dev/nvidia0", fd=99) == "cuda_driver"
+    live_ranges = [
+        {
+            "addr": "0x10000000",
+            "addr_end": "0x20000000",
+            "len": 268_435_456,
+            "fd": 99,
+            "owner_frame": "0x54c5b3",
+        }
+    ]
+    vma_entries = [
+        {
+            "start": 0x10000000,
+            "end": 0x20000000,
+            "name": "/dev/nvidia0",
+            "size_kb": 262144,
+            "rss_kb": 4096,
+            "private_dirty_kb": 4096,
+            "anonymous_kb": 0,
+            "referenced_kb": 4096,
+            "excluded_hook_vma": False,
+        }
+    ]
+    join = join_tracked_ranges_to_vmas(live_ranges, vma_entries)
+    assert "cuda_driver" in join["buckets"]
+    assert "file_backed" not in join["buckets"]
+
+
+def test_classify_vma_name_fd_reuse_stale_fd_fail_closed_unknown_fd() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        attribute_non_glibc_mmap_source,
+        classify_vma_name,
+    )
+
+    assert classify_vma_name("", fd=42) == "unknown_fd"
+    hook_marks = [
+        {"event": "alloc_hook_C4_enter", "allocator_probe": {"vma_entries": []}},
+        {
+            "event": "alloc_hook_C4_exit",
+            "alloc_hook_stats": {
+                "window_net_bytes": 1_000_000_000,
+                "ring_drop_count": 0,
+                "table_overflow_count": 0,
+                "lost_owner_count": 0,
+                "partial_munmap_ambiguity_count": 0,
+                "lock_contention_drop_count": 0,
+            },
+            "live_ranges": [
+                {
+                    "addr": "0x1000",
+                    "addr_end": "0x2000",
+                    "len": 4096,
+                    "fd": 42,
+                    "owner_frame": "0xdeadbeef",
+                }
+            ],
+            "allocator_probe": {
+                "vma_entries": [
+                    {
+                        "start": 0x1000,
+                        "end": 0x2000,
+                        "name": "",
+                        "size_kb": 4,
+                        "rss_kb": 4,
+                        "private_dirty_kb": 4,
+                        "anonymous_kb": 4,
+                        "referenced_kb": 4,
+                        "excluded_hook_vma": False,
+                    }
+                ]
+            },
+        },
+    ]
+    result = attribute_non_glibc_mmap_source(
+        hook_marks,
+        non_glibc_mmap_target_bytes=1_000_000_000,
+    )
+    assert result["source_tier"] == "C"
+    assert result["status"] == "INCONCLUSIVE"
+    assert "unknown_fd_classification" in result.get("fail_reasons", [])
 

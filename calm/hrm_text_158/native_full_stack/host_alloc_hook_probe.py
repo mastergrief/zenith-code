@@ -79,6 +79,10 @@ def _bind_hook_api(lib: ctypes.CDLL) -> None:
     lib.hrm_alloc_hook_reset_aggregation_window.restype = None
     lib.hrm_alloc_hook_flush_stats_json.argtypes = [ctypes.c_char_p]
     lib.hrm_alloc_hook_flush_stats_json.restype = ctypes.c_int
+    flush_live = getattr(lib, "hrm_alloc_hook_flush_live_ranges_json", None)
+    if flush_live is not None:
+        flush_live.argtypes = [ctypes.c_char_p]
+        flush_live.restype = ctypes.c_int
     lib.hrm_alloc_hook_note_positive_control.argtypes = [ctypes.c_uint64]
     lib.hrm_alloc_hook_note_positive_control.restype = None
 
@@ -104,6 +108,25 @@ def read_stats_json(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}", "path": str(path)}
+
+
+def flush_live_ranges(path: Path, *, so_path: Path | None = None) -> dict[str, Any]:
+    lib = load_hook_library(so_path)
+    if lib is None:
+        return {"status": "hook_so_missing"}
+    _bind_hook_api(lib)
+    flush_live = getattr(lib, "hrm_alloc_hook_flush_live_ranges_json", None)
+    if flush_live is None:
+        return {"status": "live_ranges_api_missing"}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rc = int(flush_live(str(path).encode("utf-8")))
+    if rc != 0:
+        return {"status": "flush_failed", "rc": rc}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"status": "parse_failed", "error": f"{type(exc).__name__}: {exc}"}
+    return {"status": "ok", "live_ranges": list(payload.get("live_ranges") or [])}
 
 
 def flush_stats(path: Path, *, so_path: Path | None = None) -> dict[str, Any]:
@@ -251,6 +274,7 @@ def run_positive_control(
         return {"status": "HOOK_FAILURE", "reason": "stats_flush_failed", "stats": stats}
     return {
         "status": "ok",
+        "kind": "hook_self_control_cpu",
         "checks": checks,
         "stats": stats,
         "positive_control_passed": True,
@@ -465,4 +489,366 @@ def attribute_alloc_hook_profile(
         "stats_exit": stats_exit,
         "top_sites": top_sites,
         "hook_ran": hook_ran,
+    }
+
+
+NON_GLIBC_UNCLASSIFIED_MAX_FRACTION = 0.10
+SOURCE_RESOLVE_DOMINANCE = 0.80
+SOURCE_RECONCILE_MIN = 0.8
+SOURCE_RECONCILE_MAX = 1.2
+
+
+def _parse_addr(value: Any) -> int | None:
+    if value is None:
+        return None
+    text = str(value)
+    try:
+        return int(text, 16) if text.startswith("0x") else int(text)
+    except ValueError:
+        return None
+
+
+def _is_anonymous_vma_name(name: str) -> bool:
+    lowered = (name or "").lower()
+    return lowered == "" or "[anon" in lowered
+
+
+def _is_real_file_path_vma_name(name: str) -> bool:
+    text = (name or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if "[heap]" in lowered or "[stack]" in lowered or "[anon" in lowered:
+        return False
+    return True
+
+
+def classify_vma_name(name: str, *, fd: int | None = None) -> str:
+    """Classify a VMA using smaps name as authority; fd is corroboration only."""
+    lowered = (name or "").lower()
+    if "nvidia" in lowered or "nvidia-uvm" in lowered:
+        return "cuda_driver"
+    if "[heap]" in lowered:
+        return "heap"
+    if "[stack]" in lowered:
+        return "stack"
+    if _is_anonymous_vma_name(name):
+        if fd is not None and fd >= 0:
+            return "unknown_fd"
+        return "anonymous_private"
+    if _is_real_file_path_vma_name(name):
+        return "file_backed"
+    if fd is not None and fd == -1:
+        return "anonymous_private"
+    if fd is not None and fd >= 0:
+        return "unknown_fd"
+    return "unknown_fd"
+
+
+def _interval_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> int:
+    lo = max(start_a, start_b)
+    hi = min(end_a, end_b)
+    return max(0, hi - lo)
+
+
+def read_proc_maps_modules() -> list[dict[str, Any]]:
+    modules: list[dict[str, Any]] = []
+    try:
+        for line in Path("/proc/self/maps").read_text(encoding="utf-8", errors="replace").splitlines():
+            parts = line.split()
+            if len(parts) < 2 or "-" not in parts[0]:
+                continue
+            start_hex, end_hex = parts[0].split("-", 1)
+            try:
+                start = int(start_hex, 16)
+                end = int(end_hex, 16)
+            except ValueError:
+                continue
+            name = parts[-1] if len(parts) >= 6 else ""
+            modules.append({"start": start, "end": end, "name": name, "perms": parts[1]})
+    except Exception as exc:
+        return [{"error": f"{type(exc).__name__}: {exc}"}]
+    return modules
+
+
+def symbolize_frame_extended(owner_frame: str | int) -> dict[str, Any]:
+    frame_int = _parse_addr(owner_frame)
+    if frame_int is None:
+        return {"owner_frame": str(owner_frame), "resolved": False, "tier": "C"}
+    modules = read_proc_maps_modules()
+    module_path: str | None = None
+    module_offset: int | None = None
+    for row in modules:
+        if row.get("error"):
+            continue
+        start = int(row["start"])
+        end = int(row["end"])
+        if start <= frame_int < end:
+            module_path = str(row.get("name") or "")
+            module_offset = frame_int - start
+            break
+    if not module_path:
+        return {
+            "owner_frame": hex(frame_int),
+            "resolved": False,
+            "tier": "C",
+            "reason": "no_maps_module",
+        }
+    if any(frag in module_path for frag in SKIP_MODULE_FRAGMENTS):
+        return {
+            "owner_frame": hex(frame_int),
+            "resolved": False,
+            "tier": "C",
+            "module": module_path,
+            "module_offset": module_offset,
+            "reason": "skip_list_module",
+        }
+    proc = subprocess.run(
+        ["addr2line", "-f", "-C", "-e", module_path, hex(module_offset or 0)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    symbol = lines[0] if lines else None
+    location = lines[1] if len(lines) > 1 else None
+    line_resolved = bool(location and location != "??:0")
+    return {
+        "owner_frame": hex(frame_int),
+        "resolved": line_resolved,
+        "tier": "A" if line_resolved else "B",
+        "symbol": symbol,
+        "location": location,
+        "module": module_path,
+        "module_offset": module_offset,
+    }
+
+
+def join_tracked_ranges_to_vmas(
+    live_ranges: Sequence[Mapping[str, Any]],
+    vma_entries: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    buckets: dict[str, dict[str, int]] = {}
+    unmapped_bytes = 0
+    join_rows: list[dict[str, Any]] = []
+    for rng in live_ranges:
+        start = _parse_addr(rng.get("addr"))
+        end = _parse_addr(rng.get("addr_end"))
+        length = int(rng.get("len") or 0)
+        if start is None or end is None or length <= 0:
+            continue
+        owner_frame = rng.get("owner_frame")
+        fd = int(rng.get("fd") if rng.get("fd") is not None else -1)
+        matched = False
+        matched_rss = 0
+        matched_name = ""
+        for vma in vma_entries:
+            if vma.get("excluded_hook_vma"):
+                continue
+            vma_start = int(vma.get("start") or 0)
+            vma_end = int(vma.get("end") or 0)
+            overlap = _interval_overlap(start, end, vma_start, vma_end)
+            if overlap <= 0:
+                continue
+            matched = True
+            vma_rss_kb = int(vma.get("rss_kb") or 0)
+            vma_size_kb = max(int(vma.get("size_kb") or 1), 1)
+            rss_share = int(vma_rss_kb * 1024 * overlap / max(vma_end - vma_start, 1))
+            matched_rss += rss_share
+            matched_name = str(vma.get("name") or matched_name)
+            fd_class = classify_vma_name(matched_name, fd=fd)
+            bucket = buckets.setdefault(
+                fd_class,
+                {"va_bytes": 0, "rss_bytes": 0, "owner_frames": {}},
+            )
+            bucket["va_bytes"] += overlap
+            bucket["rss_bytes"] += rss_share
+            frame_key = str(owner_frame)
+            bucket["owner_frames"][frame_key] = bucket["owner_frames"].get(frame_key, 0) + overlap
+        if not matched:
+            unmapped_bytes += length
+        join_rows.append(
+            {
+                "addr": hex(start),
+                "addr_end": hex(end),
+                "len": length,
+                "fd": fd,
+                "owner_frame": owner_frame,
+                "vma_name": matched_name or None,
+                "matched": matched,
+                "matched_rss_bytes": matched_rss,
+            }
+        )
+    owner_totals: dict[str, int] = {}
+    for bucket in buckets.values():
+        for frame, nbytes in bucket.get("owner_frames", {}).items():
+            owner_totals[frame] = owner_totals.get(frame, 0) + int(nbytes)
+    dominant_owner = None
+    dominant_owner_bytes = 0
+    for frame, nbytes in owner_totals.items():
+        if nbytes > dominant_owner_bytes:
+            dominant_owner = frame
+            dominant_owner_bytes = nbytes
+    return {
+        "buckets": buckets,
+        "join_rows": join_rows,
+        "unmapped_live_range_bytes": unmapped_bytes,
+        "dominant_owner_frame": dominant_owner,
+        "dominant_owner_frame_bytes": dominant_owner_bytes,
+        "owner_frame_totals_va_bytes": owner_totals,
+    }
+
+
+def attribute_non_glibc_mmap_source(
+    hook_marks: Sequence[Mapping[str, Any]],
+    *,
+    non_glibc_mmap_target_bytes: int | None,
+    allocator_type_attribution: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    enter = next((row for row in hook_marks if str(row.get("event")) == "alloc_hook_C4_enter"), None)
+    exit_mark = next((row for row in hook_marks if str(row.get("event")) == "alloc_hook_C4_exit"), None)
+    preflight = next((row for row in hook_marks if str(row.get("event")) == "alloc_hook_preflight"), None)
+    if preflight and str(preflight.get("status")) == "HOOK_FAILURE":
+        return {
+            "status": "HOOK_FAILURE",
+            "source_tier": "HOOK_FAILURE",
+            "call_site_status": "UNRESOLVED",
+            "hook_ran": False,
+        }
+    if not exit_mark:
+        return {
+            "status": "INCONCLUSIVE",
+            "source_tier": "C",
+            "call_site_status": "UNRESOLVED",
+            "reason": "missing_alloc_hook_C4_exit",
+            "hook_ran": False,
+        }
+
+    stats_exit = dict(exit_mark.get("alloc_hook_stats") or {})
+    live_ranges = list(exit_mark.get("live_ranges") or [])
+    if not live_ranges:
+        live_path = exit_mark.get("live_ranges_path")
+        if live_path:
+            live_ranges = list(read_stats_json(Path(str(live_path))).get("live_ranges") or [])
+
+    target_bytes = non_glibc_mmap_target_bytes
+    if target_bytes is None and allocator_type_attribution:
+        partition = dict(allocator_type_attribution.get("partition") or {})
+        target_bytes = partition.get("non_glibc_mmap_bytes")
+    if target_bytes is None:
+        target_bytes = int(stats_exit.get("window_net_bytes") or 0)
+
+    enter_probe = dict((enter or {}).get("allocator_probe") or {})
+    exit_probe = dict(exit_mark.get("allocator_probe") or {})
+    enter_vmas = list(enter_probe.get("vma_entries") or [])
+    exit_vmas = list(exit_probe.get("vma_entries") or [])
+
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import diff_vma_entries
+
+    vma_diff = diff_vma_entries(enter_vmas, exit_vmas)
+    join = join_tracked_ranges_to_vmas(live_ranges, exit_vmas)
+
+    classified_va = 0
+    classified_rss = 0
+    fd_class_rows: list[dict[str, Any]] = []
+    for fd_class, bucket in join.get("buckets", {}).items():
+        va_b = int(bucket.get("va_bytes") or 0)
+        rss_b = int(bucket.get("rss_bytes") or 0)
+        classified_va += va_b
+        classified_rss += rss_b
+        fd_class_rows.append(
+            {
+                "fd_class": fd_class,
+                "fd_class_va_bytes": va_b,
+                "fd_class_rss_bytes": rss_b,
+            }
+        )
+
+    unclassified = int(join.get("unmapped_live_range_bytes") or 0)
+    unknown_fd_bucket = dict(join.get("buckets", {}).get("unknown_fd") or {})
+    unknown_fd_bytes = int(unknown_fd_bucket.get("va_bytes") or 0)
+    if unclassified == 0 and target_bytes > 0:
+        unclassified = max(int(target_bytes) - classified_va, 0)
+
+    dominant_frame = join.get("dominant_owner_frame")
+    dominant_frame_va = int(join.get("dominant_owner_frame_bytes") or 0)
+    sym = symbolize_frame_extended(dominant_frame) if dominant_frame else {"resolved": False, "tier": "C"}
+
+    ring_drops = int(stats_exit.get("ring_drop_count") or 0)
+    table_overflow = int(stats_exit.get("table_overflow_count") or 0)
+    lost_owner = int(stats_exit.get("lost_owner_count") or 0)
+    partial_munmap = int(stats_exit.get("partial_munmap_ambiguity_count") or 0)
+    lock_drops = int(stats_exit.get("lock_contention_drop_count") or 0)
+
+    fail_reasons: list[str] = []
+    if unknown_fd_bytes > 0:
+        fail_reasons.append("unknown_fd_classification")
+    if ring_drops or table_overflow or lost_owner or lock_drops:
+        fail_reasons.append("hook_drops_or_overflow")
+    if partial_munmap:
+        fail_reasons.append("partial_munmap_ambiguity")
+    if unclassified and target_bytes > 0 and (unclassified / target_bytes) > NON_GLIBC_UNCLASSIFIED_MAX_FRACTION:
+        fail_reasons.append("unclassified_over_tolerance")
+    if not live_ranges:
+        fail_reasons.append("no_live_ranges_captured")
+
+    classified_live_net_bytes = classified_va
+    reconcile_ratio = None
+    if target_bytes > 0:
+        reconcile_ratio = classified_live_net_bytes / float(target_bytes)
+
+    source_tier = "C"
+    source_status = "INCONCLUSIVE"
+    call_site_status = "UNRESOLVED"
+    resolved_source: str | None = None
+
+    if fail_reasons:
+        source_status = "INCONCLUSIVE"
+    elif target_bytes > 0 and dominant_frame_va > 0:
+        dominance = dominant_frame_va / float(max(classified_live_net_bytes, 1))
+        if (
+            reconcile_ratio is not None
+            and SOURCE_RECONCILE_MIN <= reconcile_ratio <= SOURCE_RECONCILE_MAX
+            and dominance >= SOURCE_RESOLVE_DOMINANCE
+        ):
+            if sym.get("tier") == "A":
+                source_tier = "A"
+                source_status = "RESOLVED_SOURCE"
+                resolved_source = str(sym.get("location"))
+                call_site_status = "RESOLVED"
+            elif sym.get("tier") == "B":
+                source_tier = "B"
+                source_status = "RESOLVED_MODULE"
+                resolved_source = str(sym.get("module"))
+                call_site_status = "UNRESOLVED"
+            else:
+                source_status = "UNMAPPED_ANONYMOUS_MMAP"
+        else:
+            source_status = "INCONCLUSIVE"
+            if dominant_frame and fd_class_rows and fd_class_rows[0]["fd_class"] == "anonymous_private":
+                source_status = "ANONYMOUS_BUCKET_TRIVIAL_FD_CLASS"
+
+    return {
+        "status": source_status,
+        "source_tier": source_tier,
+        "resolved_source": resolved_source,
+        "call_site_status": call_site_status,
+        "non_glibc_mmap_target_bytes": int(target_bytes),
+        "classified_live_net_bytes": classified_live_net_bytes,
+        "classified_live_net_gib": classified_live_net_bytes / (1024.0**3),
+        "unclassified_net_bytes": unclassified,
+        "unclassified_net_fraction": (unclassified / target_bytes) if target_bytes else None,
+        "reconcile_ratio_vs_non_glibc_target": reconcile_ratio,
+        "dominant_owner_frame": dominant_frame,
+        "dominant_owner_frame_symbol": sym,
+        "fd_class_rows": fd_class_rows,
+        "vma_rss_reconcile": vma_diff,
+        "range_vma_join": join,
+        "live_range_count": len(live_ranges),
+        "fail_reasons": fail_reasons,
+        "hook_stats_exit": stats_exit,
+        "anonymous_bucket_fd_class_trivial": True,
+        "recording_mode": "mmap_all_fd_cuda_safe",
+        "stale_fd_readlink_authority": False,
+        "classification_authority": "tracked_range_vma_join",
     }

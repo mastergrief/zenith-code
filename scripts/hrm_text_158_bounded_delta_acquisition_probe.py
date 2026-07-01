@@ -2495,6 +2495,7 @@ class PhaseProgress:
         from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
             arm_hook,
             disarm_hook,
+            flush_live_ranges,
             flush_stats,
             hook_vma_ranges,
             prefault_hook,
@@ -2505,12 +2506,16 @@ class PhaseProgress:
         )
 
         stats_path = self.host_rss_profile_path.parent / "alloc_hook_stats.json"
+        live_ranges_path = self.host_rss_profile_path.parent / "alloc_hook_live_ranges.json"
         stats: dict[str, Any] = {}
+        live_ranges: list[dict[str, Any]] = []
         if str(event) == "alloc_hook_C4_enter":
             prefault_hook()
             arm_hook()
             reset_aggregation_window()
         elif str(event) == "alloc_hook_C4_exit":
+            live_flush = flush_live_ranges(live_ranges_path)
+            live_ranges = list(live_flush.get("live_ranges") or [])
             stats = flush_stats(stats_path)
             disarm_hook()
         elif str(event).startswith("alloc_hook_"):
@@ -2529,6 +2534,9 @@ class PhaseProgress:
             "alloc_hook_stats": stats,
             "allocator_probe": snapshot_allocator_probe(exclude_hook_vmas=exclude),
         }
+        if live_ranges:
+            mark["live_ranges"] = live_ranges
+            mark["live_ranges_path"] = str(live_ranges_path)
         for key in ("step", "optimizer_step_index", "state_index", "state_bucket", "status"):
             if key in fields:
                 mark[key] = fields[key]
