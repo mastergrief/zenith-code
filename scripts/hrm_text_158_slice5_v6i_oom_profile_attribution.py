@@ -33,7 +33,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     PROFILE_TORCH_CPU_CENSUS_ENV,
 )
 
-ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v6"
+ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v7"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
@@ -147,6 +147,7 @@ def _probe_nested(probe: Mapping[str, Any], *keys: str) -> Any:
 def _allocator_source_scalars(probe: Mapping[str, Any]) -> dict[str, Any]:
     cuda = dict(probe.get("cuda_allocator") or {})
     mallinfo = dict(probe.get("mallinfo2") or {})
+    malloc_info = dict(probe.get("malloc_info_all_arenas") or {})
     rollup = dict(probe.get("smaps_rollup") or {})
     categories = dict(probe.get("smaps_categories") or {})
     host_active = None
@@ -164,6 +165,10 @@ def _allocator_source_scalars(probe: Mapping[str, Any]) -> dict[str, Any]:
         "private_dirty_kb": rollup.get("private_dirty_kb"),
         "heap_kb": categories.get("heap_kb"),
         "glibc_uordblks_bytes": mallinfo.get("uordblks_bytes"),
+        "glibc_arena_system_or_retained_bytes": malloc_info.get(
+            "glibc_arena_system_or_retained_bytes"
+        ),
+        "malloc_info_total_mmap_bytes": malloc_info.get("total_mmap_bytes"),
         "cuda_host_active_bytes": host_active,
         "host_memory_stats_available": bool(cuda.get("host_memory_stats_available")),
         "cuda_gpu_allocated_bytes": cuda.get("cuda_gpu_allocated_bytes"),
@@ -386,6 +391,206 @@ def attribute_allocator_native_profile(
         "host_cache_empty_diagnostic": host_cache_diag,
         "next_probe_route": next_probe_route,
         "c4_delta_rss_gib_reference": c4_delta_rss_gib,
+    }
+
+
+def attribute_allocator_type_partition(
+    *,
+    marks: list[dict[str, Any]],
+    alloc_hook_marks: list[dict[str, Any]],
+    allocator_marks: list[dict[str, Any]],
+    disjointness_probe: Mapping[str, Any] | None,
+    self_footprint: Mapping[str, Any] | None,
+    cross_run_reconcile_caveat: bool = False,
+) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        ALLOCATOR_TYPE_DOMINANCE,
+        ALLOCATOR_TYPE_RECONCILE_MAX,
+        ALLOCATOR_TYPE_RECONCILE_MIN,
+        MALLOC_INFO_SELF_FOOTPRINT_MAX_BYTES,
+        compute_delta_disjoint_partition,
+    )
+
+    subphase = attribute_subphase_rss_profile(marks)
+    c4_delta_gib = None
+    for row in subphase.get("subphase_deltas") or []:
+        if str(row.get("phase")) == "C4_gpu_cap_apply_sync":
+            c4_delta_gib = row.get("delta_rss_gib")
+            break
+    if c4_delta_gib is None:
+        c4_delta_gib = subphase.get("dominant_subphase_delta_rss_gib")
+    if c4_delta_gib is None:
+        return {
+            "allocator_type_owner_status": "INCONCLUSIVE",
+            "tier": "C",
+            "call_site_status": "UNRESOLVED",
+            "reason": "missing_c4_delta",
+        }
+
+    hook_enter = next(
+        (row for row in alloc_hook_marks if str(row.get("event")) == "alloc_hook_C4_enter"),
+        None,
+    )
+    hook_exit = next(
+        (row for row in alloc_hook_marks if str(row.get("event")) == "alloc_hook_C4_exit"),
+        None,
+    )
+    alloc_enter = next(
+        (row for row in allocator_marks if str(row.get("event")) == "allocator_C4_enter"),
+        None,
+    )
+    alloc_exit = next(
+        (row for row in allocator_marks if str(row.get("event")) == "allocator_C4_exit"),
+        None,
+    )
+    if not hook_exit or not alloc_enter or not alloc_exit:
+        return {
+            "allocator_type_owner_status": "INCONCLUSIVE",
+            "tier": "C",
+            "call_site_status": "UNRESOLVED",
+            "reason": "missing_boundary_marks",
+        }
+
+    hook_window = int(dict(hook_exit.get("alloc_hook_stats") or {}).get("window_net_bytes") or 0)
+    malloc_enter = dict((alloc_enter.get("allocator_probe") or {}).get("malloc_info_all_arenas") or {})
+    malloc_exit = dict((alloc_exit.get("allocator_probe") or {}).get("malloc_info_all_arenas") or {})
+    if not malloc_enter.get("available") or not malloc_exit.get("available"):
+        return {
+            "allocator_type_owner_status": "INCONCLUSIVE",
+            "tier": "C",
+            "call_site_status": "UNRESOLVED",
+            "reason": "malloc_info_unavailable_at_boundary",
+            "malloc_info_enter": malloc_enter,
+            "malloc_info_exit": malloc_exit,
+        }
+
+    footprint_bytes = 0
+    footprint_status = None
+    if self_footprint is not None:
+        footprint_status = str(self_footprint.get("malloc_info_self_footprint_status") or "")
+        if footprint_status == "exceeded":
+            return {
+                "allocator_type_owner_status": "INCONCLUSIVE",
+                "tier": "C",
+                "call_site_status": "UNRESOLVED",
+                "reason": "malloc_info_self_footprint_exceeded",
+                "self_footprint": dict(self_footprint),
+            }
+        footprint_bytes = int(self_footprint.get("malloc_info_self_footprint_bytes") or 0)
+
+    catches = None
+    if disjointness_probe is not None and disjointness_probe.get("status") == "ok":
+        catches = bool(disjointness_probe.get("mmap_hook_catches_glibc_internal"))
+
+    enter_cuda = _allocator_source_scalars(dict(alloc_enter.get("allocator_probe") or {}))
+    exit_cuda = _allocator_source_scalars(dict(alloc_exit.get("allocator_probe") or {}))
+    cuda_measured = bool(enter_cuda.get("host_memory_stats_available")) and bool(
+        exit_cuda.get("host_memory_stats_available")
+    )
+    cuda_delta = None
+    if cuda_measured:
+        cuda_delta = _delta_gib(
+            int(exit_cuda.get("cuda_host_active_bytes"))
+            if exit_cuda.get("cuda_host_active_bytes") is not None
+            else None,
+            int(enter_cuda.get("cuda_host_active_bytes"))
+            if enter_cuda.get("cuda_host_active_bytes") is not None
+            else None,
+            kib=False,
+        )
+        if cuda_delta is not None:
+            cuda_delta = int(cuda_delta * (1024**3))
+
+    partition = compute_delta_disjoint_partition(
+        c4_delta_rss_bytes=int(float(c4_delta_gib) * (1024**3)),
+        hook_window_net_bytes=hook_window,
+        malloc_info_enter=malloc_enter,
+        malloc_info_exit=malloc_exit,
+        mmap_hook_catches_glibc_internal=catches,
+        self_footprint_bytes=footprint_bytes,
+        cuda_host_delta_bytes=cuda_delta,
+        cuda_host_measured=cuda_measured,
+    )
+
+    if cross_run_reconcile_caveat:
+        return {
+            "allocator_type_owner_status": "INCONCLUSIVE",
+            "tier": "C",
+            "call_site_status": "UNRESOLVED",
+            "cross_run_reconcile_caveat": True,
+            "partition": partition,
+            "disjointness_probe": dict(disjointness_probe or {}),
+            "self_footprint": dict(self_footprint or {}),
+            "reason": "cross_run_buckets_forbidden_for_resolved",
+        }
+
+    fail_reasons = list(partition.get("fail_reasons") or [])
+    if footprint_status == "unavailable":
+        fail_reasons.append("malloc_info_self_footprint_unavailable")
+
+    measured = dict(partition.get("measured_buckets_bytes") or {})
+    c4_bytes = int(partition.get("c4_delta_rss_bytes") or 0)
+    measured_sum = int(partition.get("measured_sum_bytes") or 0)
+    residual = int(partition.get("residual_unattributed_bytes") or 0)
+    reconcile = partition.get("reconcile_ratio_measured_only")
+    residual_fraction = partition.get("residual_fraction_of_c4")
+
+    dominant_type = None
+    dominant_bytes = 0
+    for name, value in measured.items():
+        if value is None:
+            continue
+        if int(value) > dominant_bytes:
+            dominant_bytes = int(value)
+            dominant_type = name
+
+    tier = "C"
+    owner_status = "INCONCLUSIVE"
+    if fail_reasons:
+        owner_status = "INCONCLUSIVE"
+    elif reconcile is not None and ALLOCATOR_TYPE_RECONCILE_MIN <= float(reconcile) <= ALLOCATOR_TYPE_RECONCILE_MAX:
+        if dominant_type and c4_bytes > 0 and (dominant_bytes / c4_bytes) >= ALLOCATOR_TYPE_DOMINANCE:
+            owner_status = "RESOLVED_BY_TYPE"
+            tier = "A"
+        else:
+            owner_status = "PARTIAL"
+            tier = "B"
+    elif (
+        not cuda_measured
+        and residual_fraction is not None
+        and float(residual_fraction) >= ALLOCATOR_TYPE_DOMINANCE
+    ):
+        owner_status = "INFERRED_RESIDUAL_DOMINANT"
+        tier = "C"
+
+    mallinfo_enter = dict((alloc_enter.get("allocator_probe") or {}).get("mallinfo2") or {})
+    mallinfo_exit = dict((alloc_exit.get("allocator_probe") or {}).get("mallinfo2") or {})
+
+    return {
+        "allocator_type_owner_status": owner_status,
+        "tier": tier,
+        "dominant_allocator_type": dominant_type,
+        "dominant_allocator_type_bytes": dominant_bytes if dominant_type else None,
+        "call_site_status": "UNRESOLVED",
+        "c4_delta_rss_gib": float(c4_delta_gib),
+        "hook_window_net_gib": hook_window / (1024.0**3),
+        "cuda_host_measured": cuda_measured,
+        "cuda_host_delta_gib": (cuda_delta / (1024.0**3)) if cuda_delta is not None else None,
+        "residual_unattributed_gib": residual / (1024.0**3),
+        "residual_fraction_of_c4": residual_fraction,
+        "reconcile_ratio_measured_only": reconcile,
+        "measured_sum_gib": measured_sum / (1024.0**3),
+        "partition": partition,
+        "disjointness_probe": dict(disjointness_probe or {}),
+        "self_footprint": dict(self_footprint or {}),
+        "mallinfo2_main_arena_cross_check": {
+            "enter_uordblks_bytes": mallinfo_enter.get("uordblks_bytes"),
+            "exit_uordblks_bytes": mallinfo_exit.get("uordblks_bytes"),
+            "label": "main_arena_cross_check_only",
+        },
+        "fail_reasons": fail_reasons,
+        "cross_run_reconcile_caveat": bool(cross_run_reconcile_caveat),
+        "malloc_info_self_footprint_threshold_bytes": MALLOC_INFO_SELF_FOOTPRINT_MAX_BYTES,
     }
 
 
@@ -1260,6 +1465,9 @@ def build_attribution_receipt(
     census_profile_path: Path | None = None,
     allocator_profile_path: Path | None = None,
     alloc_hook_profile_path: Path | None = None,
+    disjointness_probe: Mapping[str, Any] | None = None,
+    self_footprint: Mapping[str, Any] | None = None,
+    cross_run_reconcile_caveat: bool = False,
 ) -> dict[str, Any]:
     marks = _read_jsonl(profile_path)
     diagnostic_marks = (
@@ -1314,6 +1522,24 @@ def build_attribution_receipt(
         hook_path = alloc_hook_profile_path or profile_path
         receipt["alloc_hook_profile_path"] = str(hook_path)
         receipt["alloc_hook_mark_count"] = len(alloc_hook_marks)
+    effective_allocator_marks = allocator_marks
+    if effective_allocator_marks is None:
+        effective_allocator_marks = [row for row in marks if _is_allocator_mark(row)] or None
+    if (
+        effective_allocator_marks
+        and alloc_hook_marks
+        and any(str(row.get("event")) == "allocator_C4_exit" for row in effective_allocator_marks)
+    ):
+        type_attr = attribute_allocator_type_partition(
+            marks=marks,
+            alloc_hook_marks=alloc_hook_marks,
+            allocator_marks=effective_allocator_marks,
+            disjointness_probe=disjointness_probe,
+            self_footprint=self_footprint,
+            cross_run_reconcile_caveat=cross_run_reconcile_caveat,
+        )
+        receipt["allocator_type_attribution"] = type_attr
+        receipt["call_site_status"] = "UNRESOLVED"
     alloc_hook_attr = attribution.get("alloc_hook_attribution")
     if isinstance(alloc_hook_attr, Mapping):
         classified_null = alloc_hook_attr.get("classified_null")
@@ -1495,6 +1721,164 @@ def run_fixture_torch_census(out_root: Path) -> dict[str, Any]:
         "census_events_seen": sorted({str(row.get("event")) for row in census_marks}),
         "measurement_perturbed": True,
     }
+
+
+def run_fixture_allocator_type(out_root: Path) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        default_hook_so_path,
+        run_ld_preload_torch_preflight,
+        run_positive_control,
+    )
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        measure_malloc_info_self_footprint,
+        read_malloc_info_all_arenas,
+        run_isolated_mmap_disjointness_probe,
+    )
+
+    out_root.mkdir(parents=True, exist_ok=True)
+    scratch = out_root / "allocator_type_fixture_n1"
+    scratch.mkdir(parents=True, exist_ok=True)
+    malloc_info_avail = read_malloc_info_all_arenas()
+    if not malloc_info_avail.get("available"):
+        return {
+            "scratch_root": str(scratch),
+            "exit_code": 2,
+            "malloc_info_availability": malloc_info_avail,
+            "allocator_type_attribution": {
+                "allocator_type_owner_status": "INCONCLUSIVE",
+                "tier": "C",
+                "reason": "malloc_info_unavailable",
+            },
+        }
+
+    so_path = default_hook_so_path()
+    preflight = run_ld_preload_torch_preflight(so_path)
+    if preflight.get("status") != "ok":
+        return {
+            "scratch_root": str(scratch),
+            "preflight": preflight,
+            "exit_code": 2,
+            "hook_status": "HOOK_FAILURE",
+            "malloc_info_availability": malloc_info_avail,
+        }
+
+    positive_env = os.environ.copy()
+    positive_env["LD_PRELOAD"] = str(so_path)
+    positive_env[PROFILE_ALLOC_HOOK_ENV] = "1"
+    positive_env["HRM_TEXT_158_PROFILE_HOST_RSS"] = "1"
+    positive_env["HRM_TEXT_158_ALLOC_HOOK_STATS_PATH"] = str(
+        scratch / "alloc_hook_positive_control.json"
+    )
+    positive_proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import run_positive_control; "
+                "import json; "
+                "out=run_positive_control(Path(%r)); "
+                "print(json.dumps(out))"
+            )
+            % str(scratch / "alloc_hook_positive_control.json"),
+        ],
+        cwd=REPO_ROOT,
+        env={**positive_env, "PYTHONPATH": "."},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    positive: dict[str, Any]
+    try:
+        positive = json.loads((positive_proc.stdout or "").strip().splitlines()[-1])
+    except Exception:
+        positive = {
+            "status": "HOOK_FAILURE",
+            "reason": "positive_control_subprocess_failed",
+            "exit_code": int(positive_proc.returncode),
+            "stderr_tail": "\n".join(positive_proc.stderr.splitlines()[-10:]),
+        }
+    if positive.get("status") != "ok":
+        return {
+            "scratch_root": str(scratch),
+            "preflight": preflight,
+            "positive_control": positive,
+            "exit_code": 2,
+            "hook_status": "HOOK_FAILURE",
+            "malloc_info_availability": malloc_info_avail,
+        }
+
+    self_footprint = measure_malloc_info_self_footprint()
+    disjointness_probe = run_isolated_mmap_disjointness_probe(
+        so_path=so_path,
+        out_path=scratch / "disjointness_probe.json",
+    )
+
+    lane_holding: dict[str, Any] | None = None
+    lane_release: dict[str, Any] | None = None
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_acquire import acquire_resource_lane
+
+        lane_holding = acquire_resource_lane(out_root)
+    except Exception as exc:
+        lane_holding = {"acquire_error": f"{type(exc).__name__}: {exc}"}
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    env["LD_PRELOAD"] = str(so_path)
+    env["HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP"] = "1"
+    env["HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY"] = "1"
+    env["HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"] = "1"
+    env["HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"] = "1"
+    env[PROFILE_HOST_RSS_ENV] = "1"
+    env[PROFILE_ALLOCATOR_NATIVE_ENV] = "1"
+    env[PROFILE_ALLOC_HOOK_ENV] = "1"
+    env["HRM_TEXT_158_ALLOC_HOOK_STATS_PATH"] = str(scratch / "alloc_hook_stats.json")
+    cmd = _fixture_probe_argv(scratch)
+    proc = subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=600,
+    )
+    profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane
+
+        lane_release = release_resource_lane(out_root)
+    except Exception as exc:
+        lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
+
+    receipt = build_attribution_receipt(
+        run_root=scratch,
+        profile_path=profile_path,
+        alloc_hook_profile_path=profile_path,
+        disjointness_probe=disjointness_probe,
+        self_footprint=self_footprint,
+    )
+    receipt["fixture"] = {
+        "scratch_root": str(scratch),
+        "command": cmd,
+        "exit_code": int(proc.returncode),
+        "stdout_tail": "\n".join(proc.stdout.splitlines()[-20:]),
+        "stderr_tail": "\n".join(proc.stderr.splitlines()[-20:]),
+        "resource_lane_holding": lane_holding,
+        "resource_lane_release": lane_release,
+        "preflight": preflight,
+        "positive_control": positive,
+        "malloc_info_availability": malloc_info_avail,
+        "self_footprint": self_footprint,
+        "disjointness_probe": disjointness_probe,
+        "measurement_perturbed": True,
+        "hook_so_path": str(so_path),
+        "isolated_subprocess_disjointness_probe": True,
+        "in_process_256mib_probe_before_c4": False,
+    }
+    return receipt
 
 
 def run_fixture_alloc_hook(out_root: Path) -> dict[str, Any]:
@@ -1749,6 +2133,7 @@ def main() -> int:
             "fixture_torch_census",
             "fixture_allocator_native",
             "fixture_alloc_hook",
+            "fixture_allocator_type",
         ),
         required=True,
     )
@@ -1826,6 +2211,8 @@ def main() -> int:
         payload = run_fixture_allocator_native(args.run_root)
     elif args.mode == "fixture_alloc_hook":
         payload = run_fixture_alloc_hook(args.run_root)
+    elif args.mode == "fixture_allocator_type":
+        payload = run_fixture_allocator_type(args.run_root)
     else:
         payload = run_fixture(args.run_root)
 
@@ -1838,6 +2225,7 @@ def main() -> int:
         "fixture_torch_census",
         "fixture_allocator_native",
         "fixture_alloc_hook",
+        "fixture_allocator_type",
     } and int(payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))) != 0:
         return 1
     return 0

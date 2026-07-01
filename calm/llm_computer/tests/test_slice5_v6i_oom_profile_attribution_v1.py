@@ -290,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v6")
+    assert receipt["schema"].endswith("/v7")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -1014,4 +1014,397 @@ def test_build_attribution_receipt_auto_detects_alloc_hook_marks(tmp_path) -> No
     assert receipt["call_site_status"] == "UNRESOLVED"
     assert receipt["classified_null"]["slice_outcome"] == "CLASSIFIED_NULL"
     assert receipt["allocator_type_partition"]["mmap_net_gib"] > 3.5
+
+
+def _malloc_info_payload(
+    *,
+    system_current: int,
+    total_mmap: int,
+) -> dict[str, Any]:
+    return {
+        "available": True,
+        "system_current_bytes": system_current,
+        "total_mmap_bytes": total_mmap,
+        "glibc_arena_system_or_retained_bytes": system_current,
+        "label": "glibc_arena_system_or_retained",
+    }
+
+
+def _allocator_mark_malloc_info(
+    event: str,
+    *,
+    rss_kib: int,
+    system_current: int,
+    total_mmap: int,
+    host_active: int | None = None,
+) -> dict[str, Any]:
+    cuda: dict[str, Any] = {"host_memory_stats_available": host_active is not None}
+    if host_active is not None:
+        cuda["cuda_host_active_bytes_all_current"] = host_active
+    return {
+        "schema": probe.PROFILE_HOST_RSS_ALLOCATOR_SCHEMA,
+        "event": event,
+        "resource_snapshot": {"rss_kib": rss_kib},
+        "allocator_probe": {
+            "malloc_info_all_arenas": _malloc_info_payload(
+                system_current=system_current,
+                total_mmap=total_mmap,
+            ),
+            "mallinfo2": {"uordblks_bytes": system_current},
+            "cuda_allocator": cuda,
+        },
+        "measurement_perturbed": True,
+    }
+
+
+def _c4_subphase_profile_marks(*, delta_gib: float = 7.33) -> list[dict[str, Any]]:
+    enter_kib = 2_500_000
+    exit_kib = enter_kib + int(delta_gib * 1024 * 1024)
+    return [
+        {
+            "schema": probe.PROFILE_HOST_RSS_SCHEMA,
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": "enter",
+            "resource_snapshot": {"rss_kib": enter_kib},
+        },
+        {
+            "schema": probe.PROFILE_HOST_RSS_SCHEMA,
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": "exit",
+            "resource_snapshot": {"rss_kib": exit_kib},
+        },
+    ]
+
+
+def test_compute_delta_disjoint_partition_delta_not_absolute() -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        compute_delta_disjoint_partition,
+    )
+
+    enter = _malloc_info_payload(system_current=500_000_000, total_mmap=1_000_000_000)
+    exit_ = _malloc_info_payload(system_current=3_500_000_000, total_mmap=5_500_000_000)
+    c4_bytes = int(7.33 * (1024**3))
+    hook_window = 4_500_000_000
+    part = compute_delta_disjoint_partition(
+        c4_delta_rss_bytes=c4_bytes,
+        hook_window_net_bytes=hook_window,
+        malloc_info_enter=enter,
+        malloc_info_exit=exit_,
+        mmap_hook_catches_glibc_internal=True,
+    )
+    assert part["delta_glibc_mmap_bytes"] == 4_500_000_000
+    assert part["non_glibc_mmap_bytes"] == 0
+    assert "negative_non_glibc_mmap" not in part["fail_reasons"]
+    absolute_wrong = hook_window - int(exit_["total_mmap_bytes"])
+    assert absolute_wrong < 0
+
+
+def test_allocator_type_partition_self_footprint_exceeded_inconclusive() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_type_partition,
+    )
+
+    marks = _c4_subphase_profile_marks()
+    hook_marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_500_000),
+        _alloc_hook_mark(
+            "alloc_hook_C4_exit",
+            rss_kib=10_000_000,
+            stats={"window_net_bytes": 4_000_000_000},
+        ),
+    ]
+    alloc_marks = [
+        _allocator_mark_malloc_info(
+            "allocator_C4_enter",
+            rss_kib=2_500_000,
+            system_current=500_000_000,
+            total_mmap=1_000_000_000,
+        ),
+        _allocator_mark_malloc_info(
+            "allocator_C4_exit",
+            rss_kib=10_000_000,
+            system_current=3_000_000_000,
+            total_mmap=5_000_000_000,
+        ),
+    ]
+    result = attribute_allocator_type_partition(
+        marks=marks,
+        alloc_hook_marks=hook_marks,
+        allocator_marks=alloc_marks,
+        disjointness_probe={"status": "ok", "mmap_hook_catches_glibc_internal": True},
+        self_footprint={
+            "malloc_info_self_footprint_status": "exceeded",
+            "malloc_info_self_footprint_bytes": 8_000_000,
+        },
+    )
+    assert result["allocator_type_owner_status"] == "INCONCLUSIVE"
+    assert result["reason"] == "malloc_info_self_footprint_exceeded"
+
+
+def test_allocator_type_partition_cross_run_not_resolved() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_type_partition,
+    )
+
+    marks = _c4_subphase_profile_marks()
+    hook_marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_500_000),
+        _alloc_hook_mark(
+            "alloc_hook_C4_exit",
+            rss_kib=10_000_000,
+            stats={"window_net_bytes": 4_000_000_000},
+        ),
+    ]
+    alloc_marks = [
+        _allocator_mark_malloc_info(
+            "allocator_C4_enter",
+            rss_kib=2_500_000,
+            system_current=500_000_000,
+            total_mmap=1_000_000_000,
+        ),
+        _allocator_mark_malloc_info(
+            "allocator_C4_exit",
+            rss_kib=10_000_000,
+            system_current=6_500_000_000,
+            total_mmap=5_000_000_000,
+        ),
+    ]
+    result = attribute_allocator_type_partition(
+        marks=marks,
+        alloc_hook_marks=hook_marks,
+        allocator_marks=alloc_marks,
+        disjointness_probe={"status": "ok", "mmap_hook_catches_glibc_internal": True},
+        self_footprint={"malloc_info_self_footprint_status": "ok", "malloc_info_self_footprint_bytes": 0},
+        cross_run_reconcile_caveat=True,
+    )
+    assert result["allocator_type_owner_status"] == "INCONCLUSIVE"
+    assert result["cross_run_reconcile_caveat"] is True
+
+
+def test_allocator_type_partition_disjointness_ambiguous_inconclusive() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_type_partition,
+    )
+
+    marks = _c4_subphase_profile_marks()
+    hook_marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_500_000),
+        _alloc_hook_mark(
+            "alloc_hook_C4_exit",
+            rss_kib=10_000_000,
+            stats={"window_net_bytes": 4_000_000_000},
+        ),
+    ]
+    alloc_marks = [
+        _allocator_mark_malloc_info(
+            "allocator_C4_enter",
+            rss_kib=2_500_000,
+            system_current=500_000_000,
+            total_mmap=1_000_000_000,
+        ),
+        _allocator_mark_malloc_info(
+            "allocator_C4_exit",
+            rss_kib=10_000_000,
+            system_current=3_000_000_000,
+            total_mmap=5_000_000_000,
+        ),
+    ]
+    result = attribute_allocator_type_partition(
+        marks=marks,
+        alloc_hook_marks=hook_marks,
+        allocator_marks=alloc_marks,
+        disjointness_probe=None,
+        self_footprint={"malloc_info_self_footprint_status": "ok", "malloc_info_self_footprint_bytes": 0},
+    )
+    assert result["allocator_type_owner_status"] == "INCONCLUSIVE"
+    assert "disjointness_probe_ambiguous" in result["fail_reasons"]
+
+
+def test_allocator_type_partition_honest_glibc_label() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_type_partition,
+    )
+
+    marks = _c4_subphase_profile_marks()
+    hook_marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_500_000),
+        _alloc_hook_mark(
+            "alloc_hook_C4_exit",
+            rss_kib=10_000_000,
+            stats={"window_net_bytes": 500_000_000},
+        ),
+    ]
+    alloc_marks = [
+        _allocator_mark_malloc_info(
+            "allocator_C4_enter",
+            rss_kib=2_500_000,
+            system_current=200_000_000,
+            total_mmap=100_000_000,
+        ),
+        _allocator_mark_malloc_info(
+            "allocator_C4_exit",
+            rss_kib=10_000_000,
+            system_current=6_800_000_000,
+            total_mmap=200_000_000,
+        ),
+    ]
+    result = attribute_allocator_type_partition(
+        marks=marks,
+        alloc_hook_marks=hook_marks,
+        allocator_marks=alloc_marks,
+        disjointness_probe={"status": "ok", "mmap_hook_catches_glibc_internal": False},
+        self_footprint={"malloc_info_self_footprint_status": "ok", "malloc_info_self_footprint_bytes": 0},
+    )
+    measured = result["partition"]["measured_buckets_bytes"]
+    assert "glibc_arena_system_or_retained_bytes" in measured
+    assert result["partition"]["delta_glibc_arena_system_or_retained_bytes"] == 6_600_000_000
+
+
+def test_allocator_type_residual_dominant_without_cuda_host_stats() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_allocator_type_partition,
+    )
+
+    marks = _c4_subphase_profile_marks()
+    hook_marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_500_000),
+        _alloc_hook_mark(
+            "alloc_hook_C4_exit",
+            rss_kib=10_000_000,
+            stats={"window_net_bytes": 200_000_000},
+        ),
+    ]
+    alloc_marks = [
+        _allocator_mark_malloc_info(
+            "allocator_C4_enter",
+            rss_kib=2_500_000,
+            system_current=200_000_000,
+            total_mmap=100_000_000,
+        ),
+        _allocator_mark_malloc_info(
+            "allocator_C4_exit",
+            rss_kib=10_000_000,
+            system_current=400_000_000,
+            total_mmap=150_000_000,
+        ),
+    ]
+    result = attribute_allocator_type_partition(
+        marks=marks,
+        alloc_hook_marks=hook_marks,
+        allocator_marks=alloc_marks,
+        disjointness_probe={"status": "ok", "mmap_hook_catches_glibc_internal": False},
+        self_footprint={"malloc_info_self_footprint_status": "ok", "malloc_info_self_footprint_bytes": 0},
+    )
+    assert result["allocator_type_owner_status"] != "RESOLVED_BY_TYPE"
+    assert result["cuda_host_measured"] is False
+    if result["allocator_type_owner_status"] == "INFERRED_RESIDUAL_DOMINANT":
+        assert result["tier"] == "C"
+
+
+def test_parse_malloc_info_xml_labels() -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import parse_malloc_info_xml
+
+    xml = b"""<malloc version="1"><system type="current" size="12345"/>
+    <total type="rest" size="100"/><total type="mmap" size="200"/></malloc>"""
+    parsed = parse_malloc_info_xml(xml)
+    assert parsed["available"] is True
+    assert parsed["label"] == "glibc_arena_system_or_retained"
+    assert parsed["glibc_arena_system_or_retained_bytes"] == 12345
+
+
+def test_repeated_malloc_info_capture_footprint_bounded() -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        MALLOC_INFO_SELF_FOOTPRINT_MAX_BYTES,
+        measure_malloc_info_self_footprint,
+        read_malloc_info_all_arenas,
+    )
+
+    for _ in range(50):
+        captured = read_malloc_info_all_arenas()
+        if not captured.get("available"):
+            pytest.skip("malloc_info unavailable on host")
+    footprint = measure_malloc_info_self_footprint(samples=3)
+    assert footprint["malloc_info_self_footprint_status"] == "ok"
+    assert int(footprint["malloc_info_self_footprint_bytes"] or 0) <= MALLOC_INFO_SELF_FOOTPRINT_MAX_BYTES
+
+
+def test_measure_malloc_info_self_footprint_counts_total_rest_delta(monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        MALLOC_INFO_SELF_FOOTPRINT_MAX_BYTES,
+        measure_malloc_info_self_footprint,
+    )
+
+    readings = [
+        {
+            "available": True,
+            "system_current_bytes": 121_499_648,
+            "total_mmap_bytes": 4_927_488,
+            "total_rest_bytes": 844_074,
+        },
+        {
+            "available": True,
+            "system_current_bytes": 121_499_648,
+            "total_mmap_bytes": 4_927_488,
+            "total_rest_bytes": 839_994,
+        },
+        {
+            "available": True,
+            "system_current_bytes": 121_499_648,
+            "total_mmap_bytes": 4_927_488,
+            "total_rest_bytes": 835_914,
+        },
+    ]
+    call_idx = {"i": 0}
+
+    def _fake_read() -> dict:
+        row = readings[min(call_idx["i"], len(readings) - 1)]
+        call_idx["i"] += 1
+        return dict(row)
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.host_allocator_probe.read_malloc_info_all_arenas",
+        _fake_read,
+    )
+    footprint = measure_malloc_info_self_footprint(samples=3)
+    assert footprint["malloc_info_self_footprint_bytes"] == 844_074 - 835_914
+    assert footprint["malloc_info_self_footprint_bytes"] > 0
+    assert footprint["malloc_info_self_footprint_status"] == "ok"
+    assert footprint["malloc_info_self_footprint_bytes"] <= MALLOC_INFO_SELF_FOOTPRINT_MAX_BYTES
+
+
+def test_measure_malloc_info_self_footprint_total_rest_exceeded_inconclusive(monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        measure_malloc_info_self_footprint,
+    )
+
+    readings = [
+        {
+            "available": True,
+            "system_current_bytes": 100,
+            "total_mmap_bytes": 200,
+            "total_rest_bytes": 0,
+        },
+        {
+            "available": True,
+            "system_current_bytes": 100,
+            "total_mmap_bytes": 200,
+            "total_rest_bytes": 5_000_000,
+        },
+    ]
+    call_idx = {"i": 0}
+
+    def _fake_read() -> dict:
+        row = readings[min(call_idx["i"], len(readings) - 1)]
+        call_idx["i"] += 1
+        return dict(row)
+
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.host_allocator_probe.read_malloc_info_all_arenas",
+        _fake_read,
+    )
+    footprint = measure_malloc_info_self_footprint(samples=2)
+    assert footprint["malloc_info_self_footprint_bytes"] == 5_000_000
+    assert footprint["malloc_info_self_footprint_status"] == "exceeded"
 
