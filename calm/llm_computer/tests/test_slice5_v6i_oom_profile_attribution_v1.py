@@ -290,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v9")
+    assert receipt["schema"].endswith("/v10")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -1861,4 +1861,315 @@ def test_debugmallocstats_preflight_parseable() -> None:
     result = preflight_debugmallocstats_self_test()
     assert result["capture_method"] == "os.dup2_fd2_tempfile"
     assert result["status"] == "ok"
+
+
+def test_gate_a_parse_debugmallocstats_current_arena_bytes() -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        parse_debugmallocstats,
+    )
+
+    text = """
+# arenas allocated current = 3
+# arenas allocated total = 10
+# arenas highwater mark = 8
+3 arenas * 1048576 bytes/arena = 3,145,728
+# bytes in allocated blocks = 1,234,567
+# bytes in available blocks = 2,345,678
+"""
+    parsed = parse_debugmallocstats(text)
+    assert parsed["parse_ok"] is True
+    assert parsed["arenas_allocated_current"] == 3
+    assert parsed["arenas_allocated_total"] == 10
+    assert parsed["arenas_highwater_mark"] == 8
+    assert parsed["arena_bytes"] == 3_145_728
+    assert parsed["bytes_in_allocated_blocks"] == 1_234_567
+
+
+def _obmalloc_c4_marks(
+    *,
+    c3_arena: int,
+    c4_enter_arena: int,
+    c4_exit_arena: int,
+    c4_enter_alloc: int,
+    c4_exit_alloc: int,
+) -> list[dict[str, Any]]:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+    )
+
+    stats = lambda arena, alloc: {
+        "available": True,
+        "parse_ok": True,
+        "arenas_allocated_current": 1,
+        "arena_bytes": arena,
+        "bytes_in_allocated_blocks": alloc,
+    }
+    return [
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+            "event": "obmalloc_C3_exit",
+            "measurement_perturbed": True,
+            "debugmallocstats": stats(c3_arena, 0),
+        },
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+            "event": "obmalloc_C4_enter",
+            "measurement_perturbed": True,
+            "debugmallocstats": stats(c4_enter_arena, c4_enter_alloc),
+        },
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+            "event": "obmalloc_C4_exit",
+            "measurement_perturbed": True,
+            "debugmallocstats": stats(c4_exit_arena, c4_exit_alloc),
+        },
+    ]
+
+
+def test_gate_b_obmalloc_reconcile_uses_c4_enter_baseline() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_arena_retention,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    obmalloc = _obmalloc_c4_marks(
+        c3_arena=100,
+        c4_enter_arena=1_000_000,
+        c4_exit_arena=1_000_000 + BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        c4_enter_alloc=100,
+        c4_exit_alloc=int(BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES * 0.8),
+    )
+    result = attribute_obmalloc_arena_retention(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + obmalloc,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    deltas = result["deltas"]
+    assert deltas["arena_bytes_delta_reconcile"] == BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES
+    assert deltas["arena_bytes_delta_c3_to_c4_enter"] == 1_000_000 - 100
+    assert result["classifier_terminal"] == "OBMALLOC_LIVE_CHURN"
+
+
+def test_gate_c_obmalloc_self_footprint_inconclusive() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_arena_retention,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    result = attribute_obmalloc_arena_retention(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={
+            "status": "exceeded",
+            "debugmallocstats_self_footprint_status": "exceeded",
+            "debugmallocstats_self_footprint_bytes": 9_000_000,
+        },
+    )
+    assert result["fail_closed_terminal"] == "OBMALLOC_SELF_FOOTPRINT_INCONCLUSIVE"
+
+
+def test_gate_c_obmalloc_arena_stats_unparseable() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_arena_retention,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    result = attribute_obmalloc_arena_retention(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        debugmallocstats_preflight={"status": "unavailable"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["fail_closed_terminal"] == "ARENA_STATS_UNPARSEABLE_INCONCLUSIVE"
+
+
+def test_gate_c_obmalloc_observer_perturbed_incomplete_b() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_arena_retention,
+    )
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    partial_b = marks + [
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+            "event": "obmalloc_C4_enter",
+            "measurement_perturbed": True,
+            "debugmallocstats": {"available": True, "arena_bytes": 1, "bytes_in_allocated_blocks": 1},
+        }
+    ]
+    result = attribute_obmalloc_arena_retention(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=partial_b,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["fail_closed_terminal"] == "OBSERVER_PERTURBED_INCONCLUSIVE"
+
+
+def test_gate_d_obmalloc_arena_delta_floor_not_obmalloc() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_arena_retention,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    tiny_delta = 512 * 1024
+    obmalloc = _obmalloc_c4_marks(
+        c3_arena=0,
+        c4_enter_arena=1_000_000,
+        c4_exit_arena=1_000_000 + tiny_delta,
+        c4_enter_alloc=100,
+        c4_exit_alloc=100,
+    )
+    result = attribute_obmalloc_arena_retention(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + obmalloc,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["classifier_terminal"] == "NOT_OBMALLOC_UNTRACED"
+    assert result["deltas"]["reconcile_ratio"] == pytest.approx(
+        tiny_delta / BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES
+    )
+
+
+def test_gate_f_obmalloc_reconcile_out_of_band_low() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_arena_retention,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    delta = int(BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES * 0.30)
+    obmalloc = _obmalloc_c4_marks(
+        c3_arena=0,
+        c4_enter_arena=0,
+        c4_exit_arena=delta,
+        c4_enter_alloc=0,
+        c4_exit_alloc=int(delta * 0.8),
+    )
+    result = attribute_obmalloc_arena_retention(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + obmalloc,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["fail_closed_terminal"] == "RECONCILE_OUT_OF_BAND_INCONCLUSIVE"
+
+
+def test_gate_f_obmalloc_not_obmalloc_untraced_low_ratio() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_arena_retention,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    delta = int(BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES * 0.10)
+    obmalloc = _obmalloc_c4_marks(
+        c3_arena=0,
+        c4_enter_arena=0,
+        c4_exit_arena=delta,
+        c4_enter_alloc=0,
+        c4_exit_alloc=0,
+    )
+    result = attribute_obmalloc_arena_retention(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + obmalloc,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["classifier_terminal"] == "NOT_OBMALLOC_UNTRACED"
+    assert result["fail_closed_terminal"] is None
+
+
+def test_gate_f_obmalloc_high_water_retention_branch() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_arena_retention,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+    delta = BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES
+    obmalloc = _obmalloc_c4_marks(
+        c3_arena=0,
+        c4_enter_arena=0,
+        c4_exit_arena=delta,
+        c4_enter_alloc=0,
+        c4_exit_alloc=int(delta * 0.1),
+    )
+    result = attribute_obmalloc_arena_retention(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks + obmalloc,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["classifier_terminal"] == "OBMALLOC_HIGH_WATER_RETENTION"
+
+
+def test_gate_e_dual_env_abort_subprocess() -> None:
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    env[probe.PROFILE_HOST_RSS_ENV] = "1"
+    env[probe.PROFILE_TRACEMALLOC_ENV] = "1"
+    env[probe.PROFILE_DEBUGMALLOCSTATS_ENV] = "1"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import scripts.hrm_text_158_bounded_delta_acquisition_probe as p; "
+            "p.assert_profile_tracemalloc_debugmallocstats_mutual_exclusion()",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert "profile_env_mutual_exclusion_abort" in proc.stdout
+
+
+def test_capture_debugmallocstats_fd_cleanup_on_error(monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack import host_allocator_probe as hap
+
+    monkeypatch.setattr(hap.sys, "_debugmallocstats", lambda: (_ for _ in ()).throw(RuntimeError("boom")), raising=False)
+    text, err = hap.capture_debugmallocstats_fd2()
+    assert text is None
+    assert err is not None
+
+
+def test_measure_debugmallocstats_self_footprint_ok() -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        DEBUGMALLOC_SELF_FOOTPRINT_MAX_BYTES,
+        measure_debugmallocstats_self_footprint,
+    )
+
+    result = measure_debugmallocstats_self_footprint(samples=2)
+    assert result["status"] in {"ok", "exceeded", "unavailable"}
+    if result["status"] == "ok":
+        assert int(result["debugmallocstats_self_footprint_bytes"] or 0) <= DEBUGMALLOC_SELF_FOOTPRINT_MAX_BYTES
 

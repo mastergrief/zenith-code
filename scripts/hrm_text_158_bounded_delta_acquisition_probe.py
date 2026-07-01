@@ -317,6 +317,7 @@ PROFILE_ALLOCATOR_NATIVE_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_NATIVE"
 PROFILE_ALLOCATOR_HOST_CACHE_DIAG_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_HOST_CACHE_DIAG"
 PROFILE_ALLOC_HOOK_ENV = "HRM_TEXT_158_PROFILE_ALLOC_HOOK"
 PROFILE_TRACEMALLOC_ENV = "HRM_TEXT_158_PROFILE_TRACEMALLOC"
+PROFILE_DEBUGMALLOCSTATS_ENV = "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS"
 PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
 PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
@@ -325,6 +326,7 @@ PROFILE_HOST_RSS_ALLOCATOR_SCHEMA = "hrm_text_158_profile_host_rss_mark/v4"
 PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v5"
 PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA = "hrm_text_158_profile_host_rss_mark/v6"
 PROFILE_HOST_RSS_TRIANGULATION_SCHEMA = "hrm_text_158_profile_host_rss_mark/v7"
+PROFILE_HOST_RSS_OBMALLOC_SCHEMA = "hrm_text_158_profile_host_rss_mark/v8"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
@@ -1820,6 +1822,25 @@ def profile_tracemalloc_enabled() -> bool:
     return _enabled()
 
 
+def profile_debugmallocstats_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        profile_debugmallocstats_enabled as _enabled,
+    )
+
+    return _enabled()
+
+
+def assert_profile_tracemalloc_debugmallocstats_mutual_exclusion() -> None:
+    if profile_tracemalloc_enabled() and profile_debugmallocstats_enabled():
+        payload = {
+            "event": "profile_env_mutual_exclusion_abort",
+            "tracemalloc_env": PROFILE_TRACEMALLOC_ENV,
+            "debugmallocstats_env": PROFILE_DEBUGMALLOCSTATS_ENV,
+        }
+        print(json.dumps(payload, sort_keys=True), flush=True)
+        os.abort()
+
+
 def profile_allocator_native_enabled() -> bool:
     from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
         profile_allocator_native_enabled as _enabled,
@@ -2598,6 +2619,44 @@ class PhaseProgress:
                 mark[key] = fields[key]
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
+    def _emit_obmalloc_boundary_mark(
+        self,
+        event: str,
+        *,
+        fields: Mapping[str, Any],
+        measurement_perturbed: bool = False,
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_debugmallocstats_enabled():
+            return
+        from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+            read_debugmallocstats,
+        )
+
+        mark: dict[str, Any] = {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "parent_phase": "sparse_cap_apply",
+            "event": str(event),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": _proc_self_resource_snapshot(),
+            "measurement_perturbed": bool(measurement_perturbed),
+            "debugmallocstats": read_debugmallocstats(),
+        }
+        for key in (
+            "step",
+            "optimizer_step_index",
+            "state_index",
+            "state_bucket",
+            "allocation_site_id",
+            "sub_phase_id",
+        ):
+            if key in fields:
+                mark[key] = fields[key]
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
     def make_host_rss_subphase_emitter(
         self,
         *,
@@ -2752,6 +2811,38 @@ class PhaseProgress:
             )
 
         emit.triangulation_emit = triangulation_emit  # type: ignore[attr-defined]
+
+        def obmalloc_emit(
+            event: str,
+            *,
+            sub_phase_id: str,
+            optimizer_step_index: int,
+            allocation_site_id: str,
+            state_index: int | None = None,
+            state_bucket: int | None = None,
+        ) -> None:
+            self._emit_obmalloc_boundary_mark(
+                str(event),
+                fields={
+                    "step": int(step),
+                    "optimizer_step_index": int(optimizer_step_index),
+                    "sub_phase_id": str(sub_phase_id),
+                    "allocation_site_id": str(allocation_site_id),
+                    **(
+                        {"state_index": int(state_index)}
+                        if state_index is not None
+                        else {}
+                    ),
+                    **(
+                        {"state_bucket": int(state_bucket)}
+                        if state_bucket is not None
+                        else {}
+                    ),
+                },
+                measurement_perturbed=True,
+            )
+
+        emit.obmalloc_emit = obmalloc_emit  # type: ignore[attr-defined]
         return emit
 
     def mark(self, phase: str, event: str, **fields: Any) -> dict[str, Any]:
@@ -7410,6 +7501,7 @@ def run_c2p1_probe(
             f"{ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES}"
         )
     assert_default_off(enabled)
+    assert_profile_tracemalloc_debugmallocstats_mutual_exclusion()
     if bool(persistent_accumulator_w6_byte_packed) and bool(persistent_accumulator_w5_byte_packed):
         raise ValueError(
             "persistent_accumulator_w6_byte_packed and persistent_accumulator_w5_byte_packed "

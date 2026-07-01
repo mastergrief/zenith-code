@@ -31,11 +31,13 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     PROFILE_HOST_RSS_LIVE_RESIDENT_ENV,
     PROFILE_HOST_RSS_SUBPHASE_IDS,
     PROFILE_HOST_RSS_TRIANGULATION_SCHEMA,
+    PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
     PROFILE_TORCH_CPU_CENSUS_ENV,
     PROFILE_TRACEMALLOC_ENV,
+    PROFILE_DEBUGMALLOCSTATS_ENV,
 )
 
-ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v9"
+ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v10"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
@@ -129,6 +131,13 @@ GUARD_STABILITY_FRAC = 0.25
 GUARD_ENVELOPE_MIN_GIB = 0.25
 PERTURBATION_MIN_GIB = 0.5
 PERTURBATION_NOISE_K = 2.0
+OBMALLOC_RECONCILE_MIN = 0.5
+OBMALLOC_RECONCILE_MAX = 1.5
+OBMALLOC_NOT_OBMALLOC_MAX = 0.25
+OBMALLOC_OUT_OF_BAND_LOW_MIN = 0.25
+OBMALLOC_OCCUPANCY_LIVE_MIN = 0.6
+OBMALLOC_OCCUPANCY_HIGH_WATER_MAX = 0.3
+OBMALLOC_ARENA_DELTA_FLOOR_BYTES = 1024 * 1024
 C4_SUBPHASE = "C4_gpu_cap_apply_sync"
 
 
@@ -1263,6 +1272,287 @@ def attribute_python_allocator_triangulation(
     }
 
 
+def _is_obmalloc_mark(row: Mapping[str, Any]) -> bool:
+    return str(row.get("schema")) == PROFILE_HOST_RSS_OBMALLOC_SCHEMA or str(
+        row.get("event", "")
+    ).startswith("obmalloc_")
+
+
+def _obmalloc_mark(
+    marks: Sequence[Mapping[str, Any]],
+    event: str,
+) -> dict[str, Any] | None:
+    for row in marks:
+        if _is_obmalloc_mark(row) and str(row.get("event")) == str(event):
+            return dict(row)
+    return None
+
+
+def _obmalloc_field(
+    mark: Mapping[str, Any] | None,
+    field: str,
+) -> int | None:
+    if mark is None:
+        return None
+    stats = dict(mark.get("debugmallocstats") or {})
+    if not stats.get("available"):
+        return None
+    value = stats.get(field)
+    return int(value) if value is not None else None
+
+
+def attribute_obmalloc_arena_retention(
+    *,
+    marks_a: list[dict[str, Any]],
+    marks_a_prime: list[dict[str, Any]],
+    marks_b: list[dict[str, Any]],
+    debugmallocstats_preflight: Mapping[str, Any] | None = None,
+    self_footprint_preflight: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    banked = _banked_reference_paths()
+    c4_a = _c4_subphase_delta_gib(marks_a)
+    c4_a_prime = _c4_subphase_delta_gib(marks_a_prime)
+    c4_b = _c4_subphase_delta_gib(marks_b)
+
+    noise_floor: float | None = None
+    if c4_a is not None and c4_a_prime is not None:
+        noise_floor = abs(float(c4_a_prime) - float(c4_a))
+
+    run_stability_threshold = GUARD_STABILITY_FRAC * TOTAL_C4_REFERENCE_GIB
+    denominator_variance_threshold = (
+        GUARD_STABILITY_FRAC * BANKED_NON_GLIBC_MMAP_REFERENCE_GIB
+    )
+    envelope_tolerance = (
+        max(float(noise_floor), GUARD_ENVELOPE_MIN_GIB)
+        if noise_floor is not None
+        else GUARD_ENVELOPE_MIN_GIB
+    )
+    total_c4_envelope_delta = (
+        abs(float(c4_a) - TOTAL_C4_REFERENCE_GIB) if c4_a is not None else None
+    )
+
+    guards: dict[str, Any] = {
+        "noise_floor_gib": noise_floor,
+        "run_stability_threshold_gib": run_stability_threshold,
+        "denominator_variance_threshold_gib": denominator_variance_threshold,
+        "total_c4_envelope_tolerance_gib": envelope_tolerance,
+        "total_c4_envelope_delta_gib": total_c4_envelope_delta,
+        "c4_rss_delta_gib_same_run": {
+            "A": c4_a,
+            "A_prime": c4_a_prime,
+            "B": c4_b,
+        },
+    }
+
+    if noise_floor is None:
+        guards["run_stability_ok"] = False
+        guards["denominator_variance_ok"] = False
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "INCONCLUSIVE_PENDING_NOISE_FLOOR",
+            "classifier_terminal": None,
+        }
+
+    guards["run_stability_ok"] = noise_floor <= run_stability_threshold
+    guards["denominator_variance_ok"] = noise_floor <= denominator_variance_threshold
+    guards["total_c4_envelope_ok"] = (
+        total_c4_envelope_delta is not None
+        and total_c4_envelope_delta <= envelope_tolerance
+    )
+
+    if not guards["total_c4_envelope_ok"]:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "DENOMINATOR_INVALID_INCONCLUSIVE",
+            "classifier_terminal": None,
+        }
+    if not guards["run_stability_ok"] or not guards["denominator_variance_ok"]:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "INCONCLUSIVE_CROSS_RUN_DENOMINATOR",
+            "classifier_terminal": None,
+        }
+
+    footprint = dict(self_footprint_preflight or {})
+    footprint_bytes = footprint.get("debugmallocstats_self_footprint_bytes")
+    footprint_status = str(
+        footprint.get("debugmallocstats_self_footprint_status")
+        or footprint.get("status")
+        or ""
+    )
+    guards["debugmallocstats_self_footprint_bytes"] = footprint_bytes
+    guards["debugmallocstats_self_footprint_status"] = footprint_status
+    if footprint_status == "exceeded":
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "OBMALLOC_SELF_FOOTPRINT_INCONCLUSIVE",
+            "classifier_terminal": None,
+        }
+
+    preflight = dict(debugmallocstats_preflight or {})
+    if str(preflight.get("status")) != "ok":
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "ARENA_STATS_UNPARSEABLE_INCONCLUSIVE",
+            "classifier_terminal": None,
+            "arena_stats_unavailable_reason": preflight.get("status"),
+        }
+
+    perturbation_delta = (
+        abs(float(c4_b) - float(c4_a))
+        if c4_a is not None and c4_b is not None
+        else None
+    )
+    perturbation_threshold = max(
+        PERTURBATION_MIN_GIB,
+        PERTURBATION_NOISE_K * float(noise_floor),
+    )
+    guards["perturbation_delta_gib"] = perturbation_delta
+    guards["perturbation_threshold_gib"] = perturbation_threshold
+
+    c3_exit_mark = _obmalloc_mark(marks_b, "obmalloc_C3_exit")
+    c4_enter_mark = _obmalloc_mark(marks_b, "obmalloc_C4_enter")
+    c4_exit_mark = _obmalloc_mark(marks_b, "obmalloc_C4_exit")
+    b_incomplete = c4_exit_mark is None
+    guards["b_run_incomplete"] = b_incomplete
+    if b_incomplete:
+        has_obmalloc = any(_is_obmalloc_mark(row) for row in marks_b)
+        reason = (
+            "missing_obmalloc_C4_exit"
+            if has_obmalloc
+            else "missing_obmalloc_marks"
+        )
+        guards["b_incomplete_reason"] = reason
+        if perturbation_delta is not None and perturbation_delta > perturbation_threshold:
+            return {
+                **banked,
+                "guards": guards,
+                "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+                "observer_reason": reason,
+                "classifier_terminal": None,
+            }
+        if has_obmalloc:
+            return {
+                **banked,
+                "guards": guards,
+                "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+                "observer_reason": reason,
+                "classifier_terminal": None,
+            }
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "ARENA_STATS_UNPARSEABLE_INCONCLUSIVE",
+            "classifier_terminal": None,
+        }
+
+    if perturbation_delta is not None and perturbation_delta > perturbation_threshold:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+            "observer_reason": "c4_rss_perturbation_exceeded",
+            "classifier_terminal": None,
+        }
+
+    c3_arena = _obmalloc_field(c3_exit_mark, "arena_bytes")
+    c4_enter_arena = _obmalloc_field(c4_enter_mark, "arena_bytes")
+    c4_exit_arena = _obmalloc_field(c4_exit_mark, "arena_bytes")
+    c4_enter_alloc = _obmalloc_field(c4_enter_mark, "bytes_in_allocated_blocks")
+    c4_exit_alloc = _obmalloc_field(c4_exit_mark, "bytes_in_allocated_blocks")
+
+    if (
+        c4_enter_arena is None
+        or c4_exit_arena is None
+        or c4_enter_alloc is None
+        or c4_exit_alloc is None
+    ):
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "ARENA_STATS_UNPARSEABLE_INCONCLUSIVE",
+            "classifier_terminal": None,
+        }
+
+    arena_bytes_delta_reconcile = int(c4_exit_arena) - int(c4_enter_arena)
+    allocated_block_bytes_delta_reconcile = int(c4_exit_alloc) - int(c4_enter_alloc)
+    arena_bytes_delta_c3_to_c4_enter = (
+        int(c4_enter_arena) - int(c3_arena) if c3_arena is not None else None
+    )
+
+    denom = int(BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES)
+    reconcile_ratio = (
+        float(arena_bytes_delta_reconcile) / float(denom) if denom > 0 else 0.0
+    )
+
+    deltas: dict[str, Any] = {
+        "arena_bytes_delta_reconcile": arena_bytes_delta_reconcile,
+        "allocated_block_bytes_delta_reconcile": allocated_block_bytes_delta_reconcile,
+        "arena_bytes_delta_c3_to_c4_enter": arena_bytes_delta_c3_to_c4_enter,
+        "reconcile_ratio": reconcile_ratio,
+        "c4_enter_arena_bytes": c4_enter_arena,
+        "c4_exit_arena_bytes": c4_exit_arena,
+        "c4_enter_allocated_block_bytes": c4_enter_alloc,
+        "c4_exit_allocated_block_bytes": c4_exit_alloc,
+    }
+
+    if reconcile_ratio < OBMALLOC_NOT_OBMALLOC_MAX:
+        return {
+            **banked,
+            "guards": guards,
+            "deltas": deltas,
+            "fail_closed_terminal": None,
+            "classifier_terminal": "NOT_OBMALLOC_UNTRACED",
+            "next_lane": "native_backtrace",
+        }
+
+    if reconcile_ratio < OBMALLOC_RECONCILE_MIN or reconcile_ratio > OBMALLOC_RECONCILE_MAX:
+        return {
+            **banked,
+            "guards": guards,
+            "deltas": deltas,
+            "fail_closed_terminal": "RECONCILE_OUT_OF_BAND_INCONCLUSIVE",
+            "classifier_terminal": None,
+        }
+
+    if arena_bytes_delta_reconcile <= OBMALLOC_ARENA_DELTA_FLOOR_BYTES:
+        return {
+            **banked,
+            "guards": guards,
+            "deltas": deltas,
+            "fail_closed_terminal": None,
+            "classifier_terminal": "NOT_OBMALLOC_UNTRACED",
+            "next_lane": "native_backtrace",
+            "arena_delta_floor_breach": True,
+        }
+
+    occupancy = (
+        float(allocated_block_bytes_delta_reconcile) / float(arena_bytes_delta_reconcile)
+    )
+    deltas["occupancy_ratio"] = occupancy
+
+    if occupancy >= OBMALLOC_OCCUPANCY_LIVE_MIN:
+        classifier_terminal = "OBMALLOC_LIVE_CHURN"
+    elif occupancy < OBMALLOC_OCCUPANCY_HIGH_WATER_MAX:
+        classifier_terminal = "OBMALLOC_HIGH_WATER_RETENTION"
+    else:
+        classifier_terminal = "AMBIGUOUS_MID_BAND"
+
+    return {
+        **banked,
+        "guards": guards,
+        "deltas": deltas,
+        "fail_closed_terminal": None,
+        "classifier_terminal": classifier_terminal,
+        "call_site_status": "UNRESOLVED",
+    }
+
+
 def _compute_phase_deltas(
     marks: list[dict[str, Any]],
     *,
@@ -1900,7 +2190,12 @@ def build_attribution_receipt(
     return receipt
 
 
-def _fixture_probe_argv(scratch_root: Path, *, tracemalloc: bool = False) -> list[str]:
+def _fixture_probe_argv(
+    scratch_root: Path,
+    *,
+    tracemalloc: bool = False,
+    debugmallocstats: bool = False,
+) -> list[str]:
     parent = (
         "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_"
         "rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt"
@@ -2646,6 +2941,177 @@ def run_fixture_non_glibc_mmap_source(out_root: Path) -> dict[str, Any]:
     return payload
 
 
+def _fixture_obmalloc_env(*, debugmallocstats: bool) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    env["HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP"] = "1"
+    env["HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY"] = "1"
+    env["HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"] = "1"
+    env["HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"] = "1"
+    env[PROFILE_HOST_RSS_ENV] = "1"
+    if debugmallocstats:
+        env[PROFILE_DEBUGMALLOCSTATS_ENV] = "1"
+    return env
+
+
+def _run_fixture_obmalloc_probe(
+    out_root: Path,
+    *,
+    scratch_name: str,
+    debugmallocstats: bool,
+) -> dict[str, Any]:
+    out_root.mkdir(parents=True, exist_ok=True)
+    scratch = out_root / scratch_name
+    scratch.mkdir(parents=True, exist_ok=True)
+    lane_holding: dict[str, Any] | None = None
+    lane_release: dict[str, Any] | None = None
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_acquire import acquire_resource_lane
+
+        lane_holding = acquire_resource_lane(out_root)
+    except Exception as exc:
+        lane_holding = {"acquire_error": f"{type(exc).__name__}: {exc}"}
+
+    env = _fixture_obmalloc_env(debugmallocstats=debugmallocstats)
+    cmd = _fixture_probe_argv(scratch, debugmallocstats=debugmallocstats)
+    proc = subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=1200 if debugmallocstats else 600,
+    )
+    profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
+    marks = _read_jsonl(profile_path) if profile_path.is_file() else []
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane
+
+        lane_release = release_resource_lane(out_root)
+    except Exception as exc:
+        lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
+
+    return {
+        "scratch_root": str(scratch),
+        "profile_path": str(profile_path),
+        "command": cmd,
+        "exit_code": int(proc.returncode),
+        "stdout_tail": "\n".join(proc.stdout.splitlines()[-20:]),
+        "stderr_tail": "\n".join(proc.stderr.splitlines()[-20:]),
+        "resource_lane_holding": lane_holding,
+        "resource_lane_release": lane_release,
+        "profile_mark_count": len(marks),
+        "c4_rss_delta_gib": _c4_subphase_delta_gib(marks),
+        "obmalloc_mark_count": sum(1 for row in marks if _is_obmalloc_mark(row)),
+        "marks": marks,
+    }
+
+
+def run_fixture_obmalloc_arena_ab(out_root: Path) -> dict[str, Any]:
+    payload = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_arena_ab",
+        debugmallocstats=False,
+    )
+    payload["fixture_mode"] = "fixture_obmalloc_arena_ab"
+    payload.pop("marks", None)
+    return payload
+
+
+def run_fixture_obmalloc_arena_ab_replicate(out_root: Path) -> dict[str, Any]:
+    payload = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_arena_ab_replicate",
+        debugmallocstats=False,
+    )
+    payload["fixture_mode"] = "fixture_obmalloc_arena_ab_replicate"
+    payload.pop("marks", None)
+    return payload
+
+
+def run_fixture_obmalloc_arena_b(out_root: Path) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        measure_debugmallocstats_self_footprint,
+        preflight_debugmallocstats_self_test,
+    )
+
+    preflight = preflight_debugmallocstats_self_test()
+    footprint = measure_debugmallocstats_self_footprint()
+    payload = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_arena_b",
+        debugmallocstats=True,
+    )
+    payload["fixture_mode"] = "fixture_obmalloc_arena_b"
+    payload["debugmallocstats_preflight"] = preflight
+    payload["debugmallocstats_self_footprint"] = footprint
+    payload.pop("marks", None)
+    return payload
+
+
+def run_fixture_obmalloc_arena_combined(out_root: Path) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        measure_debugmallocstats_self_footprint,
+        preflight_debugmallocstats_self_test,
+    )
+
+    run_a = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_arena_ab",
+        debugmallocstats=False,
+    )
+    run_a_prime = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_arena_ab_replicate",
+        debugmallocstats=False,
+    )
+    preflight = preflight_debugmallocstats_self_test()
+    footprint = measure_debugmallocstats_self_footprint()
+    run_b = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_arena_b",
+        debugmallocstats=True,
+    )
+
+    obmalloc = attribute_obmalloc_arena_retention(
+        marks_a=list(run_a.pop("marks", [])),
+        marks_a_prime=list(run_a_prime.pop("marks", [])),
+        marks_b=list(run_b.pop("marks", [])),
+        debugmallocstats_preflight=preflight,
+        self_footprint_preflight=footprint,
+    )
+
+    exit_codes = [
+        int(run_a.get("exit_code", 1)),
+        int(run_a_prime.get("exit_code", 1)),
+        int(run_b.get("exit_code", 1)),
+    ]
+    payload: dict[str, Any] = {
+        "schema": ATTRIBUTION_SCHEMA,
+        "fixture_mode": "fixture_obmalloc_arena_combined",
+        "exit_code": max(exit_codes),
+        "runs": {
+            "A": {k: v for k, v in run_a.items() if k != "marks"},
+            "A_prime": {k: v for k, v in run_a_prime.items() if k != "marks"},
+            "B": {k: v for k, v in run_b.items() if k != "marks"},
+        },
+        "debugmallocstats_preflight": preflight,
+        "debugmallocstats_self_footprint": footprint,
+        "alloc_hook_attribution": {
+            "allocator_type_partition": {
+                "mmap_net_bytes": BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES,
+                "mmap_net_gib": BANKED_NON_GLIBC_MMAP_REFERENCE_GIB,
+                "c4_subphase_delta_rss_gib": TOTAL_C4_REFERENCE_GIB,
+            }
+        },
+        "obmalloc_arena_attribution": obmalloc,
+        "classifier_terminal": obmalloc.get("classifier_terminal"),
+        "fail_closed_terminal": obmalloc.get("fail_closed_terminal"),
+    }
+    return payload
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -2664,6 +3130,10 @@ def main() -> int:
             "fixture_allocator_triangulation_ab_replicate",
             "fixture_allocator_triangulation_tracemalloc",
             "fixture_allocator_triangulation_combined",
+            "fixture_obmalloc_arena_ab",
+            "fixture_obmalloc_arena_ab_replicate",
+            "fixture_obmalloc_arena_b",
+            "fixture_obmalloc_arena_combined",
         ),
         required=True,
     )
@@ -2753,6 +3223,14 @@ def main() -> int:
         payload = run_fixture_allocator_triangulation_tracemalloc(args.run_root)
     elif args.mode == "fixture_allocator_triangulation_combined":
         payload = run_fixture_allocator_triangulation_combined(args.run_root)
+    elif args.mode == "fixture_obmalloc_arena_ab":
+        payload = run_fixture_obmalloc_arena_ab(args.run_root)
+    elif args.mode == "fixture_obmalloc_arena_ab_replicate":
+        payload = run_fixture_obmalloc_arena_ab_replicate(args.run_root)
+    elif args.mode == "fixture_obmalloc_arena_b":
+        payload = run_fixture_obmalloc_arena_b(args.run_root)
+    elif args.mode == "fixture_obmalloc_arena_combined":
+        payload = run_fixture_obmalloc_arena_combined(args.run_root)
     else:
         payload = run_fixture(args.run_root)
 
@@ -2771,6 +3249,10 @@ def main() -> int:
         "fixture_allocator_triangulation_ab_replicate",
         "fixture_allocator_triangulation_tracemalloc",
         "fixture_allocator_triangulation_combined",
+        "fixture_obmalloc_arena_ab",
+        "fixture_obmalloc_arena_ab_replicate",
+        "fixture_obmalloc_arena_b",
+        "fixture_obmalloc_arena_combined",
     } and int(payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))) != 0:
         return 1
     return 0

@@ -677,6 +677,7 @@ def capture_debugmallocstats_fd2() -> tuple[str | None, str | None]:
     if not hasattr(sys, "_debugmallocstats"):
         return None, "debugmallocstats_not_exported"
     saved_fd = os.dup(2)
+    capture_fd: int | None = None
     tmp_path: str | None = None
     try:
         with tempfile.NamedTemporaryFile(mode="w+b", delete=False) as tmp:
@@ -688,19 +689,22 @@ def capture_debugmallocstats_fd2() -> tuple[str | None, str | None]:
         sys._debugmallocstats()
         sys.stdout.flush()
         sys.stderr.flush()
-        os.dup2(saved_fd, 2)
-        os.close(capture_fd)
         text = Path(tmp_path).read_text(encoding="utf-8", errors="replace")
         if not text.strip():
             return None, "debugmallocstats_empty_capture"
         return text, None
     except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+    finally:
         try:
             os.dup2(saved_fd, 2)
         except Exception:
             pass
-        return None, f"{type(exc).__name__}: {exc}"
-    finally:
+        if capture_fd is not None:
+            try:
+                os.close(capture_fd)
+            except Exception:
+                pass
         try:
             os.close(saved_fd)
         except Exception:
@@ -713,26 +717,67 @@ def capture_debugmallocstats_fd2() -> tuple[str | None, str | None]:
 
 
 _DEBUGMALLOC_ARENA_CURRENT_RE = re.compile(r"# arenas allocated current\s*=\s*(\d+)")
-_DEBUGMALLOC_ARENA_TOTAL_BYTES_RE = re.compile(
-    r"(\d+) arenas \* \d+ bytes/arena\s*=\s*([\d,]+)"
+_DEBUGMALLOC_ARENAS_TOTAL_RE = re.compile(r"# arenas allocated total\s*=\s*(\d+)")
+_DEBUGMALLOC_ARENAS_HIGHWATER_RE = re.compile(r"# arenas highwater mark\s*=\s*(\d+)")
+_DEBUGMALLOC_ARENA_CURRENT_BYTES_RE = re.compile(
+    r"(\d+) arenas \* (\d+) bytes/arena\s*=\s*([\d,]+)"
 )
+_DEBUGMALLOC_ALLOCATED_BLOCKS_RE = re.compile(
+    r"# bytes in allocated blocks\s*=\s*([\d,]+)"
+)
+_DEBUGMALLOC_AVAILABLE_BLOCKS_RE = re.compile(
+    r"# bytes in available blocks\s*=\s*([\d,]+)"
+)
+DEBUGMALLOC_SELF_FOOTPRINT_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _parse_debugmalloc_int(value: str) -> int:
+    return int(str(value).replace(",", ""))
 
 
 def parse_debugmallocstats(text: str) -> dict[str, Any]:
     out: dict[str, Any] = {"raw_line_count": len(text.splitlines())}
     current_match = _DEBUGMALLOC_ARENA_CURRENT_RE.search(text)
     if current_match:
+        out["arenas_allocated_current"] = int(current_match.group(1))
         out["arena_count"] = int(current_match.group(1))
-    total_match = _DEBUGMALLOC_ARENA_TOTAL_BYTES_RE.search(text)
+    total_match = _DEBUGMALLOC_ARENAS_TOTAL_RE.search(text)
     if total_match:
-        out["arena_bytes"] = int(total_match.group(2).replace(",", ""))
-        if "arena_count" not in out:
-            out["arena_count"] = int(total_match.group(1))
-    if "arena_count" in out or "arena_bytes" in out:
+        out["arenas_allocated_total"] = int(total_match.group(1))
+    highwater_match = _DEBUGMALLOC_ARENAS_HIGHWATER_RE.search(text)
+    if highwater_match:
+        out["arenas_highwater_mark"] = int(highwater_match.group(1))
+    arena_bytes_match = _DEBUGMALLOC_ARENA_CURRENT_BYTES_RE.search(text)
+    if arena_bytes_match:
+        out["arenas_in_product_line"] = int(arena_bytes_match.group(1))
+        out["bytes_per_arena"] = int(arena_bytes_match.group(2))
+        out["arena_bytes"] = _parse_debugmalloc_int(arena_bytes_match.group(3))
+    allocated_blocks_match = _DEBUGMALLOC_ALLOCATED_BLOCKS_RE.search(text)
+    if allocated_blocks_match:
+        out["bytes_in_allocated_blocks"] = _parse_debugmalloc_int(
+            allocated_blocks_match.group(1)
+        )
+    available_blocks_match = _DEBUGMALLOC_AVAILABLE_BLOCKS_RE.search(text)
+    if available_blocks_match:
+        out["bytes_in_available_blocks"] = _parse_debugmalloc_int(
+            available_blocks_match.group(1)
+        )
+    if (
+        out.get("arenas_allocated_current") is not None
+        and out.get("arenas_in_product_line") is not None
+        and int(out["arenas_allocated_current"]) != int(out["arenas_in_product_line"])
+    ):
+        out["arena_bytes_current_mismatch"] = True
+    required_present = (
+        out.get("arena_bytes") is not None
+        and out.get("bytes_in_allocated_blocks") is not None
+        and out.get("arenas_allocated_current") is not None
+    )
+    if required_present:
         out["parse_ok"] = True
     else:
         out["parse_ok"] = False
-        out["unavailable_reason"] = "debugmallocstats_unparseable"
+        out["unavailable_reason"] = "debugmallocstats_missing_required_fields"
     return out
 
 
@@ -759,6 +804,63 @@ def preflight_debugmallocstats_self_test() -> dict[str, Any]:
         "status": "ok" if result.get("available") else "unavailable",
         "capture_method": "os.dup2_fd2_tempfile",
         "debugmallocstats": result,
+    }
+
+
+def profile_debugmallocstats_enabled() -> bool:
+    import os
+
+    rss_on = os.environ.get("HRM_TEXT_158_PROFILE_HOST_RSS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    dm_on = os.environ.get("HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    return rss_on and dm_on
+
+
+def measure_debugmallocstats_self_footprint(*, samples: int = 3) -> dict[str, Any]:
+    readings: list[dict[str, Any]] = []
+    for _ in range(max(int(samples), 2)):
+        readings.append(read_debugmallocstats())
+    if not all(row.get("available") for row in readings):
+        return {
+            "status": "unavailable",
+            "debugmallocstats_self_footprint_status": "debugmallocstats_unavailable",
+            "debugmallocstats_self_footprint_bytes": None,
+            "readings": readings,
+        }
+    arena_bytes = [
+        int(row.get("arena_bytes") or 0)
+        for row in readings
+        if row.get("arena_bytes") is not None
+    ]
+    allocated_blocks = [
+        int(row.get("bytes_in_allocated_blocks") or 0)
+        for row in readings
+        if row.get("bytes_in_allocated_blocks") is not None
+    ]
+    arena_delta = max(arena_bytes) - min(arena_bytes) if arena_bytes else 0
+    allocated_delta = (
+        max(allocated_blocks) - min(allocated_blocks) if allocated_blocks else 0
+    )
+    footprint = max(arena_delta, allocated_delta)
+    status = (
+        "ok" if footprint <= DEBUGMALLOC_SELF_FOOTPRINT_MAX_BYTES else "exceeded"
+    )
+    return {
+        "status": status,
+        "debugmallocstats_self_footprint_status": status,
+        "debugmallocstats_self_footprint_bytes": int(footprint),
+        "debugmallocstats_self_footprint_threshold_bytes": DEBUGMALLOC_SELF_FOOTPRINT_MAX_BYTES,
+        "samples": int(samples),
+        "readings": readings,
     }
 
 
