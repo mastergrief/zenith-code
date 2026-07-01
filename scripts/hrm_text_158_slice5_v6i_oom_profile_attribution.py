@@ -21,8 +21,10 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     HOST_RSS_PROFILE_JSONL_NAME,
     PROFILE_ALLOCATOR_HOST_CACHE_DIAG_ENV,
     PROFILE_ALLOCATOR_NATIVE_ENV,
+    PROFILE_ALLOC_HOOK_ENV,
     PROFILE_HOST_RSS_ALLOCATOR_SCHEMA,
     PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA,
+    PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA,
     PROFILE_HOST_RSS_CENSUS_SCHEMA,
     PROFILE_HOST_RSS_ENV,
     PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB,
@@ -31,7 +33,7 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     PROFILE_TORCH_CPU_CENSUS_ENV,
 )
 
-ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v5"
+ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v6"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
@@ -124,6 +126,13 @@ def _is_allocator_mark(row: Mapping[str, Any]) -> bool:
 
 def _is_allocator_site_mark(row: Mapping[str, Any]) -> bool:
     return str(row.get("schema", "")) == PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA
+
+
+def _is_alloc_hook_mark(row: Mapping[str, Any]) -> bool:
+    return (
+        str(row.get("schema", "")) == PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA
+        and str(row.get("event", "")).startswith("alloc_hook_")
+    )
 
 
 def _probe_nested(probe: Mapping[str, Any], *keys: str) -> Any:
@@ -1040,6 +1049,7 @@ def attribute_host_rss_profile(
     diagnostic_marks: list[dict[str, Any]] | None = None,
     census_marks: list[dict[str, Any]] | None = None,
     allocator_marks: list[dict[str, Any]] | None = None,
+    alloc_hook_marks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     parent_marks = [row for row in marks if _is_parent_phase_mark(row)]
     phase_deltas = _compute_phase_deltas(
@@ -1149,6 +1159,66 @@ def attribute_host_rss_profile(
             "host_cache_empty_diagnostic"
         )
 
+    alloc_hook_attribution: dict[str, Any] | None = None
+    if alloc_hook_marks:
+        from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+            attribute_alloc_hook_profile,
+        )
+        from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+            diff_vma_entries,
+            read_vma_entries,
+        )
+
+        alloc_hook_attribution = attribute_alloc_hook_profile(
+            alloc_hook_marks,
+            c4_delta_rss_gib=float(c4_delta) if c4_delta is not None else parent_sparse_cap_delta,
+        )
+        enter = next(
+            (row for row in alloc_hook_marks if str(row.get("event")) == "alloc_hook_C4_enter"),
+            None,
+        )
+        exit_mark = next(
+            (row for row in alloc_hook_marks if str(row.get("event")) == "alloc_hook_C4_exit"),
+            None,
+        )
+        maps_diff: dict[str, Any] | None = None
+        if enter and exit_mark:
+            exclude = []
+            stats = dict((enter.get("alloc_hook_stats") or {}))
+            for start_key, end_key in (
+                ("hook_table_start", "hook_table_end"),
+                ("hook_ring_start", "hook_ring_end"),
+            ):
+                if stats.get(start_key) is not None and stats.get(end_key) is not None:
+                    exclude.append((int(stats[start_key]), int(stats[end_key])))
+            before = list((enter.get("allocator_probe") or {}).get("vma_entries") or [])
+            after = list((exit_mark.get("allocator_probe") or {}).get("vma_entries") or [])
+            if not before:
+                before = read_vma_entries(exclude_ranges=exclude)
+            if not after:
+                after = read_vma_entries(exclude_ranges=exclude)
+            maps_diff = diff_vma_entries(before, after)
+        alloc_hook_attribution["maps_diff_attribution"] = maps_diff
+        status = str(alloc_hook_attribution.get("mechanism_owner_status"))
+        if status == "RESOLVED":
+            mechanism["mechanism_owner_status"] = "RESOLVED"
+            mechanism["allocation_source"] = alloc_hook_attribution.get("allocation_source")
+            mechanism["culprit_class"] = "C"
+            mechanism["culprit_class_status"] = "RESOLVED"
+            mechanism["call_site_status"] = alloc_hook_attribution.get("call_site_status")
+            mechanism["call_site_origin_file_line"] = alloc_hook_attribution.get(
+                "call_site_origin_file_line"
+            )
+        elif status in {"HOOK_FAILURE", "INCONCLUSIVE"}:
+            mechanism["mechanism_owner_status"] = status
+            mechanism["culprit_class"] = None
+            mechanism["culprit_class_status"] = "UNRESOLVED"
+        elif status == "UNMAPPED_OR_UNRESOLVED":
+            mechanism["mechanism_owner_status"] = "UNMAPPED_OR_UNRESOLVED"
+            mechanism["next_probe_route"] = "cuda_driver_host_probe"
+            mechanism["call_site_status"] = "UNRESOLVED"
+            alloc_hook_attribution["call_site_status"] = "UNRESOLVED"
+
     has_subphase_marks = any(_is_subphase_mark(row) for row in marks)
     if not has_subphase_marks:
         mechanism["mechanism_owner_status"] = "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -1176,6 +1246,7 @@ def attribute_host_rss_profile(
         "reconciliation": reconciliation,
         "census_attribution": census_attribution,
         "allocator_attribution": allocator_attribution,
+        "alloc_hook_attribution": alloc_hook_attribution,
         **mechanism,
     }
 
@@ -1188,6 +1259,7 @@ def build_attribution_receipt(
     diagnostic_profile_path: Path | None = None,
     census_profile_path: Path | None = None,
     allocator_profile_path: Path | None = None,
+    alloc_hook_profile_path: Path | None = None,
 ) -> dict[str, Any]:
     marks = _read_jsonl(profile_path)
     diagnostic_marks = (
@@ -1199,6 +1271,10 @@ def build_attribution_receipt(
     allocator_marks = (
         _read_jsonl(allocator_profile_path) if allocator_profile_path is not None else None
     )
+    if alloc_hook_profile_path is not None:
+        alloc_hook_marks = _read_jsonl(alloc_hook_profile_path)
+    else:
+        alloc_hook_marks = [row for row in marks if _is_alloc_hook_mark(row)] or None
     wall_totals: dict[str, float] = {}
     if extract_report is None and run_root.is_dir():
         extract_report = extract_run_root(run_root)
@@ -1214,6 +1290,7 @@ def build_attribution_receipt(
         diagnostic_marks=diagnostic_marks,
         census_marks=census_marks,
         allocator_marks=allocator_marks,
+        alloc_hook_marks=alloc_hook_marks,
     )
     receipt: dict[str, Any] = {
         "schema": ATTRIBUTION_SCHEMA,
@@ -1233,6 +1310,18 @@ def build_attribution_receipt(
     if allocator_profile_path is not None:
         receipt["allocator_profile_path"] = str(allocator_profile_path)
         receipt["allocator_mark_count"] = len(allocator_marks or [])
+    if alloc_hook_marks:
+        hook_path = alloc_hook_profile_path or profile_path
+        receipt["alloc_hook_profile_path"] = str(hook_path)
+        receipt["alloc_hook_mark_count"] = len(alloc_hook_marks)
+    alloc_hook_attr = attribution.get("alloc_hook_attribution")
+    if isinstance(alloc_hook_attr, Mapping):
+        classified_null = alloc_hook_attr.get("classified_null")
+        if classified_null:
+            receipt["classified_null"] = classified_null
+        partition = alloc_hook_attr.get("allocator_type_partition")
+        if partition:
+            receipt["allocator_type_partition"] = partition
     if attribution["dominant_phase_owner"] is None:
         receipt["rss_phase_owner_status"] = "UNRESOLVED"
     else:
@@ -1408,6 +1497,134 @@ def run_fixture_torch_census(out_root: Path) -> dict[str, Any]:
     }
 
 
+def run_fixture_alloc_hook(out_root: Path) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        default_hook_so_path,
+        run_ld_preload_torch_preflight,
+        run_positive_control,
+    )
+
+    out_root.mkdir(parents=True, exist_ok=True)
+    scratch = out_root / "alloc_hook_fixture_n1"
+    scratch.mkdir(parents=True, exist_ok=True)
+    so_path = default_hook_so_path()
+    preflight = run_ld_preload_torch_preflight(so_path)
+    if preflight.get("status") != "ok":
+        return {
+            "scratch_root": str(scratch),
+            "preflight": preflight,
+            "positive_control": None,
+            "exit_code": 2,
+            "hook_status": "HOOK_FAILURE",
+        }
+
+    positive_env = os.environ.copy()
+    positive_env["LD_PRELOAD"] = str(so_path)
+    positive_env[PROFILE_ALLOC_HOOK_ENV] = "1"
+    positive_env["HRM_TEXT_158_PROFILE_HOST_RSS"] = "1"
+    positive_env["HRM_TEXT_158_ALLOC_HOOK_STATS_PATH"] = str(scratch / "alloc_hook_positive_control.json")
+    positive_proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import run_positive_control; "
+                "import json; "
+                "out=run_positive_control(Path(%r)); "
+                "print(json.dumps(out))"
+            )
+            % str(scratch / "alloc_hook_positive_control.json"),
+        ],
+        cwd=REPO_ROOT,
+        env={**positive_env, "PYTHONPATH": "."},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    positive: dict[str, Any]
+    try:
+        positive = json.loads((positive_proc.stdout or "").strip().splitlines()[-1])
+    except Exception:
+        positive = {
+            "status": "HOOK_FAILURE",
+            "reason": "positive_control_subprocess_failed",
+            "exit_code": int(positive_proc.returncode),
+            "stderr_tail": "\n".join(positive_proc.stderr.splitlines()[-10:]),
+        }
+    if positive.get("status") != "ok":
+        return {
+            "scratch_root": str(scratch),
+            "preflight": preflight,
+            "positive_control": positive,
+            "exit_code": 2,
+            "hook_status": "HOOK_FAILURE",
+        }
+
+    lane_holding: dict[str, Any] | None = None
+    lane_release: dict[str, Any] | None = None
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_acquire import acquire_resource_lane
+
+        lane_holding = acquire_resource_lane(out_root)
+    except Exception as exc:
+        lane_holding = {"acquire_error": f"{type(exc).__name__}: {exc}"}
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "."
+    env["LD_PRELOAD"] = str(so_path)
+    env["HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP"] = "1"
+    env["HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY"] = "1"
+    env["HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"] = "1"
+    env["HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"] = "1"
+    env[PROFILE_HOST_RSS_ENV] = "1"
+    env[PROFILE_ALLOCATOR_NATIVE_ENV] = "1"
+    env[PROFILE_ALLOC_HOOK_ENV] = "1"
+    env["HRM_TEXT_158_ALLOC_HOOK_STATS_PATH"] = str(scratch / "alloc_hook_stats.json")
+    cmd = _fixture_probe_argv(scratch)
+    proc = subprocess.run(
+        cmd,
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=600,
+    )
+    profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
+    hook_marks = [row for row in _read_jsonl(profile_path) if _is_alloc_hook_mark(row)]
+    try:
+        from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane
+
+        lane_release = release_resource_lane(out_root)
+    except Exception as exc:
+        lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
+
+    receipt = build_attribution_receipt(
+        run_root=scratch,
+        profile_path=profile_path,
+        alloc_hook_profile_path=profile_path,
+    )
+    receipt["fixture"] = {
+        "scratch_root": str(scratch),
+        "command": cmd,
+        "exit_code": int(proc.returncode),
+        "stdout_tail": "\n".join(proc.stdout.splitlines()[-20:]),
+        "stderr_tail": "\n".join(proc.stderr.splitlines()[-20:]),
+        "resource_lane_holding": lane_holding,
+        "resource_lane_release": lane_release,
+        "preflight": preflight,
+        "positive_control": positive,
+        "alloc_hook_mark_count": len(hook_marks),
+        "alloc_hook_events_seen": sorted({str(row.get("event")) for row in hook_marks}),
+        "measurement_perturbed": True,
+        "hook_so_path": str(so_path),
+        "forward_fidelity_skip_scoped_to_alloc_hook_fixture": True,
+    }
+    return receipt
+
+
 def run_fixture_allocator_native(out_root: Path) -> dict[str, Any]:
     out_root.mkdir(parents=True, exist_ok=True)
     scratch = out_root / "allocator_native_fixture_n1"
@@ -1531,6 +1748,7 @@ def main() -> int:
             "fixture_live_resident",
             "fixture_torch_census",
             "fixture_allocator_native",
+            "fixture_alloc_hook",
         ),
         required=True,
     )
@@ -1565,6 +1783,12 @@ def main() -> int:
         default=None,
         help="Optional torch CPU census host_rss_profile.jsonl for attribute mode",
     )
+    parser.add_argument(
+        "--alloc-hook-profile-path",
+        type=Path,
+        default=None,
+        help="Optional alloc-hook host_rss_profile.jsonl for attribute mode",
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -1590,6 +1814,7 @@ def main() -> int:
             diagnostic_profile_path=args.diagnostic_profile_path,
             census_profile_path=args.census_profile_path,
             allocator_profile_path=args.allocator_profile_path,
+            alloc_hook_profile_path=args.alloc_hook_profile_path,
         )
         if args.aborted_run_root is not None:
             payload["aborted_run_root"] = str(args.aborted_run_root)
@@ -1599,6 +1824,8 @@ def main() -> int:
         payload = run_fixture_torch_census(args.run_root)
     elif args.mode == "fixture_allocator_native":
         payload = run_fixture_allocator_native(args.run_root)
+    elif args.mode == "fixture_alloc_hook":
+        payload = run_fixture_alloc_hook(args.run_root)
     else:
         payload = run_fixture(args.run_root)
 
@@ -1610,6 +1837,7 @@ def main() -> int:
         "fixture_live_resident",
         "fixture_torch_census",
         "fixture_allocator_native",
+        "fixture_alloc_hook",
     } and int(payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))) != 0:
         return 1
     return 0

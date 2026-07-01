@@ -315,12 +315,14 @@ PROFILE_HOST_RSS_LIVE_RESIDENT_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS_LIVE_RESIDEN
 PROFILE_TORCH_CPU_CENSUS_ENV = "HRM_TEXT_158_PROFILE_TORCH_CPU_CENSUS"
 PROFILE_ALLOCATOR_NATIVE_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_NATIVE"
 PROFILE_ALLOCATOR_HOST_CACHE_DIAG_ENV = "HRM_TEXT_158_PROFILE_ALLOCATOR_HOST_CACHE_DIAG"
+PROFILE_ALLOC_HOOK_ENV = "HRM_TEXT_158_PROFILE_ALLOC_HOOK"
 PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
 PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
 PROFILE_HOST_RSS_CENSUS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v3"
 PROFILE_HOST_RSS_ALLOCATOR_SCHEMA = "hrm_text_158_profile_host_rss_mark/v4"
 PROFILE_HOST_RSS_ALLOCATOR_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v5"
+PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA = "hrm_text_158_profile_host_rss_mark/v6"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
@@ -1824,6 +1826,14 @@ def profile_allocator_host_cache_diag_enabled() -> bool:
     return _enabled()
 
 
+def profile_alloc_hook_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        profile_alloc_hook_enabled as _enabled,
+    )
+
+    return _enabled()
+
+
 def gc_collect_and_malloc_trim() -> None:
     import gc
 
@@ -2471,6 +2481,61 @@ class PhaseProgress:
                 mark[key] = fields[key]
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
+    def _emit_alloc_hook_mark(
+        self,
+        *,
+        event: str,
+        fields: Mapping[str, Any],
+        allocation_dims: Mapping[str, Any] | None = None,
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_alloc_hook_enabled():
+            return
+        from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+            arm_hook,
+            disarm_hook,
+            flush_stats,
+            hook_vma_ranges,
+            prefault_hook,
+            reset_aggregation_window,
+        )
+        from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+            snapshot_allocator_probe,
+        )
+
+        stats_path = self.host_rss_profile_path.parent / "alloc_hook_stats.json"
+        stats: dict[str, Any] = {}
+        if str(event) == "alloc_hook_C4_enter":
+            prefault_hook()
+            arm_hook()
+            reset_aggregation_window()
+        elif str(event) == "alloc_hook_C4_exit":
+            stats = flush_stats(stats_path)
+            disarm_hook()
+        elif str(event).startswith("alloc_hook_"):
+            stats = flush_stats(stats_path)
+        exclude = hook_vma_ranges(stats) if stats else []
+        resource_snapshot = _proc_self_resource_snapshot()
+        mark: dict[str, Any] = {
+            "schema": PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "parent_phase": "sparse_cap_apply",
+            "event": str(event),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+            "measurement_perturbed": True,
+            "alloc_hook_stats": stats,
+            "allocator_probe": snapshot_allocator_probe(exclude_hook_vmas=exclude),
+        }
+        for key in ("step", "optimizer_step_index", "state_index", "state_bucket", "status"):
+            if key in fields:
+                mark[key] = fields[key]
+        if allocation_dims is not None:
+            mark["allocation_dims"] = dict(allocation_dims)
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
     def make_host_rss_subphase_emitter(
         self,
         *,
@@ -2538,6 +2603,26 @@ class PhaseProgress:
                     allocation_site_id=str(allocation_site_id),
                     allocation_dims=allocation_dims,
                 )
+                if profile_alloc_hook_enabled():
+                    hook_event = str(event).replace("allocator_", "alloc_hook_", 1)
+                    self._emit_alloc_hook_mark(
+                        event=hook_event,
+                        fields={
+                            "step": int(step),
+                            "optimizer_step_index": int(optimizer_step_index),
+                            **(
+                                {"state_index": int(state_index)}
+                                if state_index is not None
+                                else {}
+                            ),
+                            **(
+                                {"state_bucket": int(state_bucket)}
+                                if state_bucket is not None
+                                else {}
+                            ),
+                        },
+                        allocation_dims=allocation_dims,
+                    )
                 return
             self._emit_host_rss_subphase_mark(
                 parent_phase="sparse_cap_apply",
@@ -7519,6 +7604,10 @@ def run_c2p1_probe(
             if profile_host_rss_enabled()
             else None
         )
+        if profile_alloc_hook_enabled():
+            from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import prefault_hook
+
+            prefault_hook()
         phase_progress = PhaseProgress(
             enabled=bool(emit_progress),
             device=torch_device,
@@ -7673,16 +7762,23 @@ def run_c2p1_probe(
             )
     
         with phase_progress.phase("forward_fidelity"):
-            forward_init_fidelity = compute_forward_level_init_fidelity(
-                model,
-                model_batch,
-                tensor_states,
-                eligible,
-                device=torch_device,
-                threshold=float(init_fidelity_atol),
-                eligible_scope=eligible_scope,
-                total_steps=int(steps),
-            )
+            if profile_alloc_hook_enabled():
+                forward_init_fidelity = {
+                    "schema": "hrm_text_158_c2p1_weight_level_init_fidelity/v0",
+                    "skipped": True,
+                    "skip_reason": "alloc_hook_attribution_fixture",
+                }
+            else:
+                forward_init_fidelity = compute_forward_level_init_fidelity(
+                    model,
+                    model_batch,
+                    tensor_states,
+                    eligible,
+                    device=torch_device,
+                    threshold=float(init_fidelity_atol),
+                    eligible_scope=eligible_scope,
+                    total_steps=int(steps),
+                )
         if oracle_screen_mode is not None:
             extras = model.compute_train_extra_args(1, max(1, int(steps)))
             if str(oracle_screen_mode) == ORACLE_SCREEN_MODE_CANDIDATE_SET_VIABILITY:

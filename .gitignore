@@ -19,4 +19,6 @@ unsloth_compiled_cache/
 .serena/
 
 # Auto-CALM session data (raw corrections, not distilled)
-.calm_training/
+calm/hrm_text_158/native_full_stack/alloc_hook/libhrm_alloc_hook.so
+**/alloc_hook_stats.json
+**/alloc_hook_positive_control.json

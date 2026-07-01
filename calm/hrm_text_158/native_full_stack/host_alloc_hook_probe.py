@@ -1,0 +1,468 @@
+"""Alloc-hook interposer probe facade (compact scalars only)."""
+
+from __future__ import annotations
+
+import ctypes
+import json
+import os
+import subprocess
+from pathlib import Path
+from typing import Any, Mapping, Sequence
+
+PROFILE_ALLOC_HOOK_ENV = "HRM_TEXT_158_PROFILE_ALLOC_HOOK"
+ALLOC_HOOK_LOG_ENV = "HRM_TEXT_158_ALLOC_HOOK_LOG_PATH"
+ALLOC_HOOK_STATS_ENV = "HRM_TEXT_158_ALLOC_HOOK_STATS_PATH"
+
+SKIP_MODULE_FRAGMENTS = (
+    "libhrm_alloc_hook",
+    "/libc.",
+    "ld-linux",
+    "libdl.",
+    "libpthread",
+    "libgcc",
+    "libstdc++",
+)
+
+HOOK_RESOLVE_DOMINANCE = 0.80
+HOOK_RECONCILE_MIN = 0.8
+HOOK_RECONCILE_MAX = 1.2
+UNKNOWN_FREE_MAX_FRACTION = 0.10
+HOOK_INSTRUMENTATION_MAX_GIB = 0.25
+
+
+def profile_alloc_hook_enabled() -> bool:
+    rss_on = os.environ.get("HRM_TEXT_158_PROFILE_HOST_RSS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    hook_on = os.environ.get(PROFILE_ALLOC_HOOK_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    return rss_on and hook_on
+
+
+def default_hook_so_path() -> Path:
+    return (
+        Path(__file__).resolve().parent
+        / "alloc_hook"
+        / "libhrm_alloc_hook.so"
+    )
+
+
+def load_hook_library(so_path: Path | None = None) -> ctypes.CDLL | None:
+    path = so_path or default_hook_so_path()
+    preload = os.environ.get("LD_PRELOAD", "")
+    if str(path) in preload or path.name in preload:
+        try:
+            return ctypes.CDLL(None)
+        except OSError:
+            pass
+    if not path.is_file():
+        return None
+    try:
+        return ctypes.CDLL(str(path))
+    except OSError:
+        return None
+
+
+def _bind_hook_api(lib: ctypes.CDLL) -> None:
+    lib.hrm_alloc_hook_is_active.restype = ctypes.c_int
+    lib.hrm_alloc_hook_is_recording.restype = ctypes.c_int
+    lib.hrm_alloc_hook_arm.restype = None
+    lib.hrm_alloc_hook_disarm.restype = None
+    lib.hrm_alloc_hook_prefault.restype = ctypes.c_int
+    lib.hrm_alloc_hook_reset_aggregation_window.restype = None
+    lib.hrm_alloc_hook_flush_stats_json.argtypes = [ctypes.c_char_p]
+    lib.hrm_alloc_hook_flush_stats_json.restype = ctypes.c_int
+    lib.hrm_alloc_hook_note_positive_control.argtypes = [ctypes.c_uint64]
+    lib.hrm_alloc_hook_note_positive_control.restype = None
+
+
+def hook_vma_ranges(stats: Mapping[str, Any]) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    for start_key, end_key in (
+        ("hook_table_start", "hook_table_end"),
+        ("hook_ring_start", "hook_ring_end"),
+    ):
+        start = stats.get(start_key)
+        end = stats.get(end_key)
+        if start is None or end is None:
+            continue
+        ranges.append((int(start), int(end)))
+    return ranges
+
+
+def read_stats_json(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {"error": "stats_missing", "path": str(path)}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}", "path": str(path)}
+
+
+def flush_stats(path: Path, *, so_path: Path | None = None) -> dict[str, Any]:
+    lib = load_hook_library(so_path)
+    if lib is None:
+        return {"status": "hook_so_missing"}
+    _bind_hook_api(lib)
+    if int(lib.hrm_alloc_hook_is_active()) != 1:
+        return {"status": "hook_inactive"}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rc = int(lib.hrm_alloc_hook_flush_stats_json(str(path).encode("utf-8")))
+    if rc != 0:
+        return {"status": "flush_failed", "rc": rc}
+    return read_stats_json(path)
+
+
+def prefault_hook(*, so_path: Path | None = None) -> dict[str, Any]:
+    lib = load_hook_library(so_path)
+    if lib is None:
+        return {"status": "hook_so_missing", "prefault_done": False}
+    _bind_hook_api(lib)
+    if not profile_alloc_hook_enabled():
+        ensure = getattr(lib, "hrm_alloc_hook_prefault", None)
+        if ensure is None:
+            return {"status": "prefault_api_missing", "prefault_done": False}
+    rc = int(lib.hrm_alloc_hook_prefault())
+    return {"status": "ok" if rc == 1 else "prefault_failed", "prefault_done": rc == 1}
+
+
+def reset_aggregation_window(*, so_path: Path | None = None) -> None:
+    lib = load_hook_library(so_path)
+    if lib is None:
+        return
+    _bind_hook_api(lib)
+    if int(lib.hrm_alloc_hook_is_active()) == 1:
+        lib.hrm_alloc_hook_reset_aggregation_window()
+
+
+def arm_hook(*, so_path: Path | None = None) -> dict[str, Any]:
+    lib = load_hook_library(so_path)
+    if lib is None:
+        return {"status": "hook_so_missing", "recording_armed": False}
+    _bind_hook_api(lib)
+    lib.hrm_alloc_hook_arm()
+    armed = int(lib.hrm_alloc_hook_is_recording()) == 1
+    return {"status": "ok" if armed else "arm_failed", "recording_armed": armed}
+
+
+def disarm_hook(*, so_path: Path | None = None) -> dict[str, Any]:
+    lib = load_hook_library(so_path)
+    if lib is None:
+        return {"status": "hook_so_missing", "recording_armed": False}
+    _bind_hook_api(lib)
+    lib.hrm_alloc_hook_disarm()
+    armed = int(lib.hrm_alloc_hook_is_recording()) == 1
+    return {"status": "ok", "recording_armed": armed}
+
+
+def run_ld_preload_torch_preflight(so_path: Path | None = None) -> dict[str, Any]:
+    path = so_path or default_hook_so_path()
+    if not path.is_file():
+        return {"status": "HOOK_FAILURE", "reason": "hook_so_missing", "path": str(path)}
+    env = os.environ.copy()
+    env["LD_PRELOAD"] = str(path)
+    env[PROFILE_ALLOC_HOOK_ENV] = "1"
+    env["HRM_TEXT_158_PROFILE_HOST_RSS"] = "1"
+    proc = subprocess.run(
+        [
+            "python3",
+            "-c",
+            "import torch; print('torch_ok', torch.__version__)",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+    if proc.returncode != 0:
+        return {
+            "status": "HOOK_FAILURE",
+            "reason": "ld_preload_torch_import_failed",
+            "exit_code": int(proc.returncode),
+            "stderr_tail": "\n".join(proc.stderr.splitlines()[-10:]),
+        }
+    return {"status": "ok", "stdout": proc.stdout.strip()}
+
+
+def run_positive_control(
+    stats_path: Path,
+    *,
+    malloc_bytes: int = 1_048_576,
+    torch_bytes: int = 2_097_152,
+    aligned_bytes: int = 4_194_304,
+) -> dict[str, Any]:
+    lib = load_hook_library()
+    if lib is None:
+        return {"status": "HOOK_FAILURE", "reason": "hook_so_missing"}
+    _bind_hook_api(lib)
+    if int(lib.hrm_alloc_hook_is_active()) != 1:
+        pref = prefault_hook(so_path=default_hook_so_path())
+        if not pref.get("prefault_done"):
+            return {"status": "HOOK_FAILURE", "reason": "hook_prefault_failed", "prefault": pref}
+    if int(lib.hrm_alloc_hook_is_active()) != 1:
+        return {"status": "HOOK_FAILURE", "reason": "hook_inactive"}
+
+    arm_result = arm_hook()
+    if not arm_result.get("recording_armed"):
+        return {"status": "HOOK_FAILURE", "reason": "hook_arm_failed", "arm": arm_result}
+
+    libc = ctypes.CDLL("libc.so.6")
+    libc.malloc.argtypes = [ctypes.c_size_t]
+    libc.malloc.restype = ctypes.c_void_p
+    libc.free.argtypes = [ctypes.c_void_p]
+    libc.free.restype = None
+    checks: list[dict[str, Any]] = []
+
+    ptr = libc.malloc(ctypes.c_size_t(malloc_bytes))
+    if not ptr:
+        return {"status": "HOOK_FAILURE", "reason": "malloc_failed"}
+    lib.hrm_alloc_hook_note_positive_control(ctypes.c_uint64(malloc_bytes))
+    checks.append({"kind": "malloc", "bytes": malloc_bytes, "ptr": hex(int(ptr))})
+    libc.free(ptr)
+
+    import torch
+
+    tensor = torch.empty(torch_bytes // 4, dtype=torch.float32)
+    checks.append({"kind": "torch_cpu_tensor", "bytes": int(tensor.numel() * tensor.element_size())})
+    del tensor
+
+    aligned_ptr = ctypes.c_void_p()
+    rc = libc.posix_memalign(
+        ctypes.byref(aligned_ptr),
+        ctypes.c_size_t(64),
+        ctypes.c_size_t(aligned_bytes),
+    )
+    if rc != 0:
+        return {"status": "HOOK_FAILURE", "reason": "posix_memalign_failed", "rc": int(rc)}
+    checks.append({"kind": "posix_memalign", "bytes": aligned_bytes, "ptr": hex(int(aligned_ptr.value or 0))})
+    libc.free(aligned_ptr)
+
+    stats = flush_stats(stats_path)
+    disarm_hook()
+    if stats.get("error"):
+        return {"status": "HOOK_FAILURE", "reason": "stats_flush_failed", "stats": stats}
+    return {
+        "status": "ok",
+        "checks": checks,
+        "stats": stats,
+        "positive_control_passed": True,
+    }
+
+
+def symbolize_frame(owner_frame: str | int, *, so_path: Path | None = None) -> dict[str, Any]:
+    frame = str(owner_frame)
+    if frame.startswith("0x"):
+        addr = frame
+    else:
+        addr = hex(int(owner_frame))
+    path = so_path or default_hook_so_path()
+    proc = subprocess.run(
+        ["addr2line", "-f", "-C", "-e", str(path), addr],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0 or proc.stdout.strip() == "??:0":
+        return {"owner_frame": frame, "resolved": False, "symbol": None, "module": str(path.name)}
+    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    symbol = lines[0] if lines else None
+    location = lines[1] if len(lines) > 1 else None
+    return {
+        "owner_frame": frame,
+        "resolved": bool(location and location != "??:0"),
+        "symbol": symbol,
+        "location": location,
+        "module": str(path.name),
+    }
+
+
+def attribute_alloc_hook_profile(
+    hook_marks: Sequence[Mapping[str, Any]],
+    *,
+    c4_delta_rss_gib: float | None,
+) -> dict[str, Any]:
+    enter = next((row for row in hook_marks if str(row.get("event")) == "alloc_hook_C4_enter"), None)
+    exit_mark = next((row for row in hook_marks if str(row.get("event")) == "alloc_hook_C4_exit"), None)
+    preflight = next((row for row in hook_marks if str(row.get("event")) == "alloc_hook_preflight"), None)
+
+    if preflight and str(preflight.get("status")) == "HOOK_FAILURE":
+        return {
+            "status": "HOOK_FAILURE",
+            "mechanism_owner_status": "HOOK_FAILURE",
+            "tier": "HOOK_FAILURE",
+            "call_site_status": "UNRESOLVED",
+            "preflight": dict(preflight),
+            "hook_ran": False,
+        }
+
+    stats_enter = dict((enter or {}).get("alloc_hook_stats") or {})
+    stats_exit = dict((exit_mark or {}).get("alloc_hook_stats") or {})
+    top_sites = list(stats_exit.get("top_sites") or [])
+
+    dominant = top_sites[0] if top_sites else None
+    dominant_net = float(dominant.get("net_bytes") or 0) if dominant else 0.0
+    window_net = float(stats_exit.get("window_net_bytes") or 0)
+    lost_owner = int(stats_exit.get("lost_owner_count") or 0)
+    ring_drops = int(stats_exit.get("ring_drop_count") or 0)
+    lock_contention_drops = int(stats_exit.get("lock_contention_drop_count") or 0)
+    table_overflow = int(stats_exit.get("table_overflow_count") or 0)
+    unknown_free_bytes = int(stats_exit.get("unknown_free_bytes") or 0)
+    unknown_unmeasured = int(stats_exit.get("unknown_free_unmeasured_count") or 0)
+    unknown_bounded = bool(stats_exit.get("unknown_free_bytes_bounded", False))
+
+    hook_instr_delta = None
+    c4_window_rss_delta_gib = None
+    if enter and exit_mark:
+        pre_rss = int(((enter.get("resource_snapshot") or {}).get("rss_kib")) or 0)
+        post_rss = int(((exit_mark.get("resource_snapshot") or {}).get("rss_kib")) or 0)
+        c4_window_rss_delta_gib = (post_rss - pre_rss) / (1024.0 * 1024.0)
+        if bool(stats_exit.get("prefault_done")):
+            hook_instr_delta = 0.0
+        else:
+            hook_instr_delta = c4_window_rss_delta_gib
+
+    mechanism_owner_status = "UNMAPPED_OR_UNRESOLVED"
+    tier = "C"
+    status = "UNMAPPED_ANONYMOUS_MMAP"
+    allocation_source: str | None = None
+    call_site_status = "UNRESOLVED"
+    call_site_origin: str | None = None
+    hook_ran = bool(enter and exit_mark)
+
+    if lost_owner > 0 or table_overflow > 0 or lock_contention_drops > 0:
+        mechanism_owner_status = "INCONCLUSIVE"
+        tier = "INCONCLUSIVE"
+        status = "INCONCLUSIVE"
+    elif not unknown_bounded or unknown_unmeasured > 0:
+        mechanism_owner_status = "INCONCLUSIVE"
+        tier = "INCONCLUSIVE"
+        status = "INCONCLUSIVE"
+    elif c4_delta_rss_gib is not None and unknown_free_bytes > UNKNOWN_FREE_MAX_FRACTION * c4_delta_rss_gib * (1024 ** 3):
+        mechanism_owner_status = "INCONCLUSIVE"
+        tier = "INCONCLUSIVE"
+        status = "INCONCLUSIVE"
+    elif hook_instr_delta is not None and hook_instr_delta > HOOK_INSTRUMENTATION_MAX_GIB:
+        mechanism_owner_status = "INCONCLUSIVE"
+        tier = "INCONCLUSIVE"
+        status = "INCONCLUSIVE"
+    elif dominant and c4_delta_rss_gib and c4_delta_rss_gib > 0:
+        reconcile = abs(dominant_net) / (c4_delta_rss_gib * (1024 ** 3))
+        dominance = abs(dominant_net) / max(abs(window_net), 1.0)
+        if (
+            dominance >= HOOK_RESOLVE_DOMINANCE
+            and HOOK_RECONCILE_MIN <= reconcile <= HOOK_RECONCILE_MAX
+            and lost_owner == 0
+            and table_overflow == 0
+            and unknown_bounded
+            and unknown_unmeasured == 0
+        ):
+            sym = symbolize_frame(str(dominant.get("owner_frame")))
+            if sym.get("resolved"):
+                mechanism_owner_status = "RESOLVED"
+                tier = "A"
+                status = "RESOLVED"
+                allocation_source = str(sym.get("location"))
+                call_site_status = "RESOLVED"
+                call_site_origin = allocation_source
+            else:
+                mechanism_owner_status = "RESOLVED"
+                tier = "B"
+                status = "RESOLVED_MODULE_ONLY"
+                allocation_source = str(sym.get("module"))
+                call_site_status = "UNRESOLVED"
+        elif hook_ran and window_net > 0:
+            status = "UNMAPPED_ANONYMOUS_MMAP"
+
+    window_net_gib = window_net / (1024.0 ** 3)
+    c4_delta = float(c4_delta_rss_gib or 0.0)
+    non_mmap_remainder_gib = max(c4_delta - window_net_gib, 0.0) if c4_delta > 0 else None
+    allocator_type_partition: dict[str, Any] | None = None
+    if hook_ran and c4_delta > 0:
+        allocator_type_partition = {
+            "c4_subphase_delta_rss_gib": c4_delta,
+            "mmap_net_gib": window_net_gib,
+            "mmap_net_bytes": int(window_net),
+            "non_mmap_remainder_gib": non_mmap_remainder_gib,
+            "non_mmap_remainder_fraction_of_c4": (
+                non_mmap_remainder_gib / c4_delta if c4_delta > 0 else None
+            ),
+            "non_mmap_remainder_class": (
+                "malloc_glibc_arena_or_driver_pinned"
+                if non_mmap_remainder_gib and non_mmap_remainder_gib > 0.05
+                else None
+            ),
+            "libc_malloc_interposition_cuda_safe": False,
+            "recording_mode": "mmap_only_cuda_safe",
+            "forward_fidelity_skipped_baseline_note": (
+                "fixture_alloc_hook skips forward_fidelity; C4 subphase delta may differ "
+                "from prior unskipped runs (e.g. 7.33 vs 7.57 GiB)"
+            ),
+        }
+
+    classified_null: dict[str, Any] | None = None
+    if hook_ran:
+        classified_null = {
+            "slice_outcome": "CLASSIFIED_NULL",
+            "libc_malloc_ldpreload_cuda_incompatible": True,
+            "libc_malloc_ldpreload_cuda_incompatible_status": "CONFIRMED",
+            "superseded_folds": ["F4", "F7", "F11"],
+            "superseded_reason": (
+                "malloc-family LD_PRELOAD interception is CUDA-incompatible on this stack; "
+                "pointer-owned libc ledger and unknown-free measurement folds are void"
+            ),
+            "surviving_mechanism": "mmap_only_recording",
+            "mechanism_owner_named": mechanism_owner_status == "RESOLVED",
+            "next_method_proposal": (
+                "mallinfo2/malloc_stats glibc arena introspection (CUDA-safe, no interposition) "
+                "+ cuda-driver probe (cuMemHostAlloc) for driver-pinned remainder"
+            ),
+        }
+
+    if mechanism_owner_status == "UNMAPPED_OR_UNRESOLVED":
+        call_site_status = "UNRESOLVED"
+        call_site_origin = None
+
+    return {
+        "status": status,
+        "mechanism_owner_status": mechanism_owner_status,
+        "tier": tier,
+        "allocation_source": allocation_source,
+        "call_site_status": call_site_status,
+        "call_site_origin_file_line": call_site_origin,
+        "dominant_hook_site": dominant,
+        "window_net_bytes": window_net,
+        "window_net_gib": window_net_gib,
+        "reconcile_ratio_vs_c4_rss": (
+            abs(dominant_net) / (c4_delta_rss_gib * (1024 ** 3))
+            if dominant and c4_delta_rss_gib
+            else None
+        ),
+        "ring_drop_count": ring_drops,
+        "lock_contention_drop_count": lock_contention_drops,
+        "table_overflow_count": table_overflow,
+        "lost_owner_count": lost_owner,
+        "unknown_free_bytes": unknown_free_bytes,
+        "unknown_free_unmeasured_count": unknown_unmeasured,
+        "unknown_free_bytes_bounded": unknown_bounded,
+        "unknown_free_fraction_of_c4_rss": (
+            unknown_free_bytes / (c4_delta_rss_gib * (1024 ** 3))
+            if c4_delta_rss_gib
+            else None
+        ),
+        "hook_instrumentation_rss_delta_gib": hook_instr_delta,
+        "c4_window_rss_delta_gib": c4_window_rss_delta_gib,
+        "allocator_type_partition": allocator_type_partition,
+        "classified_null": classified_null,
+        "stats_enter": stats_enter,
+        "stats_exit": stats_exit,
+        "top_sites": top_sites,
+        "hook_ran": hook_ran,
+    }

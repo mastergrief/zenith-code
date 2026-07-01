@@ -290,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v5")
+    assert receipt["schema"].endswith("/v6")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -764,3 +764,254 @@ def test_tier_c_anonymous_only_no_call_site_overclaim() -> None:
     result = attribute_allocator_native_profile(marks, c4_delta_rss_gib=1.0)
     assert result["mechanism_owner_status"] == "UNMAPPED_OR_UNRESOLVED"
     assert result["call_site_status"] == "UNRESOLVED"
+
+
+def _alloc_hook_mark(event: str, *, rss_kib: int, stats: dict | None = None) -> dict:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA,
+    )
+
+    return {
+        "schema": PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA,
+        "event": event,
+        "resource_snapshot": {"rss_kib": rss_kib},
+        "alloc_hook_stats": stats or {},
+        "allocator_probe": {"vma_entries": []},
+    }
+
+
+def test_profile_alloc_hook_default_off(monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack import host_alloc_hook_probe as hook_probe
+
+    monkeypatch.delenv(hook_probe.PROFILE_ALLOC_HOOK_ENV, raising=False)
+    monkeypatch.delenv("HRM_TEXT_158_PROFILE_HOST_RSS", raising=False)
+    assert hook_probe.profile_alloc_hook_enabled() is False
+
+
+def test_alloc_hook_table_overflow_inconclusive() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        attribute_alloc_hook_profile,
+    )
+
+    stats = {
+        "window_net_bytes": 8_000_000_000,
+        "lost_owner_count": 1,
+        "table_overflow_count": 1,
+        "unknown_free_bytes_bounded": True,
+        "unknown_free_unmeasured_count": 0,
+        "top_sites": [{"owner_frame": "0xabc", "net_bytes": 8_000_000_000}],
+    }
+    marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_000_000),
+        _alloc_hook_mark("alloc_hook_C4_exit", rss_kib=10_000_000, stats=stats),
+    ]
+    result = attribute_alloc_hook_profile(marks, c4_delta_rss_gib=7.5)
+    assert result["mechanism_owner_status"] == "INCONCLUSIVE"
+
+
+def test_alloc_hook_unknown_unmeasured_inconclusive() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        attribute_alloc_hook_profile,
+    )
+
+    stats = {
+        "window_net_bytes": 1_000_000,
+        "lost_owner_count": 0,
+        "table_overflow_count": 0,
+        "unknown_free_bytes_bounded": False,
+        "unknown_free_unmeasured_count": 2,
+        "top_sites": [],
+    }
+    marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_000_000),
+        _alloc_hook_mark("alloc_hook_C4_exit", rss_kib=3_000_000, stats=stats),
+    ]
+    result = attribute_alloc_hook_profile(marks, c4_delta_rss_gib=1.0)
+    assert result["mechanism_owner_status"] == "INCONCLUSIVE"
+
+
+def test_vma_diff_existing_region() -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import diff_vma_entries
+
+    before = [{"start": 100, "end": 200, "rss_kb": 1000, "anonymous_kb": 500, "name": "[heap]"}]
+    after = [{"start": 100, "end": 200, "rss_kb": 1300, "anonymous_kb": 800, "name": "[heap]"}]
+    result = diff_vma_entries(before, after)
+    assert result["top_positive_vma_deltas"][0]["delta_rss_kb"] == 300
+    assert result["top_positive_vma_deltas"][0]["is_new_vma"] is False
+
+
+def test_read_vma_entries_parses_smaps_detail_lines(tmp_path, monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import read_vma_entries
+
+    smaps_text = """00400000-00401000 r-xp 00000000 08:01 1234 /usr/lib/libc.so.6
+Size:                  4 kB
+Rss:                   4 kB
+Private_Dirty:         0 kB
+Anonymous:             0 kB
+Referenced:            4 kB
+7f0000000000-7f0000100000 rw-p 00000000 00:00 0 
+Size:               1024 kB
+Rss:                 512 kB
+Private_Dirty:       512 kB
+Anonymous:           512 kB
+Referenced:          512 kB
+"""
+    smaps_path = tmp_path / "smaps"
+    smaps_path.write_text(smaps_text, encoding="utf-8")
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.host_allocator_probe.Path",
+        lambda p: smaps_path if str(p) == "/proc/self/smaps" else Path(p),
+    )
+    entries = read_vma_entries()
+    assert len(entries) == 2
+    assert entries[0]["name"] == "/usr/lib/libc.so.6"
+    assert entries[0]["size_kb"] == 4
+    assert entries[0]["rss_kb"] == 4
+    assert entries[1]["rss_kb"] == 512
+    assert entries[1]["anonymous_kb"] == 512
+
+
+def test_alloc_hook_lock_contention_inconclusive() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        attribute_alloc_hook_profile,
+    )
+
+    stats = {
+        "top_sites": [{"owner_frame": "0x1000", "net_bytes": 8_000_000_000}],
+        "window_net_bytes": 8_000_000_000,
+        "lost_owner_count": 0,
+        "table_overflow_count": 0,
+        "lock_contention_drop_count": 42,
+        "unknown_free_bytes_bounded": True,
+        "unknown_free_unmeasured_count": 0,
+    }
+    marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_000_000),
+        _alloc_hook_mark("alloc_hook_C4_exit", rss_kib=10_000_000, stats=stats),
+    ]
+    result = attribute_alloc_hook_profile(marks, c4_delta_rss_gib=7.5)
+    assert result["mechanism_owner_status"] == "INCONCLUSIVE"
+    assert result["lock_contention_drop_count"] == 42
+
+
+def test_read_vma_entries_rejects_size_detail_as_header(tmp_path, monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import read_vma_entries
+
+    smaps_text = """00400000-00401000 r-xp 00000000 08:01 1234 /usr/lib/libc.so.6
+Size:                  4 kB
+Rss:                   4 kB
+Size:               1024 kB
+Rss:                 512 kB
+7f0000000000-7f0000100000 rw-p 00000000 00:00 0 
+Size:               1024 kB
+"""
+    smaps_path = tmp_path / "smaps"
+    smaps_path.write_text(smaps_text, encoding="utf-8")
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.host_allocator_probe.Path",
+        lambda p: smaps_path if str(p) == "/proc/self/smaps" else Path(p),
+    )
+    entries = read_vma_entries()
+    assert len(entries) == 2
+    assert entries[0]["name"] == "/usr/lib/libc.so.6"
+    assert entries[1]["rss_kb"] == 0
+
+
+def test_positive_control_miss_hook_failure(tmp_path) -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import run_positive_control
+
+    result = run_positive_control(tmp_path / "missing_stats.json")
+    assert result["status"] == "HOOK_FAILURE"
+
+
+def test_alloc_hook_unmapped_anonymous_mmap_status() -> None:
+    from calm.hrm_text_158.native_full_stack.host_alloc_hook_probe import (
+        attribute_alloc_hook_profile,
+    )
+
+    stats = {
+        "window_net_bytes": 4_469_030_912,
+        "prefault_done": 1,
+        "lost_owner_count": 0,
+        "table_overflow_count": 0,
+        "lock_contention_drop_count": 0,
+        "unknown_free_bytes_bounded": True,
+        "unknown_free_unmeasured_count": 0,
+        "top_sites": [{"owner_frame": "0x54c5b3", "net_bytes": 4_469_030_912}],
+    }
+    marks = [
+        _alloc_hook_mark("alloc_hook_C4_enter", rss_kib=2_500_000),
+        _alloc_hook_mark("alloc_hook_C4_exit", rss_kib=10_000_000, stats=stats),
+    ]
+    result = attribute_alloc_hook_profile(marks, c4_delta_rss_gib=7.33)
+    assert result["status"] == "UNMAPPED_ANONYMOUS_MMAP"
+    assert result["mechanism_owner_status"] == "UNMAPPED_OR_UNRESOLVED"
+    assert result["call_site_status"] == "UNRESOLVED"
+    assert result["hook_ran"] is True
+    partition = result["allocator_type_partition"]
+    assert partition is not None
+    assert partition["mmap_net_gib"] > 4.0
+    assert partition["non_mmap_remainder_gib"] > 2.5
+    assert partition["libc_malloc_interposition_cuda_safe"] is False
+    classified = result["classified_null"]
+    assert classified["slice_outcome"] == "CLASSIFIED_NULL"
+    assert classified["libc_malloc_ldpreload_cuda_incompatible"] is True
+    assert "F4" in classified["superseded_folds"]
+
+
+def test_build_attribution_receipt_auto_detects_alloc_hook_marks(tmp_path) -> None:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        HOST_RSS_PROFILE_JSONL_NAME,
+        PROFILE_HOST_RSS_SCHEMA,
+    )
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        build_attribution_receipt,
+    )
+
+    profile_path = tmp_path / HOST_RSS_PROFILE_JSONL_NAME
+    lines = [
+        {
+            "schema": PROFILE_HOST_RSS_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "event": "enter",
+            "step": 1,
+            "resource_snapshot": {"rss_kib": 2_400_000},
+        },
+        {
+            "schema": PROFILE_HOST_RSS_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "event": "exit",
+            "step": 1,
+            "resource_snapshot": {"rss_kib": 10_200_000},
+        },
+        _alloc_hook_mark(
+            "alloc_hook_C4_enter",
+            rss_kib=2_500_000,
+            stats={"window_net_bytes": 0},
+        ),
+        _alloc_hook_mark(
+            "alloc_hook_C4_exit",
+            rss_kib=10_000_000,
+            stats={
+                "window_net_bytes": 4_000_000_000,
+                "prefault_done": 1,
+                "lost_owner_count": 0,
+                "table_overflow_count": 0,
+                "unknown_free_bytes_bounded": True,
+                "unknown_free_unmeasured_count": 0,
+                "top_sites": [{"owner_frame": "0xabc", "net_bytes": 4_000_000_000}],
+            },
+        ),
+    ]
+    profile_path.write_text(
+        "\n".join(json.dumps(row) for row in lines) + "\n",
+        encoding="utf-8",
+    )
+    receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
+    assert receipt["alloc_hook_attribution"] is not None
+    assert receipt["alloc_hook_attribution"]["status"] == "UNMAPPED_ANONYMOUS_MMAP"
+    assert receipt["alloc_hook_attribution"]["call_site_status"] == "UNRESOLVED"
+    assert receipt["call_site_status"] == "UNRESOLVED"
+    assert receipt["classified_null"]["slice_outcome"] == "CLASSIFIED_NULL"
+    assert receipt["allocator_type_partition"]["mmap_net_gib"] > 3.5
+
