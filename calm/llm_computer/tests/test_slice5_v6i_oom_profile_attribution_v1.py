@@ -2533,7 +2533,7 @@ def _obmalloc_expanded_phase3_real_emission_marks_for_state(
     marks: list[dict[str, Any]] = []
     for site_id, delta in leaf_holding_deltas.items():
         if site_id in ("C4.S1d.3", "C4.S1d.4"):
-            pair_deltas = _split_hold_across_pairs(int(delta), 4)
+            pair_deltas = _split_hold_across_pairs(int(delta), 1)
             marks.extend(
                 _obmalloc_expanded_site_multi_pair_marks_for_site(
                     state_index=int(state_index),
@@ -3555,9 +3555,27 @@ def test_obmalloc_expanded_s1d_multi_pair_aggregate_holding_delta() -> None:
         leaf_holding_deltas=single_state_holding,
     )
     for site_id in ("C4.S1d.3", "C4.S1d.4"):
-        assert site_id in OBMALLOC_SITE_MULTI_PAIR_SITES
         assert _site_bracket_holding_delta_bytes(
             site_marks,
+            site_id,
+            state_idx,
+            absent_is_zero=True,
+        ) == (s1d3_hold if site_id == "C4.S1d.3" else s1d4_hold)
+
+    # Explicit multi-pair injection exercises consumer aggregation (not real emitter shape).
+    multi_pair_marks: list[dict[str, Any]] = []
+    for site_id, hold in (("C4.S1d.3", s1d3_hold), ("C4.S1d.4", s1d4_hold)):
+        multi_pair_marks.extend(
+            _obmalloc_expanded_site_multi_pair_marks_for_site(
+                state_index=state_idx,
+                site_id=site_id,
+                pair_deltas=_split_hold_across_pairs(int(hold), 4),
+            )
+        )
+    for site_id in ("C4.S1d.3", "C4.S1d.4"):
+        assert site_id in OBMALLOC_SITE_MULTI_PAIR_SITES
+        assert _site_bracket_holding_delta_bytes(
+            multi_pair_marks,
             site_id,
             state_idx,
             absent_is_zero=True,
@@ -3589,14 +3607,18 @@ def test_obmalloc_expanded_s1d_multi_pair_aggregate_holding_delta() -> None:
         + _obmalloc_expanded_boundary_marks(after_state_blocks=[200_000_000] * 8)
         + site_marks_all
     )
+    multi_pair_stream = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[200_000_000] * 8)
+        + multi_pair_marks
+    )
     validation = _validate_obmalloc_expanded_event_stream(
-        marks,
-        sampled_states=sampled,
+        multi_pair_stream,
+        sampled_states=(state_idx,),
     )
     assert validation["valid"] is True
     assert validation["pair_counts_by_site"]["C4.S1d.3"][state_idx] == 4
     assert validation["pair_counts_by_site"]["C4.S1d.4"][state_idx] == 4
-    assert validation["counts"]["total"] > 162
 
     result = attribute_obmalloc_expanded(
         marks_a=marks,
@@ -3744,6 +3766,88 @@ def test_run_fixture_obmalloc_probe_lane_release_on_timeout(
     assert payload["resource_lane_release"] == {"lane": "released"}
 
 
+def test_run_fixture_obmalloc_probe_stale_profile_unlink_pre_probe_preserves_fresh_marks(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """FIX-F: stale profile clear must run pre-probe; post-probe unlink erases fresh marks."""
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _read_jsonl,
+        _run_fixture_obmalloc_probe,
+    )
+
+    scratch_name = "stale_profile_case"
+    scratch = tmp_path / scratch_name
+    scratch.mkdir(parents=True, exist_ok=True)
+    profile_path = scratch / probe.HOST_RSS_PROFILE_JSONL_NAME
+    stale_mark = {"event": "stale_sentinel_pre_probe", "optimizer_step_index": -1}
+    profile_path.write_text(json.dumps(stale_mark) + "\n", encoding="utf-8")
+
+    fresh_marks = [
+        {
+            "event": "obmalloc_site_C4.S1d.3_pre",
+            "optimizer_step_index": 1,
+            "state_index": 0,
+            "allocation_site_id": "C4.S1d.3",
+        },
+        {
+            "event": "obmalloc_site_C4.S1d.3_post",
+            "optimizer_step_index": 1,
+            "state_index": 0,
+            "allocation_site_id": "C4.S1d.3",
+        },
+    ]
+
+    def _fake_acquire(out_root: Path):
+        return {"lane": "held"}
+
+    def _fake_release(out_root: Path):
+        return {"lane": "released"}
+
+    def _fake_streaming(*_args, **_kwargs):
+        profile_path.write_text(
+            "\n".join(json.dumps(row) for row in fresh_marks) + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "exit_code": 0,
+            "probe_stream_log": str(scratch / "probe_stream.log"),
+            "subprocess_timeout_expired": False,
+            "stdout_tail": "",
+            "stderr_tail": "",
+            "used_capture_output": False,
+        }
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_r7_resource_lane_acquire.acquire_resource_lane",
+        _fake_acquire,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_r7_resource_lane_release.release_resource_lane",
+        _fake_release,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_subprocess_streaming_to_log",
+        _fake_streaming,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._fixture_obmalloc_env",
+        lambda **_kwargs: {},
+    )
+
+    payload = _run_fixture_obmalloc_probe(
+        tmp_path,
+        scratch_name=scratch_name,
+        debugmallocstats=False,
+    )
+
+    assert payload["profile_mark_count"] > 0
+    assert payload["marks"] == fresh_marks
+    assert all(row.get("event") != "stale_sentinel_pre_probe" for row in payload["marks"])
+    assert profile_path.is_file()
+    assert _read_jsonl(profile_path) == fresh_marks
+
+
 def test_durable_mirror_default_off(tmp_path: Path, monkeypatch) -> None:
     from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
         run_fixture_obmalloc_expanded_combined,
@@ -3802,3 +3906,145 @@ def test_durable_mirror_opt_in_writes_receipt(tmp_path: Path) -> None:
     assert receipt["post_hash"] is not None
     assert Path(receipt["backup_path"]).is_file()
     assert result["durable_artifact_path"] == str(mirror_path)
+
+
+def _product_path_emit_marks_for_apply_cap(
+    *,
+    n_apply_cap_calls: int = 1,
+    state_index: int = 0,
+    optimizer_step_index: int = 1,
+) -> list[dict[str, Any]]:
+    import torch
+
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        EventCodedVoteUpdateState,
+    )
+    from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapTensorResult
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        apply_cap_tensor_result_gpu,
+        compute_obmalloc_expanded_sampled_states,
+        reset_obmalloc_site_emit_dedup_session,
+    )
+    from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateInputs, VoteUpdateSpec
+    from calm.llm_computer.tests.test_sparse_event_coded_planner_v1_parity_v0 import (
+        _make_state,
+        _vote_spec,
+        _votes_for_indices,
+    )
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        plan_event_coded_integer_vote_update,
+    )
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required for product-path emit topology test")
+
+    reset_obmalloc_site_emit_dedup_session()
+    numel = 64
+    state = _make_state(numel=numel)
+    state_key = "probe_state"
+    votes = _votes_for_indices({0: 12, 3: -9}, numel=numel)
+    inputs = VoteUpdateInputs(votes=votes)
+    spec = _vote_spec()
+    plan = plan_event_coded_integer_vote_update(state, inputs, spec)
+    event_states = {state_key: state}
+    plans_by_key = {state_key: plan}
+    inputs_by_key = {state_key: inputs}
+    vote_specs_by_key = {state_key: spec}
+    accepted_flat_by_key = {state_key: tuple(int(x) for x in plan.applied_indices.tolist())}
+    q_gpu = state.q_levels.cuda()
+    item = GlobalRateCapTensorResult(
+        state_key=state_key,
+        q_levels=q_gpu,
+        accumulators=torch.zeros(numel, dtype=torch.int16, device="cuda"),
+        stats={},
+    )
+    sampled_states = compute_obmalloc_expanded_sampled_states(32)
+    marks: list[dict[str, Any]] = []
+
+    def site_emit(
+        site_id: str,
+        suffix: str,
+        *,
+        origin_file: str = "",
+        origin_line: int = 0,
+        optimizer_step_index: int = 0,
+        state_index: int = -1,
+    ) -> None:
+        marks.append(
+            {
+                "event": f"obmalloc_site_{site_id}_{suffix}",
+                "optimizer_step_index": int(optimizer_step_index),
+                "state_index": int(state_index),
+                "allocation_site_id": str(site_id),
+            }
+        )
+
+    def merge_stats(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+        merged = dict(a)
+        merged.update(b)
+        return merged
+
+    for _ in range(int(n_apply_cap_calls)):
+        apply_cap_tensor_result_gpu(
+            item,
+            event_states=event_states,
+            plans_by_key=plans_by_key,
+            inputs_by_key=inputs_by_key,
+            vote_specs_by_key=vote_specs_by_key,
+            accepted_flat_by_key=accepted_flat_by_key,
+            local_selection_ordering_step=int(optimizer_step_index),
+            cap_boundary_transient=0,
+            cap_item_stats={},
+            merge_stats_fn=merge_stats,
+            state_index=int(state_index),
+            host_allocator_site_emit=site_emit,
+            sampled_states=sampled_states,
+        )
+    return marks
+
+
+def test_product_path_apply_cap_emit_topology_single_pair_per_state() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _site_bracket_pair_count_for_state,
+    )
+
+    state_idx = 0
+    marks = _product_path_emit_marks_for_apply_cap(
+        n_apply_cap_calls=1,
+        state_index=state_idx,
+        optimizer_step_index=1,
+    )
+    for site_id in ("C4.S1", "C4.S1a", "C4.S1d.1", "C4.S1d.3", "C4.S1d.4"):
+        assert _site_bracket_pair_count_for_state(marks, site_id, state_idx) == 1, site_id
+
+    marks_double = _product_path_emit_marks_for_apply_cap(
+        n_apply_cap_calls=2,
+        state_index=state_idx,
+        optimizer_step_index=1,
+    )
+    for site_id in ("C4.S1", "C4.S1a", "C4.S1d.1"):
+        assert _site_bracket_pair_count_for_state(marks_double, site_id, state_idx) == 1, site_id
+
+
+def test_fail_closed_process_exit_code_propagates_nonzero() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _resolve_attribution_process_exit_code,
+    )
+
+    fields = _resolve_attribution_process_exit_code(
+        probe_exit_code=0,
+        fail_closed_terminal="OBSERVER_PERTURBED_INCONCLUSIVE",
+    )
+    assert int(fields["process_exit_code"]) == 37
+    assert int(fields["mapped_terminal_code"]) == 37
+    assert fields["exit_code_agreement"] is True
+
+    clean = _resolve_attribution_process_exit_code(
+        probe_exit_code=0,
+        fail_closed_terminal=None,
+    )
+    assert int(clean["process_exit_code"]) == 0
+    assert clean["mapped_terminal_code"] is None

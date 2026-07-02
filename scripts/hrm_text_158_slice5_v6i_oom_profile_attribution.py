@@ -261,8 +261,54 @@ OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN = 0.75
 OBMALLOC_EXPANDED_EVENT_COUNT_TARGET = 162
 OBMALLOC_EXPANDED_EVENT_COUNT_MAX = 170
 OBMALLOC_EXPANDED_RETENTION_FLOOR_BYTES = 1024
-# Sites that emit multiple ordered pre/post bracket pairs per sampled state (Phase-3b).
-OBMALLOC_SITE_MULTI_PAIR_SITES = frozenset({"C4.S1d.3", "C4.S1d.4"})
+# Sites allowed to emit multiple ordered pre/post pairs in SYNTHETIC/legacy streams.
+# Real emitter (post FIX-C1) uses one pair per site; consumer aggregation still
+# accepts multi-pair marks for these sites when present in test fixtures.
+OBMALLOC_SITE_MULTI_PAIR_SITES: frozenset[str] = frozenset({"C4.S1d.3", "C4.S1d.4"})
+
+FAIL_CLOSED_TERMINAL_EXIT_CODES: dict[str, int] = {
+    "OBSERVER_PERTURBED_INCONCLUSIVE": 37,
+    "ARENA_STATS_UNPARSEABLE_INCONCLUSIVE": 37,
+    "HOLDER_AMBIGUOUS": 37,
+    "CHILD_COVERAGE_FAIL": 37,
+    "S1D_CHILD_COVERAGE_FAIL": 37,
+    "S1F_CHILD_COVERAGE_FAIL": 37,
+    "CHILD_PARENT_RECONCILE_FAIL": 37,
+    "CHILD_OVERLAP_DOUBLE_COUNT": 37,
+    "INCONCLUSIVE_PENDING_NOISE_FLOOR": 37,
+    "DENOMINATOR_INVALID_INCONCLUSIVE": 37,
+    "INCONCLUSIVE_CROSS_RUN_DENOMINATOR": 37,
+    "OBMALLOC_SELF_FOOTPRINT_INCONCLUSIVE": 37,
+    "RECONCILE_OUT_OF_BAND_INCONCLUSIVE": 37,
+    "BRACKET_REMAINDER_TOO_LARGE": 37,
+    "TRACEMALLOC_PERTURBED_INCONCLUSIVE": 37,
+    "CLASSIFIER_INCONCLUSIVE": 37,
+}
+
+
+def _mapped_terminal_exit_code(fail_closed_terminal: str | None) -> int | None:
+    if fail_closed_terminal is None:
+        return None
+    return int(FAIL_CLOSED_TERMINAL_EXIT_CODES.get(str(fail_closed_terminal), 37))
+
+
+def _resolve_attribution_process_exit_code(
+    *,
+    probe_exit_code: int,
+    fail_closed_terminal: str | None,
+) -> dict[str, Any]:
+    mapped_terminal_code = _mapped_terminal_exit_code(fail_closed_terminal)
+    process_exit_code = int(probe_exit_code)
+    if mapped_terminal_code is not None:
+        process_exit_code = int(mapped_terminal_code)
+    exit_code_agreement = (
+        mapped_terminal_code is None or int(process_exit_code) == int(mapped_terminal_code)
+    )
+    return {
+        "process_exit_code": int(process_exit_code),
+        "mapped_terminal_code": mapped_terminal_code,
+        "exit_code_agreement": bool(exit_code_agreement),
+    }
 OBMALLOC_EXPANDED_BOUNDARY_AFTER_STATE_MAX = 8
 
 
@@ -4620,6 +4666,9 @@ def _run_fixture_obmalloc_probe(
     out_root.mkdir(parents=True, exist_ok=True)
     scratch = out_root / scratch_name
     scratch.mkdir(parents=True, exist_ok=True)
+    profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
+    if profile_path.is_file():
+        profile_path.unlink()
     lane_holding: dict[str, Any] | None = None
     lane_release: dict[str, Any] | None = None
     subprocess_result: dict[str, Any] = {}
@@ -4655,7 +4704,6 @@ def _run_fixture_obmalloc_probe(
         except Exception as exc:
             lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
 
-    profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
     marks = _read_jsonl(profile_path) if profile_path.is_file() else []
 
     return {
@@ -4910,11 +4958,23 @@ def run_fixture_obmalloc_expanded_combined(
         int(run_a_prime.get("exit_code", 1)),
         int(run_b.get("exit_code", 1)),
     ]
+    probe_exit_code = max(exit_codes)
+    fail_closed_terminal = expanded.get("fail_closed_terminal")
+    exit_fields = _resolve_attribution_process_exit_code(
+        probe_exit_code=int(probe_exit_code),
+        fail_closed_terminal=(
+            str(fail_closed_terminal) if fail_closed_terminal is not None else None
+        ),
+    )
     localization = dict(expanded.get("localization") or {})
     payload: dict[str, Any] = {
         "schema": ATTRIBUTION_SCHEMA,
         "fixture_mode": "fixture_obmalloc_expanded",
-        "exit_code": max(exit_codes),
+        "exit_code": int(exit_fields["process_exit_code"]),
+        "process_exit_code": int(exit_fields["process_exit_code"]),
+        "mapped_terminal_code": exit_fields["mapped_terminal_code"],
+        "exit_code_agreement": bool(exit_fields["exit_code_agreement"]),
+        "probe_exit_code": int(probe_exit_code),
         "runs": {
             "A": {k: v for k, v in run_a.items() if k != "marks"},
             "A_prime": {k: v for k, v in run_a_prime.items() if k != "marks"},
@@ -5099,8 +5159,13 @@ def main() -> int:
         "fixture_obmalloc_arena_combined",
         "fixture_obmalloc_site_brackets",
         "fixture_obmalloc_expanded",
-    } and int(payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))) != 0:
-        return 1
+    } and int(payload.get("process_exit_code", payload.get("exit_code", 1))) != 0:
+        return int(payload.get("process_exit_code", payload.get("exit_code", 1)))
+    fail_closed_terminal = payload.get("fail_closed_terminal")
+    if fail_closed_terminal is not None:
+        mapped = _mapped_terminal_exit_code(str(fail_closed_terminal))
+        if mapped is not None:
+            return int(mapped)
     return 0
 
 

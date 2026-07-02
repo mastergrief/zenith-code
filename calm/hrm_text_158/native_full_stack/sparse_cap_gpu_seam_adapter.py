@@ -54,6 +54,50 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
 )
 
 
+_SITE_EMIT_DEDUP_KEYS: set[tuple[int, int, str, str]] = set()
+
+
+def reset_obmalloc_site_emit_dedup_session() -> None:
+    """Clear cross-apply_cap site-emit dedup state (FIX-G; fresh per probe subprocess)."""
+    _SITE_EMIT_DEDUP_KEYS.clear()
+
+
+def _wrap_site_emit_dedup(
+    host_allocator_site_emit: Callable[..., None] | None,
+) -> Callable[..., None] | None:
+    if host_allocator_site_emit is None:
+        return None
+
+    def _wrapped(
+        site_id: str,
+        suffix: str,
+        *,
+        origin_file: str = "",
+        origin_line: int = 0,
+        optimizer_step_index: int = 0,
+        state_index: int = -1,
+    ) -> None:
+        key = (
+            int(optimizer_step_index),
+            int(state_index),
+            str(site_id),
+            str(suffix),
+        )
+        if key in _SITE_EMIT_DEDUP_KEYS:
+            return
+        _SITE_EMIT_DEDUP_KEYS.add(key)
+        host_allocator_site_emit(
+            site_id,
+            suffix,
+            origin_file=origin_file,
+            origin_line=int(origin_line),
+            optimizer_step_index=int(optimizer_step_index),
+            state_index=int(state_index),
+        )
+
+    return _wrapped
+
+
 def sparse_cap_gpu_lane_enabled() -> bool:
     return (
         os.environ.get(RUN_GPU_GLOBAL_RATE_CAP_ENV) == "1"
@@ -489,7 +533,7 @@ def sync_event_coded_carrier_from_gpu_cap(
     )
     carrier_emit_kwargs = {
         "host_allocator_site_emit": host_allocator_site_emit,
-        "site_emit_enabled": bool(site_enabled),
+        "site_emit_enabled": False,
         "optimizer_step_index": optimizer_step_index,
         "state_index": state_index,
     }
@@ -595,8 +639,9 @@ def apply_cap_tensor_result_gpu(
         int(state_index),
         sampled_states=sampled_states,
     )
-    if host_allocator_site_emit is not None and site_enabled:
-        host_allocator_site_emit(
+    dedup_site_emit = _wrap_site_emit_dedup(host_allocator_site_emit)
+    if dedup_site_emit is not None and site_enabled:
+        dedup_site_emit(
             "C4.S1",
             "pre",
             origin_file="sparse_cap_gpu_seam_adapter.py",
@@ -612,13 +657,13 @@ def apply_cap_tensor_result_gpu(
         step_index=int(local_selection_ordering_step),
         cap_boundary_transient_dense=int(cap_boundary_transient),
         lightweight_runtime_stats=True,
-        host_allocator_site_emit=host_allocator_site_emit,
+        host_allocator_site_emit=dedup_site_emit,
         optimizer_step_index=int(local_selection_ordering_step),
         state_index=int(state_index),
         site_emit_enabled=bool(site_enabled),
     )
-    if host_allocator_site_emit is not None and site_enabled:
-        host_allocator_site_emit(
+    if dedup_site_emit is not None and site_enabled:
+        dedup_site_emit(
             "C4.S1",
             "post",
             origin_file="sparse_cap_gpu_seam_adapter.py",
@@ -633,7 +678,7 @@ def apply_cap_tensor_result_gpu(
         accepted_flat_by_key[state_key],
         q_persistent_cpu=vu.q_levels,
         step_index=int(local_selection_ordering_step),
-        host_allocator_site_emit=host_allocator_site_emit,
+        host_allocator_site_emit=dedup_site_emit,
         optimizer_step_index=int(local_selection_ordering_step),
         state_index=int(state_index),
         sampled_states=sampled_states,

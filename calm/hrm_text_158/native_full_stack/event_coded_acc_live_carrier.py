@@ -749,17 +749,14 @@ class EventCodedAccLiveState:
         cold = int(self.cold_default)
         _site("C4.S1d.3", "pre", 716)
         pre_arr = np.full(active_sorted.shape[0], cold, dtype=np.int32)
-        _site("C4.S1d.3", "post", 716)
         if hot_indices.size:
             pos_in_hot = np.searchsorted(hot_indices, active_sorted)
             in_hot = pos_in_hot < hot_indices.size
             if in_hot.any():
                 matched = hot_indices[pos_in_hot[in_hot]] == active_sorted[in_hot]
-                _site("C4.S1d.4", "pre", 722)
                 hot_hits = np.zeros(active_sorted.shape[0], dtype=bool)
                 hot_hits[np.where(in_hot)[0][matched]] = True
                 pre_arr[hot_hits] = hot_values[pos_in_hot[hot_hits]].astype(np.int32)
-                _site("C4.S1d.4", "post", 724)
         if touched_arr.size:
             pass  # touched lanes not in hot already default to cold_default in pre_arr
         promote_at = promotion_carry_threshold(threshold_abs=self.threshold_abs)
@@ -791,13 +788,8 @@ class EventCodedAccLiveState:
                             if proxy_indices.size
                             else np.sort(extra)
                         )
-        touched_set = set(vote_map) if vote_map is not None else set()
-        _site("C4.S1d.3", "pre", 757)
         vote_arr = np.zeros(active_sorted.shape[0], dtype=np.int32)
-        _site("C4.S1d.3", "post", 757)
-        _site("C4.S1d.4", "pre", 758)
         vote_touched_mask = np.zeros(active_sorted.shape[0], dtype=bool)
-        _site("C4.S1d.4", "post", 758)
         if touched_arr.size:
             vote_positions = np.searchsorted(active_sorted, touched_arr)
             vote_valid = (vote_positions < active_sorted.size) & (
@@ -813,15 +805,24 @@ class EventCodedAccLiveState:
                         [int(vote_map[int(i)]) for i in touched_arr[vote_valid]],
                         dtype=np.int32,
                     )
-        _site("C4.S1d.3", "pre", 774)
         post_arr = vectorized_carry_self_update_row(
             pre_arr,
             vote_arr,
             decay_numerator=DEFAULT_DECAY_NUMERATOR,
             decay_denominator=DEFAULT_DECAY_DENOMINATOR,
         )
-        _site("C4.S1d.3", "post", 779)
-        _site("C4.S1d.4", "pre", 781)
+        q_arr = np.zeros(active_sorted.shape[0], dtype=np.int32)
+        if self.q_levels:
+            q_keys = np.array(sorted(self.q_levels), dtype=np.int32)
+            q_vals = np.array([self.q_levels[int(k)] for k in q_keys], dtype=np.int32)
+            q_pos = np.searchsorted(q_keys, active_sorted)
+            q_hit = q_pos < q_keys.size
+            if q_hit.any():
+                q_match = q_keys[q_pos[q_hit]] == active_sorted[q_hit]
+                q_arr[np.where(q_hit)[0][q_match]] = q_vals[q_pos[q_hit][q_match]]
+        _site("C4.S1d.3", "post", 810)
+
+        _site("C4.S1d.4", "pre", 722)
         if hot_indices.size:
             pos_in_hot = np.searchsorted(hot_indices, active_sorted)
             in_hot = np.zeros(active_sorted.shape[0], dtype=bool)
@@ -843,21 +844,7 @@ class EventCodedAccLiveState:
             | (np.abs(post_arr) >= int(promote_at))
         )
         promotion_count = int(np.sum(promote_mask & ~in_hot))
-        _site("C4.S1d.4", "post", 799)
 
-        _site("C4.S1d.3", "pre", 802)
-        q_arr = np.zeros(active_sorted.shape[0], dtype=np.int32)
-        if self.q_levels:
-            q_keys = np.array(sorted(self.q_levels), dtype=np.int32)
-            q_vals = np.array([self.q_levels[int(k)] for k in q_keys], dtype=np.int32)
-            q_pos = np.searchsorted(q_keys, active_sorted)
-            q_hit = q_pos < q_keys.size
-            if q_hit.any():
-                q_match = q_keys[q_pos[q_hit]] == active_sorted[q_hit]
-                q_arr[np.where(q_hit)[0][q_match]] = q_vals[q_pos[q_hit][q_match]]
-        _site("C4.S1d.3", "post", 810)
-
-        _site("C4.S1d.4", "pre", 812)
         cross_mask = vectorized_crosses_threshold(
             post_arr,
             q_arr,
