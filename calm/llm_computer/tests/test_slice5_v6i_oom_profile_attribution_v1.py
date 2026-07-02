@@ -4278,3 +4278,140 @@ def test_code_currency_import_byte_self_check_fail_closed_on_mismatch(
         enforce_with_mismatch,
     )
     assert maybe_enforce_phase3b_probe_import_byte_currency() == CODE_CURRENCY_MISMATCH_EXIT_CODE
+
+
+def test_postrun_aggregate_liveness_rollup_surfaces_unresolved_and_cleared_arms(
+    tmp_path: Path,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        LAST_ACTIVE_PHASE_NAME,
+        LIVENESS_STACK_DUMP_NAME,
+        build_phase3_subsplit_postrun_aggregate_receipt,
+        build_postrun_aggregate_liveness_rollup,
+    )
+
+    def _write_arm(
+        arm_name: str,
+        *,
+        lap: dict[str, Any],
+        stack_dump: bool = True,
+    ) -> None:
+        arm_dir = tmp_path / arm_name
+        arm_dir.mkdir(parents=True, exist_ok=True)
+        (arm_dir / LAST_ACTIVE_PHASE_NAME).write_text(
+            json.dumps(lap),
+            encoding="utf-8",
+        )
+        if stack_dump:
+            (arm_dir / LIVENESS_STACK_DUMP_NAME).write_text(
+                "guard stack dump sentinel\n",
+                encoding="utf-8",
+            )
+
+    _write_arm(
+        "obmalloc_expanded_ab",
+        lap={
+            "failure_class": "LIVENESS_FAILURE",
+            "fail_closed_termination": "faulthandler_exit_true",
+            "guard_event": "cleared",
+            "phase": "sparse_cap_apply",
+            "phase_status": "completed",
+            "liveness_failure": False,
+            "active_phase_elapsed_seconds": 0.00012,
+        },
+    )
+    _write_arm(
+        "obmalloc_expanded_ab_replicate",
+        lap={
+            "failure_class": "LIVENESS_FAILURE",
+            "fail_closed_termination": "faulthandler_exit_true",
+            "guard_event": "resume",
+            "phase": "step",
+            "active_phase_elapsed_seconds": 0.00008,
+        },
+    )
+    _write_arm(
+        "obmalloc_expanded_b",
+        lap={
+            "failure_class": "LIVENESS_FAILURE",
+            "fail_closed_termination": "faulthandler_exit_true",
+            "guard_event": "exit",
+            "phase": "sparse_cap_apply",
+            "phase_status": "completed",
+            "liveness_failure": False,
+            "active_phase_elapsed_seconds": 0.00015,
+        },
+    )
+
+    rollup = build_postrun_aggregate_liveness_rollup(tmp_path)
+    assert rollup["any_unresolved_terminal_liveness_failure"] is True
+    assert rollup["arms_with_unresolved_terminal_liveness_failure"] == [
+        "obmalloc_expanded_ab_replicate"
+    ]
+    assert set(rollup["arms_with_cleared_last_active_phase"]) == {
+        "obmalloc_expanded_ab",
+        "obmalloc_expanded_b",
+    }
+
+    ab = rollup["arms"]["obmalloc_expanded_ab"]
+    assert ab["liveness_stack_dump_present"] is True
+    assert ab["last_active_phase_cleared"] is True
+    assert ab["terminal_unresolved_liveness_failure"] is False
+    assert ab["failure_class"] == "LIVENESS_FAILURE"
+    assert ab["guard_event"] == "cleared"
+
+    replicate = rollup["arms"]["obmalloc_expanded_ab_replicate"]
+    assert replicate["terminal_unresolved_liveness_failure"] is True
+    assert replicate["last_active_phase_cleared"] is False
+    assert replicate["phase"] == "step"
+    assert replicate["guard_event"] == "resume"
+
+    aggregate = build_phase3_subsplit_postrun_aggregate_receipt(tmp_path)
+    assert "liveness_rollup" in aggregate
+    assert aggregate["liveness_rollup"]["any_unresolved_terminal_liveness_failure"] is True
+    assert aggregate["liveness_rollup"]["arms"]["obmalloc_expanded_ab_replicate"][
+        "terminal_unresolved_liveness_failure"
+    ] is True
+
+
+def test_phase_budget_breach_does_not_trigger_interrupt() -> None:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PHASE3_C4S1_FIRST_MILESTONE_REPORT_ONLY_BUDGET_SECONDS,
+        build_phase_budget_interrupt_authority_contract,
+        evaluate_first_milestone_budget_report_only,
+        first_milestone_budget_breach_triggers_interrupt,
+    )
+
+    contract = build_phase_budget_interrupt_authority_contract(
+        max_silent_phase_seconds=600.0,
+    )
+    assert contract["first_milestone_budgets_report_only"] is True
+    assert contract["milestone_budget_breach_triggers_interrupt"] is False
+    assert contract["interrupt_authority"] == "faulthandler_silent_phase_guard"
+    assert contract["interrupt_timeout_seconds"] == 600.0
+    assert contract["first_milestone_budget_seconds"] == dict(
+        PHASE3_C4S1_FIRST_MILESTONE_REPORT_ONLY_BUDGET_SECONDS
+    )
+
+    assert first_milestone_budget_breach_triggers_interrupt() is False
+
+    apply_budget = float(
+        PHASE3_C4S1_FIRST_MILESTONE_REPORT_ONLY_BUDGET_SECONDS[
+            "sparse_cap_apply_emission"
+        ]
+    )
+    breached = evaluate_first_milestone_budget_report_only(
+        "sparse_cap_apply_emission",
+        apply_budget + 20.0,
+    )
+    assert breached["budget_breached"] is True
+    assert breached["report_only"] is True
+    assert breached["triggers_interrupt"] is False
+    assert breached["known_milestone"] is True
+
+    within = evaluate_first_milestone_budget_report_only(
+        "sparse_cap_apply_emission",
+        apply_budget - 1.0,
+    )
+    assert within["budget_breached"] is False
+    assert within["triggers_interrupt"] is False

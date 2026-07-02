@@ -460,6 +460,145 @@ def build_postrun_aggregate_exit_summary(
     }
 
 
+OBMALLOC_EXPANDED_ARM_DIR_NAMES: tuple[str, ...] = (
+    "obmalloc_expanded_ab",
+    "obmalloc_expanded_ab_replicate",
+    "obmalloc_expanded_b",
+)
+POSTRUN_AGGREGATE_RECEIPT_SCHEMA = (
+    "hrm_text_158_phase3_subsplit_postrun_aggregate_receipt/v1"
+)
+LIVENESS_STACK_DUMP_NAME = "liveness_stack_dump.txt"
+LAST_ACTIVE_PHASE_NAME = "last_active_phase.json"
+LIVENESS_ROLLUP_SCHEMA = "hrm_text_158_phase3_subsplit_liveness_rollup/v1"
+
+
+def _last_active_phase_cleared(payload: Mapping[str, Any]) -> bool:
+    if payload.get("guard_event") == "cleared":
+        return True
+    if payload.get("phase_status") == "completed":
+        return True
+    if payload.get("liveness_failure") is False:
+        return True
+    return False
+
+
+def summarize_arm_liveness_telemetry(arm_dir: Path) -> dict[str, Any]:
+    """Mechanical per-arm liveness rollup for postrun aggregate receipts (C3)."""
+    arm_path = Path(arm_dir)
+    summary: dict[str, Any] = {
+        "arm_dir": str(arm_path),
+        "arm_exists": arm_path.is_dir(),
+        "liveness_stack_dump_present": False,
+        "last_active_phase_present": False,
+        "failure_class": None,
+        "fail_closed_termination": None,
+        "guard_event": None,
+        "phase": None,
+        "active_phase_elapsed_seconds": None,
+        "last_active_phase_cleared": None,
+        "terminal_unresolved_liveness_failure": False,
+    }
+    if not arm_path.is_dir():
+        return summary
+
+    stack_dump_path = arm_path / LIVENESS_STACK_DUMP_NAME
+    summary["liveness_stack_dump_present"] = stack_dump_path.is_file()
+
+    lap_path = arm_path / LAST_ACTIVE_PHASE_NAME
+    if not lap_path.is_file():
+        return summary
+
+    summary["last_active_phase_present"] = True
+    lap = json.loads(lap_path.read_text(encoding="utf-8"))
+    summary["failure_class"] = lap.get("failure_class")
+    summary["fail_closed_termination"] = lap.get("fail_closed_termination")
+    summary["guard_event"] = lap.get("guard_event")
+    summary["phase"] = lap.get("phase")
+    summary["active_phase_elapsed_seconds"] = lap.get("active_phase_elapsed_seconds")
+    cleared = _last_active_phase_cleared(lap)
+    summary["last_active_phase_cleared"] = cleared
+    summary["terminal_unresolved_liveness_failure"] = (
+        lap.get("failure_class") == "LIVENESS_FAILURE" and not cleared
+    )
+    return summary
+
+
+def build_postrun_aggregate_liveness_rollup(
+    run_root: Path,
+    *,
+    arm_dir_names: Sequence[str] = OBMALLOC_EXPANDED_ARM_DIR_NAMES,
+) -> dict[str, Any]:
+    arms = {
+        str(arm_name): summarize_arm_liveness_telemetry(Path(run_root) / str(arm_name))
+        for arm_name in arm_dir_names
+    }
+    unresolved = [
+        arm_name
+        for arm_name, arm_summary in arms.items()
+        if arm_summary.get("terminal_unresolved_liveness_failure")
+    ]
+    cleared = [
+        arm_name
+        for arm_name, arm_summary in arms.items()
+        if arm_summary.get("last_active_phase_cleared") is True
+    ]
+    return {
+        "schema": LIVENESS_ROLLUP_SCHEMA,
+        "run_root": str(run_root),
+        "arms": arms,
+        "arms_with_unresolved_terminal_liveness_failure": unresolved,
+        "arms_with_cleared_last_active_phase": cleared,
+        "any_unresolved_terminal_liveness_failure": bool(unresolved),
+    }
+
+
+def build_phase3_subsplit_postrun_aggregate_receipt(
+    run_root: Path,
+    *,
+    attribution_json_name: str = (
+        "v6i_obmalloc_expanded_attribution_c4s1_phase3_subsplit.json"
+    ),
+    classifier_receipt_rel: str = "postrun/phase3_subsplit_classifier_receipt.json",
+) -> dict[str, Any]:
+    root = Path(run_root)
+    out: dict[str, Any] = {
+        "schema": POSTRUN_AGGREGATE_RECEIPT_SCHEMA,
+        "run_id": root.name,
+        "mirror_durable_absent": True,
+    }
+
+    attribution_payload: dict[str, Any] | None = None
+    attr_path = root / attribution_json_name
+    if attr_path.is_file():
+        attribution_payload = json.loads(attr_path.read_text(encoding="utf-8"))
+        out["mirror_durable_absent"] = "durable_mirror_receipt" not in attribution_payload
+
+    exit_code_artifact: int | None = None
+    ec_path = root / "exit_code.txt"
+    if ec_path.is_file():
+        exit_code_artifact = int(ec_path.read_text(encoding="utf-8").strip())
+
+    classifier_receipt: dict[str, Any] | None = None
+    cls_path = root / classifier_receipt_rel
+    if cls_path.is_file():
+        classifier_receipt = json.loads(cls_path.read_text(encoding="utf-8"))
+        out["classifier"] = classifier_receipt
+        out["branch_outcome"] = classifier_receipt.get("branch_outcome")
+        out["s1f_branch_outcome"] = classifier_receipt.get("s1f_branch_outcome")
+
+    exit_summary = build_postrun_aggregate_exit_summary(
+        attribution_payload=attribution_payload,
+        exit_code_artifact=exit_code_artifact,
+        classifier_receipt=classifier_receipt,
+    )
+    out.update(exit_summary)
+    out["liveness_rollup"] = build_postrun_aggregate_liveness_rollup(root)
+    if attribution_payload is not None:
+        out["fail_closed_terminal"] = attribution_payload.get("fail_closed_terminal")
+    return out
+
+
 def resolve_fixture_attribution_main_exit_code(payload: Mapping[str, Any]) -> int:
     fail_closed_terminal = _fail_closed_terminal_from_attribution_payload(payload)
     if fail_closed_terminal is not None:

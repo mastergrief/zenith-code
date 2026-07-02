@@ -310,6 +310,24 @@ PROBE_PHASE_TO_MILESTONE_PHASE_ID = {
     "live_carrier_snapshot_emit": "live_carrier_snapshot_emit",
     "receipt_write": "artifact_flush",
 }
+PHASE_BUDGET_INTERRUPT_AUTHORITY_SCHEMA = (
+    "hrm_text_158_phase_budget_interrupt_authority/v1"
+)
+# C4.S1 Phase-3 first-milestone wall budgets are REPORT-ONLY progress telemetry.
+# Sole fail-closed interrupt authority for active-phase silence is the faulthandler
+# guard armed from max_silent_phase_seconds (default 600s on GPU launch).
+PHASE3_C4S1_FIRST_MILESTONE_REPORT_ONLY_BUDGET_SECONDS: dict[str, float] = {
+    "forward_backward": 90.0,
+    "optimizer_update": 120.0,
+    "sparse_cap_apply_emission": 180.0,
+    "artifact_flush": 60.0,
+}
+PHASE3_C4S1_MILESTONE_TO_PROBE_PHASE_IDS: dict[str, tuple[str, ...]] = {
+    "forward_backward": ("step_forward_backward",),
+    "optimizer_update": ("sparse_vote_construction", "step_update"),
+    "sparse_cap_apply_emission": ("sparse_cap_apply",),
+    "artifact_flush": ("receipt_write", "artifact_flush"),
+}
 PROFILE_HOST_RSS_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS"
 PROFILE_HOST_RSS_LIVE_RESIDENT_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS_LIVE_RESIDENT"
 PROFILE_TORCH_CPU_CENSUS_ENV = "HRM_TEXT_158_PROFILE_TORCH_CPU_CENSUS"
@@ -1506,6 +1524,64 @@ def enforce_phase_bound(
             duration_seconds=float(duration_seconds),
             timeout_seconds=timeout,
         )
+
+
+def build_phase_budget_interrupt_authority_contract(
+    *,
+    silent_phase_timeout_seconds: float | int | None = None,
+    max_silent_phase_seconds: float | int | None = None,
+) -> dict[str, Any]:
+    """Encode C4: milestone budgets are report-only; faulthandler silent guard interrupts."""
+    interrupt_seconds = _timeout_or_none(
+        silent_phase_timeout_seconds
+        if silent_phase_timeout_seconds is not None
+        else max_silent_phase_seconds
+    )
+    return {
+        "schema": PHASE_BUDGET_INTERRUPT_AUTHORITY_SCHEMA,
+        "first_milestone_budgets_report_only": True,
+        "first_milestone_budget_seconds": dict(
+            PHASE3_C4S1_FIRST_MILESTONE_REPORT_ONLY_BUDGET_SECONDS
+        ),
+        "interrupt_authority": "faulthandler_silent_phase_guard",
+        "interrupt_timeout_seconds": interrupt_seconds,
+        "phase_timeout_scalar_is_aggregate_cap_not_milestone_interrupt": True,
+        "milestone_budget_breach_triggers_interrupt": False,
+    }
+
+
+def evaluate_first_milestone_budget_report_only(
+    milestone_phase_id: str,
+    elapsed_seconds: float,
+) -> dict[str, Any]:
+    """Report milestone budget breach without raising or arming fail-closed interrupt."""
+    budget = PHASE3_C4S1_FIRST_MILESTONE_REPORT_ONLY_BUDGET_SECONDS.get(
+        str(milestone_phase_id)
+    )
+    if budget is None:
+        return {
+            "milestone_phase_id": str(milestone_phase_id),
+            "budget_seconds": None,
+            "elapsed_seconds": float(elapsed_seconds),
+            "budget_breached": False,
+            "report_only": True,
+            "triggers_interrupt": False,
+            "known_milestone": False,
+        }
+    breached = float(elapsed_seconds) > float(budget)
+    return {
+        "milestone_phase_id": str(milestone_phase_id),
+        "budget_seconds": float(budget),
+        "elapsed_seconds": float(elapsed_seconds),
+        "budget_breached": breached,
+        "report_only": True,
+        "triggers_interrupt": False,
+        "known_milestone": True,
+    }
+
+
+def first_milestone_budget_breach_triggers_interrupt() -> bool:
+    return False
 
 
 def resolve_max_silent_phase_seconds(
@@ -7853,6 +7929,10 @@ def run_c2p1_probe(
             silent_phase_timeout_seconds=silent_phase_timeout_seconds,
             total_timeout_seconds=float(total_timeout_seconds),
         )
+        phase_budget_interrupt_authority = build_phase_budget_interrupt_authority_contract(
+            silent_phase_timeout_seconds=silent_phase_timeout_seconds,
+            max_silent_phase_seconds=silent_phase_timeout_seconds,
+        )
         last_active_phase_path = scratch_root / "last_active_phase.json"
         resolved_phase_heartbeat_seconds = resolve_phase_heartbeat_seconds(
             emit_progress=bool(emit_progress),
@@ -8633,6 +8713,7 @@ def run_c2p1_probe(
             },
             "stdout_liveness": stdout_liveness_receipt,
             "phase_timeout_exemption": phase_timeout_exemption_receipt,
+            "phase_budget_interrupt_authority": phase_budget_interrupt_authority,
             "dry_run": True,
             "checkpoint_written": False,
             "creditdir_mutated": False,
