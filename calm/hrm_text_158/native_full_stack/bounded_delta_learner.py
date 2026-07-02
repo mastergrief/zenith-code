@@ -2566,6 +2566,14 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 getattr(rss_emit, "site_emit", None) if rss_emit is not None else None
             )
             n_c4_states = len(gpu_cap_result.tensor_results)
+            from calm.hrm_text_158.native_full_stack.c4_retention_owner_census import (
+                begin_c4_retention_owner_census_session,
+                pending_obmalloc_c4_after_state_allocation_dims,
+            )
+
+            c4_retention_census = begin_c4_retention_owner_census_session()
+            if c4_retention_census is not None:
+                c4_retention_census.register_priors(tensor_states, event_states)
             obmalloc_expanded_on = os.environ.get(
                 "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED", ""
             ).strip().lower() in {"1", "true", "yes", "on"}
@@ -2634,9 +2642,23 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     carriers_by_key[state_key] = carrier
                     q_by_key[state_key] = q_out
                     stats_by_key[state_key] = stats
+                    if c4_retention_census is not None:
+                        c4_retention_census.register_new(carrier=carrier, q_out=q_out)
                     if (int(state_index) + 1) % 4 == 0 or (
                         int(state_index) + 1
                     ) == len(gpu_cap_result.tensor_results):
+                        census_dims = (
+                            c4_retention_census.build_allocation_dims(
+                                tensor_states=tensor_states,
+                                event_states=event_states,
+                                carriers_by_key=carriers_by_key,
+                                q_by_key=q_by_key,
+                                next_states=None,
+                                state_index=int(state_index),
+                            )
+                            if c4_retention_census is not None
+                            else None
+                        )
                         _emit_torch_cpu_census_boundary(
                             rss_emit,
                             event="census_C4_after_state",
@@ -2664,15 +2686,29 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                             state_index=int(state_index),
                             state_bucket=int(state_index) // 4,
                         )
-                        _emit_obmalloc_boundary(
-                            rss_emit,
-                            event="obmalloc_C4_after_state",
-                            sub_phase_id="C4_gpu_cap_apply_sync",
-                            allocation_site_id="C4_after_state",
-                            optimizer_step_index=step_index,
+                        with pending_obmalloc_c4_after_state_allocation_dims(
+                            census_dims,
                             state_index=int(state_index),
-                            state_bucket=int(state_index) // 4,
-                        )
+                        ):
+                            if census_dims is not None and rss_emit is not None:
+                                rss_emit(
+                                    "c4_retention_owner_census_after_state",
+                                    sub_phase_id="C4_gpu_cap_apply_sync",
+                                    allocation_site_id="C4_after_state",
+                                    optimizer_step_index=step_index,
+                                    state_index=int(state_index),
+                                    state_bucket=int(state_index) // 4,
+                                    allocation_dims=census_dims,
+                                )
+                            _emit_obmalloc_boundary(
+                                rss_emit,
+                                event="obmalloc_C4_after_state",
+                                sub_phase_id="C4_gpu_cap_apply_sync",
+                                allocation_site_id="C4_after_state",
+                                optimizer_step_index=step_index,
+                                state_index=int(state_index),
+                                state_bucket=int(state_index) // 4,
+                            )
                 _emit_torch_cpu_census_boundary(
                     rss_emit,
                     event="census_C4_exit",

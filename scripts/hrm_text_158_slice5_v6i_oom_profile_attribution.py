@@ -1713,6 +1713,212 @@ def _count_obmalloc_expanded_enabled_events(marks: Sequence[Mapping[str, Any]]) 
     }
 
 
+def _c4_after_state_owner_census_rows(
+    marks: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    companion_by_state: dict[int, dict[str, Any]] = {}
+    for row in marks:
+        if str(row.get("event")) != "c4_retention_owner_census_after_state":
+            continue
+        dims = dict(row.get("allocation_dims") or {})
+        state_index = row.get("state_index")
+        if state_index is None:
+            # Census marks carry the state index inside allocation_dims
+            # (c4_state_index); the top-level state_index is unset on the
+            # emitted census event. Fall back to it so census rows join the
+            # obmalloc_C4_after_state marks (which carry only top-level
+            # state_index and no allocation_dims).
+            state_index = dims.get("c4_state_index")
+        if state_index is None:
+            continue
+        companion_by_state[int(state_index)] = dims
+
+    rows: list[dict[str, Any]] = []
+    for row in marks:
+        if not _is_obmalloc_mark(row):
+            continue
+        if str(row.get("event")) != "obmalloc_C4_after_state":
+            continue
+        state_index = int(row.get("state_index", -1))
+        dims = dict(row.get("allocation_dims") or {})
+        if not dims:
+            dims = dict(companion_by_state.get(state_index) or {})
+        if not dims:
+            continue
+        rows.append(
+            {
+                "state_index": state_index,
+                "allocation_dims": dims,
+                "bytes_in_allocated_blocks": _obmalloc_field(
+                    row, "bytes_in_allocated_blocks"
+                ),
+                "arena_bytes": _obmalloc_field(row, "arena_bytes"),
+            }
+        )
+    rows.sort(key=lambda item: int(item["state_index"]))
+    return rows
+
+
+def _correlate_owner_counts_with_retention(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    paired: list[dict[str, Any]] = []
+    prev_blocks: int | None = None
+    prev_carriers: int | None = None
+    for row in rows:
+        blocks = row.get("bytes_in_allocated_blocks")
+        dims = dict(row.get("allocation_dims") or {})
+        carriers = int(dims.get("c4_n_carriers_by_key", 0))
+        if blocks is None:
+            continue
+        item = {
+            "state_index": int(row.get("state_index", -1)),
+            "c4_n_carriers_by_key": carriers,
+            "c4_n_tensor_states": int(dims.get("c4_n_tensor_states", 0)),
+            "bytes_in_allocated_blocks": int(blocks),
+        }
+        if prev_blocks is not None and prev_carriers is not None:
+            item["retention_delta_blocks"] = int(blocks) - int(prev_blocks)
+            item["delta_carriers_by_key"] = int(carriers) - int(prev_carriers)
+        paired.append(item)
+        prev_blocks = int(blocks)
+        prev_carriers = int(carriers)
+
+    correlated_steps = [
+        row
+        for row in paired
+        if int(row.get("retention_delta_blocks", 0)) > OBMALLOC_EXPANDED_RETENTION_FLOOR_BYTES
+        and int(row.get("delta_carriers_by_key", 0)) > 0
+    ]
+    retention_steps = [
+        row
+        for row in paired
+        if int(row.get("retention_delta_blocks", 0)) > OBMALLOC_EXPANDED_RETENTION_FLOOR_BYTES
+    ]
+    carrier_growth_steps = [
+        row for row in paired if int(row.get("delta_carriers_by_key", 0)) > 0
+    ]
+    correlation_fraction = (
+        float(len(correlated_steps)) / float(len(retention_steps))
+        if retention_steps
+        else 0.0
+    )
+    return {
+        "paired_steps": paired,
+        "correlation_fraction": correlation_fraction,
+        "retention_step_count": len(retention_steps),
+        "carrier_growth_step_count": len(carrier_growth_steps),
+        "correlated_step_count": len(correlated_steps),
+    }
+
+
+def attribute_c4_retention_owner_census(
+    *,
+    marks_a: list[dict[str, Any]],
+    marks_a_prime: list[dict[str, Any]],
+    marks_b: list[dict[str, Any]],
+    n_states: int = OBMALLOC_SITE_N_STATES_WITNESS,
+) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    banked = _banked_reference_paths()
+    c4_a = _c4_subphase_delta_gib(marks_a)
+    c4_a_prime = _c4_subphase_delta_gib(marks_a_prime)
+    c4_b = _c4_subphase_delta_gib(marks_b)
+
+    noise_floor: float | None = None
+    if c4_a is not None and c4_a_prime is not None:
+        noise_floor = abs(float(c4_a_prime) - float(c4_a))
+
+    perturbation_cap_gib = max(
+        0.5,
+        2.0 * float(noise_floor) if noise_floor is not None else 0.0,
+    )
+    census_rows = _c4_after_state_owner_census_rows(marks_b)
+    correlation = _correlate_owner_counts_with_retention(census_rows)
+
+    tier_b_present = any(
+        "c4_weakref_n_new_carriers_by_key" in dict(row.get("allocation_dims") or {})
+        for row in census_rows
+    )
+    tier_b_status = "DISABLED"
+    if tier_b_present:
+        tier_b_status = "ENABLED"
+        if c4_b is not None and noise_floor is not None:
+            perturbation_delta_gib = abs(float(c4_b) - float(TOTAL_C4_REFERENCE_GIB))
+            if perturbation_delta_gib > perturbation_cap_gib:
+                tier_b_status = "OBSERVER_PERTURBED"
+
+    sampled = tuple(compute_obmalloc_expanded_sampled_states(n_states))
+    n_tensor = max(
+        (int(dict(row.get("allocation_dims") or {}).get("c4_n_tensor_states", 0)) for row in census_rows),
+        default=0,
+    )
+    last_carriers = 0
+    if census_rows:
+        last_carriers = int(
+            dict(census_rows[-1].get("allocation_dims") or {}).get("c4_n_carriers_by_key", 0)
+        )
+
+    # Priors persist flat-at-n when c4_n_tensor_states never drops below the
+    # peak prior count across the loop. Combined with new carriers accumulating
+    # to n, that is the simultaneous 2n-hold (prior baseline held AND new
+    # carriers accumulated) that defines the OOM peak — DUAL_HOLD_2N. It must
+    # take precedence over NEW_ACCUM_DOMINANT, which is reserved for the
+    # single-owner case where priors do NOT persist at n (released/small) while
+    # new carriers accumulate.
+    tensor_series = [
+        int(dict(row.get("allocation_dims") or {}).get("c4_n_tensor_states", 0))
+        for row in census_rows
+    ]
+    min_tensor = min(tensor_series) if tensor_series else 0
+    priors_persist_flat_at_n = n_tensor > 0 and min_tensor >= n_tensor
+    new_carriers_reach_n = n_tensor > 0 and last_carriers >= n_tensor
+
+    classifier_terminal: str | None = None
+    if not census_rows:
+        classifier_terminal = "INCONCLUSIVE"
+    elif (
+        priors_persist_flat_at_n
+        and new_carriers_reach_n
+        and correlation["retention_step_count"] > 0
+    ):
+        classifier_terminal = "DUAL_HOLD_2N"
+    elif (
+        correlation["correlation_fraction"] >= 0.75
+        and correlation["carrier_growth_step_count"] > 0
+        and correlation["retention_step_count"] > 0
+    ):
+        classifier_terminal = "NEW_ACCUM_DOMINANT"
+    elif correlation["retention_step_count"] > 0 and correlation["carrier_growth_step_count"] == 0:
+        classifier_terminal = "PRIOR_DOMINANT"
+    else:
+        classifier_terminal = "INCONCLUSIVE"
+
+    return {
+        **banked,
+        "guards": {
+            "noise_floor_gib": noise_floor,
+            "perturbation_cap_gib": perturbation_cap_gib,
+            "sampled_states": list(sampled),
+            "n_states": int(n_states),
+            "census_row_count": len(census_rows),
+        },
+        "localization": {
+            "census_rows": census_rows,
+            "correlation": correlation,
+            "tier_b_status": tier_b_status,
+            "pre_apply_coowns_priors": True,
+            "pre_apply_coowns_priors_kind": "STATIC_ROUTING_FACT",
+        },
+        "classifier_terminal": classifier_terminal,
+        "fail_closed_terminal": None,
+        "slice8_rewrite_authorized": False,
+    }
+
+
 def attribute_obmalloc_expanded(
     *,
     marks_a: list[dict[str, Any]],
@@ -3772,6 +3978,7 @@ def _fixture_obmalloc_env(
     debugmallocstats: bool,
     site_brackets: bool = False,
     expanded: bool = False,
+    c4_retention_owner_census: bool = False,
 ) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = "."
@@ -3786,6 +3993,12 @@ def _fixture_obmalloc_env(
         env[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] = "1"
     if expanded:
         env[PROFILE_OBMALLOC_EXPANDED_ENV] = "1"
+    if c4_retention_owner_census:
+        from calm.hrm_text_158.native_full_stack.c4_retention_owner_census import (
+            PROFILE_C4_RETENTION_OWNER_CENSUS_ENV,
+        )
+
+        env[PROFILE_C4_RETENTION_OWNER_CENSUS_ENV] = "1"
     return env
 
 
@@ -3796,6 +4009,7 @@ def _run_fixture_obmalloc_probe(
     debugmallocstats: bool,
     site_brackets: bool = False,
     expanded: bool = False,
+    c4_retention_owner_census: bool = False,
 ) -> dict[str, Any]:
     out_root.mkdir(parents=True, exist_ok=True)
     scratch = out_root / scratch_name
@@ -3813,6 +4027,7 @@ def _run_fixture_obmalloc_probe(
         debugmallocstats=debugmallocstats,
         site_brackets=site_brackets,
         expanded=expanded,
+        c4_retention_owner_census=c4_retention_owner_census,
     )
     cmd = _fixture_probe_argv(scratch, debugmallocstats=debugmallocstats)
     proc = subprocess.run(
@@ -4050,14 +4265,24 @@ def run_fixture_obmalloc_expanded_combined(out_root: Path) -> dict[str, Any]:
         debugmallocstats=True,
         site_brackets=True,
         expanded=True,
+        c4_retention_owner_census=True,
     )
 
+    marks_a = list(run_a.pop("marks", []))
+    marks_a_prime = list(run_a_prime.pop("marks", []))
+    marks_b = list(run_b.pop("marks", []))
+
     expanded = attribute_obmalloc_expanded(
-        marks_a=list(run_a.pop("marks", [])),
-        marks_a_prime=list(run_a_prime.pop("marks", [])),
-        marks_b=list(run_b.pop("marks", [])),
+        marks_a=marks_a,
+        marks_a_prime=marks_a_prime,
+        marks_b=marks_b,
         debugmallocstats_preflight=preflight,
         self_footprint_preflight=footprint,
+    )
+    owner_census = attribute_c4_retention_owner_census(
+        marks_a=marks_a,
+        marks_a_prime=marks_a_prime,
+        marks_b=marks_b,
     )
 
     exit_codes = [
@@ -4078,16 +4303,21 @@ def run_fixture_obmalloc_expanded_combined(out_root: Path) -> dict[str, Any]:
         "debugmallocstats_preflight": preflight,
         "debugmallocstats_self_footprint": footprint,
         "obmalloc_expanded_attribution": expanded,
+        "c4_retention_owner_census": owner_census,
         "classifier_terminal": expanded.get("classifier_terminal"),
+        "c4_retention_owner_classifier_terminal": owner_census.get("classifier_terminal"),
         "fail_closed_terminal": expanded.get("fail_closed_terminal"),
         "slice8_rewrite_authorized": expanded.get("slice8_rewrite_authorized"),
     }
     if localization:
         payload["scaled_representativeness"] = localization.get("scaled_representativeness")
         payload["representativeness_cleared"] = localization.get("representativeness_cleared")
-    out_path = Path("/tmp/v6i_obmalloc_expanded_attribution.json")
+    durable_root = Path("/home/gabe/hrm158_v6i_slice8m_census")
+    durable_root.mkdir(parents=True, exist_ok=True)
+    out_path = durable_root / "v6i_obmalloc_expanded_attribution_8m.json"
     out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     payload["combined_attribution_path"] = str(out_path)
+    payload["durable_artifact_path"] = str(out_path)
     return payload
 
 
