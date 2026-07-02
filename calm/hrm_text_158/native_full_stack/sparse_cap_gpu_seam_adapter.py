@@ -483,8 +483,23 @@ def sync_event_coded_carrier_from_gpu_cap(
     _site("C4.S2a", "pre", 441)
     q_out = q_persistent_cpu.detach().cpu().clone().to(torch.int8)
     _site("C4.S2a", "post", 442)
+    site_enabled = _obmalloc_site_state_enabled(
+        int(state_index),
+        sampled_states=sampled_states,
+    )
+    carrier_emit_kwargs = {
+        "host_allocator_site_emit": host_allocator_site_emit,
+        "site_emit_enabled": bool(site_enabled),
+        "optimizer_step_index": optimizer_step_index,
+        "state_index": state_index,
+    }
     if not accepted_local_indices:
-        apply_event_coded_carrier_step(updated, votes={}, step_index=int(step_index))
+        apply_event_coded_carrier_step(
+            updated,
+            votes={},
+            step_index=int(step_index),
+            **carrier_emit_kwargs,
+        )
         _site("C4.S2", "post", 538)
         return q_out.contiguous(), updated
 
@@ -534,7 +549,12 @@ def sync_event_coded_carrier_from_gpu_cap(
         updated._invalidate_packed_caches()
         _site("C4.S2c", "post", 486)
 
-    apply_event_coded_carrier_step(updated, votes={}, step_index=int(step_index))
+    apply_event_coded_carrier_step(
+        updated,
+        votes={},
+        step_index=int(step_index),
+        **carrier_emit_kwargs,
+    )
     observation = C8StepObservation()
     persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
         exact_accumulator_shadow=None,

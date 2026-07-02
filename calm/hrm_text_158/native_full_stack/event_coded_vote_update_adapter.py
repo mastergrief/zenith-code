@@ -1068,19 +1068,50 @@ def apply_event_coded_carrier_step(
     votes: Mapping[int, int] | None = None,
     sparse_vote_events: Any | None = None,
     step_index: int,
+    host_allocator_site_emit: Callable[..., None] | None = None,
+    site_emit_enabled: bool = False,
+    optimizer_step_index: int | None = None,
+    state_index: int | None = None,
 ) -> None:
+    def _emit_site(site_id: str, suffix: str, line: int) -> None:
+        if host_allocator_site_emit is None or not site_emit_enabled:
+            return
+        host_allocator_site_emit(
+            site_id,
+            suffix,
+            origin_file="event_coded_vote_update_adapter.py",
+            origin_line=int(line),
+            optimizer_step_index=int(
+                optimizer_step_index if optimizer_step_index is not None else step_index
+            ),
+            state_index=int(state_index if state_index is not None else -1),
+        )
+
+    emit_kwargs = {
+        "host_allocator_site_emit": host_allocator_site_emit,
+        "site_emit_enabled": site_emit_enabled,
+        "optimizer_step_index": optimizer_step_index,
+        "state_index": state_index,
+    }
     if sparse_vote_events is not None:
         from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 
         if not isinstance(sparse_vote_events, SparseVoteEvents):
             sparse_vote_events = SparseVoteEvents.from_dict(sparse_vote_events)
+        _emit_site("C4.S1d.1", "pre", 1077)
+        sparse_indices = sparse_vote_events.indices.detach().cpu().numpy()
+        sparse_values = sparse_vote_events.values.detach().cpu().numpy()
+        _emit_site("C4.S1d.1", "post", 1081)
         carrier.apply_step(
             int(step_index),
-            sparse_vote_indices=sparse_vote_events.indices.detach().cpu().numpy(),
-            sparse_vote_values=sparse_vote_events.values.detach().cpu().numpy(),
+            sparse_vote_indices=sparse_indices,
+            sparse_vote_values=sparse_values,
+            **emit_kwargs,
         )
         return
-    carrier.apply_step(int(step_index), votes=dict(votes or {}))
+    _emit_site("C4.S1d.1", "pre", 1087)
+    _emit_site("C4.S1d.1", "post", 1087)
+    carrier.apply_step(int(step_index), votes=dict(votes or {}), **emit_kwargs)
 
 
 def apply_event_coded_integer_vote_update_from_plan(
@@ -1128,17 +1159,25 @@ def apply_event_coded_integer_vote_update_from_plan(
         else _votes_dict_from_tensor(inputs.votes)
     )
     _site("C4.S1d", "pre", 1087)
+    carrier_emit_kwargs = {
+        "host_allocator_site_emit": host_allocator_site_emit,
+        "site_emit_enabled": site_emit_enabled,
+        "optimizer_step_index": optimizer_step_index,
+        "state_index": state_index,
+    }
     if inputs.sparse_vote_events is not None:
         apply_event_coded_carrier_step(
             carrier,
             sparse_vote_events=inputs.sparse_vote_events,
             step_index=int(step_index),
+            **carrier_emit_kwargs,
         )
     else:
         apply_event_coded_carrier_step(
             carrier,
             votes=vote_map,
             step_index=int(step_index),
+            **carrier_emit_kwargs,
         )
     _site("C4.S1d", "post", 1098)
 
@@ -1190,10 +1229,14 @@ def apply_event_coded_integer_vote_update_from_plan(
         )
     )
     stats["logical_numel"] = int(state.q_levels.numel())
+    _site("C4.S1f.2", "pre", 1193)
     if carrier.step_records:
         stats["v4_live_observed_surfaces"] = observed_surfaces_dict(carrier.step_records[-1])
+    _site("C4.S1f.2", "post", 1194)
     stats["flip_count"] = int(plan.applied_indices.numel())
+    _site("C4.S1f.1", "pre", 1195)
     stats["q_changed_count"] = int((q_out != state.q_levels).sum().item())
+    _site("C4.S1f.1", "post", 1197)
     _site("C4.S1f", "post", 1139)
     return EventCodedVoteUpdateResult(
         q_levels=q_out,

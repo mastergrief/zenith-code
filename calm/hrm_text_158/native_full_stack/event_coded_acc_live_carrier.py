@@ -666,13 +666,37 @@ class EventCodedAccLiveState:
         sparse_vote_indices: np.ndarray | torch.Tensor | None = None,
         sparse_vote_values: np.ndarray | torch.Tensor | None = None,
         hot_risk_override: Iterable[int] | None = None,
+        host_allocator_site_emit: Callable[..., None] | None = None,
+        site_emit_enabled: bool = False,
+        optimizer_step_index: int | None = None,
+        state_index: int | None = None,
     ) -> StepSurfaceRecord:
+        def _site(site_id: str, suffix: str, line: int) -> None:
+            if host_allocator_site_emit is None or not site_emit_enabled:
+                return
+            host_allocator_site_emit(
+                site_id,
+                suffix,
+                origin_file="event_coded_acc_live_carrier.py",
+                origin_line=int(line),
+                optimizer_step_index=int(
+                    optimizer_step_index if optimizer_step_index is not None else step_index
+                ),
+                state_index=int(state_index if state_index is not None else -1),
+            )
+
+        emit_kwargs = {
+            "host_allocator_site_emit": host_allocator_site_emit,
+            "site_emit_enabled": site_emit_enabled,
+            "optimizer_step_index": optimizer_step_index,
+            "state_index": state_index,
+        }
         vote_values_sorted: np.ndarray | None = None
         if sparse_vote_indices is not None:
             idx_np = np.asarray(sparse_vote_indices, dtype=np.int64).reshape(-1)
             val_np = np.asarray(sparse_vote_values, dtype=np.int32).reshape(-1)
             if idx_np.size == 0:
-                return self.apply_step(step_index, votes={})
+                return self.apply_step(step_index, votes={}, **emit_kwargs)
             if idx_np.size == 1 or np.all(idx_np[1:] >= idx_np[:-1]):
                 touched_arr = idx_np.astype(np.int32)
                 vote_values_sorted = val_np.astype(np.int32)
@@ -690,6 +714,7 @@ class EventCodedAccLiveState:
             )
         hot_indices = self._hot.indices_array()
         hot_values = self._hot.values_array()
+        _site("C4.S1d.2", "pre", 691)
         if hot_risk_override is not None:
             proxy_arr = np.unique(
                 np.array([int(item) for item in hot_risk_override], dtype=np.int32)
@@ -697,7 +722,15 @@ class EventCodedAccLiveState:
             active_sorted = _union_sorted_int32(hot_indices, touched_arr, proxy_arr)
         else:
             active_sorted = _union_sorted_int32(hot_indices, touched_arr)
+        _site("C4.S1d.2", "post", 699)
         if active_sorted.size == 0:
+            _site("C4.S1d.3", "pre", 716)
+            _site("C4.S1d.3", "post", 716)
+            _site("C4.S1d.4", "pre", 722)
+            _site("C4.S1d.4", "post", 837)
+            _site("C4.S1d.5", "pre", 858)
+            _site("C4.S1d.5", "post", 869)
+            _site("C4.S1d.6", "pre", 872)
             record = StepSurfaceRecord(
                 step_index=int(step_index),
                 crossing_indices=(),
@@ -710,18 +743,23 @@ class EventCodedAccLiveState:
                 demotion_on_crossing_count=0,
             )
             self.step_records.append(record)
+            _site("C4.S1d.6", "post", 883)
             return record
 
         cold = int(self.cold_default)
+        _site("C4.S1d.3", "pre", 716)
         pre_arr = np.full(active_sorted.shape[0], cold, dtype=np.int32)
+        _site("C4.S1d.3", "post", 716)
         if hot_indices.size:
             pos_in_hot = np.searchsorted(hot_indices, active_sorted)
             in_hot = pos_in_hot < hot_indices.size
             if in_hot.any():
                 matched = hot_indices[pos_in_hot[in_hot]] == active_sorted[in_hot]
+                _site("C4.S1d.4", "pre", 722)
                 hot_hits = np.zeros(active_sorted.shape[0], dtype=bool)
                 hot_hits[np.where(in_hot)[0][matched]] = True
                 pre_arr[hot_hits] = hot_values[pos_in_hot[hot_hits]].astype(np.int32)
+                _site("C4.S1d.4", "post", 724)
         if touched_arr.size:
             pass  # touched lanes not in hot already default to cold_default in pre_arr
         promote_at = promotion_carry_threshold(threshold_abs=self.threshold_abs)
@@ -754,8 +792,12 @@ class EventCodedAccLiveState:
                             else np.sort(extra)
                         )
         touched_set = set(vote_map) if vote_map is not None else set()
+        _site("C4.S1d.3", "pre", 757)
         vote_arr = np.zeros(active_sorted.shape[0], dtype=np.int32)
+        _site("C4.S1d.3", "post", 757)
+        _site("C4.S1d.4", "pre", 758)
         vote_touched_mask = np.zeros(active_sorted.shape[0], dtype=bool)
+        _site("C4.S1d.4", "post", 758)
         if touched_arr.size:
             vote_positions = np.searchsorted(active_sorted, touched_arr)
             vote_valid = (vote_positions < active_sorted.size) & (
@@ -771,12 +813,15 @@ class EventCodedAccLiveState:
                         [int(vote_map[int(i)]) for i in touched_arr[vote_valid]],
                         dtype=np.int32,
                     )
+        _site("C4.S1d.3", "pre", 774)
         post_arr = vectorized_carry_self_update_row(
             pre_arr,
             vote_arr,
             decay_numerator=DEFAULT_DECAY_NUMERATOR,
             decay_denominator=DEFAULT_DECAY_DENOMINATOR,
         )
+        _site("C4.S1d.3", "post", 779)
+        _site("C4.S1d.4", "pre", 781)
         if hot_indices.size:
             pos_in_hot = np.searchsorted(hot_indices, active_sorted)
             in_hot = np.zeros(active_sorted.shape[0], dtype=bool)
@@ -798,7 +843,9 @@ class EventCodedAccLiveState:
             | (np.abs(post_arr) >= int(promote_at))
         )
         promotion_count = int(np.sum(promote_mask & ~in_hot))
+        _site("C4.S1d.4", "post", 799)
 
+        _site("C4.S1d.3", "pre", 802)
         q_arr = np.zeros(active_sorted.shape[0], dtype=np.int32)
         if self.q_levels:
             q_keys = np.array(sorted(self.q_levels), dtype=np.int32)
@@ -808,7 +855,9 @@ class EventCodedAccLiveState:
             if q_hit.any():
                 q_match = q_keys[q_pos[q_hit]] == active_sorted[q_hit]
                 q_arr[np.where(q_hit)[0][q_match]] = q_vals[q_pos[q_hit][q_match]]
+        _site("C4.S1d.3", "post", 810)
 
+        _site("C4.S1d.4", "pre", 812)
         cross_mask = vectorized_crosses_threshold(
             post_arr,
             q_arr,
@@ -835,6 +884,7 @@ class EventCodedAccLiveState:
         )
         demotion_cross_mask = cross_mask & journal_has
         update_mask = journal_has & ~cross_mask & ~demotion_decay_mask
+        _site("C4.S1d.4", "post", 837)
 
         crossing_indices = [int(x) for x in active_sorted[cross_mask]]
         applied_indices = list(crossing_indices)
@@ -859,6 +909,7 @@ class EventCodedAccLiveState:
         write_mask = promote_mask | update_mask
         upd_idx = active_sorted[write_mask]
         upd_val = post_arr[write_mask].astype(np.int16)
+        _site("C4.S1d.5", "pre", 858)
         new_idx, new_val = merge_hot_table_arrays(
             hot_indices,
             hot_values,
@@ -868,7 +919,9 @@ class EventCodedAccLiveState:
         )
         self._hot.replace_arrays(new_idx, new_val)
         self._invalidate_packed_caches()
+        _site("C4.S1d.5", "post", 869)
 
+        _site("C4.S1d.6", "pre", 872)
         record = StepSurfaceRecord(
             step_index=int(step_index),
             crossing_indices=tuple(crossing_indices),
@@ -881,6 +934,7 @@ class EventCodedAccLiveState:
             demotion_on_crossing_count=int(demotion_on_crossing),
         )
         self.step_records.append(record)
+        _site("C4.S1d.6", "post", 883)
         return record
 
     def to_checkpoint_payload(self):

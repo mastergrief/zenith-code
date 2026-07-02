@@ -141,8 +141,40 @@ ALLOCATION_SITE_ORIGINS: dict[str, tuple[str, str]] = {
         "event_coded_vote_update_adapter.py:1087",
         "sparse_vote_numpy_branch",
     ),
+    "C4.S1d.1": (
+        "event_coded_vote_update_adapter.py:1077",
+        "sparse_vote_numpy_detach",
+    ),
+    "C4.S1d.2": (
+        "event_coded_acc_live_carrier.py:691",
+        "apply_step_active_sorted_union",
+    ),
+    "C4.S1d.3": (
+        "event_coded_acc_live_carrier.py:716",
+        "apply_step_int32_lane_vectors",
+    ),
+    "C4.S1d.4": (
+        "event_coded_acc_live_carrier.py:722",
+        "apply_step_bool_mask_arrays",
+    ),
+    "C4.S1d.5": (
+        "event_coded_acc_live_carrier.py:858",
+        "apply_step_hot_table_merge",
+    ),
+    "C4.S1d.6": (
+        "event_coded_acc_live_carrier.py:872",
+        "apply_step_surface_record",
+    ),
     "C4.S1e": ("event_coded_vote_update_adapter.py:1112", "c8_runtime_guards"),
     "C4.S1f": ("event_coded_vote_update_adapter.py:1126", "c8_stats_assembly"),
+    "C4.S1f.1": (
+        "event_coded_vote_update_adapter.py:1196",
+        "q_changed_count_full_bool_compare",
+    ),
+    "C4.S1f.2": (
+        "event_coded_vote_update_adapter.py:1193",
+        "observed_surfaces_dict",
+    ),
 }
 
 CENSUS_RECONCILE_RATIO_MIN = 0.8
@@ -177,8 +209,16 @@ OBMALLOC_SITE_LEAF_SITES = (
     "C4.S1c_clone",
     "C4.S1c_contig",
     "C4.S1d",
+    "C4.S1d.1",
+    "C4.S1d.2",
+    "C4.S1d.3",
+    "C4.S1d.4",
+    "C4.S1d.5",
+    "C4.S1d.6",
     "C4.S1e",
     "C4.S1f",
+    "C4.S1f.1",
+    "C4.S1f.2",
     "C4.S2a",
     "C4.S2b",
     "C4.S2c",
@@ -191,6 +231,18 @@ OBMALLOC_SITE_CHILD_SITES = (
     "C4.S1d",
     "C4.S1e",
     "C4.S1f",
+)
+OBMALLOC_SITE_S1D_CHILD_SITES = (
+    "C4.S1d.1",
+    "C4.S1d.2",
+    "C4.S1d.3",
+    "C4.S1d.4",
+    "C4.S1d.5",
+    "C4.S1d.6",
+)
+OBMALLOC_SITE_S1F_CHILD_SITES = (
+    "C4.S1f.1",
+    "C4.S1f.2",
 )
 OBMALLOC_SITE_AGGREGATE_SITE = "C4.S2"
 OBMALLOC_SITE_WINDOW_ENTRY = "C4.S1"
@@ -206,9 +258,12 @@ OBMALLOC_EXPANDED_STATE_DOMINANCE_MIN = 0.75
 OBMALLOC_EXPANDED_REPRESENTATIVENESS_MIN = 0.25
 OBMALLOC_EXPANDED_CANCELLATION_NEG_FRAC = 0.10
 OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN = 0.75
-OBMALLOC_EXPANDED_EVENT_COUNT_TARGET = 98
-OBMALLOC_EXPANDED_EVENT_COUNT_MAX = 106
+OBMALLOC_EXPANDED_EVENT_COUNT_TARGET = 162
+OBMALLOC_EXPANDED_EVENT_COUNT_MAX = 170
 OBMALLOC_EXPANDED_RETENTION_FLOOR_BYTES = 1024
+# Sites that emit multiple ordered pre/post bracket pairs per sampled state (Phase-3b).
+OBMALLOC_SITE_MULTI_PAIR_SITES = frozenset({"C4.S1d.3", "C4.S1d.4"})
+OBMALLOC_EXPANDED_BOUNDARY_AFTER_STATE_MAX = 8
 
 
 def _is_allocator_mark(row: Mapping[str, Any]) -> bool:
@@ -1653,6 +1708,21 @@ def _obmalloc_site_mark_for_state(
     *,
     state_index: int | None = None,
 ) -> dict[str, Any] | None:
+    rows = _obmalloc_site_marks_for_state(
+        marks,
+        event,
+        state_index=state_index,
+    )
+    return rows[0] if rows else None
+
+
+def _obmalloc_site_marks_for_state(
+    marks: Sequence[Mapping[str, Any]],
+    event: str,
+    *,
+    state_index: int | None = None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for row in marks:
         if not _is_obmalloc_site_mark(row):
             continue
@@ -1660,8 +1730,34 @@ def _obmalloc_site_mark_for_state(
             continue
         if state_index is not None and int(row.get("state_index", -1)) != int(state_index):
             continue
-        return dict(row)
-    return None
+        rows.append(dict(row))
+    return rows
+
+
+def _site_bracket_pair_count_for_state(
+    marks: Sequence[Mapping[str, Any]],
+    site_id: str,
+    state_index: int,
+) -> int:
+    n_pre = len(
+        _obmalloc_site_marks_for_state(
+            marks,
+            f"obmalloc_site_{site_id}_pre",
+            state_index=int(state_index),
+        )
+    )
+    n_post = len(
+        _obmalloc_site_marks_for_state(
+            marks,
+            f"obmalloc_site_{site_id}_post",
+            state_index=int(state_index),
+        )
+    )
+    if n_pre == 0 and n_post == 0:
+        return 0
+    if n_pre != n_post:
+        return -1
+    return int(n_pre)
 
 
 def _site_bracket_holding_bytes(mark: Mapping[str, Any] | None) -> int | None:
@@ -1679,23 +1775,28 @@ def _site_bracket_holding_delta_bytes(
     *,
     absent_is_zero: bool = False,
 ) -> int | None:
-    pre = _obmalloc_site_mark_for_state(
+    pres = _obmalloc_site_marks_for_state(
         marks,
         f"obmalloc_site_{site_id}_pre",
         state_index=int(state_index),
     )
-    post = _obmalloc_site_mark_for_state(
+    posts = _obmalloc_site_marks_for_state(
         marks,
         f"obmalloc_site_{site_id}_post",
         state_index=int(state_index),
     )
-    if pre is None and post is None:
+    if not pres and not posts:
         return 0 if absent_is_zero else None
-    pre_bytes = _site_bracket_holding_bytes(pre)
-    post_bytes = _site_bracket_holding_bytes(post)
-    if pre_bytes is None or post_bytes is None:
+    if len(pres) != len(posts):
         return None
-    return int(post_bytes) - int(pre_bytes)
+    total = 0
+    for pre, post in zip(pres, posts):
+        pre_bytes = _site_bracket_holding_bytes(pre)
+        post_bytes = _site_bracket_holding_bytes(post)
+        if pre_bytes is None or post_bytes is None:
+            return None
+        total += int(post_bytes) - int(pre_bytes)
+    return int(total)
 
 
 def _site_bracket_forcing_delta_bytes(
@@ -1705,23 +1806,28 @@ def _site_bracket_forcing_delta_bytes(
     *,
     absent_is_zero: bool = False,
 ) -> int | None:
-    pre = _obmalloc_site_mark_for_state(
+    pres = _obmalloc_site_marks_for_state(
         marks,
         f"obmalloc_site_{site_id}_pre",
         state_index=int(state_index),
     )
-    post = _obmalloc_site_mark_for_state(
+    posts = _obmalloc_site_marks_for_state(
         marks,
         f"obmalloc_site_{site_id}_post",
         state_index=int(state_index),
     )
-    if pre is None and post is None:
+    if not pres and not posts:
         return 0 if absent_is_zero else None
-    pre_bytes = _site_bracket_arena_bytes(pre)
-    post_bytes = _site_bracket_arena_bytes(post)
-    if pre_bytes is None or post_bytes is None:
+    if len(pres) != len(posts):
         return None
-    return int(post_bytes) - int(pre_bytes)
+    total = 0
+    for pre, post in zip(pres, posts):
+        pre_bytes = _site_bracket_arena_bytes(pre)
+        post_bytes = _site_bracket_arena_bytes(post)
+        if pre_bytes is None or post_bytes is None:
+            return None
+        total += int(post_bytes) - int(pre_bytes)
+    return int(total)
 
 
 def _site_bracket_holding_delta_bytes_legacy(
@@ -1749,22 +1855,40 @@ def _profile_has_child_marks(marks: Sequence[Mapping[str, Any]]) -> bool:
     return False
 
 
+def _profile_has_s1d_subsplit_marks(marks: Sequence[Mapping[str, Any]]) -> bool:
+    child_events = {
+        f"obmalloc_site_{site_id}_{suffix}"
+        for site_id in OBMALLOC_SITE_S1D_CHILD_SITES
+        for suffix in ("pre", "post")
+    }
+    for row in marks:
+        if str(row.get("event", "")) in child_events:
+            return True
+    return False
+
+
+def _profile_has_s1f_subsplit_marks(marks: Sequence[Mapping[str, Any]]) -> bool:
+    child_events = {
+        f"obmalloc_site_{site_id}_{suffix}"
+        for site_id in OBMALLOC_SITE_S1F_CHILD_SITES
+        for suffix in ("pre", "post")
+    }
+    for row in marks:
+        if str(row.get("event", "")) in child_events:
+            return True
+    return False
+
+
 def _child_site_bracket_pair_present(
     marks: Sequence[Mapping[str, Any]],
     site_id: str,
     state_index: int,
 ) -> bool:
-    pre = _obmalloc_site_mark_for_state(
+    return _site_bracket_pair_count_for_state(
         marks,
-        f"obmalloc_site_{site_id}_pre",
-        state_index=int(state_index),
-    )
-    post = _obmalloc_site_mark_for_state(
-        marks,
-        f"obmalloc_site_{site_id}_post",
-        state_index=int(state_index),
-    )
-    return pre is not None and post is not None
+        site_id,
+        int(state_index),
+    ) >= 1
 
 
 def _count_obmalloc_expanded_enabled_events(marks: Sequence[Mapping[str, Any]]) -> dict[str, int]:
@@ -1788,6 +1912,45 @@ def _count_obmalloc_expanded_enabled_events(marks: Sequence[Mapping[str, Any]]) 
         **obmalloc_boundary,
         "site_leaf_bracket": site_leaf,
         "total": sum(obmalloc_boundary.values()) + site_leaf,
+    }
+
+
+def _validate_obmalloc_expanded_event_stream(
+    marks: Sequence[Mapping[str, Any]],
+    *,
+    sampled_states: Sequence[int],
+) -> dict[str, Any]:
+    counts = _count_obmalloc_expanded_enabled_events(marks)
+    corruption_reasons: list[str] = []
+    pair_counts_by_site: dict[str, dict[int, int]] = {
+        site_id: {} for site_id in OBMALLOC_SITE_LEAF_SITES
+    }
+
+    if counts["obmalloc_C4_after_state"] > OBMALLOC_EXPANDED_BOUNDARY_AFTER_STATE_MAX:
+        corruption_reasons.append("duplicate_boundary_after_state")
+
+    for state_idx in sampled_states:
+        for site_id in OBMALLOC_SITE_LEAF_SITES:
+            pair_count = _site_bracket_pair_count_for_state(
+                marks,
+                site_id,
+                int(state_idx),
+            )
+            if pair_count == 0:
+                continue
+            pair_counts_by_site[site_id][int(state_idx)] = int(pair_count)
+            if pair_count < 0:
+                continue
+            if site_id not in OBMALLOC_SITE_MULTI_PAIR_SITES and pair_count > 1:
+                corruption_reasons.append(
+                    f"duplicate_single_pair_{site_id}_state{int(state_idx)}"
+                )
+
+    return {
+        "counts": counts,
+        "valid": not corruption_reasons,
+        "corruption_reasons": corruption_reasons,
+        "pair_counts_by_site": pair_counts_by_site,
     }
 
 
@@ -2049,10 +2212,19 @@ def attribute_obmalloc_expanded(
         "n_states": int(n_states),
     }
 
-    event_counts = _count_obmalloc_expanded_enabled_events(marks_b)
+    event_validation = _validate_obmalloc_expanded_event_stream(
+        marks_b,
+        sampled_states=sampled,
+    )
+    event_counts = dict(event_validation["counts"])
     guards["obmalloc_expanded_event_counts"] = event_counts
+    guards["obmalloc_expanded_event_validation"] = {
+        "valid": bool(event_validation["valid"]),
+        "corruption_reasons": list(event_validation["corruption_reasons"]),
+        "pair_counts_by_site": event_validation["pair_counts_by_site"],
+    }
 
-    if event_counts["total"] > OBMALLOC_EXPANDED_EVENT_COUNT_MAX:
+    if not event_validation["valid"]:
         return {
             **banked,
             "guards": guards,
@@ -2202,7 +2374,11 @@ def attribute_obmalloc_expanded(
     )
 
     child_profile_mode = _profile_has_child_marks(marks_b)
+    phase3_s1d_subsplit_mode = _profile_has_s1d_subsplit_marks(marks_b)
+    phase3_s1f_subsplit_mode = _profile_has_s1f_subsplit_marks(marks_b)
     guards["child_profile_mode"] = child_profile_mode
+    guards["phase3_s1d_subsplit_mode"] = phase3_s1d_subsplit_mode
+    guards["phase3_s1f_subsplit_mode"] = phase3_s1f_subsplit_mode
     if child_profile_mode:
         for state_idx in sampled:
             for site_id in OBMALLOC_SITE_CHILD_SITES:
@@ -2215,6 +2391,40 @@ def attribute_obmalloc_expanded(
                         **banked,
                         "guards": guards,
                         "fail_closed_terminal": "CHILD_COVERAGE_FAIL",
+                        "classifier_terminal": None,
+                        "missing_child_site": site_id,
+                        "missing_state_index": int(state_idx),
+                        "slice8_rewrite_authorized": False,
+                    }
+    if phase3_s1d_subsplit_mode:
+        for state_idx in sampled:
+            for site_id in OBMALLOC_SITE_S1D_CHILD_SITES:
+                if not _child_site_bracket_pair_present(
+                    marks_b,
+                    site_id,
+                    int(state_idx),
+                ):
+                    return {
+                        **banked,
+                        "guards": guards,
+                        "fail_closed_terminal": "S1D_CHILD_COVERAGE_FAIL",
+                        "classifier_terminal": None,
+                        "missing_child_site": site_id,
+                        "missing_state_index": int(state_idx),
+                        "slice8_rewrite_authorized": False,
+                    }
+    if phase3_s1f_subsplit_mode:
+        for state_idx in sampled:
+            for site_id in OBMALLOC_SITE_S1F_CHILD_SITES:
+                if not _child_site_bracket_pair_present(
+                    marks_b,
+                    site_id,
+                    int(state_idx),
+                ):
+                    return {
+                        **banked,
+                        "guards": guards,
+                        "fail_closed_terminal": "S1F_CHILD_COVERAGE_FAIL",
                         "classifier_terminal": None,
                         "missing_child_site": site_id,
                         "missing_state_index": int(state_idx),
@@ -2355,6 +2565,8 @@ def attribute_obmalloc_expanded(
         "representativeness_cleared": representativeness_cleared,
         "cross_run_reconcile_caveat": True,
         "child_profile_mode": child_profile_mode,
+        "phase3_s1d_subsplit_mode": phase3_s1d_subsplit_mode,
+        "phase3_s1f_subsplit_mode": phase3_s1f_subsplit_mode,
     }
 
     classifier_terminal: str | None = None
@@ -2444,7 +2656,128 @@ def attribute_obmalloc_expanded(
     else:
         localization["child_dominance_verdict"] = "legacy_child_sites_absent"
 
-    if fail_closed_terminal == "CHILD_PARENT_RECONCILE_FAIL":
+    if phase3_s1d_subsplit_mode:
+        s1d_child_pos_totals = {
+            site_id: int(bracket_pos_totals[site_id])
+            for site_id in OBMALLOC_SITE_S1D_CHILD_SITES
+        }
+        parent_s1d_pos = int(bracket_pos_totals.get("C4.S1d", 0))
+        s1d_child_sum_pos = sum(s1d_child_pos_totals.values())
+        s1d_parent_reconcile_fraction = abs(s1d_child_sum_pos - parent_s1d_pos) / max(
+            parent_s1d_pos,
+            1,
+        )
+        localization["s1d_child_aggregate_holder_pos_bytes"] = s1d_child_pos_totals
+        localization["s1d_parent_reconcile_fraction"] = s1d_parent_reconcile_fraction
+        if s1d_child_sum_pos > int(parent_s1d_pos * 1.15) and s1d_parent_reconcile_fraction > OBMALLOC_SITE_REMAINDER_MAX_FRAC:
+            fail_closed_terminal = "CHILD_OVERLAP_DOUBLE_COUNT"
+        for state_idx in sampled:
+            signed = per_state[str(state_idx)]["signed_holding_deltas_bytes"]
+            parent_hold = max(int(signed.get("C4.S1d", 0)), 0)
+            s1d_state_sum = sum(
+                max(int(signed.get(site_id, 0)), 0)
+                for site_id in OBMALLOC_SITE_S1D_CHILD_SITES
+            )
+            state_reconcile = abs(s1d_state_sum - parent_hold) / max(parent_hold, 1)
+            if state_reconcile > OBMALLOC_SITE_REMAINDER_MAX_FRAC:
+                fail_closed_terminal = "CHILD_PARENT_RECONCILE_FAIL"
+                localization["s1d_reconcile_fail_state_index"] = int(state_idx)
+                localization["s1d_reconcile_fail_fraction"] = state_reconcile
+                break
+        if fail_closed_terminal is None and s1d_parent_reconcile_fraction > OBMALLOC_SITE_REMAINDER_MAX_FRAC:
+            fail_closed_terminal = "CHILD_PARENT_RECONCILE_FAIL"
+        s1d_aggregate_pos = sum(s1d_child_pos_totals.values())
+        if s1d_aggregate_pos > 0 and fail_closed_terminal is None:
+            s1d_fractions = {
+                site_id: float(s1d_child_pos_totals[site_id]) / float(s1d_aggregate_pos)
+                for site_id in OBMALLOC_SITE_S1D_CHILD_SITES
+            }
+            s1d_ranked = sorted(s1d_fractions.items(), key=lambda item: item[1], reverse=True)
+            s1d_top_site, s1d_top_fraction = s1d_ranked[0]
+            s1d_states_with_dominance = 0
+            for state_idx in sampled:
+                signed = per_state[str(state_idx)]["signed_holding_deltas_bytes"]
+                s1d_pos = {
+                    site_id: max(int(signed.get(site_id, 0)), 0)
+                    for site_id in OBMALLOC_SITE_S1D_CHILD_SITES
+                }
+                s1d_state_sum = sum(s1d_pos.values())
+                if s1d_state_sum <= 0:
+                    continue
+                s1d_state_fraction = float(s1d_pos[s1d_top_site]) / float(s1d_state_sum)
+                if s1d_state_fraction >= OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC:
+                    s1d_states_with_dominance += 1
+            s1d_state_dominance_fraction = (
+                float(s1d_states_with_dominance) / float(len(sampled)) if sampled else 0.0
+            )
+            localization["s1d_aggregate_holder_fractions"] = s1d_fractions
+            localization["s1d_dominant_bracket"] = s1d_top_site
+            localization["s1d_state_dominance_fraction"] = s1d_state_dominance_fraction
+            if (
+                s1d_top_fraction >= OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC
+                and s1d_state_dominance_fraction >= OBMALLOC_EXPANDED_STATE_DOMINANCE_MIN
+            ):
+                localization["s1d_subsplit_verdict"] = f"DOMINANT_S1D_HOLDER_{s1d_top_site}"
+            else:
+                localization["s1d_subsplit_verdict"] = "S1D_SUBSPLIT_AMBIGUOUS"
+        elif fail_closed_terminal is None:
+            localization["s1d_subsplit_verdict"] = "S1D_SUBSPLIT_AMBIGUOUS"
+    else:
+        localization["s1d_subsplit_verdict"] = "legacy_s1d_subsites_absent"
+
+    if phase3_s1f_subsplit_mode:
+        s1f_child_pos_totals = {
+            site_id: int(bracket_pos_totals[site_id])
+            for site_id in OBMALLOC_SITE_S1F_CHILD_SITES
+        }
+        parent_s1f_pos = int(bracket_pos_totals.get("C4.S1f", 0))
+        s1f_child_sum_pos = sum(s1f_child_pos_totals.values())
+        s1f_parent_reconcile_fraction = abs(s1f_child_sum_pos - parent_s1f_pos) / max(
+            parent_s1f_pos,
+            1,
+        )
+        localization["s1f_child_aggregate_holder_pos_bytes"] = s1f_child_pos_totals
+        localization["s1f_parent_reconcile_fraction"] = s1f_parent_reconcile_fraction
+        for state_idx in sampled:
+            signed = per_state[str(state_idx)]["signed_holding_deltas_bytes"]
+            parent_hold = max(int(signed.get("C4.S1f", 0)), 0)
+            s1f_state_sum = sum(
+                max(int(signed.get(site_id, 0)), 0)
+                for site_id in OBMALLOC_SITE_S1F_CHILD_SITES
+            )
+            state_reconcile = abs(s1f_state_sum - parent_hold) / max(parent_hold, 1)
+            if state_reconcile > OBMALLOC_SITE_REMAINDER_MAX_FRAC:
+                fail_closed_terminal = "CHILD_PARENT_RECONCILE_FAIL"
+                localization["s1f_reconcile_fail_state_index"] = int(state_idx)
+                localization["s1f_reconcile_fail_fraction"] = state_reconcile
+                break
+        if fail_closed_terminal is None and s1f_parent_reconcile_fraction > OBMALLOC_SITE_REMAINDER_MAX_FRAC:
+            fail_closed_terminal = "CHILD_PARENT_RECONCILE_FAIL"
+        s1f_aggregate_pos = sum(s1f_child_pos_totals.values())
+        if s1f_aggregate_pos > 0 and fail_closed_terminal is None:
+            s1f_fractions = {
+                site_id: float(s1f_child_pos_totals[site_id]) / float(s1f_aggregate_pos)
+                for site_id in OBMALLOC_SITE_S1F_CHILD_SITES
+            }
+            s1f_ranked = sorted(s1f_fractions.items(), key=lambda item: item[1], reverse=True)
+            s1f_top_site, s1f_top_fraction = s1f_ranked[0]
+            localization["s1f_aggregate_holder_fractions"] = s1f_fractions
+            localization["s1f_dominant_bracket"] = s1f_top_site
+            if s1f_top_fraction >= OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC:
+                localization["s1f_subsplit_verdict"] = f"DOMINANT_S1F_HOLDER_{s1f_top_site}"
+            else:
+                localization["s1f_subsplit_verdict"] = "S1F_SUBSPLIT_AMBIGUOUS"
+        elif fail_closed_terminal is None:
+            localization["s1f_subsplit_verdict"] = "S1F_SUBSPLIT_AMBIGUOUS"
+    else:
+        localization["s1f_subsplit_verdict"] = "legacy_s1f_subsites_absent"
+
+    if fail_closed_terminal in {
+        "CHILD_PARENT_RECONCILE_FAIL",
+        "CHILD_OVERLAP_DOUBLE_COUNT",
+        "S1D_CHILD_COVERAGE_FAIL",
+        "S1F_CHILD_COVERAGE_FAIL",
+    }:
         return {
             **banked,
             "guards": guards,
