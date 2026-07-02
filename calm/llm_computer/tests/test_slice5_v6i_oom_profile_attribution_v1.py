@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pytest
 import torch
@@ -4205,9 +4205,11 @@ def test_code_currency_import_byte_self_check_fail_closed_on_mismatch(
         CODE_CURRENCY_MISMATCH_EXIT_CODE,
         CODE_CURRENCY_MISMATCH_TERMINAL,
         CodeCurrencyMismatchError,
+        EXECUTED_GUARD_PASSED_ENV,
         OBMALLOC_EXPANDED_ENV,
         IMPORT_BYTE_PINS_ENV,
         PHASE3B_PROBE_IMPORT_MODULE_BY_REL,
+        PINNED_PROBE_MODULE_NAMES,
         REPO_ROOT,
         SKIP_IMPORT_BYTE_CHECK_ENV,
         enforce_import_byte_pins_or_fail_closed,
@@ -4255,27 +4257,33 @@ def test_code_currency_import_byte_self_check_fail_closed_on_mismatch(
 
     monkeypatch.setenv(OBMALLOC_EXPANDED_ENV, "1")
     monkeypatch.delenv(SKIP_IMPORT_BYTE_CHECK_ENV, raising=False)
+    monkeypatch.delenv(EXECUTED_GUARD_PASSED_ENV, raising=False)
     monkeypatch.setenv(IMPORT_BYTE_PINS_ENV, json.dumps(live_pins))
+    import sys
 
-    def enforce_with_mismatch(
-        pins: dict[str, str],
+    for name in PINNED_PROBE_MODULE_NAMES:
+        sys.modules.pop(name, None)
+
+    real_verify = verify_imported_bytes_for_pinned_modules
+
+    def verify_with_mismatch(
+        pins: Mapping[str, str],
         *,
         enabled: bool = True,
         import_module_fn: Any = None,
         hash_fn: Any = None,
     ) -> dict[str, Any]:
-        from scripts.hrm_text_158_code_currency_guard import import_module_for_rel_path
-
-        return enforce_import_byte_pins_or_fail_closed(
-            pins,
-            enabled=enabled,
-            import_module_fn=import_module_fn or import_module_for_rel_path,
-            hash_fn=mismatched_hash,
-        )
+        kwargs: dict[str, Any] = {
+            "enabled": enabled,
+            "hash_fn": mismatched_hash,
+        }
+        if import_module_fn is not None:
+            kwargs["import_module_fn"] = import_module_fn
+        return real_verify(pins, **kwargs)
 
     monkeypatch.setattr(
-        "scripts.hrm_text_158_code_currency_guard.enforce_import_byte_pins_or_fail_closed",
-        enforce_with_mismatch,
+        "scripts.hrm_text_158_code_currency_guard.verify_imported_bytes_for_pinned_modules",
+        verify_with_mismatch,
     )
     assert maybe_enforce_phase3b_probe_import_byte_currency() == CODE_CURRENCY_MISMATCH_EXIT_CODE
 
@@ -4415,3 +4423,297 @@ def test_phase_budget_breach_does_not_trigger_interrupt() -> None:
     )
     assert within["budget_breached"] is False
     assert within["triggers_interrupt"] is False
+
+
+def _load_stale_executed_carrier_module() -> Any:
+    import sys
+    import types
+
+    from scripts.hrm_text_158_code_currency_guard import REPO_ROOT
+
+    carrier_rel = "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py"
+    carrier_path = REPO_ROOT / carrier_rel
+    source = carrier_path.read_text(encoding="utf-8")
+    stale_source = source + "\ndef __stale_pyc_probe_sentinel():\n    return 42\n"
+    module_name = "calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier"
+    module = types.ModuleType(module_name)
+    module.__file__ = str(carrier_path.resolve())
+    sys.modules[module_name] = module
+    exec(compile(stale_source, str(carrier_path), "exec"), module.__dict__)
+    return module
+
+
+def test_code_currency_executed_fingerprint_fail_closed_constant_only_stale_co_consts() -> None:
+    import sys
+    import types
+
+    from scripts.hrm_text_158_code_currency_guard import (
+        REPO_ROOT,
+        _code_object_signature,
+        _code_object_signature_co_consts_blind,
+        _iter_reachable_code_objects_from_module,
+        expected_reachable_fingerprint_from_source,
+        fingerprint_reachable_code_objects,
+        hash_file_bytes,
+        verify_executed_code_for_pinned_modules,
+        verify_imported_bytes_for_pinned_modules,
+    )
+
+    carrier_rel = "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py"
+    carrier_path = REPO_ROOT / carrier_rel
+    current_source = carrier_path.read_text(encoding="utf-8")
+    stale_source = current_source.replace(
+        '_site("C4.S1d.3", "post", 810)',
+        '_site("C4.S1d.3", "post", 757)',
+        1,
+    )
+    assert stale_source != current_source
+
+    module_name = "calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier"
+    pins = {carrier_rel: hash_file_bytes(carrier_path)}
+
+    current_module = types.ModuleType(module_name)
+    current_module.__file__ = str(carrier_path.resolve())
+    exec(compile(current_source, str(carrier_path), "exec"), current_module.__dict__)
+
+    stale_module = types.ModuleType(module_name)
+    stale_module.__file__ = str(carrier_path.resolve())
+    exec(compile(stale_source, str(carrier_path), "exec"), stale_module.__dict__)
+
+    current_codes = _iter_reachable_code_objects_from_module(current_module)
+    stale_codes = _iter_reachable_code_objects_from_module(stale_module)
+    assert len(current_codes) == len(stale_codes)
+
+    drifted_pairs: list[tuple[types.CodeType, types.CodeType]] = []
+    for current_code, stale_code in zip(current_codes, stale_codes):
+        assert current_code.co_code == stale_code.co_code
+        if current_code.co_consts != stale_code.co_consts:
+            drifted_pairs.append((current_code, stale_code))
+    assert drifted_pairs, "expected at least one reachable code object with co_const drift"
+
+    drift_current, drift_stale = drifted_pairs[0]
+    assert _code_object_signature_co_consts_blind(drift_current) == _code_object_signature_co_consts_blind(
+        drift_stale
+    )
+    assert _code_object_signature(drift_current) != _code_object_signature(drift_stale)
+
+    expected_fp = expected_reachable_fingerprint_from_source(current_source, module_name=module_name)
+    assert fingerprint_reachable_code_objects(current_module) == expected_fp
+    assert fingerprint_reachable_code_objects(stale_module) != expected_fp
+
+    def _import_stale_carrier(_rel_path: str) -> Any:
+        return stale_module
+
+    byte_report = verify_imported_bytes_for_pinned_modules(
+        pins,
+        import_module_fn=_import_stale_carrier,
+    )
+    assert byte_report["ok"] is True
+
+    executed_report = verify_executed_code_for_pinned_modules(
+        pins,
+        import_module_fn=_import_stale_carrier,
+    )
+    assert executed_report["ok"] is False
+    assert executed_report["mismatches"]
+    assert executed_report["mismatches"][0]["kind"] == "executed_fingerprint_mismatch"
+
+    sys.modules.pop(module_name, None)
+
+
+def test_code_currency_executed_fingerprint_fail_closed_stale_pyc_direct_carrier(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import sys
+
+    from scripts.hrm_text_158_code_currency_guard import (
+        CODE_CURRENCY_GUARD_NOT_RUN_TERMINAL,
+        CODE_CURRENCY_MISMATCH_EXIT_CODE,
+        EXECUTED_GUARD_PASSED_ENV,
+        OBMALLOC_EXPANDED_ENV,
+        PINNED_PROBE_MODULE_NAMES,
+        REPO_ROOT,
+        hash_file_bytes,
+        run_phase3b_probe_executed_code_currency_guard,
+        verify_executed_code_for_pinned_modules,
+        verify_imported_bytes_for_pinned_modules,
+    )
+
+    carrier_rel = "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py"
+    pins = {carrier_rel: hash_file_bytes(REPO_ROOT / carrier_rel)}
+
+    for name in PINNED_PROBE_MODULE_NAMES:
+        sys.modules.pop(name, None)
+
+    stale_module = _load_stale_executed_carrier_module()
+
+    def _import_stale_carrier(_rel_path: str) -> Any:
+        return stale_module
+
+    byte_report = verify_imported_bytes_for_pinned_modules(
+        pins,
+        import_module_fn=_import_stale_carrier,
+    )
+    assert byte_report["ok"] is True
+
+    executed_report = verify_executed_code_for_pinned_modules(
+        pins,
+        import_module_fn=_import_stale_carrier,
+    )
+    assert executed_report["ok"] is False
+    assert executed_report["mismatches"]
+    assert executed_report["mismatches"][0]["kind"] == "executed_fingerprint_mismatch"
+
+    monkeypatch.setenv(OBMALLOC_EXPANDED_ENV, "1")
+    monkeypatch.delenv(EXECUTED_GUARD_PASSED_ENV, raising=False)
+    guard_exit = run_phase3b_probe_executed_code_currency_guard(argv=["--help"])
+    assert guard_exit == CODE_CURRENCY_MISMATCH_EXIT_CODE
+    guard_payload = json.loads(capsys.readouterr().out)
+    assert guard_payload["fail_closed_terminal"] == CODE_CURRENCY_GUARD_NOT_RUN_TERMINAL
+    assert "calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier" in guard_payload[
+        "sys_modules_before_guard"
+    ]
+
+
+def test_code_currency_executed_fingerprint_fail_closed_stale_pyc_transitive_d_recompute(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import importlib
+    import sys
+
+    from scripts.hrm_text_158_code_currency_guard import (
+        CODE_CURRENCY_GUARD_NOT_RUN_TERMINAL,
+        CODE_CURRENCY_MISMATCH_EXIT_CODE,
+        EXECUTED_GUARD_PASSED_ENV,
+        OBMALLOC_EXPANDED_ENV,
+        PINNED_PROBE_MODULE_NAMES,
+        run_phase3b_probe_executed_code_currency_guard,
+    )
+
+    for name in PINNED_PROBE_MODULE_NAMES:
+        sys.modules.pop(name, None)
+    sys.modules.pop(
+        "calm.hrm_text_158.native_full_stack.d_recompute_window_live_carrier_snapshot",
+        None,
+    )
+
+    importlib.import_module(
+        "calm.hrm_text_158.native_full_stack.d_recompute_window_live_carrier_snapshot"
+    )
+    assert (
+        "calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier" in sys.modules
+    )
+
+    monkeypatch.setenv(OBMALLOC_EXPANDED_ENV, "1")
+    monkeypatch.delenv(EXECUTED_GUARD_PASSED_ENV, raising=False)
+    guard_exit = run_phase3b_probe_executed_code_currency_guard(argv=["--help"])
+    assert guard_exit == CODE_CURRENCY_MISMATCH_EXIT_CODE
+    guard_payload = json.loads(capsys.readouterr().out)
+    assert guard_payload["fail_closed_terminal"] == CODE_CURRENCY_GUARD_NOT_RUN_TERMINAL
+    assert guard_payload["guard_ran_before_pinned_imports"] is False
+    assert "calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier" in guard_payload[
+        "sys_modules_before_guard"
+    ]
+
+
+def test_code_currency_executed_guard_bootstrap_happy_path_before_probe(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import json
+    import sys
+
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe_bootstrap import main as bootstrap_main
+    from scripts.hrm_text_158_code_currency_guard import (
+        EXECUTED_GUARD_PASSED_ENV,
+        EXECUTED_GUARD_SCHEMA,
+        OBMALLOC_EXPANDED_ENV,
+        PINNED_PROBE_MODULE_NAMES,
+    )
+
+    for name in PINNED_PROBE_MODULE_NAMES:
+        sys.modules.pop(name, None)
+
+    monkeypatch.setenv(OBMALLOC_EXPANDED_ENV, "1")
+    monkeypatch.delenv(EXECUTED_GUARD_PASSED_ENV, raising=False)
+
+    exit_code = bootstrap_main(["--help"])
+    assert exit_code == 0
+    captured = capsys.readouterr().out
+    decoder = json.JSONDecoder()
+    cursor = 0
+    guard_payload: dict[str, Any] | None = None
+    while cursor < len(captured):
+        snippet = captured[cursor:].lstrip()
+        if not snippet:
+            break
+        offset = len(captured) - len(snippet)
+        try:
+            payload, end = decoder.raw_decode(snippet)
+        except json.JSONDecodeError:
+            break
+        if payload.get("schema") == EXECUTED_GUARD_SCHEMA:
+            guard_payload = payload
+            break
+        cursor = offset + end
+
+    assert guard_payload is not None
+    assert guard_payload["ok"] is True
+    assert guard_payload["guard_ran_before_pinned_imports"] is True
+    assert guard_payload["sys_modules_before_guard"] == []
+    assert guard_payload["proof_method"] == "reachable_code_object_fingerprint_method_a"
+    assert guard_payload["child_post_script_cli_argv"] == ["--help"]
+    assert guard_payload["child_sys_argv"]
+    assert guard_payload["child_orig_argv"]
+    assert guard_payload["child_orig_argv"][0]
+    help_idx = captured.find("usage:")
+    assert help_idx > 0
+    guard_idx = captured.find(EXECUTED_GUARD_SCHEMA)
+    assert guard_idx >= 0
+    assert guard_idx < help_idx
+
+
+def test_capture_probe_child_argv_records_honest_full_argv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from scripts.hrm_text_158_code_currency_guard import capture_probe_child_argv_records
+
+    monkeypatch.setattr(
+        sys,
+        "orig_argv",
+        ["/usr/bin/python3", "-B", "/repo/scripts/bootstrap.py", "--help"],
+        raising=False,
+    )
+    monkeypatch.setattr(sys, "argv", ["/repo/scripts/bootstrap.py", "--help"])
+    records = capture_probe_child_argv_records(["--help"])
+    assert records["child_orig_argv"] == [
+        "/usr/bin/python3",
+        "-B",
+        "/repo/scripts/bootstrap.py",
+        "--help",
+    ]
+    assert records["child_sys_argv"] == ["/repo/scripts/bootstrap.py", "--help"]
+    assert records["child_post_script_cli_argv"] == ["--help"]
+
+
+def test_phase3_obmalloc_surface_pinned_files_role_coverage() -> None:
+    from calm.hrm_text_158.native_full_stack.box_lane import (
+        DEFAULT_FLOOR_PINNED_FILES,
+        PHASE3_OBMALLOC_SURFACE_PINNED_FILES,
+    )
+
+    phase3_roles = {role for role, _ in PHASE3_OBMALLOC_SURFACE_PINNED_FILES}
+    assert {
+        "event_coded_acc_live_carrier",
+        "sparse_cap_gpu_seam_adapter",
+        "event_coded_vote_update_adapter",
+        "bounded_delta_learner",
+        "attribution_script",
+        "code_currency_guard",
+        "probe_bootstrap",
+    } <= phase3_roles
+    assert len(DEFAULT_FLOOR_PINNED_FILES) + len(PHASE3_OBMALLOC_SURFACE_PINNED_FILES) >= 10

@@ -33,7 +33,13 @@ ANALYZER_PINNED_FILES: tuple[tuple[str, str], ...] = (
 )
 
 PHASE3_OBMALLOC_SURFACE_PINNED_FILES: tuple[tuple[str, str], ...] = (
+    ("event_coded_acc_live_carrier", "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py"),
+    ("sparse_cap_gpu_seam_adapter", "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py"),
+    ("event_coded_vote_update_adapter", "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py"),
+    ("bounded_delta_learner", "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py"),
     ("attribution_script", "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py"),
+    ("code_currency_guard", "scripts/hrm_text_158_code_currency_guard.py"),
+    ("probe_bootstrap", "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py"),
 )
 
 CAPTURE_COMPLETE_RE = re.compile(

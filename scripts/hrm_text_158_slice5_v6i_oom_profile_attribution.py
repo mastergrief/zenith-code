@@ -4103,7 +4103,10 @@ def _fixture_probe_argv(
         "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_"
         "rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt"
     )
-    from scripts.hrm_text_158_code_currency_guard import phase3b_probe_python_argv_prefix
+    from scripts.hrm_text_158_code_currency_guard import (
+        phase3b_probe_python_argv_prefix,
+        phase3b_probe_script_path,
+    )
 
     cmd = [
         sys.executable,
@@ -4113,7 +4116,7 @@ def _fixture_probe_argv(
             else []
         ),
         "-u",
-        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        phase3b_probe_script_path(expanded=expanded),
         "--allow-gpu-launch",
         "--enable-bounded-delta-probe",
         "--device",

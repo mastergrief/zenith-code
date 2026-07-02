@@ -1,10 +1,13 @@
-"""Phase-3b code-freshness guard: pycache invalidation + imported-byte self-check."""
+"""Phase-3b code-freshness guard: pycache invalidation + executed-code self-check."""
 from __future__ import annotations
 
 import hashlib
 import importlib
+import inspect
 import json
 import os
+import sys
+import types
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -12,6 +15,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CODE_CURRENCY_MISMATCH_TERMINAL = "CODE_CURRENCY_MISMATCH_INCONCLUSIVE"
 CODE_CURRENCY_MISMATCH_EXIT_CODE = 37
+CODE_CURRENCY_EXECUTED_MISMATCH_TERMINAL = "CODE_CURRENCY_EXECUTED_MISMATCH_INCONCLUSIVE"
+CODE_CURRENCY_GUARD_NOT_RUN_TERMINAL = "CODE_CURRENCY_GUARD_NOT_RUN_INCONCLUSIVE"
+
+EXECUTED_GUARD_SCHEMA = "hrm_text_158_code_currency_executed_guard/v1"
+IMPORT_BYTE_GUARD_SCHEMA = "hrm_text_158_code_currency_import_byte_check/v1"
+EXECUTED_GUARD_PASSED_ENV = "HRM_TEXT_158_CODE_CURRENCY_EXECUTED_GUARD_PASSED"
+EXECUTED_GUARD_PROOF_METHOD = "reachable_code_object_fingerprint_method_a"
 
 SKIP_IMPORT_BYTE_CHECK_ENV = "HRM_TEXT_158_SKIP_CODE_CURRENCY_IMPORT_BYTE_CHECK"
 IMPORT_BYTE_PINS_ENV = "HRM_TEXT_158_CODE_CURRENCY_IMPORT_BYTE_PINS"
@@ -31,7 +41,7 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "b9d8f94cede2b31c695da09e37684fb5750b3607465d0cda2c45733258af83a9"
     ),
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "b559b75e0c68eacc08b795c05e0d21feee04d60674ae10b12d9edd7ef67bb901"
+        "6cd6574cbf981fc3cf3ee2ffea2a2ba3fa2b1b0b67e90853e878ead42e48993c"
     ),
 }
 
@@ -50,12 +60,17 @@ PHASE3B_PROBE_IMPORT_MODULE_BY_REL: dict[str, str] = {
     ),
 }
 
+PINNED_PROBE_MODULE_NAMES: tuple[str, ...] = tuple(PHASE3B_PROBE_IMPORT_MODULE_BY_REL.values())
+
 PHASE3B_PROBE_IMPORT_BYTE_PINS: dict[str, str] = {
     rel: PHASE3B_PINNED_SOURCE_FILES[rel]
     for rel in PHASE3B_PROBE_IMPORT_MODULE_BY_REL
 }
 
-PHASE3B_PYCACHE_INVALIDATION_PATHS: tuple[str, ...] = tuple(PHASE3B_PINNED_SOURCE_FILES)
+PHASE3B_PYCACHE_INVALIDATION_PATHS: tuple[str, ...] = tuple(
+    list(PHASE3B_PROBE_IMPORT_MODULE_BY_REL)
+    + ["scripts/hrm_text_158_code_currency_guard.py"]
+)
 
 
 def _env_truthy(name: str) -> bool:
@@ -65,6 +80,125 @@ def _env_truthy(name: str) -> bool:
 def hash_file_bytes(path: Path, *, read_bytes: Callable[[Path], bytes] | None = None) -> str:
     payload = path.read_bytes() if read_bytes is None else read_bytes(path)
     return hashlib.sha256(payload).hexdigest()
+
+
+def _serialize_co_const_value(value: Any) -> bytes:
+    if isinstance(value, types.CodeType):
+        raise TypeError("nested CodeType must be excluded from co_consts serialization")
+    if value is None:
+        return b"null"
+    if isinstance(value, bool):
+        return b"bool:" + (b"true" if value else b"false")
+    if isinstance(value, int):
+        return b"int:" + str(value).encode("ascii")
+    if isinstance(value, float):
+        return b"float:" + repr(value).encode("ascii")
+    if isinstance(value, complex):
+        return b"complex:" + repr(value).encode("ascii")
+    if isinstance(value, str):
+        return b"str:" + value.encode("utf-8")
+    if isinstance(value, bytes):
+        return b"bytes:" + value
+    if isinstance(value, tuple):
+        parts = [_serialize_co_const_value(item) for item in value]
+        return b"tuple:" + b"|".join(parts)
+    if isinstance(value, frozenset):
+        parts = sorted(_serialize_co_const_value(item) for item in value)
+        return b"frozenset:" + b"|".join(parts)
+    raise TypeError(f"unsupported co_const type: {type(value)!r}")
+
+
+def _serialize_co_consts_non_code(code: types.CodeType) -> bytes:
+    parts: list[bytes] = []
+    for const in code.co_consts:
+        if isinstance(const, types.CodeType):
+            continue
+        parts.append(_serialize_co_const_value(const))
+    return b";".join(parts)
+
+
+def _code_object_signature_co_consts_blind(code: types.CodeType) -> bytes:
+    """Pre-fix fingerprint that ignored non-code co_consts (test-only baseline)."""
+    hasher = hashlib.sha256()
+    hasher.update(code.co_code)
+    hasher.update(repr(code.co_names).encode("utf-8"))
+    hasher.update(repr(code.co_varnames).encode("utf-8"))
+    hasher.update(str(code.co_firstlineno).encode("utf-8"))
+    qualname = getattr(code, "co_qualname", code.co_name)
+    hasher.update(str(qualname).encode("utf-8"))
+    return hasher.digest()
+
+
+def _code_object_signature(code: types.CodeType) -> bytes:
+    hasher = hashlib.sha256()
+    hasher.update(_code_object_signature_co_consts_blind(code))
+    hasher.update(_serialize_co_consts_non_code(code))
+    return hasher.digest()
+
+
+def _iter_nested_code_objects(code: types.CodeType) -> list[types.CodeType]:
+    seen: set[types.CodeType] = set()
+    ordered: list[types.CodeType] = []
+
+    def visit(current: types.CodeType) -> None:
+        if current in seen:
+            return
+        seen.add(current)
+        ordered.append(current)
+        for const in current.co_consts:
+            if isinstance(const, types.CodeType):
+                visit(const)
+
+    visit(code)
+    return ordered
+
+
+def _iter_reachable_code_objects_from_module(module: types.ModuleType) -> list[types.CodeType]:
+    seen: set[types.CodeType] = set()
+    ordered: list[types.CodeType] = []
+
+    def visit_code(code: types.CodeType) -> None:
+        for nested in _iter_nested_code_objects(code):
+            if nested in seen:
+                continue
+            seen.add(nested)
+            ordered.append(nested)
+
+    def visit_object(obj: Any) -> None:
+        if inspect.isroutine(obj):
+            code = getattr(obj, "__code__", None)
+            if isinstance(code, types.CodeType):
+                visit_code(code)
+        elif inspect.isclass(obj):
+            for attr in obj.__dict__.values():
+                visit_object(attr)
+
+    for value in module.__dict__.values():
+        visit_object(value)
+    return ordered
+
+
+def fingerprint_reachable_code_objects(module: types.ModuleType) -> str:
+    codes = _iter_reachable_code_objects_from_module(module)
+    signatures = sorted(_code_object_signature(code) for code in codes)
+    hasher = hashlib.sha256()
+    for signature in signatures:
+        hasher.update(signature)
+    return hasher.hexdigest()
+
+
+def expected_reachable_fingerprint_from_source(
+    source: str,
+    *,
+    module_name: str = "pinned_expected_module",
+) -> str:
+    module = types.ModuleType(module_name)
+    sys.modules[module_name] = module
+    try:
+        exec(compile(source, "<pinned-source>", "exec"), module.__dict__)
+        return fingerprint_reachable_code_objects(module)
+    finally:
+        sys.modules.pop(module_name, None)
 
 
 def invalidate_pycache_for_source_files(
@@ -95,6 +229,58 @@ def imported_module_file_path(module: Any) -> Path:
     if not file_path:
         raise ValueError(f"module {module!r} has no __file__")
     return Path(file_path).resolve()
+
+
+def pinned_modules_present_in_sys_modules(
+    module_names: Sequence[str] = PINNED_PROBE_MODULE_NAMES,
+) -> list[str]:
+    return [name for name in module_names if name in sys.modules]
+
+
+def verify_executed_code_for_pinned_modules(
+    pins: Mapping[str, str],
+    *,
+    repo_root: Path = REPO_ROOT,
+    import_module_fn: Callable[[str], Any] = import_module_for_rel_path,
+) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    mismatches: list[dict[str, Any]] = []
+    for rel_path, expected_file_sha in pins.items():
+        source_path = repo_root / rel_path
+        source = source_path.read_text(encoding="utf-8")
+        actual_file_sha = hash_file_bytes(source_path)
+        if actual_file_sha != str(expected_file_sha):
+            row = {
+                "rel_path": str(rel_path),
+                "kind": "source_file_sha_mismatch",
+                "actual_sha256": actual_file_sha,
+                "expected_sha256": str(expected_file_sha),
+            }
+            results.append(row)
+            mismatches.append(row)
+            continue
+        expected_fp = expected_reachable_fingerprint_from_source(source)
+        module = import_module_fn(str(rel_path))
+        actual_fp = fingerprint_reachable_code_objects(module)
+        row = {
+            "rel_path": str(rel_path),
+            "module_name": PHASE3B_PROBE_IMPORT_MODULE_BY_REL[str(rel_path)],
+            "expected_executed_fingerprint": expected_fp,
+            "actual_executed_fingerprint": actual_fp,
+            "proof_method": EXECUTED_GUARD_PROOF_METHOD,
+            "reachable_code_object_count": len(
+                _iter_reachable_code_objects_from_module(module)
+            ),
+        }
+        results.append(row)
+        if actual_fp != expected_fp:
+            mismatches.append({**row, "kind": "executed_fingerprint_mismatch"})
+    return {
+        "ok": not mismatches,
+        "results": results,
+        "mismatches": mismatches,
+        "proof_method": EXECUTED_GUARD_PROOF_METHOD,
+    }
 
 
 def verify_imported_bytes_for_pinned_modules(
@@ -134,9 +320,64 @@ def verify_imported_bytes_for_pinned_modules(
     }
 
 
+def capture_probe_child_argv_records(
+    post_script_cli_argv: Sequence[str] | None,
+) -> dict[str, list[str]]:
+    orig_argv = list(getattr(sys, "orig_argv", [sys.executable, *sys.argv]))
+    return {
+        "child_orig_argv": orig_argv,
+        "child_sys_argv": list(sys.argv),
+        "child_post_script_cli_argv": list(post_script_cli_argv or []),
+    }
+
+
+def build_executed_guard_receipt(
+    *,
+    ok: bool,
+    proof_method: str,
+    executed_report: Mapping[str, Any],
+    import_byte_report: Mapping[str, Any] | None,
+    argv_records: Mapping[str, Sequence[str]],
+    sys_modules_before: Sequence[str],
+    sys_modules_after: Sequence[str],
+    pycache_invalidated_paths: Sequence[str],
+    fail_closed_terminal: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema": EXECUTED_GUARD_SCHEMA,
+        "ok": bool(ok),
+        "proof_method": str(proof_method),
+        "fail_closed_terminal": fail_closed_terminal,
+        "process_exit_code": None if ok else CODE_CURRENCY_MISMATCH_EXIT_CODE,
+        "mapped_terminal_code": None if ok else CODE_CURRENCY_MISMATCH_EXIT_CODE,
+        "exit_code_agreement": True if ok else None,
+        "child_orig_argv": list(argv_records.get("child_orig_argv") or []),
+        "child_sys_argv": list(argv_records.get("child_sys_argv") or []),
+        "child_post_script_cli_argv": list(
+            argv_records.get("child_post_script_cli_argv") or []
+        ),
+        "env": {
+            "PYTHONDONTWRITEBYTECODE": os.environ.get("PYTHONDONTWRITEBYTECODE"),
+            "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED": os.environ.get(OBMALLOC_EXPANDED_ENV),
+        },
+        "sys_flags": {
+            "dont_write_bytecode": bool(sys.flags.dont_write_bytecode),
+        },
+        "sys_modules_before_guard": list(sys_modules_before),
+        "sys_modules_after_guard": list(sys_modules_after),
+        "guard_ran_before_pinned_imports": not bool(sys_modules_before),
+        "pycache_invalidated_paths": list(pycache_invalidated_paths),
+        "executed_code_fingerprints": list(executed_report.get("results") or []),
+        "executed_code_mismatches": list(executed_report.get("mismatches") or []),
+        "import_byte_fingerprints": (
+            list(import_byte_report.get("results") or []) if import_byte_report else []
+        ),
+    }
+
+
 def build_code_currency_mismatch_receipt(report: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "schema": "hrm_text_158_code_currency_import_byte_check/v1",
+        "schema": IMPORT_BYTE_GUARD_SCHEMA,
         "fail_closed_terminal": CODE_CURRENCY_MISMATCH_TERMINAL,
         "process_exit_code": CODE_CURRENCY_MISMATCH_EXIT_CODE,
         "mapped_terminal_code": CODE_CURRENCY_MISMATCH_EXIT_CODE,
@@ -189,30 +430,79 @@ def resolve_probe_import_byte_pins() -> dict[str, str]:
     return dict(PHASE3B_PROBE_IMPORT_BYTE_PINS)
 
 
-def maybe_enforce_phase3b_probe_import_byte_currency() -> int | None:
-    if not _env_truthy(OBMALLOC_EXPANDED_ENV):
+def _emit_guard_receipt(receipt: Mapping[str, Any]) -> None:
+    print(json.dumps(dict(receipt), indent=2, sort_keys=True), flush=True)
+
+
+def run_phase3b_probe_executed_code_currency_guard(
+    *,
+    argv: Sequence[str] | None = None,
+    repo_root: Path = REPO_ROOT,
+    require_obmalloc_expanded: bool = True,
+) -> int | None:
+    if require_obmalloc_expanded and not _env_truthy(OBMALLOC_EXPANDED_ENV):
         return None
     if _env_truthy(SKIP_IMPORT_BYTE_CHECK_ENV):
         return None
+    if _env_truthy(EXECUTED_GUARD_PASSED_ENV):
+        return None
+
+    argv_records = capture_probe_child_argv_records(argv)
+    sys_modules_before = pinned_modules_present_in_sys_modules()
+    if sys_modules_before:
+        receipt = build_executed_guard_receipt(
+            ok=False,
+            proof_method=EXECUTED_GUARD_PROOF_METHOD,
+            executed_report={"results": [], "mismatches": []},
+            import_byte_report=None,
+            argv_records=argv_records,
+            sys_modules_before=sys_modules_before,
+            sys_modules_after=list(sys_modules_before),
+            pycache_invalidated_paths=[],
+            fail_closed_terminal=CODE_CURRENCY_GUARD_NOT_RUN_TERMINAL,
+        )
+        receipt["process_exit_code"] = CODE_CURRENCY_MISMATCH_EXIT_CODE
+        receipt["mapped_terminal_code"] = CODE_CURRENCY_MISMATCH_EXIT_CODE
+        _emit_guard_receipt(receipt)
+        return CODE_CURRENCY_MISMATCH_EXIT_CODE
+
+    removed = invalidate_pycache_for_source_files(repo_root, PHASE3B_PYCACHE_INVALIDATION_PATHS)
     pins = resolve_probe_import_byte_pins()
-    try:
-        report = enforce_import_byte_pins_or_fail_closed(pins, enabled=True)
-    except CodeCurrencyMismatchError as exc:
-        print(json.dumps(exc.receipt, indent=2, sort_keys=True), flush=True)
-        return int(exc.receipt.get("process_exit_code", CODE_CURRENCY_MISMATCH_EXIT_CODE))
-    print(
-        json.dumps(
-            {
-                "schema": "hrm_text_158_code_currency_import_byte_check/v1",
-                "ok": True,
-                "checked_modules": report.get("results", []),
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        flush=True,
+    executed_report = verify_executed_code_for_pinned_modules(pins, repo_root=repo_root)
+    import_byte_report = verify_imported_bytes_for_pinned_modules(pins, enabled=True)
+    sys_modules_after = pinned_modules_present_in_sys_modules()
+    ok = bool(executed_report.get("ok")) and bool(import_byte_report.get("ok"))
+    fail_closed_terminal = None
+    if not ok:
+        fail_closed_terminal = (
+            CODE_CURRENCY_EXECUTED_MISMATCH_TERMINAL
+            if executed_report.get("mismatches")
+            else CODE_CURRENCY_MISMATCH_TERMINAL
+        )
+    receipt = build_executed_guard_receipt(
+        ok=ok,
+        proof_method=EXECUTED_GUARD_PROOF_METHOD,
+        executed_report=executed_report,
+        import_byte_report=import_byte_report,
+        argv_records=argv_records,
+        sys_modules_before=sys_modules_before,
+        sys_modules_after=sys_modules_after,
+        pycache_invalidated_paths=removed,
+        fail_closed_terminal=fail_closed_terminal,
     )
+    if not ok:
+        receipt["process_exit_code"] = CODE_CURRENCY_MISMATCH_EXIT_CODE
+        receipt["mapped_terminal_code"] = CODE_CURRENCY_MISMATCH_EXIT_CODE
+        _emit_guard_receipt(receipt)
+        return CODE_CURRENCY_MISMATCH_EXIT_CODE
+
+    _emit_guard_receipt(receipt)
+    os.environ[EXECUTED_GUARD_PASSED_ENV] = "1"
     return None
+
+
+def maybe_enforce_phase3b_probe_import_byte_currency() -> int | None:
+    return run_phase3b_probe_executed_code_currency_guard(require_obmalloc_expanded=True)
 
 
 def prepare_phase3b_probe_launch_env(
@@ -232,8 +522,15 @@ def prepare_phase3b_probe_launch_env(
         if (repo_root / rel).is_file()
     }
     merged[IMPORT_BYTE_PINS_ENV] = json.dumps(pin_payload, sort_keys=True)
+    merged.pop(EXECUTED_GUARD_PASSED_ENV, None)
     return merged
 
 
 def phase3b_probe_python_argv_prefix() -> list[str]:
     return ["-B"]
+
+
+def phase3b_probe_script_path(*, expanded: bool) -> str:
+    if expanded:
+        return "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py"
+    return "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"
