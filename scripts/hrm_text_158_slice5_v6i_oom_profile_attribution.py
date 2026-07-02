@@ -293,6 +293,55 @@ def _mapped_terminal_exit_code(fail_closed_terminal: str | None) -> int | None:
     return int(FAIL_CLOSED_TERMINAL_EXIT_CODES.get(str(fail_closed_terminal), 37))
 
 
+def _exit_code_agreement_truthful(
+    *,
+    fail_closed_terminal: str | None,
+    probe_exit_code: int,
+    process_exit_code: int,
+    mapped_terminal_code: int | None,
+) -> bool:
+    if fail_closed_terminal is not None:
+        if mapped_terminal_code is None:
+            return False
+        return (
+            int(process_exit_code) == int(mapped_terminal_code)
+            and int(process_exit_code) != 0
+        )
+    return (
+        mapped_terminal_code is None
+        and int(process_exit_code) == int(probe_exit_code)
+    )
+
+
+def _fail_closed_terminal_from_attribution_payload(
+    payload: Mapping[str, Any],
+) -> str | None:
+    fail_closed = payload.get("fail_closed_terminal")
+    if fail_closed is not None:
+        return str(fail_closed)
+    expanded = payload.get("obmalloc_expanded_attribution") or {}
+    nested = expanded.get("fail_closed_terminal")
+    if nested is not None:
+        return str(nested)
+    return None
+
+
+def _probe_exit_code_from_attribution_payload(payload: Mapping[str, Any]) -> int:
+    if payload.get("probe_exit_code") is not None:
+        return int(payload["probe_exit_code"])
+    if payload.get("exit_code") is not None:
+        return int(payload["exit_code"])
+    runs = payload.get("runs") or {}
+    exit_codes: list[int] = []
+    for arm in ("A", "A_prime", "B"):
+        arm_payload = runs.get(arm) or {}
+        if "exit_code" in arm_payload:
+            exit_codes.append(int(arm_payload["exit_code"]))
+    if exit_codes:
+        return max(exit_codes)
+    return 1
+
+
 def _resolve_attribution_process_exit_code(
     *,
     probe_exit_code: int,
@@ -302,14 +351,123 @@ def _resolve_attribution_process_exit_code(
     process_exit_code = int(probe_exit_code)
     if mapped_terminal_code is not None:
         process_exit_code = int(mapped_terminal_code)
-    exit_code_agreement = (
-        mapped_terminal_code is None or int(process_exit_code) == int(mapped_terminal_code)
+    exit_code_agreement = _exit_code_agreement_truthful(
+        fail_closed_terminal=fail_closed_terminal,
+        probe_exit_code=int(probe_exit_code),
+        process_exit_code=int(process_exit_code),
+        mapped_terminal_code=mapped_terminal_code,
     )
     return {
         "process_exit_code": int(process_exit_code),
         "mapped_terminal_code": mapped_terminal_code,
         "exit_code_agreement": bool(exit_code_agreement),
     }
+
+
+def resolve_classifier_exit_fields_from_attribution_payload(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    fail_closed_terminal = _fail_closed_terminal_from_attribution_payload(payload)
+    probe_exit_code = _probe_exit_code_from_attribution_payload(payload)
+    serialized_process_exit_code = payload.get("process_exit_code")
+    if serialized_process_exit_code is None:
+        serialized_process_exit_code = payload.get("exit_code", probe_exit_code)
+    serialized_process_exit_code = int(serialized_process_exit_code)
+
+    serialized_mapped_terminal_code = payload.get("mapped_terminal_code")
+    if serialized_mapped_terminal_code is not None:
+        serialized_mapped_terminal_code = int(serialized_mapped_terminal_code)
+
+    expected_mapped_terminal_code = (
+        _mapped_terminal_exit_code(fail_closed_terminal)
+        if fail_closed_terminal is not None
+        else None
+    )
+    agreement_mapped_terminal_code = (
+        serialized_mapped_terminal_code
+        if serialized_mapped_terminal_code is not None
+        else expected_mapped_terminal_code
+    )
+    exit_code_agreement = _exit_code_agreement_truthful(
+        fail_closed_terminal=fail_closed_terminal,
+        probe_exit_code=probe_exit_code,
+        process_exit_code=serialized_process_exit_code,
+        mapped_terminal_code=agreement_mapped_terminal_code,
+    )
+
+    canonical = _resolve_attribution_process_exit_code(
+        probe_exit_code=probe_exit_code,
+        fail_closed_terminal=fail_closed_terminal,
+    )
+    return {
+        "fail_closed_terminal": fail_closed_terminal,
+        "probe_exit_code": int(probe_exit_code),
+        "process_exit_code": int(canonical["process_exit_code"]),
+        "mapped_terminal_code": canonical["mapped_terminal_code"],
+        "exit_code_agreement": bool(exit_code_agreement),
+        "exit_code": int(canonical["process_exit_code"]),
+        "serialized_process_exit_code": int(serialized_process_exit_code),
+        "serialized_mapped_terminal_code": serialized_mapped_terminal_code,
+    }
+
+
+def build_postrun_aggregate_exit_summary(
+    *,
+    attribution_payload: Mapping[str, Any] | None,
+    exit_code_artifact: int | None,
+    classifier_receipt: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    attribution_exit_fields: dict[str, Any] = {}
+    if attribution_payload is not None:
+        attribution_exit_fields = resolve_classifier_exit_fields_from_attribution_payload(
+            attribution_payload
+        )
+
+    classifier_exit_fields: dict[str, Any] | None = None
+    if classifier_receipt is not None:
+        merged_payload: dict[str, Any] = dict(attribution_payload or {})
+        merged_payload.update(
+            {
+                "process_exit_code": classifier_receipt.get("process_exit_code"),
+                "mapped_terminal_code": classifier_receipt.get("mapped_terminal_code"),
+                "exit_code_agreement": classifier_receipt.get("exit_code_agreement"),
+                "fail_closed_terminal": classifier_receipt.get("fail_closed_terminal")
+                or attribution_exit_fields.get("fail_closed_terminal"),
+                "exit_code": classifier_receipt.get("exit_code"),
+            }
+        )
+        classifier_exit_fields = resolve_classifier_exit_fields_from_attribution_payload(
+            merged_payload
+        )
+
+    aggregate_exit_code = exit_code_artifact
+    if attribution_exit_fields.get("fail_closed_terminal") is not None:
+        aggregate_exit_code = int(attribution_exit_fields["process_exit_code"])
+    elif classifier_exit_fields and classifier_exit_fields.get("fail_closed_terminal") is not None:
+        aggregate_exit_code = int(classifier_exit_fields["process_exit_code"])
+    elif attribution_exit_fields:
+        aggregate_exit_code = int(attribution_exit_fields["process_exit_code"])
+
+    return {
+        "exit_code": aggregate_exit_code,
+        "exit_code_artifact": exit_code_artifact,
+        "attribution_exit_fields": attribution_exit_fields,
+        "classifier_exit_fields": classifier_exit_fields,
+        "exit_code_propagation_overrode_zero_artifact": (
+            exit_code_artifact == 0
+            and aggregate_exit_code not in (None, 0)
+        ),
+    }
+
+
+def resolve_fixture_attribution_main_exit_code(payload: Mapping[str, Any]) -> int:
+    fail_closed_terminal = _fail_closed_terminal_from_attribution_payload(payload)
+    if fail_closed_terminal is not None:
+        mapped = _mapped_terminal_exit_code(fail_closed_terminal)
+        if mapped is not None:
+            return int(mapped)
+    exit_fields = resolve_classifier_exit_fields_from_attribution_payload(payload)
+    return int(exit_fields["process_exit_code"])
 OBMALLOC_EXPANDED_BOUNDARY_AFTER_STATE_MAX = 8
 
 
@@ -5176,11 +5334,11 @@ def main() -> int:
         "fixture_obmalloc_arena_combined",
         "fixture_obmalloc_site_brackets",
         "fixture_obmalloc_expanded",
-    } and int(payload.get("process_exit_code", payload.get("exit_code", 1))) != 0:
-        return int(payload.get("process_exit_code", payload.get("exit_code", 1)))
-    fail_closed_terminal = payload.get("fail_closed_terminal")
+    }:
+        return resolve_fixture_attribution_main_exit_code(payload)
+    fail_closed_terminal = _fail_closed_terminal_from_attribution_payload(payload)
     if fail_closed_terminal is not None:
-        mapped = _mapped_terminal_exit_code(str(fail_closed_terminal))
+        mapped = _mapped_terminal_exit_code(fail_closed_terminal)
         if mapped is not None:
             return int(mapped)
     return 0

@@ -4032,6 +4032,8 @@ def test_product_path_apply_cap_emit_topology_single_pair_per_state() -> None:
 def test_fail_closed_process_exit_code_propagates_nonzero() -> None:
     from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
         _resolve_attribution_process_exit_code,
+        resolve_classifier_exit_fields_from_attribution_payload,
+        resolve_fixture_attribution_main_exit_code,
     )
 
     fields = _resolve_attribution_process_exit_code(
@@ -4048,6 +4050,152 @@ def test_fail_closed_process_exit_code_propagates_nonzero() -> None:
     )
     assert int(clean["process_exit_code"]) == 0
     assert clean["mapped_terminal_code"] is None
+    assert clean["exit_code_agreement"] is True
+
+    fresh_payload = {
+        "exit_code": 37,
+        "process_exit_code": 37,
+        "mapped_terminal_code": 37,
+        "exit_code_agreement": True,
+        "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+        "probe_exit_code": 0,
+    }
+    fresh_fields = resolve_classifier_exit_fields_from_attribution_payload(fresh_payload)
+    assert int(fresh_fields["process_exit_code"]) == 37
+    assert int(fresh_fields["mapped_terminal_code"]) == 37
+    assert fresh_fields["exit_code_agreement"] is True
+    assert resolve_fixture_attribution_main_exit_code(fresh_payload) == 37
+
+
+def test_classifier_exit_agreement_false_when_fail_closed_and_mapped_null() -> None:
+    """MUST-FAIL-PRE-FIX: legacy classifier defaulted agreement=True on stale payloads."""
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        resolve_classifier_exit_fields_from_attribution_payload,
+    )
+
+    stale_payload = {
+        "exit_code": 0,
+        "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+        "obmalloc_expanded_attribution": {
+            "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+        },
+    }
+    legacy_classifier_agreement = bool(stale_payload.get("exit_code_agreement", True))
+    assert legacy_classifier_agreement is True
+
+    fields = resolve_classifier_exit_fields_from_attribution_payload(stale_payload)
+    assert fields["fail_closed_terminal"] == "OBSERVER_PERTURBED_INCONCLUSIVE"
+    assert fields["serialized_mapped_terminal_code"] is None
+    assert int(fields["serialized_process_exit_code"]) == 0
+    assert fields["exit_code_agreement"] is False
+    assert int(fields["process_exit_code"]) == 37
+    assert int(fields["mapped_terminal_code"]) == 37
+
+
+def test_classifier_exit_agreement_true_when_fail_closed_mapped_defined() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        resolve_classifier_exit_fields_from_attribution_payload,
+    )
+
+    payload = {
+        "exit_code": 37,
+        "process_exit_code": 37,
+        "mapped_terminal_code": 37,
+        "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+        "probe_exit_code": 0,
+    }
+    fields = resolve_classifier_exit_fields_from_attribution_payload(payload)
+    assert int(fields["process_exit_code"]) == 37
+    assert int(fields["mapped_terminal_code"]) == 37
+    assert fields["exit_code_agreement"] is True
+
+
+def test_classifier_exit_agreement_true_on_clean_run() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        resolve_classifier_exit_fields_from_attribution_payload,
+        resolve_fixture_attribution_main_exit_code,
+    )
+
+    payload = {
+        "exit_code": 0,
+        "process_exit_code": 0,
+        "mapped_terminal_code": None,
+        "fail_closed_terminal": None,
+        "probe_exit_code": 0,
+    }
+    fields = resolve_classifier_exit_fields_from_attribution_payload(payload)
+    assert int(fields["process_exit_code"]) == 0
+    assert fields["mapped_terminal_code"] is None
+    assert fields["exit_code_agreement"] is True
+    assert resolve_fixture_attribution_main_exit_code(payload) == 0
+
+
+def test_postrun_aggregate_exit_summary_propagates_fail_closed_nonzero() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        build_postrun_aggregate_exit_summary,
+    )
+
+    stale_payload = {
+        "exit_code": 0,
+        "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+    }
+    summary = build_postrun_aggregate_exit_summary(
+        attribution_payload=stale_payload,
+        exit_code_artifact=0,
+        classifier_receipt={
+            "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+            "process_exit_code": 0,
+            "mapped_terminal_code": None,
+            "exit_code_agreement": True,
+        },
+    )
+    assert int(summary["exit_code"]) == 37
+    assert summary["exit_code_propagation_overrode_zero_artifact"] is True
+    assert summary["classifier_exit_fields"]["exit_code_agreement"] is False
+
+
+def test_fixture_obmalloc_expanded_serializer_emits_fix_e_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        run_fixture_obmalloc_expanded_combined,
+    )
+
+    def _fake_probe(*_args, **_kwargs):
+        return {"exit_code": 0, "marks": [], "profile_mark_count": 1}
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_fixture_obmalloc_probe",
+        _fake_probe,
+    )
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.host_allocator_probe.preflight_debugmallocstats_self_test",
+        lambda: {"ok": True},
+    )
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.host_allocator_probe.measure_debugmallocstats_self_footprint",
+        lambda: {"ok": True},
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.attribute_obmalloc_expanded",
+        lambda **_kwargs: {
+            "classifier_terminal": None,
+            "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.attribute_c4_retention_owner_census",
+        lambda **_kwargs: {"classifier_terminal": "INCONCLUSIVE"},
+    )
+
+    payload = run_fixture_obmalloc_expanded_combined(tmp_path, mirror_durable_attribution=False)
+    assert payload["fail_closed_terminal"] == "OBSERVER_PERTURBED_INCONCLUSIVE"
+    assert int(payload["process_exit_code"]) == 37
+    assert int(payload["mapped_terminal_code"]) == 37
+    assert payload["exit_code_agreement"] is True
+    assert int(payload["exit_code"]) == 37
+    assert int(payload["probe_exit_code"]) == 0
 
 
 def test_code_currency_import_byte_self_check_fail_closed_on_mismatch(
