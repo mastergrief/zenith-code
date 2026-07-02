@@ -9299,6 +9299,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from scripts.hrm_text_158_code_currency_guard import (
+        maybe_enforce_phase3b_probe_import_byte_currency,
+    )
+
+    currency_exit = maybe_enforce_phase3b_probe_import_byte_currency()
+    if currency_exit is not None:
+        return int(currency_exit)
     args = build_arg_parser().parse_args(argv)
     receipt = run_c2p1_probe(
         parent=args.parent,

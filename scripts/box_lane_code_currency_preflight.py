@@ -36,6 +36,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--head-expected", required=True)
     ap.add_argument("--pinned-manifest", type=Path, default=None)
     ap.add_argument("--include-analyzer-surfaces", action="store_true")
+    ap.add_argument(
+        "--include-phase3-obmalloc-surfaces",
+        action="store_true",
+        help="Include Phase-3 obmalloc attribution script in pinned manifest.",
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument(
         "--sync",
@@ -93,6 +98,14 @@ def main(argv: list[str] | None = None) -> int:
     pinned = load_pinned_manifest(args.pinned_manifest)
     if args.include_analyzer_surfaces:
         pinned.extend(PinnedFile(role, rel) for role, rel in ANALYZER_PINNED_FILES)
+    if args.include_phase3_obmalloc_surfaces:
+        from calm.hrm_text_158.native_full_stack.box_lane import (
+            PHASE3_OBMALLOC_SURFACE_PINNED_FILES,
+        )
+
+        pinned.extend(
+            PinnedFile(role, rel) for role, rel in PHASE3_OBMALLOC_SURFACE_PINNED_FILES
+        )
     pinned_rows = hash_pinned_files(repo_root, pinned)
     mismatches.extend(verify_pinned_sha_expectations(pinned_rows))
     mismatches.extend(check_pinned_paths_clean(repo_root, pinned, git_runner=run_git))

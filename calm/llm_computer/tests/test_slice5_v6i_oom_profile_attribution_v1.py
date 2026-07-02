@@ -4048,3 +4048,85 @@ def test_fail_closed_process_exit_code_propagates_nonzero() -> None:
     )
     assert int(clean["process_exit_code"]) == 0
     assert clean["mapped_terminal_code"] is None
+
+
+def test_code_currency_import_byte_self_check_fail_closed_on_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.hrm_text_158_code_currency_guard import (
+        CODE_CURRENCY_MISMATCH_EXIT_CODE,
+        CODE_CURRENCY_MISMATCH_TERMINAL,
+        CodeCurrencyMismatchError,
+        OBMALLOC_EXPANDED_ENV,
+        IMPORT_BYTE_PINS_ENV,
+        PHASE3B_PROBE_IMPORT_MODULE_BY_REL,
+        REPO_ROOT,
+        SKIP_IMPORT_BYTE_CHECK_ENV,
+        enforce_import_byte_pins_or_fail_closed,
+        hash_file_bytes,
+        maybe_enforce_phase3b_probe_import_byte_currency,
+        verify_imported_bytes_for_pinned_modules,
+    )
+
+    live_pins = {
+        rel: hash_file_bytes(REPO_ROOT / rel)
+        for rel in PHASE3B_PROBE_IMPORT_MODULE_BY_REL
+    }
+
+    pass_report = verify_imported_bytes_for_pinned_modules(live_pins, enabled=True)
+    assert pass_report["ok"] is True
+    assert not pass_report.get("skipped")
+
+    carrier_rel = "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py"
+
+    def mismatched_hash(path: Path) -> str:
+        if carrier_rel in str(path).replace("\\", "/"):
+            return "0" * 64
+        return hash_file_bytes(path)
+
+    with pytest.raises(CodeCurrencyMismatchError) as exc_info:
+        enforce_import_byte_pins_or_fail_closed(
+            live_pins,
+            enabled=True,
+            hash_fn=mismatched_hash,
+        )
+    receipt = exc_info.value.receipt
+    assert receipt["fail_closed_terminal"] == CODE_CURRENCY_MISMATCH_TERMINAL
+    assert int(receipt["process_exit_code"]) == CODE_CURRENCY_MISMATCH_EXIT_CODE
+    assert int(receipt["mapped_terminal_code"]) == CODE_CURRENCY_MISMATCH_EXIT_CODE
+    assert receipt["exit_code_agreement"] is True
+    assert any(row["rel_path"] == carrier_rel for row in receipt["mismatches"])
+
+    skipped = verify_imported_bytes_for_pinned_modules(
+        live_pins,
+        enabled=False,
+        hash_fn=mismatched_hash,
+    )
+    assert skipped.get("skipped") is True
+    assert skipped["ok"] is True
+
+    monkeypatch.setenv(OBMALLOC_EXPANDED_ENV, "1")
+    monkeypatch.delenv(SKIP_IMPORT_BYTE_CHECK_ENV, raising=False)
+    monkeypatch.setenv(IMPORT_BYTE_PINS_ENV, json.dumps(live_pins))
+
+    def enforce_with_mismatch(
+        pins: dict[str, str],
+        *,
+        enabled: bool = True,
+        import_module_fn: Any = None,
+        hash_fn: Any = None,
+    ) -> dict[str, Any]:
+        from scripts.hrm_text_158_code_currency_guard import import_module_for_rel_path
+
+        return enforce_import_byte_pins_or_fail_closed(
+            pins,
+            enabled=enabled,
+            import_module_fn=import_module_fn or import_module_for_rel_path,
+            hash_fn=mismatched_hash,
+        )
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_code_currency_guard.enforce_import_byte_pins_or_fail_closed",
+        enforce_with_mismatch,
+    )
+    assert maybe_enforce_phase3b_probe_import_byte_currency() == CODE_CURRENCY_MISMATCH_EXIT_CODE

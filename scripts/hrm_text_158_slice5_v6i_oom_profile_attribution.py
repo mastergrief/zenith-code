@@ -283,6 +283,7 @@ FAIL_CLOSED_TERMINAL_EXIT_CODES: dict[str, int] = {
     "BRACKET_REMAINDER_TOO_LARGE": 37,
     "TRACEMALLOC_PERTURBED_INCONCLUSIVE": 37,
     "CLASSIFIER_INCONCLUSIVE": 37,
+    "CODE_CURRENCY_MISMATCH_INCONCLUSIVE": 37,
 }
 
 
@@ -3799,13 +3800,21 @@ def _fixture_probe_argv(
     *,
     tracemalloc: bool = False,
     debugmallocstats: bool = False,
+    expanded: bool = False,
 ) -> list[str]:
     parent = (
         "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_"
         "rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt"
     )
+    from scripts.hrm_text_158_code_currency_guard import phase3b_probe_python_argv_prefix
+
     cmd = [
         sys.executable,
+        *(
+            phase3b_probe_python_argv_prefix()
+            if expanded
+            else []
+        ),
         "-u",
         "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
         "--allow-gpu-launch",
@@ -4578,6 +4587,10 @@ def _fixture_obmalloc_env(
         )
 
         env[PROFILE_C4_RETENTION_OWNER_CENSUS_ENV] = "1"
+    if expanded:
+        from scripts.hrm_text_158_code_currency_guard import prepare_phase3b_probe_launch_env
+
+        env = prepare_phase3b_probe_launch_env(env, repo_root=REPO_ROOT, expanded=True)
     return env
 
 
@@ -4687,7 +4700,11 @@ def _run_fixture_obmalloc_probe(
             expanded=expanded,
             c4_retention_owner_census=c4_retention_owner_census,
         )
-        cmd = _fixture_probe_argv(scratch, debugmallocstats=debugmallocstats)
+        cmd = _fixture_probe_argv(
+            scratch,
+            debugmallocstats=debugmallocstats,
+            expanded=expanded,
+        )
         probe_stream_log = scratch / FIXTURE_PROBE_STREAM_LOG_NAME
         subprocess_result = _run_subprocess_streaming_to_log(
             cmd,

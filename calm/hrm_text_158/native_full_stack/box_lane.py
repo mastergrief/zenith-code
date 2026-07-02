@@ -32,6 +32,10 @@ ANALYZER_PINNED_FILES: tuple[tuple[str, str], ...] = (
     ("selector_value_orchestrator", "scripts/hrm_text_158_selector_value_analysis.py"),
 )
 
+PHASE3_OBMALLOC_SURFACE_PINNED_FILES: tuple[tuple[str, str], ...] = (
+    ("attribution_script", "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py"),
+)
+
 CAPTURE_COMPLETE_RE = re.compile(
     r"capture_complete:\s+chain_id=(?P<chain_id>\S+)(?:\s+seed=(?P<seed>\d+))?",
 )
