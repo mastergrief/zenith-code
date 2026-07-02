@@ -2538,10 +2538,10 @@ def test_obmalloc_expanded_event_count_no_duplicate() -> None:
     assert counts["obmalloc_C4_after_state"] == 8
     assert counts["obmalloc_C4_exit"] == 1
     assert counts["site_leaf_bracket"] == 32
-    assert counts["total"] == OBMALLOC_EXPANDED_EVENT_COUNT_TARGET
+    assert counts["total"] == 42
 
     duplicate_boundary = list(boundary)
-    for extra_idx in range(9):
+    for extra_idx in range(65):
         duplicate_boundary.append(
             {
                 "schema": boundary[1]["schema"],
@@ -2790,3 +2790,309 @@ def test_obmalloc_expanded_cross_state_retention_classifier() -> None:
     )
     assert result["classifier_terminal"] == "RETENTION_DOMINANT_CROSS_STATE"
     assert result["slice8_rewrite_authorized"] is False
+
+
+def _obmalloc_expanded_child_holding_deltas(
+    parent_hold: int,
+    *,
+    reconcile: bool = True,
+) -> dict[str, int]:
+    if reconcile:
+        child_parts = {
+            "C4.S1a": parent_hold // 20,
+            "C4.S1b": parent_hold // 20,
+            "C4.S1c_clone": (parent_hold * 9) // 10,
+            "C4.S1c_contig": parent_hold // 50,
+            "C4.S1d": parent_hold // 100,
+            "C4.S1e": parent_hold // 100,
+            "C4.S1f": parent_hold // 100,
+        }
+        child_sum = sum(child_parts.values())
+        child_parts["C4.S1c_clone"] += parent_hold - child_sum
+    else:
+        child_parts = {
+            "C4.S1a": parent_hold // 10,
+            "C4.S1b": parent_hold // 10,
+            "C4.S1c_clone": parent_hold,
+            "C4.S1c_contig": parent_hold // 10,
+            "C4.S1d": parent_hold // 10,
+            "C4.S1e": parent_hold // 10,
+            "C4.S1f": parent_hold // 10,
+        }
+    return {
+        "C4.S1": parent_hold,
+        **child_parts,
+        "C4.S2a": 50_000,
+        "C4.S2b": 50_000,
+        "C4.S2c": 50_000,
+    }
+
+
+def _obmalloc_expanded_preflight() -> dict[str, Any]:
+    return {
+        "debugmallocstats_preflight": {"status": "ok"},
+        "self_footprint_preflight": {
+            "status": "ok",
+            "debugmallocstats_self_footprint_status": "ok",
+        },
+    }
+
+
+def test_obmalloc_expanded_invisible_child_mark_dropped_without_consumer_wiring(
+    monkeypatch,
+) -> None:
+    import scripts.hrm_text_158_slice5_v6i_oom_profile_attribution as attribution
+
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        OBMALLOC_SITE_LEAF_SITES,
+        TOTAL_C4_REFERENCE_GIB,
+        _site_bracket_holding_delta_bytes,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    legacy_leaf_sites = ("C4.S1", "C4.S2a", "C4.S2b", "C4.S2c")
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    state_idx = int(sampled[0])
+    site_marks = _obmalloc_expanded_site_marks_for_state(
+        state_index=state_idx,
+        leaf_holding_deltas={
+            "C4.S1": 100_000,
+            "C4.S1c_clone": 80_000,
+            "C4.S2a": 50_000,
+            "C4.S2b": 50_000,
+            "C4.S2c": 50_000,
+        },
+    )
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[100_000_000] * 8)
+        + site_marks
+    )
+    unwired_totals = {
+        site_id: _site_bracket_holding_delta_bytes(
+            marks,
+            site_id,
+            state_idx,
+            absent_is_zero=True,
+        )
+        for site_id in legacy_leaf_sites
+    }
+    assert "C4.S1c_clone" not in unwired_totals
+    assert _site_bracket_holding_delta_bytes(
+        marks,
+        "C4.S1c_clone",
+        state_idx,
+        absent_is_zero=True,
+    ) == 80_000
+
+    site_marks_full: list[dict[str, Any]] = []
+    for idx in sampled:
+        site_marks_full.extend(
+            _obmalloc_expanded_site_marks_for_state(
+                state_index=int(idx),
+                leaf_holding_deltas=_obmalloc_expanded_child_holding_deltas(100_000),
+            )
+        )
+    full_marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[100_000_000] * 8)
+        + site_marks_full
+    )
+    wired = attribute_obmalloc_expanded(
+        marks_a=full_marks,
+        marks_a_prime=full_marks,
+        marks_b=full_marks,
+        **_obmalloc_expanded_preflight(),
+    )
+    assert "C4.S1c_clone" in wired["localization"]["aggregate_holder_pos_bytes"]
+    assert wired["localization"]["aggregate_holder_pos_bytes"]["C4.S1c_clone"] > 0
+    assert len(OBMALLOC_SITE_LEAF_SITES) == 11
+    monkeypatch.setattr(attribution, "OBMALLOC_SITE_LEAF_SITES", legacy_leaf_sites)
+    assert "C4.S1c_clone" not in attribution.OBMALLOC_SITE_LEAF_SITES
+
+
+def test_obmalloc_expanded_legacy_c4s1_s2_leaf_sites_preserved_after_child_extension() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    site_marks: list[dict[str, Any]] = []
+    for state_idx in sampled:
+        site_marks.extend(
+            _obmalloc_expanded_site_marks_for_state(
+                state_index=int(state_idx),
+                leaf_holding_deltas={
+                    "C4.S1": 600_000_000,
+                    "C4.S2a": 100_000_000,
+                    "C4.S2b": 100_000_000,
+                    "C4.S2c": 100_000_000,
+                },
+            )
+        )
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[200_000_000] * 8)
+        + site_marks
+    )
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        **_obmalloc_expanded_preflight(),
+    )
+    localization = result["localization"]
+    assert localization["child_profile_mode"] is False
+    assert result["fail_closed_terminal"] is None
+    assert localization["child_dominance_verdict"] == "legacy_child_sites_absent"
+    assert result["classifier_terminal"] == "DOMINANT_HOLDER_BRACKET_C4.S1"
+    assert localization["aggregate_holder_pos_bytes"]["C4.S1"] == 600_000_000 * len(sampled)
+
+
+def test_obmalloc_expanded_child_sum_reconciles_parent_c4s1() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    parent_hold = 100_000_000
+    site_marks: list[dict[str, Any]] = []
+    for state_idx in sampled:
+        site_marks.extend(
+            _obmalloc_expanded_site_marks_for_state(
+                state_index=int(state_idx),
+                leaf_holding_deltas=_obmalloc_expanded_child_holding_deltas(
+                    parent_hold,
+                    reconcile=True,
+                ),
+            )
+        )
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[200_000_000] * 8)
+        + site_marks
+    )
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        **_obmalloc_expanded_preflight(),
+    )
+    localization = result["localization"]
+    assert localization["child_profile_mode"] is True
+    assert result["fail_closed_terminal"] is None
+    assert localization["child_parent_reconcile_fraction"] <= 0.15
+    assert localization["child_dominant_bracket"] == "C4.S1c_clone"
+    assert localization["child_dominant_bracket"] != "C4.S1"
+
+    bad_marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[200_000_000] * 8)
+        + [
+            *_obmalloc_expanded_site_marks_for_state(
+                state_index=int(sampled[0]),
+                leaf_holding_deltas=_obmalloc_expanded_child_holding_deltas(
+                    parent_hold,
+                    reconcile=False,
+                ),
+            )
+        ]
+    )
+    bad_result = attribute_obmalloc_expanded(
+        marks_a=bad_marks,
+        marks_a_prime=bad_marks,
+        marks_b=bad_marks,
+        sampled_states=(int(sampled[0]),),
+        **_obmalloc_expanded_preflight(),
+    )
+    assert bad_result["fail_closed_terminal"] == "CHILD_PARENT_RECONCILE_FAIL"
+
+
+def test_obmalloc_expanded_event_count_child_sites() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        OBMALLOC_EXPANDED_EVENT_COUNT_MAX,
+        OBMALLOC_EXPANDED_EVENT_COUNT_TARGET,
+        OBMALLOC_SITE_LEAF_SITES,
+        TOTAL_C4_REFERENCE_GIB,
+        _count_obmalloc_expanded_enabled_events,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    site_marks: list[dict[str, Any]] = []
+    for state_idx in sampled:
+        site_marks.extend(
+            _obmalloc_expanded_site_marks_for_state(
+                state_index=int(state_idx),
+                leaf_holding_deltas=_obmalloc_expanded_child_holding_deltas(100_000),
+            )
+        )
+    boundary = _obmalloc_expanded_boundary_marks(
+        after_state_blocks=[100_000_000 + i * 50_000_000 for i in range(8)],
+    )
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB) + boundary + site_marks
+    counts = _count_obmalloc_expanded_enabled_events(marks)
+    assert len(OBMALLOC_SITE_LEAF_SITES) == 11
+    assert counts["site_leaf_bracket"] == 88
+    assert counts["total"] == OBMALLOC_EXPANDED_EVENT_COUNT_TARGET
+    assert counts["total"] == 98
+
+    duplicate = list(marks)
+    duplicate.extend(
+        _obmalloc_expanded_site_marks_for_state(
+            state_index=int(sampled[0]),
+            leaf_holding_deltas=_obmalloc_expanded_child_holding_deltas(100_000),
+        )
+    )
+    dup_counts = _count_obmalloc_expanded_enabled_events(duplicate)
+    assert dup_counts["total"] > OBMALLOC_EXPANDED_EVENT_COUNT_MAX
+
+    dup_result = attribute_obmalloc_expanded(
+        marks_a=_c4_subphase_marks(TOTAL_C4_REFERENCE_GIB),
+        marks_a_prime=_c4_subphase_marks(TOTAL_C4_REFERENCE_GIB),
+        marks_b=duplicate,
+        **_obmalloc_expanded_preflight(),
+    )
+    assert dup_result["fail_closed_terminal"] == "OBSERVER_PERTURBED_INCONCLUSIVE"
+
+
+def test_obmalloc_expanded_missing_child_site_fails_coverage_not_silent_zero() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    state_idx = int(sampled[0])
+    holding = _obmalloc_expanded_child_holding_deltas(100_000_000)
+    site_marks = _obmalloc_expanded_site_marks_for_state(
+        state_index=state_idx,
+        leaf_holding_deltas=holding,
+    )
+    site_marks = [
+        row
+        for row in site_marks
+        if row["event"] != "obmalloc_site_C4.S1d_pre"
+    ]
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[200_000_000] * 8)
+        + site_marks
+    )
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        sampled_states=(state_idx,),
+        **_obmalloc_expanded_preflight(),
+    )
+    assert result["guards"]["child_profile_mode"] is True
+    assert result["fail_closed_terminal"] == "CHILD_COVERAGE_FAIL"
+    assert result["missing_child_site"] == "C4.S1d"

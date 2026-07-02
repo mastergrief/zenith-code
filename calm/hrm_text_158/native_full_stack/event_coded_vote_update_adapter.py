@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass, replace
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -1017,10 +1017,32 @@ def _votes_dict_from_tensor(votes: torch.Tensor) -> dict[int, int]:
 def _sync_q_levels_tensor(
     carrier: EventCodedAccLiveState,
     q_levels: torch.Tensor,
+    *,
+    host_allocator_site_emit: Callable[..., None] | None = None,
+    site_emit_enabled: bool = False,
+    optimizer_step_index: int | None = None,
+    state_index: int | None = None,
 ) -> torch.Tensor:
+    def _site(site_id: str, suffix: str, line: int) -> None:
+        if host_allocator_site_emit is None or not site_emit_enabled:
+            return
+        host_allocator_site_emit(
+            site_id,
+            suffix,
+            origin_file="event_coded_vote_update_adapter.py",
+            origin_line=int(line),
+            optimizer_step_index=int(optimizer_step_index or 0),
+            state_index=int(state_index if state_index is not None else -1),
+        )
+
+    _site("C4.S1c_clone", "pre", 1021)
     q_out = q_levels.detach().clone().to(torch.int8)
+    _site("C4.S1c_clone", "post", 1021)
     if not carrier.q_levels:
-        return q_out.contiguous()
+        _site("C4.S1c_contig", "pre", 1023)
+        result = q_out.contiguous()
+        _site("C4.S1c_contig", "post", 1023)
+        return result
     hot_items = sorted(carrier.q_levels.items(), key=lambda item: int(item[0]))
     flat_indices = torch.tensor(
         [int(index) for index, _ in hot_items],
@@ -1034,7 +1056,10 @@ def _sync_q_levels_tensor(
     )
     flat = q_out.flatten()
     flat.index_put_((flat_indices,), flat_values)
-    return flat.view_as(q_levels).contiguous()
+    _site("C4.S1c_contig", "pre", 1037)
+    result = flat.view_as(q_levels).contiguous()
+    _site("C4.S1c_contig", "post", 1037)
+    return result
 
 
 def apply_event_coded_carrier_step(
@@ -1068,7 +1093,23 @@ def apply_event_coded_integer_vote_update_from_plan(
     step_index: int = 0,
     cap_boundary_transient_dense: int = 0,
     lightweight_runtime_stats: bool = False,
+    host_allocator_site_emit: Callable[..., None] | None = None,
+    optimizer_step_index: int | None = None,
+    state_index: int | None = None,
+    site_emit_enabled: bool = False,
 ) -> EventCodedVoteUpdateResult:
+    def _site(site_id: str, suffix: str, line: int) -> None:
+        if host_allocator_site_emit is None or not site_emit_enabled:
+            return
+        host_allocator_site_emit(
+            site_id,
+            suffix,
+            origin_file="event_coded_vote_update_adapter.py",
+            origin_line=int(line),
+            optimizer_step_index=int(optimizer_step_index if optimizer_step_index is not None else step_index),
+            state_index=int(state_index if state_index is not None else -1),
+        )
+
     _validate_event_coded_vote_inputs(
         state.q_levels,
         inputs.votes,
@@ -1078,12 +1119,15 @@ def apply_event_coded_integer_vote_update_from_plan(
     observation = C8StepObservation()
     observation.record_flatten()
     observation.transient_dense_compute_numel = int(cap_boundary_transient_dense)
+    _site("C4.S1a", "pre", 1081)
     carrier = state.carrier.cow_copy()
+    _site("C4.S1a", "post", 1081)
     vote_map = (
         inputs.sparse_vote_events
         if inputs.sparse_vote_events is not None
         else _votes_dict_from_tensor(inputs.votes)
     )
+    _site("C4.S1d", "pre", 1087)
     if inputs.sparse_vote_events is not None:
         apply_event_coded_carrier_step(
             carrier,
@@ -1096,25 +1140,37 @@ def apply_event_coded_integer_vote_update_from_plan(
             votes=vote_map,
             step_index=int(step_index),
         )
+    _site("C4.S1d", "post", 1098)
 
+    _site("C4.S1b", "pre", 1100)
     applied_set = {int(item) for item in plan.applied_indices.detach().cpu().tolist()}
     for flat_index in applied_set:
         if flat_index not in carrier.q_levels:
             carry = int(carrier.reconstruct_lane(flat_index))
             carrier.q_levels[int(flat_index)] = 1 if carry >= 0 else -1
+    _site("C4.S1b", "post", 1104)
 
-    q_out = _sync_q_levels_tensor(carrier, state.q_levels)
+    q_out = _sync_q_levels_tensor(
+        carrier,
+        state.q_levels,
+        host_allocator_site_emit=host_allocator_site_emit,
+        site_emit_enabled=site_emit_enabled,
+        optimizer_step_index=optimizer_step_index if optimizer_step_index is not None else step_index,
+        state_index=state_index,
+    )
     persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
         exact_accumulator_shadow=None,
         event_coded_live_carrier=carrier,
         eligible_numel=int(state.q_levels.numel()),
     )
+    _site("C4.S1e", "pre", 1112)
     if not bool(lightweight_runtime_stats):
         assert_c8_runtime_guards(
             carrier,
             observation=observation,
             persistent_dense_accumulator_materialized_numel=persistent_dense,
         )
+    _site("C4.S1e", "post", 1117)
     planner_transient = int(
         plan.stats.get(EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY, 0)
     )
@@ -1123,6 +1179,7 @@ def apply_event_coded_integer_vote_update_from_plan(
         for key, value in plan.stats.items()
         if not isinstance(value, torch.Tensor)
     }
+    _site("C4.S1f", "pre", 1126)
     stats.update(
         c8_runtime_guard_stats(
             carrier,
@@ -1137,6 +1194,7 @@ def apply_event_coded_integer_vote_update_from_plan(
         stats["v4_live_observed_surfaces"] = observed_surfaces_dict(carrier.step_records[-1])
     stats["flip_count"] = int(plan.applied_indices.numel())
     stats["q_changed_count"] = int((q_out != state.q_levels).sum().item())
+    _site("C4.S1f", "post", 1139)
     return EventCodedVoteUpdateResult(
         q_levels=q_out,
         carrier=carrier,

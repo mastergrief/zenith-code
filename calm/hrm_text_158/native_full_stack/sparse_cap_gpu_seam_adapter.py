@@ -592,6 +592,10 @@ def apply_cap_tensor_result_gpu(
         step_index=int(local_selection_ordering_step),
         cap_boundary_transient_dense=int(cap_boundary_transient),
         lightweight_runtime_stats=True,
+        host_allocator_site_emit=host_allocator_site_emit,
+        optimizer_step_index=int(local_selection_ordering_step),
+        state_index=int(state_index),
+        site_emit_enabled=bool(site_enabled),
     )
     if host_allocator_site_emit is not None and site_enabled:
         host_allocator_site_emit(

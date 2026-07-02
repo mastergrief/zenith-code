@@ -116,6 +116,25 @@ ALLOCATION_SITE_ORIGINS: dict[str, tuple[str, str]] = {
         "bounded_delta_learner.py:2409-2413",
         "post_apply_loop_residency",
     ),
+    "C4.S1a": ("event_coded_vote_update_adapter.py:1081", "carrier_cow_copy"),
+    "C4.S1b": (
+        "event_coded_vote_update_adapter.py:1100",
+        "applied_indices_tolist_applied_set",
+    ),
+    "C4.S1c_clone": (
+        "event_coded_vote_update_adapter.py:1021",
+        "sync_q_levels_int8_clone",
+    ),
+    "C4.S1c_contig": (
+        "event_coded_vote_update_adapter.py:1037",
+        "sync_q_levels_contiguous",
+    ),
+    "C4.S1d": (
+        "event_coded_vote_update_adapter.py:1087",
+        "sparse_vote_numpy_branch",
+    ),
+    "C4.S1e": ("event_coded_vote_update_adapter.py:1112", "c8_runtime_guards"),
+    "C4.S1f": ("event_coded_vote_update_adapter.py:1126", "c8_stats_assembly"),
 }
 
 CENSUS_RECONCILE_RATIO_MIN = 0.8
@@ -143,7 +162,28 @@ OBMALLOC_OCCUPANCY_HIGH_WATER_MAX = 0.3
 OBMALLOC_ARENA_DELTA_FLOOR_BYTES = 1024 * 1024
 C4_SUBPHASE = "C4_gpu_cap_apply_sync"
 
-OBMALLOC_SITE_LEAF_SITES = ("C4.S1", "C4.S2a", "C4.S2b", "C4.S2c")
+OBMALLOC_SITE_LEAF_SITES = (
+    "C4.S1",
+    "C4.S1a",
+    "C4.S1b",
+    "C4.S1c_clone",
+    "C4.S1c_contig",
+    "C4.S1d",
+    "C4.S1e",
+    "C4.S1f",
+    "C4.S2a",
+    "C4.S2b",
+    "C4.S2c",
+)
+OBMALLOC_SITE_CHILD_SITES = (
+    "C4.S1a",
+    "C4.S1b",
+    "C4.S1c_clone",
+    "C4.S1c_contig",
+    "C4.S1d",
+    "C4.S1e",
+    "C4.S1f",
+)
 OBMALLOC_SITE_AGGREGATE_SITE = "C4.S2"
 OBMALLOC_SITE_WINDOW_ENTRY = "C4.S1"
 OBMALLOC_SITE_WINDOW_EXIT = "C4.S2"
@@ -158,8 +198,8 @@ OBMALLOC_EXPANDED_STATE_DOMINANCE_MIN = 0.75
 OBMALLOC_EXPANDED_REPRESENTATIVENESS_MIN = 0.25
 OBMALLOC_EXPANDED_CANCELLATION_NEG_FRAC = 0.10
 OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN = 0.75
-OBMALLOC_EXPANDED_EVENT_COUNT_TARGET = 42
-OBMALLOC_EXPANDED_EVENT_COUNT_MAX = 50
+OBMALLOC_EXPANDED_EVENT_COUNT_TARGET = 98
+OBMALLOC_EXPANDED_EVENT_COUNT_MAX = 106
 OBMALLOC_EXPANDED_RETENTION_FLOOR_BYTES = 1024
 
 
@@ -1689,6 +1729,36 @@ def _site_bracket_holding_delta_bytes_legacy(
     return int(post_bytes) - int(pre_bytes)
 
 
+def _profile_has_child_marks(marks: Sequence[Mapping[str, Any]]) -> bool:
+    child_events = {
+        f"obmalloc_site_{site_id}_{suffix}"
+        for site_id in OBMALLOC_SITE_CHILD_SITES
+        for suffix in ("pre", "post")
+    }
+    for row in marks:
+        if str(row.get("event", "")) in child_events:
+            return True
+    return False
+
+
+def _child_site_bracket_pair_present(
+    marks: Sequence[Mapping[str, Any]],
+    site_id: str,
+    state_index: int,
+) -> bool:
+    pre = _obmalloc_site_mark_for_state(
+        marks,
+        f"obmalloc_site_{site_id}_pre",
+        state_index=int(state_index),
+    )
+    post = _obmalloc_site_mark_for_state(
+        marks,
+        f"obmalloc_site_{site_id}_post",
+        state_index=int(state_index),
+    )
+    return pre is not None and post is not None
+
+
 def _count_obmalloc_expanded_enabled_events(marks: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     obmalloc_boundary = {
         "obmalloc_C4_enter": 0,
@@ -2123,6 +2193,26 @@ def attribute_obmalloc_expanded(
         else 0.0
     )
 
+    child_profile_mode = _profile_has_child_marks(marks_b)
+    guards["child_profile_mode"] = child_profile_mode
+    if child_profile_mode:
+        for state_idx in sampled:
+            for site_id in OBMALLOC_SITE_CHILD_SITES:
+                if not _child_site_bracket_pair_present(
+                    marks_b,
+                    site_id,
+                    int(state_idx),
+                ):
+                    return {
+                        **banked,
+                        "guards": guards,
+                        "fail_closed_terminal": "CHILD_COVERAGE_FAIL",
+                        "classifier_terminal": None,
+                        "missing_child_site": site_id,
+                        "missing_state_index": int(state_idx),
+                        "slice8_rewrite_authorized": False,
+                    }
+
     per_state: dict[str, Any] = {}
     bracket_pos_totals = {site_id: 0 for site_id in OBMALLOC_SITE_LEAF_SITES}
     bracket_signed_totals = {site_id: 0 for site_id in OBMALLOC_SITE_LEAF_SITES}
@@ -2256,10 +2346,105 @@ def attribute_obmalloc_expanded(
         "scaled_representativeness": scaled_representativeness,
         "representativeness_cleared": representativeness_cleared,
         "cross_run_reconcile_caveat": True,
+        "child_profile_mode": child_profile_mode,
     }
 
     classifier_terminal: str | None = None
     fail_closed_terminal: str | None = None
+
+    if child_profile_mode:
+        child_pos_totals = {
+            site_id: int(bracket_pos_totals[site_id])
+            for site_id in OBMALLOC_SITE_CHILD_SITES
+        }
+        parent_c4s1_pos = int(bracket_pos_totals.get("C4.S1", 0))
+        child_sum_pos = sum(child_pos_totals.values())
+        child_parent_reconcile_fraction = abs(child_sum_pos - parent_c4s1_pos) / max(
+            parent_c4s1_pos,
+            1,
+        )
+        localization["child_aggregate_holder_pos_bytes"] = child_pos_totals
+        localization["child_parent_reconcile_fraction"] = child_parent_reconcile_fraction
+        for state_idx in sampled:
+            signed = per_state[str(state_idx)]["signed_holding_deltas_bytes"]
+            parent_hold = max(int(signed.get("C4.S1", 0)), 0)
+            child_state_sum = sum(
+                max(int(signed.get(site_id, 0)), 0)
+                for site_id in OBMALLOC_SITE_CHILD_SITES
+            )
+            state_reconcile = abs(child_state_sum - parent_hold) / max(parent_hold, 1)
+            if state_reconcile > OBMALLOC_SITE_REMAINDER_MAX_FRAC:
+                fail_closed_terminal = "CHILD_PARENT_RECONCILE_FAIL"
+                localization["child_reconcile_fail_state_index"] = int(state_idx)
+                localization["child_reconcile_fail_fraction"] = state_reconcile
+                break
+        if (
+            fail_closed_terminal is None
+            and child_parent_reconcile_fraction > OBMALLOC_SITE_REMAINDER_MAX_FRAC
+        ):
+            fail_closed_terminal = "CHILD_PARENT_RECONCILE_FAIL"
+
+        child_aggregate_pos = sum(child_pos_totals.values())
+        if child_aggregate_pos > 0:
+            child_fractions = {
+                site_id: float(child_pos_totals[site_id]) / float(child_aggregate_pos)
+                for site_id in OBMALLOC_SITE_CHILD_SITES
+            }
+            child_ranked = sorted(
+                child_fractions.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            child_top_site, child_top_fraction = child_ranked[0]
+            child_states_with_dominance = 0
+            for state_idx in sampled:
+                signed = per_state[str(state_idx)]["signed_holding_deltas_bytes"]
+                child_pos = {
+                    site_id: max(int(signed.get(site_id, 0)), 0)
+                    for site_id in OBMALLOC_SITE_CHILD_SITES
+                }
+                child_state_sum = sum(child_pos.values())
+                if child_state_sum <= 0:
+                    continue
+                child_state_fraction = (
+                    float(child_pos[child_top_site]) / float(child_state_sum)
+                )
+                if child_state_fraction >= OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC:
+                    child_states_with_dominance += 1
+            child_state_dominance_fraction = (
+                float(child_states_with_dominance) / float(len(sampled))
+                if sampled
+                else 0.0
+            )
+            localization["child_aggregate_holder_fractions"] = child_fractions
+            localization["child_dominant_bracket"] = child_top_site
+            localization["child_state_dominance_fraction"] = (
+                child_state_dominance_fraction
+            )
+            if (
+                child_top_fraction >= OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC
+                and child_state_dominance_fraction
+                >= OBMALLOC_EXPANDED_STATE_DOMINANCE_MIN
+            ):
+                localization["child_dominance_verdict"] = (
+                    f"DOMINANT_CHILD_HOLDER_{child_top_site}"
+                )
+            else:
+                localization["child_dominance_verdict"] = "CHILD_HOLDER_AMBIGUOUS"
+        else:
+            localization["child_dominance_verdict"] = "CHILD_HOLDER_AMBIGUOUS"
+    else:
+        localization["child_dominance_verdict"] = "legacy_child_sites_absent"
+
+    if fail_closed_terminal == "CHILD_PARENT_RECONCILE_FAIL":
+        return {
+            **banked,
+            "guards": guards,
+            "localization": localization,
+            "classifier_terminal": None,
+            "fail_closed_terminal": fail_closed_terminal,
+            "slice8_rewrite_authorized": False,
+        }
 
     if monotonic_fraction >= OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN:
         classifier_terminal = "RETENTION_DOMINANT_CROSS_STATE"
