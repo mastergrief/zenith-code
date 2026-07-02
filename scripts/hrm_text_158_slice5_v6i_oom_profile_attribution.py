@@ -11,7 +11,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -34,12 +34,13 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
     PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
     PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
     PROFILE_OBMALLOC_SITE_BRACKETS_ENV,
+    PROFILE_OBMALLOC_EXPANDED_ENV,
     PROFILE_TORCH_CPU_CENSUS_ENV,
     PROFILE_TRACEMALLOC_ENV,
     PROFILE_DEBUGMALLOCSTATS_ENV,
 )
 
-ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v11"
+ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v12"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
@@ -151,6 +152,15 @@ OBMALLOC_SITE_REMAINDER_MAX_FRAC = 0.15
 OBMALLOC_SITE_REPRESENTATIVENESS_UNCERTAIN_MAX = 0.25
 OBMALLOC_SITE_AMBIGUOUS_WITHIN_FRAC = 0.20
 OBMALLOC_SITE_N_STATES_WITNESS = 32
+
+OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC = 0.60
+OBMALLOC_EXPANDED_STATE_DOMINANCE_MIN = 0.75
+OBMALLOC_EXPANDED_REPRESENTATIVENESS_MIN = 0.25
+OBMALLOC_EXPANDED_CANCELLATION_NEG_FRAC = 0.10
+OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN = 0.75
+OBMALLOC_EXPANDED_EVENT_COUNT_TARGET = 42
+OBMALLOC_EXPANDED_EVENT_COUNT_MAX = 50
+OBMALLOC_EXPANDED_RETENTION_FLOOR_BYTES = 1024
 
 
 def _is_allocator_mark(row: Mapping[str, Any]) -> bool:
@@ -1579,6 +1589,508 @@ def _obmalloc_site_mark(
         if _is_obmalloc_site_mark(row) and str(row.get("event")) == str(event):
             return dict(row)
     return None
+
+
+def compute_obmalloc_expanded_sampled_states(n_states: int) -> tuple[int, ...]:
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states as _compute,
+    )
+
+    return tuple(sorted(_compute(n_states)))
+
+
+def _obmalloc_site_mark_for_state(
+    marks: Sequence[Mapping[str, Any]],
+    event: str,
+    *,
+    state_index: int | None = None,
+) -> dict[str, Any] | None:
+    for row in marks:
+        if not _is_obmalloc_site_mark(row):
+            continue
+        if str(row.get("event")) != str(event):
+            continue
+        if state_index is not None and int(row.get("state_index", -1)) != int(state_index):
+            continue
+        return dict(row)
+    return None
+
+
+def _site_bracket_holding_bytes(mark: Mapping[str, Any] | None) -> int | None:
+    if mark is None:
+        return None
+    if mark.get("allocated_blocks_holding") is not None:
+        return int(mark["allocated_blocks_holding"])
+    return _obmalloc_field(mark, "bytes_in_allocated_blocks")
+
+
+def _site_bracket_holding_delta_bytes(
+    marks: Sequence[Mapping[str, Any]],
+    site_id: str,
+    state_index: int,
+    *,
+    absent_is_zero: bool = False,
+) -> int | None:
+    pre = _obmalloc_site_mark_for_state(
+        marks,
+        f"obmalloc_site_{site_id}_pre",
+        state_index=int(state_index),
+    )
+    post = _obmalloc_site_mark_for_state(
+        marks,
+        f"obmalloc_site_{site_id}_post",
+        state_index=int(state_index),
+    )
+    if pre is None and post is None:
+        return 0 if absent_is_zero else None
+    pre_bytes = _site_bracket_holding_bytes(pre)
+    post_bytes = _site_bracket_holding_bytes(post)
+    if pre_bytes is None or post_bytes is None:
+        return None
+    return int(post_bytes) - int(pre_bytes)
+
+
+def _site_bracket_forcing_delta_bytes(
+    marks: Sequence[Mapping[str, Any]],
+    site_id: str,
+    state_index: int,
+    *,
+    absent_is_zero: bool = False,
+) -> int | None:
+    pre = _obmalloc_site_mark_for_state(
+        marks,
+        f"obmalloc_site_{site_id}_pre",
+        state_index=int(state_index),
+    )
+    post = _obmalloc_site_mark_for_state(
+        marks,
+        f"obmalloc_site_{site_id}_post",
+        state_index=int(state_index),
+    )
+    if pre is None and post is None:
+        return 0 if absent_is_zero else None
+    pre_bytes = _site_bracket_arena_bytes(pre)
+    post_bytes = _site_bracket_arena_bytes(post)
+    if pre_bytes is None or post_bytes is None:
+        return None
+    return int(post_bytes) - int(pre_bytes)
+
+
+def _site_bracket_holding_delta_bytes_legacy(
+    marks: Sequence[Mapping[str, Any]],
+    site_id: str,
+) -> int | None:
+    pre = _obmalloc_site_mark(marks, f"obmalloc_site_{site_id}_pre")
+    post = _obmalloc_site_mark(marks, f"obmalloc_site_{site_id}_post")
+    pre_bytes = _site_bracket_holding_bytes(pre)
+    post_bytes = _site_bracket_holding_bytes(post)
+    if pre_bytes is None or post_bytes is None:
+        return None
+    return int(post_bytes) - int(pre_bytes)
+
+
+def _count_obmalloc_expanded_enabled_events(marks: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    obmalloc_boundary = {
+        "obmalloc_C4_enter": 0,
+        "obmalloc_C4_after_state": 0,
+        "obmalloc_C4_exit": 0,
+    }
+    site_leaf = 0
+    for row in marks:
+        event = str(row.get("event", ""))
+        if event in obmalloc_boundary:
+            obmalloc_boundary[event] += 1
+        elif event.startswith("obmalloc_site_") and any(
+            event.endswith(f"_{site_id}_{suffix}")
+            for site_id in OBMALLOC_SITE_LEAF_SITES
+            for suffix in ("pre", "post")
+        ):
+            site_leaf += 1
+    return {
+        **obmalloc_boundary,
+        "site_leaf_bracket": site_leaf,
+        "total": sum(obmalloc_boundary.values()) + site_leaf,
+    }
+
+
+def attribute_obmalloc_expanded(
+    *,
+    marks_a: list[dict[str, Any]],
+    marks_a_prime: list[dict[str, Any]],
+    marks_b: list[dict[str, Any]],
+    n_states: int = OBMALLOC_SITE_N_STATES_WITNESS,
+    debugmallocstats_preflight: Mapping[str, Any] | None = None,
+    self_footprint_preflight: Mapping[str, Any] | None = None,
+    sampled_states: Sequence[int] | None = None,
+) -> dict[str, Any]:
+    banked = _banked_reference_paths()
+    sampled = tuple(
+        sampled_states
+        if sampled_states is not None
+        else compute_obmalloc_expanded_sampled_states(n_states)
+    )
+    c4_a = _c4_subphase_delta_gib(marks_a)
+    c4_a_prime = _c4_subphase_delta_gib(marks_a_prime)
+    c4_b = _c4_subphase_delta_gib(marks_b)
+
+    noise_floor: float | None = None
+    if c4_a is not None and c4_a_prime is not None:
+        noise_floor = abs(float(c4_a_prime) - float(c4_a))
+
+    run_stability_threshold = GUARD_STABILITY_FRAC * TOTAL_C4_REFERENCE_GIB
+    denominator_variance_threshold = (
+        GUARD_STABILITY_FRAC * BANKED_NON_GLIBC_MMAP_REFERENCE_GIB
+    )
+    envelope_tolerance = (
+        max(float(noise_floor), GUARD_ENVELOPE_MIN_GIB)
+        if noise_floor is not None
+        else GUARD_ENVELOPE_MIN_GIB
+    )
+    total_c4_envelope_delta = (
+        abs(float(c4_a) - TOTAL_C4_REFERENCE_GIB) if c4_a is not None else None
+    )
+
+    guards: dict[str, Any] = {
+        "noise_floor_gib": noise_floor,
+        "run_stability_threshold_gib": run_stability_threshold,
+        "denominator_variance_threshold_gib": denominator_variance_threshold,
+        "total_c4_envelope_tolerance_gib": envelope_tolerance,
+        "total_c4_envelope_delta_gib": total_c4_envelope_delta,
+        "c4_rss_delta_gib_same_run": {
+            "A": c4_a,
+            "A_prime": c4_a_prime,
+            "B": c4_b,
+        },
+        "sampled_states": list(sampled),
+        "n_states": int(n_states),
+    }
+
+    event_counts = _count_obmalloc_expanded_enabled_events(marks_b)
+    guards["obmalloc_expanded_event_counts"] = event_counts
+
+    if event_counts["total"] > OBMALLOC_EXPANDED_EVENT_COUNT_MAX:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+            "classifier_terminal": None,
+            "observer_reason": "duplicate_obmalloc_emit",
+            "slice8_rewrite_authorized": False,
+        }
+
+    c4_enter_mark = _obmalloc_mark(marks_b, "obmalloc_C4_enter")
+    c4_exit_mark = _obmalloc_mark(marks_b, "obmalloc_C4_exit")
+    if c4_enter_mark is None or c4_exit_mark is None:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+            "classifier_terminal": None,
+            "observer_reason": "missing_obmalloc_C4_exit",
+            "slice8_rewrite_authorized": False,
+        }
+
+    if noise_floor is None:
+        guards["run_stability_ok"] = False
+        guards["denominator_variance_ok"] = False
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "INCONCLUSIVE_PENDING_NOISE_FLOOR",
+            "classifier_terminal": None,
+            "slice8_rewrite_authorized": False,
+        }
+
+    guards["run_stability_ok"] = noise_floor <= run_stability_threshold
+    guards["denominator_variance_ok"] = noise_floor <= denominator_variance_threshold
+    guards["total_c4_envelope_ok"] = (
+        total_c4_envelope_delta is not None
+        and total_c4_envelope_delta <= envelope_tolerance
+    )
+
+    if not guards["total_c4_envelope_ok"]:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "DENOMINATOR_INVALID_INCONCLUSIVE",
+            "classifier_terminal": None,
+            "slice8_rewrite_authorized": False,
+        }
+    if not guards["run_stability_ok"] or not guards["denominator_variance_ok"]:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "INCONCLUSIVE_CROSS_RUN_DENOMINATOR",
+            "classifier_terminal": None,
+            "slice8_rewrite_authorized": False,
+        }
+
+    footprint = dict(self_footprint_preflight or {})
+    footprint_status = str(
+        footprint.get("debugmallocstats_self_footprint_status")
+        or footprint.get("status")
+        or ""
+    )
+    guards["debugmallocstats_self_footprint_bytes"] = footprint.get(
+        "debugmallocstats_self_footprint_bytes"
+    )
+    guards["debugmallocstats_self_footprint_status"] = footprint_status
+    if footprint_status == "exceeded":
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "OBMALLOC_SELF_FOOTPRINT_INCONCLUSIVE",
+            "classifier_terminal": None,
+            "slice8_rewrite_authorized": False,
+        }
+
+    preflight = dict(debugmallocstats_preflight or {})
+    if str(preflight.get("status")) != "ok":
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "ARENA_STATS_UNPARSEABLE_INCONCLUSIVE",
+            "classifier_terminal": None,
+            "arena_stats_unavailable_reason": preflight.get("status"),
+            "slice8_rewrite_authorized": False,
+        }
+
+    perturbation_delta = (
+        abs(float(c4_b) - float(c4_a))
+        if c4_a is not None and c4_b is not None
+        else None
+    )
+    perturbation_threshold = max(
+        PERTURBATION_MIN_GIB,
+        PERTURBATION_NOISE_K * float(noise_floor),
+    )
+    guards["perturbation_delta_gib"] = perturbation_delta
+    guards["perturbation_threshold_gib"] = perturbation_threshold
+
+    if (
+        perturbation_delta is not None
+        and perturbation_delta > perturbation_threshold
+    ):
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "OBSERVER_PERTURBED_INCONCLUSIVE",
+            "classifier_terminal": None,
+            "observer_reason": "c4_rss_perturbation",
+            "slice8_rewrite_authorized": False,
+        }
+
+    after_state_marks = [
+        dict(row)
+        for row in marks_b
+        if _is_obmalloc_mark(row) and str(row.get("event")) == "obmalloc_C4_after_state"
+    ]
+    after_state_marks.sort(key=lambda row: int(row.get("state_index", -1)))
+    retention_deltas: list[dict[str, Any]] = []
+    prev_blocks: int | None = None
+    for row in after_state_marks:
+        blocks = _obmalloc_field(row, "bytes_in_allocated_blocks")
+        arena = _obmalloc_field(row, "arena_bytes")
+        if blocks is None:
+            continue
+        retention_delta = None
+        if prev_blocks is not None:
+            retention_delta = int(blocks) - int(prev_blocks)
+            retention_deltas.append(
+                {
+                    "state_index": int(row.get("state_index", -1)),
+                    "retention_delta_blocks": retention_delta,
+                    "arena_bytes": arena,
+                    "bytes_in_allocated_blocks": int(blocks),
+                }
+            )
+        prev_blocks = int(blocks)
+
+    monotonic_count = sum(
+        1
+        for item in retention_deltas
+        if int(item["retention_delta_blocks"]) > OBMALLOC_EXPANDED_RETENTION_FLOOR_BYTES
+    )
+    monotonic_fraction = (
+        float(monotonic_count) / float(len(retention_deltas))
+        if retention_deltas
+        else 0.0
+    )
+
+    per_state: dict[str, Any] = {}
+    bracket_pos_totals = {site_id: 0 for site_id in OBMALLOC_SITE_LEAF_SITES}
+    bracket_signed_totals = {site_id: 0 for site_id in OBMALLOC_SITE_LEAF_SITES}
+    state_dominants: list[str] = []
+
+    for state_idx in sampled:
+        leaf_holding: dict[str, int | None] = {}
+        leaf_forcing: dict[str, int | None] = {}
+        for site_id in OBMALLOC_SITE_LEAF_SITES:
+            leaf_holding[site_id] = _site_bracket_holding_delta_bytes(
+                marks_b,
+                site_id,
+                int(state_idx),
+                absent_is_zero=True,
+            )
+            leaf_forcing[site_id] = _site_bracket_forcing_delta_bytes(
+                marks_b,
+                site_id,
+                int(state_idx),
+                absent_is_zero=True,
+            )
+        if any(delta is None for delta in leaf_holding.values()):
+            return {
+                **banked,
+                "guards": guards,
+                "fail_closed_terminal": "ARENA_STATS_UNPARSEABLE_INCONCLUSIVE",
+                "classifier_terminal": None,
+                "missing_state_index": int(state_idx),
+                "slice8_rewrite_authorized": False,
+            }
+
+        signed_deltas = {k: int(v) for k, v in leaf_holding.items()}
+        pos_sum = sum(max(delta, 0) for delta in signed_deltas.values())
+        neg_sum = sum(min(delta, 0) for delta in signed_deltas.values())
+        if pos_sum <= 0:
+            return {
+                **banked,
+                "guards": guards,
+                "fail_closed_terminal": "HOLDER_AMBIGUOUS",
+                "classifier_terminal": None,
+                "observer_reason": "holder_leaf_sum_pos_nonpositive",
+                "state_index": int(state_idx),
+                "slice8_rewrite_authorized": False,
+            }
+        if abs(int(neg_sum)) > OBMALLOC_EXPANDED_CANCELLATION_NEG_FRAC * float(pos_sum):
+            return {
+                **banked,
+                "guards": guards,
+                "fail_closed_terminal": "HOLDER_AMBIGUOUS",
+                "classifier_terminal": None,
+                "observer_reason": "cancellation_inflation",
+                "state_index": int(state_idx),
+                "signed_neg_sum": int(neg_sum),
+                "holder_leaf_sum_pos": int(pos_sum),
+                "slice8_rewrite_authorized": False,
+            }
+
+        for site_id, delta in signed_deltas.items():
+            bracket_pos_totals[site_id] += max(int(delta), 0)
+            bracket_signed_totals[site_id] += int(delta)
+
+        state_fractions = {
+            site_id: float(max(signed_deltas[site_id], 0)) / float(pos_sum)
+            for site_id in OBMALLOC_SITE_LEAF_SITES
+        }
+        state_top = max(state_fractions.items(), key=lambda item: item[1])[0]
+        state_dominants.append(state_top)
+        per_state[str(state_idx)] = {
+            "holder_leaf_sum_pos": int(pos_sum),
+            "holder_leaf_sum_signed": int(sum(signed_deltas.values())),
+            "signed_holding_deltas_bytes": signed_deltas,
+            "forcing_deltas_bytes": {
+                site_id: int(leaf_forcing[site_id] or 0) for site_id in OBMALLOC_SITE_LEAF_SITES
+            },
+            "state_holder_fractions": state_fractions,
+            "state_dominant_bracket": state_top,
+        }
+
+    aggregate_pos = sum(int(bracket_pos_totals[site_id]) for site_id in OBMALLOC_SITE_LEAF_SITES)
+    if aggregate_pos <= 0:
+        return {
+            **banked,
+            "guards": guards,
+            "fail_closed_terminal": "DENOMINATOR_INVALID_INCONCLUSIVE",
+            "classifier_terminal": None,
+            "slice8_rewrite_authorized": False,
+        }
+
+    aggregate_fractions = {
+        site_id: float(bracket_pos_totals[site_id]) / float(aggregate_pos)
+        for site_id in OBMALLOC_SITE_LEAF_SITES
+    }
+    ranked = sorted(aggregate_fractions.items(), key=lambda item: item[1], reverse=True)
+    top_site, top_fraction = ranked[0]
+    second_fraction = ranked[1][1] if len(ranked) > 1 else 0.0
+
+    states_with_dominance = sum(
+        1
+        for state_idx in sampled
+        if per_state[str(state_idx)]["state_holder_fractions"].get(top_site, 0.0)
+        >= OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC
+    )
+    state_dominance_fraction = (
+        float(states_with_dominance) / float(len(sampled)) if sampled else 0.0
+    )
+    holder_stable = len(set(state_dominants)) == 1
+
+    mean_holder_pos = (
+        sum(int(per_state[str(state_idx)]["holder_leaf_sum_pos"]) for state_idx in sampled)
+        / float(len(sampled))
+    )
+    scaled_representativeness = (
+        float(mean_holder_pos) * float(n_states)
+    ) / float(BANKED_NON_GLIBC_MMAP_REFERENCE_BYTES)
+    representativeness_cleared = (
+        scaled_representativeness >= OBMALLOC_EXPANDED_REPRESENTATIVENESS_MIN
+        and holder_stable
+    )
+
+    localization: dict[str, Any] = {
+        "per_state": per_state,
+        "aggregate_holder_pos_bytes": {k: int(v) for k, v in bracket_pos_totals.items()},
+        "aggregate_holder_signed_bytes": {
+            k: int(v) for k, v in bracket_signed_totals.items()
+        },
+        "aggregate_holder_fractions": aggregate_fractions,
+        "retention_deltas": retention_deltas,
+        "monotonic_retention_fraction": monotonic_fraction,
+        "state_dominance_fraction": state_dominance_fraction,
+        "holder_stable_across_sampled_states": holder_stable,
+        "scaled_representativeness": scaled_representativeness,
+        "representativeness_cleared": representativeness_cleared,
+        "cross_run_reconcile_caveat": True,
+    }
+
+    classifier_terminal: str | None = None
+    fail_closed_terminal: str | None = None
+
+    if monotonic_fraction >= OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN:
+        classifier_terminal = "RETENTION_DOMINANT_CROSS_STATE"
+    elif (
+        top_fraction >= OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC
+        and state_dominance_fraction >= OBMALLOC_EXPANDED_STATE_DOMINANCE_MIN
+        and holder_stable
+    ):
+        classifier_terminal = f"DOMINANT_HOLDER_BRACKET_{top_site}"
+    elif top_fraction >= OBMALLOC_EXPANDED_HOLDER_DOMINANCE_FRAC:
+        classifier_terminal = "HOLDER_AMBIGUOUS_MULTI_BRACKET"
+    else:
+        classifier_terminal = "HOLDER_AMBIGUOUS_MULTI_BRACKET"
+
+    if not representativeness_cleared:
+        if classifier_terminal is None or classifier_terminal.startswith("DOMINANT_HOLDER"):
+            classifier_terminal = "REPRESENTATIVENESS_UNCERTAIN"
+
+    k2_fallback = len(sampled) <= 2
+    slice8_rewrite_authorized = (
+        classifier_terminal is not None
+        and classifier_terminal.startswith("DOMINANT_HOLDER_BRACKET_")
+        and representativeness_cleared
+        and fail_closed_terminal is None
+        and not k2_fallback
+        and monotonic_fraction < OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN
+    )
+
+    return {
+        **banked,
+        "guards": guards,
+        "localization": localization,
+        "classifier_terminal": classifier_terminal,
+        "fail_closed_terminal": fail_closed_terminal,
+        "slice8_rewrite_authorized": slice8_rewrite_authorized,
+        "call_site_status": "UNRESOLVED",
+    }
 
 
 def _site_bracket_arena_bytes(mark: Mapping[str, Any] | None) -> int | None:
@@ -3259,6 +3771,7 @@ def _fixture_obmalloc_env(
     *,
     debugmallocstats: bool,
     site_brackets: bool = False,
+    expanded: bool = False,
 ) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = "."
@@ -3271,6 +3784,8 @@ def _fixture_obmalloc_env(
         env[PROFILE_DEBUGMALLOCSTATS_ENV] = "1"
     if site_brackets:
         env[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] = "1"
+    if expanded:
+        env[PROFILE_OBMALLOC_EXPANDED_ENV] = "1"
     return env
 
 
@@ -3280,6 +3795,7 @@ def _run_fixture_obmalloc_probe(
     scratch_name: str,
     debugmallocstats: bool,
     site_brackets: bool = False,
+    expanded: bool = False,
 ) -> dict[str, Any]:
     out_root.mkdir(parents=True, exist_ok=True)
     scratch = out_root / scratch_name
@@ -3296,6 +3812,7 @@ def _run_fixture_obmalloc_probe(
     env = _fixture_obmalloc_env(
         debugmallocstats=debugmallocstats,
         site_brackets=site_brackets,
+        expanded=expanded,
     )
     cmd = _fixture_probe_argv(scratch, debugmallocstats=debugmallocstats)
     proc = subprocess.run(
@@ -3509,6 +4026,71 @@ def run_fixture_obmalloc_site_brackets_combined(out_root: Path) -> dict[str, Any
     return payload
 
 
+def run_fixture_obmalloc_expanded_combined(out_root: Path) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        measure_debugmallocstats_self_footprint,
+        preflight_debugmallocstats_self_test,
+    )
+
+    run_a = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_expanded_ab",
+        debugmallocstats=False,
+    )
+    run_a_prime = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_expanded_ab_replicate",
+        debugmallocstats=False,
+    )
+    preflight = preflight_debugmallocstats_self_test()
+    footprint = measure_debugmallocstats_self_footprint()
+    run_b = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="obmalloc_expanded_b",
+        debugmallocstats=True,
+        site_brackets=True,
+        expanded=True,
+    )
+
+    expanded = attribute_obmalloc_expanded(
+        marks_a=list(run_a.pop("marks", [])),
+        marks_a_prime=list(run_a_prime.pop("marks", [])),
+        marks_b=list(run_b.pop("marks", [])),
+        debugmallocstats_preflight=preflight,
+        self_footprint_preflight=footprint,
+    )
+
+    exit_codes = [
+        int(run_a.get("exit_code", 1)),
+        int(run_a_prime.get("exit_code", 1)),
+        int(run_b.get("exit_code", 1)),
+    ]
+    localization = dict(expanded.get("localization") or {})
+    payload: dict[str, Any] = {
+        "schema": ATTRIBUTION_SCHEMA,
+        "fixture_mode": "fixture_obmalloc_expanded",
+        "exit_code": max(exit_codes),
+        "runs": {
+            "A": {k: v for k, v in run_a.items() if k != "marks"},
+            "A_prime": {k: v for k, v in run_a_prime.items() if k != "marks"},
+            "B": {k: v for k, v in run_b.items() if k != "marks"},
+        },
+        "debugmallocstats_preflight": preflight,
+        "debugmallocstats_self_footprint": footprint,
+        "obmalloc_expanded_attribution": expanded,
+        "classifier_terminal": expanded.get("classifier_terminal"),
+        "fail_closed_terminal": expanded.get("fail_closed_terminal"),
+        "slice8_rewrite_authorized": expanded.get("slice8_rewrite_authorized"),
+    }
+    if localization:
+        payload["scaled_representativeness"] = localization.get("scaled_representativeness")
+        payload["representativeness_cleared"] = localization.get("representativeness_cleared")
+    out_path = Path("/tmp/v6i_obmalloc_expanded_attribution.json")
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    payload["combined_attribution_path"] = str(out_path)
+    return payload
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -3532,6 +4114,7 @@ def main() -> int:
             "fixture_obmalloc_arena_b",
             "fixture_obmalloc_arena_combined",
             "fixture_obmalloc_site_brackets",
+            "fixture_obmalloc_expanded",
         ),
         required=True,
     )
@@ -3631,6 +4214,8 @@ def main() -> int:
         payload = run_fixture_obmalloc_arena_combined(args.run_root)
     elif args.mode == "fixture_obmalloc_site_brackets":
         payload = run_fixture_obmalloc_site_brackets_combined(args.run_root)
+    elif args.mode == "fixture_obmalloc_expanded":
+        payload = run_fixture_obmalloc_expanded_combined(args.run_root)
     else:
         payload = run_fixture(args.run_root)
 
@@ -3654,6 +4239,7 @@ def main() -> int:
         "fixture_obmalloc_arena_b",
         "fixture_obmalloc_arena_combined",
         "fixture_obmalloc_site_brackets",
+        "fixture_obmalloc_expanded",
     } and int(payload.get("exit_code", payload.get("fixture", {}).get("exit_code", 1))) != 0:
         return 1
     return 0

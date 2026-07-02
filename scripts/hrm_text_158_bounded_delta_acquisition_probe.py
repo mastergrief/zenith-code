@@ -319,6 +319,7 @@ PROFILE_ALLOC_HOOK_ENV = "HRM_TEXT_158_PROFILE_ALLOC_HOOK"
 PROFILE_TRACEMALLOC_ENV = "HRM_TEXT_158_PROFILE_TRACEMALLOC"
 PROFILE_DEBUGMALLOCSTATS_ENV = "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS"
 PROFILE_OBMALLOC_SITE_BRACKETS_ENV = "HRM_TEXT_158_PROFILE_OBMALLOC_SITE_BRACKETS"
+PROFILE_OBMALLOC_EXPANDED_ENV = "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED"
 PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
 PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
@@ -1843,6 +1844,17 @@ def profile_obmalloc_site_brackets_enabled() -> bool:
     }
 
 
+def profile_obmalloc_expanded_enabled() -> bool:
+    if not profile_obmalloc_site_brackets_enabled():
+        return False
+    return os.environ.get(PROFILE_OBMALLOC_EXPANDED_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def assert_profile_tracemalloc_debugmallocstats_mutual_exclusion() -> None:
     if profile_tracemalloc_enabled() and profile_debugmallocstats_enabled():
         payload = {
@@ -2561,6 +2573,15 @@ class PhaseProgress:
         for key in ("step", "optimizer_step_index", "state_index"):
             if key in fields:
                 mark[key] = fields[key]
+        if "sampled_states" in fields:
+            mark["sampled_states"] = list(fields["sampled_states"])
+        stats = dict(mark.get("debugmallocstats") or {})
+        if profile_obmalloc_expanded_enabled():
+            mark["obmalloc_expanded"] = True
+            if stats.get("arena_bytes") is not None:
+                mark["arena_bytes_forcing"] = int(stats["arena_bytes"])
+            if stats.get("bytes_in_allocated_blocks") is not None:
+                mark["allocated_blocks_holding"] = int(stats["bytes_in_allocated_blocks"])
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
     def _emit_alloc_hook_mark(
@@ -2822,6 +2843,9 @@ class PhaseProgress:
                 "optimizer_step_index": int(optimizer_step_index),
                 "state_index": int(state_index),
             }
+            sampled_states = getattr(self, "_obmalloc_expanded_sampled_states", None)
+            if sampled_states is not None:
+                site_fields["sampled_states"] = list(sampled_states)
             self._emit_allocator_site_mark(
                 site_id=str(site_id),
                 event_suffix=str(event_suffix),

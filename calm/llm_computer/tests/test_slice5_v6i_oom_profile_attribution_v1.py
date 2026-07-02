@@ -290,7 +290,7 @@ def test_build_attribution_receipt_separates_phase_and_mechanism_owner(
         encoding="utf-8",
     )
     receipt = build_attribution_receipt(run_root=tmp_path, profile_path=profile_path)
-    assert receipt["schema"].endswith("/v11")
+    assert receipt["schema"].endswith("/v12")
     assert receipt["dominant_phase_owner"] == "sparse_cap_apply"
     assert receipt["rss_phase_owner_status"] == "RESOLVED"
     assert receipt["mechanism_owner_status"] == "UNRESOLVED_SUBPHASE_REQUIRED"
@@ -2348,3 +2348,445 @@ def test_obmalloc_site_brackets_q_loop_growth_lands_in_remainder() -> None:
     assert result["classifier_terminal"] is None
     assert result["slice8_rewrite_authorized"] is False
 
+
+def test_compute_obmalloc_expanded_sampled_states_n5() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    assert compute_obmalloc_expanded_sampled_states(5) == (0, 1, 3, 4)
+    assert compute_obmalloc_expanded_sampled_states(32) == (0, 10, 21, 31)
+
+
+def test_profile_obmalloc_expanded_default_off_all_profiling(monkeypatch) -> None:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_DEBUGMALLOCSTATS_ENV,
+        PROFILE_HOST_RSS_ENV,
+        PROFILE_OBMALLOC_EXPANDED_ENV,
+        PROFILE_OBMALLOC_SITE_BRACKETS_ENV,
+        profile_obmalloc_expanded_enabled,
+    )
+
+    monkeypatch.delenv(PROFILE_HOST_RSS_ENV, raising=False)
+    monkeypatch.delenv(PROFILE_DEBUGMALLOCSTATS_ENV, raising=False)
+    monkeypatch.delenv(PROFILE_OBMALLOC_SITE_BRACKETS_ENV, raising=False)
+    monkeypatch.delenv(PROFILE_OBMALLOC_EXPANDED_ENV, raising=False)
+    assert profile_obmalloc_expanded_enabled() is False
+
+
+def test_profile_obmalloc_expanded_default_off_site_brackets_on_expanded_off(
+    monkeypatch,
+) -> None:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_DEBUGMALLOCSTATS_ENV,
+        PROFILE_HOST_RSS_ENV,
+        PROFILE_OBMALLOC_EXPANDED_ENV,
+        PROFILE_OBMALLOC_SITE_BRACKETS_ENV,
+        profile_obmalloc_expanded_enabled,
+        profile_obmalloc_site_brackets_enabled,
+    )
+
+    monkeypatch.setenv(PROFILE_HOST_RSS_ENV, "1")
+    monkeypatch.setenv(PROFILE_DEBUGMALLOCSTATS_ENV, "1")
+    monkeypatch.setenv(PROFILE_OBMALLOC_SITE_BRACKETS_ENV, "1")
+    monkeypatch.delenv(PROFILE_OBMALLOC_EXPANDED_ENV, raising=False)
+    assert profile_obmalloc_site_brackets_enabled() is True
+    assert profile_obmalloc_expanded_enabled() is False
+
+
+def test_obmalloc_site_state_enabled_respects_sampled_states() -> None:
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        _obmalloc_site_state_enabled,
+    )
+
+    assert _obmalloc_site_state_enabled(0, sampled_states=None) is True
+    assert _obmalloc_site_state_enabled(1, sampled_states=None) is False
+    sampled = frozenset({0, 10, 20, 31})
+    assert _obmalloc_site_state_enabled(10, sampled_states=sampled) is True
+    assert _obmalloc_site_state_enabled(5, sampled_states=sampled) is False
+
+
+def _obmalloc_expanded_site_marks_for_state(
+    *,
+    state_index: int,
+    leaf_holding_deltas: dict[str, int],
+    base_blocks: int = 100_000_000,
+) -> list[dict[str, Any]]:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+    )
+
+    def _stats(arena: int, blocks: int) -> dict[str, Any]:
+        return {
+            "available": True,
+            "parse_ok": True,
+            "arenas_allocated_current": 1,
+            "arena_bytes": arena,
+            "bytes_in_allocated_blocks": blocks,
+        }
+
+    marks: list[dict[str, Any]] = []
+    running_blocks = int(base_blocks)
+    running_arena = 10_000_000
+    for site_id, delta in leaf_holding_deltas.items():
+        pre_blocks = running_blocks
+        pre_arena = running_arena
+        post_blocks = pre_blocks + int(delta)
+        post_arena = pre_arena + max(int(delta), 0)
+        marks.extend(
+            [
+                {
+                    "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+                    "event": f"obmalloc_site_{site_id}_pre",
+                    "site_id": site_id,
+                    "state_index": int(state_index),
+                    "obmalloc_expanded": True,
+                    "measurement_perturbed": True,
+                    "debugmallocstats": _stats(pre_arena, pre_blocks),
+                },
+                {
+                    "schema": PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA,
+                    "event": f"obmalloc_site_{site_id}_post",
+                    "site_id": site_id,
+                    "state_index": int(state_index),
+                    "obmalloc_expanded": True,
+                    "measurement_perturbed": True,
+                    "debugmallocstats": _stats(post_arena, post_blocks),
+                },
+            ]
+        )
+        running_blocks = post_blocks
+        running_arena = post_arena
+    return marks
+
+
+def _obmalloc_expanded_boundary_marks(
+    *,
+    after_state_blocks: list[int],
+) -> list[dict[str, Any]]:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+    )
+
+    def _stats(arena: int, blocks: int) -> dict[str, Any]:
+        return {
+            "available": True,
+            "parse_ok": True,
+            "arena_bytes": arena,
+            "bytes_in_allocated_blocks": blocks,
+        }
+
+    marks: list[dict[str, Any]] = [
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+            "event": "obmalloc_C4_enter",
+            "measurement_perturbed": True,
+            "debugmallocstats": _stats(1_000_000, 50_000_000),
+        }
+    ]
+    for idx, blocks in enumerate(after_state_blocks):
+        marks.append(
+            {
+                "schema": PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+                "event": "obmalloc_C4_after_state",
+                "state_index": int(idx * 4 + 3),
+                "measurement_perturbed": True,
+                "debugmallocstats": _stats(1_000_000 + idx * 1_048_576, int(blocks)),
+            }
+        )
+    marks.append(
+        {
+            "schema": PROFILE_HOST_RSS_OBMALLOC_SCHEMA,
+            "event": "obmalloc_C4_exit",
+            "measurement_perturbed": True,
+            "debugmallocstats": _stats(10_000_000, int(after_state_blocks[-1])),
+        }
+    )
+    return marks
+
+
+def test_obmalloc_expanded_event_count_no_duplicate() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        OBMALLOC_EXPANDED_EVENT_COUNT_MAX,
+        OBMALLOC_EXPANDED_EVENT_COUNT_TARGET,
+        TOTAL_C4_REFERENCE_GIB,
+        _count_obmalloc_expanded_enabled_events,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    site_marks: list[dict[str, Any]] = []
+    for state_idx in sampled:
+        site_marks.extend(
+            _obmalloc_expanded_site_marks_for_state(
+                state_index=int(state_idx),
+                leaf_holding_deltas={
+                    "C4.S1": 100_000,
+                    "C4.S2a": 50_000,
+                    "C4.S2b": 50_000,
+                    "C4.S2c": 50_000,
+                },
+            )
+        )
+    boundary = _obmalloc_expanded_boundary_marks(
+        after_state_blocks=[100_000_000 + i * 50_000_000 for i in range(8)],
+    )
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB) + boundary + site_marks
+    counts = _count_obmalloc_expanded_enabled_events(marks)
+    assert counts["obmalloc_C4_enter"] == 1
+    assert counts["obmalloc_C4_after_state"] == 8
+    assert counts["obmalloc_C4_exit"] == 1
+    assert counts["site_leaf_bracket"] == 32
+    assert counts["total"] == OBMALLOC_EXPANDED_EVENT_COUNT_TARGET
+
+    duplicate_boundary = list(boundary)
+    for extra_idx in range(9):
+        duplicate_boundary.append(
+            {
+                "schema": boundary[1]["schema"],
+                "event": "obmalloc_C4_after_state",
+                "state_index": 100 + extra_idx,
+                "measurement_perturbed": True,
+                "debugmallocstats": boundary[1]["debugmallocstats"],
+            }
+        )
+    dup_counts = _count_obmalloc_expanded_enabled_events(
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB) + duplicate_boundary + site_marks
+    )
+    assert dup_counts["total"] > OBMALLOC_EXPANDED_EVENT_COUNT_MAX
+
+    dup_result = attribute_obmalloc_expanded(
+        marks_a=_c4_subphase_marks(TOTAL_C4_REFERENCE_GIB),
+        marks_a_prime=_c4_subphase_marks(TOTAL_C4_REFERENCE_GIB),
+        marks_b=_c4_subphase_marks(TOTAL_C4_REFERENCE_GIB) + duplicate_boundary + site_marks,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert dup_result["observer_reason"] == "duplicate_obmalloc_emit"
+
+    result = attribute_obmalloc_expanded(
+        marks_a=_c4_subphase_marks(TOTAL_C4_REFERENCE_GIB),
+        marks_a_prime=_c4_subphase_marks(TOTAL_C4_REFERENCE_GIB),
+        marks_b=marks,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["classifier_terminal"] is not None
+
+
+def test_obmalloc_expanded_holder_zero_denom_adversary() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    site_marks = _obmalloc_expanded_site_marks_for_state(
+        state_index=int(sampled[0]),
+        leaf_holding_deltas={
+            "C4.S1": 0,
+            "C4.S2a": 0,
+            "C4.S2b": 0,
+            "C4.S2c": 0,
+        },
+    )
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[100_000_000] * 8)
+        + site_marks
+    )
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        sampled_states=sampled[:1],
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["fail_closed_terminal"] == "HOLDER_AMBIGUOUS"
+    assert result["slice8_rewrite_authorized"] is False
+
+
+def test_obmalloc_expanded_cancellation_adversary() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    site_marks = _obmalloc_expanded_site_marks_for_state(
+        state_index=int(sampled[0]),
+        leaf_holding_deltas={
+            "C4.S1": 1_000_000,
+            "C4.S2a": -500_000,
+            "C4.S2b": -400_000,
+            "C4.S2c": 100_000,
+        },
+    )
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[100_000_000] * 8)
+        + site_marks
+    )
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        sampled_states=sampled[:1],
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["fail_closed_terminal"] == "HOLDER_AMBIGUOUS"
+    assert result["observer_reason"] == "cancellation_inflation"
+    assert result["slice8_rewrite_authorized"] is False
+
+
+def test_obmalloc_expanded_k2_no_slice8_authorize() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+    )
+
+    sampled = (0, 31)
+    site_marks: list[dict[str, Any]] = []
+    for state_idx in sampled:
+        site_marks.extend(
+            _obmalloc_expanded_site_marks_for_state(
+                state_index=int(state_idx),
+                leaf_holding_deltas={
+                    "C4.S1": 600_000_000,
+                    "C4.S2a": 100_000_000,
+                    "C4.S2b": 100_000_000,
+                    "C4.S2c": 100_000_000,
+                },
+            )
+        )
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[200_000_000] * 8)
+        + site_marks
+    )
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        sampled_states=sampled,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert str(result.get("classifier_terminal", "")).startswith("DOMINANT_HOLDER_BRACKET_")
+    assert result["slice8_rewrite_authorized"] is False
+
+
+def test_obmalloc_expanded_missing_c4_exit_observer_perturbed() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+    )
+
+    marks = _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB) + [
+        {
+            "schema": "hrm_text_158_profile_host_rss_mark/v8",
+            "event": "obmalloc_C4_enter",
+            "measurement_perturbed": True,
+            "debugmallocstats": {"available": True, "arena_bytes": 1, "bytes_in_allocated_blocks": 1},
+        }
+    ]
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["fail_closed_terminal"] == "OBSERVER_PERTURBED_INCONCLUSIVE"
+    assert result["observer_reason"] == "missing_obmalloc_C4_exit"
+
+
+def test_obmalloc_expanded_dominant_holder_bracket() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    site_marks: list[dict[str, Any]] = []
+    for state_idx in sampled:
+        site_marks.extend(
+            _obmalloc_expanded_site_marks_for_state(
+                state_index=int(state_idx),
+                leaf_holding_deltas={
+                    "C4.S1": 600_000_000,
+                    "C4.S2a": 100_000_000,
+                    "C4.S2b": 100_000_000,
+                    "C4.S2c": 100_000_000,
+                },
+            )
+        )
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(after_state_blocks=[200_000_000] * 8)
+        + site_marks
+    )
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["classifier_terminal"] == "DOMINANT_HOLDER_BRACKET_C4.S1"
+    localization = result["localization"]
+    assert localization["representativeness_cleared"] is True
+
+
+def test_obmalloc_expanded_cross_state_retention_classifier() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        TOTAL_C4_REFERENCE_GIB,
+        attribute_obmalloc_expanded,
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    site_marks: list[dict[str, Any]] = []
+    for state_idx in sampled:
+        site_marks.extend(
+            _obmalloc_expanded_site_marks_for_state(
+                state_index=int(state_idx),
+                leaf_holding_deltas={
+                    "C4.S1": 10_000,
+                    "C4.S2a": 10_000,
+                    "C4.S2b": 10_000,
+                    "C4.S2c": 10_000,
+                },
+            )
+        )
+    marks = (
+        _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
+        + _obmalloc_expanded_boundary_marks(
+            after_state_blocks=[
+                100_000_000,
+                200_000_000,
+                300_000_000,
+                400_000_000,
+                500_000_000,
+                600_000_000,
+                700_000_000,
+                800_000_000,
+            ]
+        )
+        + site_marks
+    )
+    result = attribute_obmalloc_expanded(
+        marks_a=marks,
+        marks_a_prime=marks,
+        marks_b=marks,
+        debugmallocstats_preflight={"status": "ok"},
+        self_footprint_preflight={"status": "ok", "debugmallocstats_self_footprint_status": "ok"},
+    )
+    assert result["classifier_terminal"] == "RETENTION_DOMINANT_CROSS_STATE"
+    assert result["slice8_rewrite_authorized"] is False

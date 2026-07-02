@@ -2565,6 +2565,23 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             host_allocator_site_emit = (
                 getattr(rss_emit, "site_emit", None) if rss_emit is not None else None
             )
+            n_c4_states = len(gpu_cap_result.tensor_results)
+            obmalloc_expanded_on = os.environ.get(
+                "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED", ""
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            sampled_states: frozenset[int] | None = None
+            if obmalloc_expanded_on and n_c4_states > 0:
+                from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+                    compute_obmalloc_expanded_sampled_states,
+                )
+
+                sampled_states = compute_obmalloc_expanded_sampled_states(n_c4_states)
+                if rss_emit is not None:
+                    setattr(
+                        rss_emit,
+                        "_obmalloc_expanded_sampled_states",
+                        tuple(sorted(sampled_states)),
+                    )
 
             def _apply_cap_tensor_result_gpu_bound(
                 item: Any,
@@ -2584,6 +2601,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     merge_stats_fn=_merge_event_coded_cap_tensor_stats,
                     state_index=int(state_index),
                     host_allocator_site_emit=host_allocator_site_emit,
+                    sampled_states=sampled_states,
                 )
 
             cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type
@@ -2760,7 +2778,6 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                         stats_by_key[state_key] = stats
                 else:
                     summary["sparse_cap_apply_parallel_mode"] = "parallel_cpu"
-                    import os
                     from concurrent.futures import ThreadPoolExecutor
 
                     def _init_sparse_cap_worker() -> None:

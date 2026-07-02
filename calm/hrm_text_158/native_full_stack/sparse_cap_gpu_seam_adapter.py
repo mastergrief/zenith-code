@@ -427,6 +427,27 @@ def _applied_plan_position(
     return int(matches[0].item())
 
 
+def compute_obmalloc_expanded_sampled_states(n_states: int) -> frozenset[int]:
+    if int(n_states) <= 0:
+        return frozenset()
+    return frozenset(
+        sorted({0, int(n_states) // 3, (2 * int(n_states)) // 3, int(n_states) - 1})
+    )
+
+
+def _obmalloc_site_state_enabled(
+    state_index: int | None,
+    *,
+    sampled_states: frozenset[int] | None,
+) -> bool:
+    if state_index is None:
+        return False
+    idx = int(state_index)
+    if sampled_states is not None:
+        return idx in sampled_states
+    return idx == 0
+
+
 def sync_event_coded_carrier_from_gpu_cap(
     carrier: EventCodedAccLiveState,
     q_gpu: torch.Tensor,
@@ -438,11 +459,15 @@ def sync_event_coded_carrier_from_gpu_cap(
     host_allocator_site_emit: Callable[..., None] | None = None,
     optimizer_step_index: int | None = None,
     state_index: int | None = None,
+    sampled_states: frozenset[int] | None = None,
 ) -> tuple[torch.Tensor, EventCodedAccLiveState]:
     """Sync live carrier from GPU cap q via accepted-index subset gather only."""
 
     def _site(site_id: str, suffix: str, line: int) -> None:
-        if host_allocator_site_emit is None or state_index is None or int(state_index) != 0:
+        if host_allocator_site_emit is None or not _obmalloc_site_state_enabled(
+            state_index,
+            sampled_states=sampled_states,
+        ):
             return
         host_allocator_site_emit(
             site_id,
@@ -450,7 +475,7 @@ def sync_event_coded_carrier_from_gpu_cap(
             origin_file="sparse_cap_gpu_seam_adapter.py",
             origin_line=int(line),
             optimizer_step_index=int(optimizer_step_index or step_index),
-            state_index=0,
+            state_index=int(state_index),
         )
 
     _site("C4.S2", "pre", 531)
@@ -539,20 +564,25 @@ def apply_cap_tensor_result_gpu(
     merge_stats_fn: Any,
     state_index: int = -1,
     host_allocator_site_emit: Callable[..., None] | None = None,
+    sampled_states: frozenset[int] | None = None,
 ) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
     """Apply one GPU cap tensor result through the sparse event-coded carrier path."""
 
     state_key = str(item.state_key)
     vu = event_states[state_key]
     plan = plans_by_key[state_key]
-    if host_allocator_site_emit is not None and int(state_index) == 0:
+    site_enabled = _obmalloc_site_state_enabled(
+        int(state_index),
+        sampled_states=sampled_states,
+    )
+    if host_allocator_site_emit is not None and site_enabled:
         host_allocator_site_emit(
             "C4.S1",
             "pre",
             origin_file="sparse_cap_gpu_seam_adapter.py",
             origin_line=522,
             optimizer_step_index=int(local_selection_ordering_step),
-            state_index=0,
+            state_index=int(state_index),
         )
     local_result = apply_event_coded_integer_vote_update_from_plan(
         vu,
@@ -563,14 +593,14 @@ def apply_cap_tensor_result_gpu(
         cap_boundary_transient_dense=int(cap_boundary_transient),
         lightweight_runtime_stats=True,
     )
-    if host_allocator_site_emit is not None and int(state_index) == 0:
+    if host_allocator_site_emit is not None and site_enabled:
         host_allocator_site_emit(
             "C4.S1",
             "post",
             origin_file="sparse_cap_gpu_seam_adapter.py",
             origin_line=530,
             optimizer_step_index=int(local_selection_ordering_step),
-            state_index=0,
+            state_index=int(state_index),
         )
     q_out, carrier = sync_event_coded_carrier_from_gpu_cap(
         local_result.carrier,
@@ -582,6 +612,7 @@ def apply_cap_tensor_result_gpu(
         host_allocator_site_emit=host_allocator_site_emit,
         optimizer_step_index=int(local_selection_ordering_step),
         state_index=int(state_index),
+        sampled_states=sampled_states,
     )
     stats = merge_stats_fn(dict(cap_item_stats), local_result.stats)
     stats["sparse_cap_gpu_seam_q_source"] = "gpu_cap.accepted_subset_gather"
