@@ -3096,3 +3096,183 @@ def test_obmalloc_expanded_missing_child_site_fails_coverage_not_silent_zero() -
     assert result["guards"]["child_profile_mode"] is True
     assert result["fail_closed_terminal"] == "CHILD_COVERAGE_FAIL"
     assert result["missing_child_site"] == "C4.S1d"
+
+
+def test_fixture_probe_argv_includes_max_silent_phase_seconds_600_non_tracemalloc(
+    tmp_path: Path,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS,
+        _fixture_probe_argv,
+    )
+
+    cmd = _fixture_probe_argv(tmp_path / "scratch")
+    idx = cmd.index("--max-silent-phase-seconds")
+    assert cmd[idx + 1] == str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS)
+    assert FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS == 600
+
+
+def test_fixture_probe_argv_tracemalloc_keeps_900(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC,
+        _fixture_probe_argv,
+    )
+
+    cmd = _fixture_probe_argv(tmp_path / "scratch", tracemalloc=True)
+    idx = cmd.index("--max-silent-phase-seconds")
+    assert cmd[idx + 1] == str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC)
+    assert FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC == 900
+
+
+def test_run_subprocess_streaming_to_log_returns_stream_path_no_capture_output(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _run_subprocess_streaming_to_log,
+    )
+
+    log_path = tmp_path / "probe_stream.log"
+
+    class _FakeProc:
+        returncode = 0
+
+        def wait(self, timeout=None):
+            log_path.write_text("phase_heartbeat tick\n", encoding="utf-8")
+            return 0
+
+        def kill(self):
+            return None
+
+    def _fake_popen(*_args, **_kwargs):
+        assert "capture_output" not in _kwargs
+        assert _kwargs.get("stdout") is not None
+        return _FakeProc()
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.subprocess.Popen",
+        _fake_popen,
+    )
+    result = _run_subprocess_streaming_to_log(
+        ["echo", "ok"],
+        cwd=tmp_path,
+        env={},
+        log_path=log_path,
+        timeout=30.0,
+    )
+    assert result["used_capture_output"] is False
+    assert result["probe_stream_log"] == str(log_path)
+
+
+def test_run_fixture_obmalloc_probe_lane_release_on_timeout(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _run_fixture_obmalloc_probe,
+    )
+
+    release_calls: list[Path] = []
+
+    def _fake_acquire(out_root: Path):
+        return {"lane": "held"}
+
+    def _fake_release(out_root: Path):
+        release_calls.append(out_root)
+        return {"lane": "released"}
+
+    def _fake_streaming(*_args, **_kwargs):
+        return {
+            "exit_code": 124,
+            "probe_stream_log": str(tmp_path / "probe_stream.log"),
+            "subprocess_timeout_expired": True,
+            "stdout_tail": "",
+            "stderr_tail": "",
+            "used_capture_output": False,
+        }
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_r7_resource_lane_acquire.acquire_resource_lane",
+        _fake_acquire,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_r7_resource_lane_release.release_resource_lane",
+        _fake_release,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_subprocess_streaming_to_log",
+        _fake_streaming,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._fixture_obmalloc_env",
+        lambda **_kwargs: {},
+    )
+
+    payload = _run_fixture_obmalloc_probe(
+        tmp_path,
+        scratch_name="timeout_case",
+        debugmallocstats=True,
+    )
+    assert release_calls == [tmp_path]
+    assert payload["subprocess_timeout_expired"] is True
+    assert payload["resource_lane_release"] == {"lane": "released"}
+
+
+def test_durable_mirror_default_off(tmp_path: Path, monkeypatch) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        run_fixture_obmalloc_expanded_combined,
+    )
+
+    def _fake_probe(*_args, **_kwargs):
+        return {
+            "exit_code": 0,
+            "marks": [],
+        }
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_fixture_obmalloc_probe",
+        _fake_probe,
+    )
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.host_allocator_probe.preflight_debugmallocstats_self_test",
+        lambda: {"ok": True},
+    )
+    monkeypatch.setattr(
+        "calm.hrm_text_158.native_full_stack.host_allocator_probe.measure_debugmallocstats_self_footprint",
+        lambda: {"ok": True},
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.attribute_obmalloc_expanded",
+        lambda **_kwargs: {"classifier_terminal": "INCONCLUSIVE"},
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.attribute_c4_retention_owner_census",
+        lambda **_kwargs: {"classifier_terminal": "INCONCLUSIVE"},
+    )
+
+    payload = run_fixture_obmalloc_expanded_combined(tmp_path, mirror_durable_attribution=False)
+    assert "durable_mirror_receipt" not in payload
+    assert "durable_artifact_path" not in payload
+    assert "combined_attribution_path" not in payload
+
+
+def test_durable_mirror_opt_in_writes_receipt(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _maybe_mirror_durable_attribution,
+    )
+
+    mirror_path = tmp_path / "mirror.json"
+    mirror_path.write_text('{"seed": true}\n', encoding="utf-8")
+    payload = {"fixture_mode": "fixture_obmalloc_expanded", "exit_code": 0}
+    result = _maybe_mirror_durable_attribution(
+        payload,
+        mirror=True,
+        mirror_path=mirror_path,
+    )
+    receipt = result["durable_mirror_receipt"]
+    assert receipt["mirror_path"] == str(mirror_path)
+    assert receipt["pre_hash"] is not None
+    assert receipt["backup_path"] is not None
+    assert receipt["post_hash"] is not None
+    assert Path(receipt["backup_path"]).is_file()
+    assert result["durable_artifact_path"] == str(mirror_path)

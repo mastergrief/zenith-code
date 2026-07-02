@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -42,6 +43,13 @@ from scripts.hrm_text_158_bounded_delta_acquisition_probe import (  # noqa: E402
 
 ATTRIBUTION_SCHEMA = "hrm_text_158_v6i_oom_profile_attribution_receipt/v12"
 EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
+
+FIXTURE_PROBE_STREAM_LOG_NAME = "probe_stream.log"
+FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS = 600
+FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC = 900
+DEFAULT_DURABLE_MIRROR_PATH = Path(
+    "/home/gabe/hrm158_v6i_slice8m_census/v6i_obmalloc_expanded_attribution_8m.json"
+)
 
 SUBPHASE_RESOLVE_FRACTION = 0.80
 SUBPHASE_UNMAPPED_FRACTION = 0.50
@@ -3471,7 +3479,14 @@ def _fixture_probe_argv(
         cmd.extend(
             [
                 "--max-silent-phase-seconds",
-                "900",
+                str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC),
+            ]
+        )
+    else:
+        cmd.extend(
+            [
+                "--max-silent-phase-seconds",
+                str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS),
             ]
         )
     return cmd
@@ -4187,6 +4202,79 @@ def _fixture_obmalloc_env(
     return env
 
 
+def _read_log_tail(log_path: Path, *, max_lines: int = 20) -> str:
+    if not log_path.is_file():
+        return ""
+    lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(lines[-max_lines:])
+
+
+def _run_subprocess_streaming_to_log(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+    log_path: Path,
+    timeout: float,
+) -> dict[str, Any]:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    timeout_expired = False
+    with log_path.open("w", encoding="utf-8") as log_f:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timeout_expired = True
+            proc.kill()
+            proc.wait()
+    return {
+        "exit_code": int(proc.returncode if proc.returncode is not None else 1),
+        "probe_stream_log": str(log_path),
+        "subprocess_timeout_expired": timeout_expired,
+        "stdout_tail": _read_log_tail(log_path),
+        "stderr_tail": "",
+        "used_capture_output": False,
+    }
+
+
+def _maybe_mirror_durable_attribution(
+    payload: dict[str, Any],
+    *,
+    mirror: bool,
+    mirror_path: Path | None = None,
+) -> dict[str, Any]:
+    if not mirror:
+        return payload
+    out_path = mirror_path or DEFAULT_DURABLE_MIRROR_PATH
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    pre_hash: str | None = None
+    backup_path: Path | None = None
+    if out_path.is_file():
+        existing = out_path.read_bytes()
+        pre_hash = hashlib.sha256(existing).hexdigest()
+        backup_path = out_path.with_suffix(out_path.suffix + f".bak.{pre_hash[:8]}")
+        backup_path.write_bytes(existing)
+    content = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    out_path.write_text(content, encoding="utf-8")
+    post_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    payload["durable_mirror_receipt"] = {
+        "mirror_path": str(out_path),
+        "pre_hash": pre_hash,
+        "backup_path": str(backup_path) if backup_path is not None else None,
+        "post_hash": post_hash,
+    }
+    payload["combined_attribution_path"] = str(out_path)
+    payload["durable_artifact_path"] = str(out_path)
+    return payload
+
+
 def _run_fixture_obmalloc_probe(
     out_root: Path,
     *,
@@ -4201,45 +4289,54 @@ def _run_fixture_obmalloc_probe(
     scratch.mkdir(parents=True, exist_ok=True)
     lane_holding: dict[str, Any] | None = None
     lane_release: dict[str, Any] | None = None
+    subprocess_result: dict[str, Any] = {}
+    cmd: list[str] = []
     try:
-        from scripts.hrm_text_158_r7_resource_lane_acquire import acquire_resource_lane
+        try:
+            from scripts.hrm_text_158_r7_resource_lane_acquire import acquire_resource_lane
 
-        lane_holding = acquire_resource_lane(out_root)
-    except Exception as exc:
-        lane_holding = {"acquire_error": f"{type(exc).__name__}: {exc}"}
+            lane_holding = acquire_resource_lane(out_root)
+        except Exception as exc:
+            lane_holding = {"acquire_error": f"{type(exc).__name__}: {exc}"}
 
-    env = _fixture_obmalloc_env(
-        debugmallocstats=debugmallocstats,
-        site_brackets=site_brackets,
-        expanded=expanded,
-        c4_retention_owner_census=c4_retention_owner_census,
-    )
-    cmd = _fixture_probe_argv(scratch, debugmallocstats=debugmallocstats)
-    proc = subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=1200 if debugmallocstats else 600,
-    )
+        env = _fixture_obmalloc_env(
+            debugmallocstats=debugmallocstats,
+            site_brackets=site_brackets,
+            expanded=expanded,
+            c4_retention_owner_census=c4_retention_owner_census,
+        )
+        cmd = _fixture_probe_argv(scratch, debugmallocstats=debugmallocstats)
+        probe_stream_log = scratch / FIXTURE_PROBE_STREAM_LOG_NAME
+        subprocess_result = _run_subprocess_streaming_to_log(
+            cmd,
+            cwd=REPO_ROOT,
+            env=env,
+            log_path=probe_stream_log,
+            timeout=1200.0 if debugmallocstats else 600.0,
+        )
+    finally:
+        try:
+            from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane
+
+            lane_release = release_resource_lane(out_root)
+        except Exception as exc:
+            lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
+
     profile_path = scratch / HOST_RSS_PROFILE_JSONL_NAME
     marks = _read_jsonl(profile_path) if profile_path.is_file() else []
-    try:
-        from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane
-
-        lane_release = release_resource_lane(out_root)
-    except Exception as exc:
-        lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
 
     return {
         "scratch_root": str(scratch),
         "profile_path": str(profile_path),
         "command": cmd,
-        "exit_code": int(proc.returncode),
-        "stdout_tail": "\n".join(proc.stdout.splitlines()[-20:]),
-        "stderr_tail": "\n".join(proc.stderr.splitlines()[-20:]),
+        "exit_code": int(subprocess_result.get("exit_code", 1)),
+        "stdout_tail": str(subprocess_result.get("stdout_tail", "")),
+        "stderr_tail": str(subprocess_result.get("stderr_tail", "")),
+        "probe_stream_log": subprocess_result.get("probe_stream_log"),
+        "subprocess_timeout_expired": bool(
+            subprocess_result.get("subprocess_timeout_expired", False)
+        ),
+        "used_capture_output": bool(subprocess_result.get("used_capture_output", False)),
         "resource_lane_holding": lane_holding,
         "resource_lane_release": lane_release,
         "profile_mark_count": len(marks),
@@ -4426,7 +4523,12 @@ def run_fixture_obmalloc_site_brackets_combined(out_root: Path) -> dict[str, Any
     return payload
 
 
-def run_fixture_obmalloc_expanded_combined(out_root: Path) -> dict[str, Any]:
+def run_fixture_obmalloc_expanded_combined(
+    out_root: Path,
+    *,
+    mirror_durable_attribution: bool = False,
+    mirror_durable_path: Path | None = None,
+) -> dict[str, Any]:
     from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
         measure_debugmallocstats_self_footprint,
         preflight_debugmallocstats_self_test,
@@ -4497,13 +4599,11 @@ def run_fixture_obmalloc_expanded_combined(out_root: Path) -> dict[str, Any]:
     if localization:
         payload["scaled_representativeness"] = localization.get("scaled_representativeness")
         payload["representativeness_cleared"] = localization.get("representativeness_cleared")
-    durable_root = Path("/home/gabe/hrm158_v6i_slice8m_census")
-    durable_root.mkdir(parents=True, exist_ok=True)
-    out_path = durable_root / "v6i_obmalloc_expanded_attribution_8m.json"
-    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    payload["combined_attribution_path"] = str(out_path)
-    payload["durable_artifact_path"] = str(out_path)
-    return payload
+    return _maybe_mirror_durable_attribution(
+        payload,
+        mirror=mirror_durable_attribution,
+        mirror_path=mirror_durable_path,
+    )
 
 
 def main() -> int:
@@ -4571,6 +4671,14 @@ def main() -> int:
         help="Optional alloc-hook host_rss_profile.jsonl for attribute mode",
     )
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--mirror-durable-attribution",
+        action="store_true",
+        help=(
+            "Opt-in mirror of fixture_obmalloc_expanded output to the legacy durable "
+            "attribution path (default OFF; writes pre-hash/backup/post-hash receipt)."
+        ),
+    )
     args = parser.parse_args()
 
     if args.mode == "extract":
@@ -4630,7 +4738,10 @@ def main() -> int:
     elif args.mode == "fixture_obmalloc_site_brackets":
         payload = run_fixture_obmalloc_site_brackets_combined(args.run_root)
     elif args.mode == "fixture_obmalloc_expanded":
-        payload = run_fixture_obmalloc_expanded_combined(args.run_root)
+        payload = run_fixture_obmalloc_expanded_combined(
+            args.run_root,
+            mirror_durable_attribution=args.mirror_durable_attribution,
+        )
     else:
         payload = run_fixture(args.run_root)
 
