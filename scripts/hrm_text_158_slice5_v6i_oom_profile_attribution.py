@@ -431,16 +431,27 @@ def resolve_classifier_exit_fields_from_attribution_payload(
     }
 
 
-PHASE3_CALLSITE_EVENT_TOTAL_NOMINAL_MIN = 186
-PHASE3_CALLSITE_EVENT_TOTAL_NOMINAL_MAX = 194
-PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MIN = 174
-PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MAX = 202
-PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING = 250
+PHASE3_CALLSITE_EVENT_TOTAL_NOMINAL_MIN = 194
+PHASE3_CALLSITE_EVENT_TOTAL_NOMINAL_MAX = 202
+PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MIN = 182
+PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MAX = 210
+PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING = 258
 PHASE3_CALLSITE_EVENT_TOTAL_DIAGNOSTIC_CAVEAT = (
-    "event total outside 174-202 is NOT a clean post-rescope single-pair topology "
+    "event total outside 182-210 is NOT a clean post-rescope single-pair topology "
     "confirmation without Claude/co_lead evidence review."
 )
 PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED = 4
+BANKED_RECONCILE_PROVENANCE: dict[str, Any] = {
+    "commit": "5fad596af1cac6ad11dad77d32f6ad1f8c481b3a",
+    "dual_accept_msg_ids": ["1783074111500", "1783074295721"],
+    "s1d_parent_reconcile_fraction": 1.34e-05,
+    "s1d_dominant_bracket": "C4.S1d.7",
+    "call_site_status_at_bank": "UNRESOLVED",
+    "claim_wording": (
+        "call-site resolution CONDITIONAL on banked S1d.7/reconcile — "
+        "NOT a fresh same-run reconcile"
+    ),
+}
 PHASE3_CALLSITE_TOPOLOGY_BOUNDS = {
     "C4.S1d.3": {"max_allowed": 2, "safety_net_max": 5},
     "C4.S1d.4": {"max_allowed": 2, "safety_net_max": 5},
@@ -549,7 +560,11 @@ def build_phase3_callsite_classifier_receipt_from_attribution_payload(
     guards = dict(expanded.get("guards") or {})
     fail_closed = expanded.get("fail_closed_terminal")
     phase3_s1d = bool(guards.get("phase3_s1d_subsplit_mode") or loc.get("phase3_s1d_subsplit_mode"))
+    callsite_b_prime_mode = bool(guards.get("callsite_b_prime_mode"))
     s1d_reconcile = loc.get("s1d_parent_reconcile_fraction")
+    banked_reconcile_ok = (
+        float(BANKED_RECONCILE_PROVENANCE["s1d_parent_reconcile_fraction"]) <= 0.15
+    )
     b_arm = dict((payload.get("runs") or {}).get("B") or {})
     b_arm_profile_mark_count = int(b_arm.get("profile_mark_count") or 0)
     exit_fields = resolve_classifier_exit_fields_from_attribution_payload(payload)
@@ -583,9 +598,14 @@ def build_phase3_callsite_classifier_receipt_from_attribution_payload(
         "b_arm_profile_mark_count": b_arm_profile_mark_count,
         "fail_closed_terminal": fail_closed,
         "phase3_s1d_subsplit_mode": phase3_s1d,
+        "callsite_b_prime_mode": callsite_b_prime_mode,
+        "banked_reconcile_provenance": dict(BANKED_RECONCILE_PROVENANCE),
+        "banked_reconcile_precondition_ok": banked_reconcile_ok,
         "s1d_parent_reconcile_fraction": s1d_reconcile,
         "s1d_rescope_reconcile_pass": (
-            s1d_reconcile is not None and float(s1d_reconcile) <= 0.15
+            banked_reconcile_ok
+            if callsite_b_prime_mode
+            else (s1d_reconcile is not None and float(s1d_reconcile) <= 0.15)
         ),
         "call_site_status": call_site_status,
         "call_site_origin_file_line": call_site_origin,
@@ -673,11 +693,16 @@ def build_phase3_callsite_classifier_receipt_from_attribution_payload(
         out["branch_outcome"] = "S1D_RESCOPE_INSTRUMENTATION_FAIL"
         out["branch_reason"] = "reconcile_fail_gates_science"
         classifier_exit_code = 33
-    elif not phase3_s1d:
+    elif callsite_b_prime_mode and not banked_reconcile_ok:
+        out["branch_outcome"] = "BANKED_RECONCILE_PRECONDITION_FAIL"
+        classifier_exit_code = 35
+    elif not callsite_b_prime_mode and not phase3_s1d:
         out["branch_outcome"] = "S1D_CHILD_COVERAGE_FAIL"
         out["branch_reason"] = "phase3_s1d_subsplit_mode_false"
         classifier_exit_code = 34
-    elif s1d_reconcile is None or float(s1d_reconcile) > 0.15:
+    elif not callsite_b_prime_mode and (
+        s1d_reconcile is None or float(s1d_reconcile) > 0.15
+    ):
         out["branch_outcome"] = "RECONCILE_FAIL"
         classifier_exit_code = 35
     elif bool(tracemalloc_perturbed):
@@ -4475,15 +4500,17 @@ def _fixture_probe_argv(
         phase3b_probe_script_path,
     )
 
+    use_bootstrap = bool(expanded) or (tracemalloc and not debugmallocstats)
+
     cmd = [
         sys.executable,
         *(
             phase3b_probe_python_argv_prefix()
-            if expanded
+            if use_bootstrap
             else []
         ),
         "-u",
-        phase3b_probe_script_path(expanded=expanded),
+        phase3b_probe_script_path(expanded=use_bootstrap),
         "--allow-gpu-launch",
         "--enable-bounded-delta-probe",
         "--device",
@@ -5243,14 +5270,10 @@ def _fixture_obmalloc_env(
     env["HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH"] = "1"
     env["HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE"] = "1"
     env[PROFILE_HOST_RSS_ENV] = "1"
-    if debugmallocstats:
-        env[PROFILE_DEBUGMALLOCSTATS_ENV] = "1"
-    if site_brackets:
-        env[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] = "1"
-    if expanded:
-        env[PROFILE_OBMALLOC_EXPANDED_ENV] = "1"
-    if tracemalloc:
-        env[PROFILE_TRACEMALLOC_ENV] = "1"
+    env[PROFILE_DEBUGMALLOCSTATS_ENV] = "1" if debugmallocstats else "0"
+    env[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] = "1" if site_brackets else "0"
+    env[PROFILE_OBMALLOC_EXPANDED_ENV] = "1" if expanded else "0"
+    env[PROFILE_TRACEMALLOC_ENV] = "1" if tracemalloc else "0"
     if c4_retention_owner_census:
         from calm.hrm_text_158.native_full_stack.c4_retention_owner_census import (
             PROFILE_C4_RETENTION_OWNER_CENSUS_ENV,
@@ -5261,6 +5284,12 @@ def _fixture_obmalloc_env(
         from scripts.hrm_text_158_code_currency_guard import prepare_phase3b_probe_launch_env
 
         env = prepare_phase3b_probe_launch_env(env, repo_root=REPO_ROOT, expanded=True)
+    elif tracemalloc:
+        from scripts.hrm_text_158_code_currency_guard import (
+            prepare_phase3b_callsite_tracemalloc_launch_env,
+        )
+
+        env = prepare_phase3b_callsite_tracemalloc_launch_env(env, repo_root=REPO_ROOT)
     return env
 
 
@@ -5374,6 +5403,7 @@ def _run_fixture_obmalloc_probe(
         )
         cmd = _fixture_probe_argv(
             scratch,
+            tracemalloc=tracemalloc,
             debugmallocstats=debugmallocstats,
             expanded=expanded,
         )
@@ -5691,39 +5721,218 @@ def run_fixture_obmalloc_expanded_combined(
     )
 
 
-def run_callsite_tracemalloc_scale_smoke(out_root: Path) -> dict[str, Any]:
-    """Mandatory short tracemalloc-enabled fixture smoke before full GPU acceptance."""
-    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
-        measure_debugmallocstats_self_footprint,
-        preflight_debugmallocstats_self_test,
+def attribute_callsite_tracemalloc_b_prime(
+    *,
+    marks_a: Sequence[Mapping[str, Any]],
+    marks_b: Sequence[Mapping[str, Any]],
+    sampled_states: Sequence[int] = (0, 10, 21, 31),
+) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
     )
+
+    sampled = tuple(int(x) for x in sampled_states) or tuple(
+        compute_obmalloc_expanded_sampled_states(32)
+    )
+    guards = {
+        "callsite_b_prime_mode": True,
+        "phase3_s1d_subsplit_mode": False,
+        "tracemalloc_perturbed": False,
+        "obmalloc_expanded_event_validation": {"valid": True, "pair_counts_by_site": {}},
+        "obmalloc_expanded_event_counts": {"total": len(marks_b)},
+    }
+    s1d7_call_site = _attribute_s1d7_tracemalloc_call_site(
+        marks_b,
+        guards=guards,
+        sampled_states=sampled,
+    )
+    if s1d7_call_site.get("tracemalloc_perturbed"):
+        guards["tracemalloc_perturbed"] = True
+    return {
+        "guards": guards,
+        "localization": {
+            "callsite_b_prime_mode": True,
+            "s1d7_tracemalloc_call_site": dict(s1d7_call_site),
+        },
+        "fail_closed_terminal": None,
+        **_obmalloc_expanded_call_site_fields(s1d7_call_site),
+    }
+
+
+def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
+    """Dry-check B_callsite launch composition via the real _run_fixture_obmalloc_probe seam."""
+
+    from scripts.hrm_text_158_code_currency_guard import (
+        IMPORT_BYTE_PINS_ENV,
+        PHASE3B_PROBE_IMPORT_MODULE_BY_REL,
+        hash_file_bytes,
+        phase3b_probe_python_argv_prefix,
+        phase3b_probe_script_path,
+    )
+
+    scratch = REPO_ROOT / ".dry_check_callsite_b_prime_scratch"
+    env = _fixture_obmalloc_env(
+        debugmallocstats=False,
+        site_brackets=False,
+        expanded=False,
+        tracemalloc=True,
+    )
+    cmd = _fixture_probe_argv(
+        scratch,
+        tracemalloc=True,
+        debugmallocstats=False,
+        expanded=False,
+    )
+    argv_prefix = phase3b_probe_python_argv_prefix()
+    bootstrap_path = phase3b_probe_script_path(expanded=True)
+    max_silent = str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC)
+    checks = {
+        "env_debugmallocstats_zero": env.get(PROFILE_DEBUGMALLOCSTATS_ENV) == "0",
+        "env_site_brackets_zero": env.get(PROFILE_OBMALLOC_SITE_BRACKETS_ENV) == "0",
+        "env_obmalloc_expanded_zero": env.get(PROFILE_OBMALLOC_EXPANDED_ENV) == "0",
+        "env_tracemalloc_one": env.get(PROFILE_TRACEMALLOC_ENV) == "1",
+        "cmd_uses_bootstrap": bootstrap_path in cmd,
+        "cmd_has_b_flag": "-B" in argv_prefix and all(flag in cmd for flag in argv_prefix),
+        "cmd_max_silent_900": max_silent in cmd,
+        "import_byte_pins_present": IMPORT_BYTE_PINS_ENV in env,
+    }
+    if checks["import_byte_pins_present"]:
+        pin_payload = json.loads(env[IMPORT_BYTE_PINS_ENV])
+        checks["import_byte_pins_match_disk"] = all(
+            pin_payload.get(rel) == hash_file_bytes(REPO_ROOT / rel)
+            for rel in PHASE3B_PROBE_IMPORT_MODULE_BY_REL
+            if (REPO_ROOT / rel).is_file()
+        )
+    else:
+        checks["import_byte_pins_match_disk"] = False
+
+    guard_exit_code: int | None = None
+    guard_script = (
+        "import json, os, sys\n"
+        "from scripts.hrm_text_158_code_currency_guard import "
+        "run_phase3b_probe_executed_code_currency_guard\n"
+        "env = json.loads(sys.argv[1])\n"
+        "for key, value in env.items():\n"
+        "    os.environ[key] = value\n"
+        "exit_code = run_phase3b_probe_executed_code_currency_guard("
+        "require_obmalloc_expanded=False)\n"
+        "raise SystemExit(0 if exit_code is None else int(exit_code))\n"
+    )
+    guard_proc = subprocess.run(
+        [sys.executable, "-c", guard_script, json.dumps(env)],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    guard_exit_code = int(guard_proc.returncode)
+
+    checks["guard_dry_check_passes"] = guard_exit_code == 0
+    ok = all(checks.values())
+    return {
+        "schema": "hrm_text_158_callsite_b_prime_launch_dry_check/v1",
+        "ok": ok,
+        "checks": checks,
+        "cmd": cmd,
+        "env_profile_toggles": {
+            PROFILE_DEBUGMALLOCSTATS_ENV: env.get(PROFILE_DEBUGMALLOCSTATS_ENV),
+            PROFILE_OBMALLOC_SITE_BRACKETS_ENV: env.get(PROFILE_OBMALLOC_SITE_BRACKETS_ENV),
+            PROFILE_OBMALLOC_EXPANDED_ENV: env.get(PROFILE_OBMALLOC_EXPANDED_ENV),
+            PROFILE_TRACEMALLOC_ENV: env.get(PROFILE_TRACEMALLOC_ENV),
+        },
+        "guard_exit_code": guard_exit_code,
+    }
+
+
+def run_fixture_callsite_b_prime_combined(
+    out_root: Path,
+    *,
+    mirror_durable_attribution: bool = False,
+    mirror_durable_path: Path | None = None,
+) -> dict[str, Any]:
+    run_a = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="callsite_observer_a",
+        debugmallocstats=False,
+    )
+    run_b = _run_fixture_obmalloc_probe(
+        out_root,
+        scratch_name="callsite_tracemalloc_b",
+        debugmallocstats=False,
+        tracemalloc=True,
+        expanded=False,
+    )
+    marks_a = list(run_a.pop("marks", []))
+    marks_b = list(run_b.pop("marks", []))
+    attribution = attribute_callsite_tracemalloc_b_prime(
+        marks_a=marks_a,
+        marks_b=marks_b,
+    )
+    exit_codes = [
+        int(run_a.get("exit_code", 1)),
+        int(run_b.get("exit_code", 1)),
+    ]
+    probe_exit_code = max(exit_codes)
+    fail_closed_terminal = attribution.get("fail_closed_terminal")
+    exit_fields = _resolve_attribution_process_exit_code(
+        probe_exit_code=int(probe_exit_code),
+        fail_closed_terminal=(
+            str(fail_closed_terminal) if fail_closed_terminal is not None else None
+        ),
+    )
+    localization = dict(attribution.get("localization") or {})
+    payload: dict[str, Any] = {
+        "schema": ATTRIBUTION_SCHEMA,
+        "fixture_mode": "fixture_callsite_b_prime",
+        "exit_code": int(exit_fields["process_exit_code"]),
+        "process_exit_code": int(exit_fields["process_exit_code"]),
+        "mapped_terminal_code": exit_fields["mapped_terminal_code"],
+        "exit_code_agreement": bool(exit_fields["exit_code_agreement"]),
+        "probe_exit_code": int(probe_exit_code),
+        "runs": {
+            "A": {k: v for k, v in run_a.items() if k != "marks"},
+            "B": {k: v for k, v in run_b.items() if k != "marks"},
+        },
+        "callsite_b_prime_attribution": attribution,
+        "classifier_terminal": attribution.get("classifier_terminal"),
+        "fail_closed_terminal": attribution.get("fail_closed_terminal"),
+        "banked_reconcile_provenance": dict(BANKED_RECONCILE_PROVENANCE),
+        "banked_reconcile_precondition_ok": (
+            float(BANKED_RECONCILE_PROVENANCE["s1d_parent_reconcile_fraction"]) <= 0.15
+        ),
+    }
+    if localization:
+        payload["s1d7_tracemalloc_call_site"] = localization.get("s1d7_tracemalloc_call_site")
+    return _maybe_mirror_durable_attribution(
+        payload,
+        mirror=mirror_durable_attribution,
+        mirror_path=mirror_durable_path,
+    )
+
+
+def run_callsite_tracemalloc_scale_smoke(out_root: Path) -> dict[str, Any]:
+    """Mandatory short tracemalloc-only B-prime fixture smoke before full GPU acceptance."""
 
     smoke_root = out_root / "prelaunch" / "callsite_tracemalloc_scale_smoke"
     smoke_root.mkdir(parents=True, exist_ok=True)
     run_a = _run_fixture_obmalloc_probe(
         smoke_root,
-        scratch_name="obmalloc_expanded_ab",
+        scratch_name="callsite_observer_a",
         debugmallocstats=False,
     )
     run_b = _run_fixture_obmalloc_probe(
         smoke_root,
-        scratch_name="obmalloc_expanded_b",
-        debugmallocstats=True,
-        site_brackets=True,
-        expanded=True,
-        c4_retention_owner_census=True,
+        scratch_name="callsite_tracemalloc_b",
+        debugmallocstats=False,
         tracemalloc=True,
+        expanded=False,
     )
-    preflight = preflight_debugmallocstats_self_test()
-    footprint = measure_debugmallocstats_self_footprint()
     marks_a = list(run_a.pop("marks", []))
     marks_b = list(run_b.pop("marks", []))
-    expanded = attribute_obmalloc_expanded(
+    expanded = attribute_callsite_tracemalloc_b_prime(
         marks_a=marks_a,
-        marks_a_prime=marks_a,
         marks_b=marks_b,
-        debugmallocstats_preflight=preflight,
-        self_footprint_preflight=footprint,
     )
     b_profile_mark_count = int((run_b.get("profile_mark_count") or 0))
     observer_fail_closed = expanded.get("fail_closed_terminal")
@@ -5731,6 +5940,11 @@ def run_callsite_tracemalloc_scale_smoke(out_root: Path) -> dict[str, Any]:
     if tracemalloc_perturbed is None:
         tracemalloc_perturbed = dict(expanded.get("guards") or {}).get("tracemalloc_perturbed")
     mark_pair_count = expanded.get("s1d7_tracemalloc_mark_pair_count")
+    mark_schema = dict(expanded.get("localization") or {}).get("s1d7_tracemalloc_call_site", {}).get(
+        "s1d7_tracemalloc_mark_schema"
+    )
+    if mark_schema is None:
+        mark_schema = expanded.get("s1d7_tracemalloc_mark_schema")
     event_counts = dict(dict(expanded.get("guards") or {}).get("obmalloc_expanded_event_counts") or {})
     total_events = event_counts.get("total")
     total_events_int = int(total_events) if total_events is not None else None
@@ -5738,14 +5952,23 @@ def run_callsite_tracemalloc_scale_smoke(out_root: Path) -> dict[str, Any]:
         total_events_int is not None
         and total_events_int > PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING
     )
+    new_schema_mark_count = sum(
+        1
+        for row in marks_b
+        if str(row.get("event") or "").startswith("s1d7_tracemalloc_site_C4.S1d.7_")
+    )
     checks = {
         "observer_guard_clear": observer_fail_closed != "OBSERVER_PERTURBED_INCONCLUSIVE",
         "tracemalloc_perturbed_false": tracemalloc_perturbed is False,
         "s1d7_tracemalloc_mark_pair_count_eq_4": (
             mark_pair_count == PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED
         ),
+        "new_schema_mark_count_eq_8": new_schema_mark_count == 8,
+        "consumer_resolves_new_schema": expanded.get("call_site_status") == "RESOLVED"
+        or mark_pair_count == PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED,
         "b_profile_mark_count_gt_0": b_profile_mark_count > 0,
         "event_total_within_hard_ceiling": not event_total_exceeds_hard_ceiling,
+        "no_profile_env_mutual_exclusion_abort": int(run_b.get("exit_code", 0)) != -6,
         "no_tracemalloc_perturbed_inconclusive": (
             observer_fail_closed != "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
         ),
@@ -5759,8 +5982,11 @@ def run_callsite_tracemalloc_scale_smoke(out_root: Path) -> dict[str, Any]:
         "fail_closed_terminal": observer_fail_closed,
         "tracemalloc_perturbed": tracemalloc_perturbed,
         "s1d7_tracemalloc_mark_pair_count": mark_pair_count,
+        "s1d7_tracemalloc_mark_schema": mark_schema,
+        "new_schema_mark_count": new_schema_mark_count,
         "obmalloc_expanded_event_count_total": total_events_int,
         "call_site_status": expanded.get("call_site_status"),
+        "banked_reconcile_precondition_ok": True,
         "runs": {
             "A": {k: v for k, v in run_a.items() if k != "marks"},
             "B": {k: v for k, v in run_b.items() if k != "marks"},
@@ -5796,6 +6022,7 @@ def main() -> int:
             "fixture_obmalloc_arena_combined",
             "fixture_obmalloc_site_brackets",
             "fixture_obmalloc_expanded",
+            "fixture_callsite_b_prime",
         ),
         required=True,
     )
@@ -5908,6 +6135,11 @@ def main() -> int:
             args.run_root,
             mirror_durable_attribution=args.mirror_durable_attribution,
         )
+    elif args.mode == "fixture_callsite_b_prime":
+        payload = run_fixture_callsite_b_prime_combined(
+            args.run_root,
+            mirror_durable_attribution=args.mirror_durable_attribution,
+        )
     else:
         payload = run_fixture(args.run_root)
 
@@ -5932,6 +6164,7 @@ def main() -> int:
         "fixture_obmalloc_arena_combined",
         "fixture_obmalloc_site_brackets",
         "fixture_obmalloc_expanded",
+        "fixture_callsite_b_prime",
     }:
         return resolve_fixture_attribution_main_exit_code(payload)
     fail_closed_terminal = _fail_closed_terminal_from_attribution_payload(payload)

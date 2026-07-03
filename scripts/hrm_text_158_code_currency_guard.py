@@ -44,7 +44,7 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "a1400ba26d64e192cc43879d969d0977dbc31b7a3e8550381c95d35b73ba7091"
     ),
     "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py": (
-        "960c40e2a96ce81f5d46c30937ad24695d4f03aeeb02688dcb56cf9b61ce43df"
+        "76f2ddd28cac8b29c9ab451d2a69e256fee9ca15c75629e08a70029c472bf346"
     ),
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
         "c6da2c8221da6f88583a1d15aa1d9f9e751bc90bfab12d1129cf80e3ed51d141"
@@ -513,8 +513,46 @@ def run_phase3b_probe_executed_code_currency_guard(
     return None
 
 
+def profile_callsite_tracemalloc_only_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        profile_tracemalloc_enabled,
+    )
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        profile_debugmallocstats_enabled,
+    )
+
+    return (
+        profile_tracemalloc_enabled()
+        and not profile_debugmallocstats_enabled()
+        and not _env_truthy(OBMALLOC_EXPANDED_ENV)
+    )
+
+
 def maybe_enforce_phase3b_probe_import_byte_currency() -> int | None:
-    return run_phase3b_probe_executed_code_currency_guard(require_obmalloc_expanded=True)
+    exit_code = run_phase3b_probe_executed_code_currency_guard(require_obmalloc_expanded=True)
+    if exit_code is not None:
+        return exit_code
+    if profile_callsite_tracemalloc_only_enabled():
+        return run_phase3b_probe_executed_code_currency_guard(require_obmalloc_expanded=False)
+    return None
+
+
+def prepare_phase3b_callsite_tracemalloc_launch_env(
+    env: Mapping[str, str],
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, str]:
+    merged = dict(env)
+    invalidate_pycache_for_source_files(repo_root, PHASE3B_PYCACHE_INVALIDATION_PATHS)
+    merged["PYTHONDONTWRITEBYTECODE"] = "1"
+    pin_payload = {
+        rel: hash_file_bytes(repo_root / rel)
+        for rel in PHASE3B_PROBE_IMPORT_MODULE_BY_REL
+        if (repo_root / rel).is_file()
+    }
+    merged[IMPORT_BYTE_PINS_ENV] = json.dumps(pin_payload, sort_keys=True)
+    merged.pop(EXECUTED_GUARD_PASSED_ENV, None)
+    return merged
 
 
 def prepare_phase3b_probe_launch_env(

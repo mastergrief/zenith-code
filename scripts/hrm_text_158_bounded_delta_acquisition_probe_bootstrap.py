@@ -12,6 +12,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     guard_exit = run_phase3b_probe_executed_code_currency_guard(argv=cli_argv)
+    if guard_exit is None:
+        from scripts.hrm_text_158_code_currency_guard import (
+            maybe_enforce_phase3b_probe_import_byte_currency,
+        )
+
+        guard_exit = maybe_enforce_phase3b_probe_import_byte_currency()
     if guard_exit is not None:
         return int(guard_exit)
     from scripts.hrm_text_158_bounded_delta_acquisition_probe import main as probe_main

@@ -651,3 +651,49 @@ def test_consumer_missing_extra_pairs_fail_closed() -> None:
         guards={"perturbation_delta_gib": 0.0, "perturbation_threshold_gib": 0.5},
     )
     assert duplicate["fail_closed_reason"] == "TRACEMALLOC_DUPLICATE_PRE"
+
+
+def test_callsite_b_prime_b_arm_launch_composition_dry_check() -> None:
+    import os
+
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PROFILE_DEBUGMALLOCSTATS_ENV,
+        PROFILE_OBMALLOC_EXPANDED_ENV,
+        PROFILE_OBMALLOC_SITE_BRACKETS_ENV,
+        PROFILE_TRACEMALLOC_ENV,
+    )
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC,
+        dry_check_callsite_b_prime_b_arm_launch_composition,
+    )
+
+    prior = {
+        PROFILE_DEBUGMALLOCSTATS_ENV: os.environ.get(PROFILE_DEBUGMALLOCSTATS_ENV),
+        PROFILE_OBMALLOC_SITE_BRACKETS_ENV: os.environ.get(PROFILE_OBMALLOC_SITE_BRACKETS_ENV),
+        PROFILE_OBMALLOC_EXPANDED_ENV: os.environ.get(PROFILE_OBMALLOC_EXPANDED_ENV),
+        PROFILE_TRACEMALLOC_ENV: os.environ.get(PROFILE_TRACEMALLOC_ENV),
+    }
+    os.environ[PROFILE_DEBUGMALLOCSTATS_ENV] = "1"
+    os.environ[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] = "1"
+    os.environ[PROFILE_OBMALLOC_EXPANDED_ENV] = "1"
+    os.environ[PROFILE_TRACEMALLOC_ENV] = "0"
+    try:
+        receipt = dry_check_callsite_b_prime_b_arm_launch_composition()
+    finally:
+        for key, value in prior.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    assert receipt["ok"] is True, receipt
+    toggles = receipt["env_profile_toggles"]
+    assert toggles[PROFILE_DEBUGMALLOCSTATS_ENV] == "0"
+    assert toggles[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] == "0"
+    assert toggles[PROFILE_OBMALLOC_EXPANDED_ENV] == "0"
+    assert toggles[PROFILE_TRACEMALLOC_ENV] == "1"
+    cmd = receipt["cmd"]
+    assert "-B" in cmd
+    assert "hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py" in " ".join(cmd)
+    assert str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC) in cmd
+    assert receipt["checks"]["guard_dry_check_passes"] is True
