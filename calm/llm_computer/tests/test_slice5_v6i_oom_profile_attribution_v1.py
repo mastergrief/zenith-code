@@ -5017,6 +5017,85 @@ def test_code_currency_executed_guard_bootstrap_happy_path_before_probe(
     assert guard_idx < help_idx
 
 
+def test_maybe_enforce_tracemalloc_only_b_arm_passes_with_clean_sys_modules() -> None:
+    import json
+    import os
+    import subprocess
+    import sys
+
+    from scripts.hrm_text_158_code_currency_guard import (
+        EXECUTED_GUARD_SCHEMA,
+        IMPORT_BYTE_PINS_ENV,
+        OBMALLOC_EXPANDED_ENV,
+        PHASE3B_PROBE_IMPORT_MODULE_BY_REL,
+        PINNED_PROBE_MODULE_NAMES,
+        PROFILE_DEBUGMALLOCSTATS_ENV,
+        PROFILE_HOST_RSS_ENV,
+        PROFILE_TRACEMALLOC_ENV,
+        REPO_ROOT,
+        hash_file_bytes,
+    )
+
+    live_pins = {
+        rel: hash_file_bytes(REPO_ROOT / rel)
+        for rel in PHASE3B_PROBE_IMPORT_MODULE_BY_REL
+        if (REPO_ROOT / rel).is_file()
+    }
+    b_arm_env = {
+        PROFILE_HOST_RSS_ENV: "1",
+        PROFILE_TRACEMALLOC_ENV: "1",
+        PROFILE_DEBUGMALLOCSTATS_ENV: "0",
+        OBMALLOC_EXPANDED_ENV: "0",
+        IMPORT_BYTE_PINS_ENV: json.dumps(live_pins, sort_keys=True),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    script = (
+        "import json, os, sys\n"
+        "env = json.loads(sys.argv[1])\n"
+        "for key, value in env.items():\n"
+        "    os.environ[key] = value\n"
+        "from scripts.hrm_text_158_code_currency_guard import (\n"
+        "    PINNED_PROBE_MODULE_NAMES,\n"
+        "    maybe_enforce_phase3b_probe_import_byte_currency,\n"
+        ")\n"
+        "for name in PINNED_PROBE_MODULE_NAMES:\n"
+        "    sys.modules.pop(name, None)\n"
+        "exit_code = maybe_enforce_phase3b_probe_import_byte_currency()\n"
+        "raise SystemExit(0 if exit_code is None else int(exit_code))\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script, json.dumps(b_arm_env)],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    decoder = json.JSONDecoder()
+    cursor = 0
+    captured = proc.stdout
+    guard_payload: dict[str, Any] | None = None
+    while cursor < len(captured):
+        snippet = captured[cursor:].lstrip()
+        if not snippet:
+            break
+        offset = len(captured) - len(snippet)
+        try:
+            payload, end = decoder.raw_decode(snippet)
+        except json.JSONDecodeError:
+            break
+        if payload.get("schema") == EXECUTED_GUARD_SCHEMA:
+            guard_payload = payload
+            break
+        cursor = offset + end
+
+    assert guard_payload is not None, proc.stdout
+    assert guard_payload["ok"] is True
+    assert guard_payload["guard_ran_before_pinned_imports"] is True
+    assert guard_payload["sys_modules_before_guard"] == []
+
+
 def test_capture_probe_child_argv_records_honest_full_argv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

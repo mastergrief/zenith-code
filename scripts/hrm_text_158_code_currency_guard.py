@@ -26,6 +26,9 @@ EXECUTED_GUARD_PROOF_METHOD = "reachable_code_object_fingerprint_method_a"
 SKIP_IMPORT_BYTE_CHECK_ENV = "HRM_TEXT_158_SKIP_CODE_CURRENCY_IMPORT_BYTE_CHECK"
 IMPORT_BYTE_PINS_ENV = "HRM_TEXT_158_CODE_CURRENCY_IMPORT_BYTE_PINS"
 OBMALLOC_EXPANDED_ENV = "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED"
+PROFILE_HOST_RSS_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS"
+PROFILE_TRACEMALLOC_ENV = "HRM_TEXT_158_PROFILE_TRACEMALLOC"
+PROFILE_DEBUGMALLOCSTATS_ENV = "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS"
 
 PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
     "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": (
@@ -514,16 +517,13 @@ def run_phase3b_probe_executed_code_currency_guard(
 
 
 def profile_callsite_tracemalloc_only_enabled() -> bool:
-    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
-        profile_tracemalloc_enabled,
-    )
-    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
-        profile_debugmallocstats_enabled,
-    )
-
+    # Env-only mirror of profile_tracemalloc_enabled (host_tracemalloc_probe.py:19-34)
+    # and profile_debugmallocstats_enabled (host_allocator_probe.py:810-825).
+    # If either probe fn gains non-env logic, update this predicate in the same commit.
     return (
-        profile_tracemalloc_enabled()
-        and not profile_debugmallocstats_enabled()
+        _env_truthy(PROFILE_HOST_RSS_ENV)
+        and _env_truthy(PROFILE_TRACEMALLOC_ENV)
+        and not _env_truthy(PROFILE_DEBUGMALLOCSTATS_ENV)
         and not _env_truthy(OBMALLOC_EXPANDED_ENV)
     )
 
