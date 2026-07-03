@@ -829,6 +829,58 @@ def test_band_counter_envelope_legacy_marks_suppressed() -> None:
     assert counter_marks[0]["event"] == S1D7_BAND_COUNTER_EVENT
 
 
+def test_band_counter_wrapper_forwards_emit_kwarg() -> None:
+    """GPU seam calls apply_event_coded_carrier_step — not carrier.apply_step directly."""
+    import numpy as np
+
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        apply_event_coded_carrier_step,
+    )
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+    )
+
+    counter_marks: list[dict[str, object]] = []
+
+    def band_counter_emit(
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: dict[str, object],
+        optimizer_step_index: int,
+        state_index: int,
+    ) -> None:
+        counter_marks.append(
+            {
+                "event": S1D7_BAND_COUNTER_EVENT,
+                "state_index": state_index,
+                "counters": counters,
+            }
+        )
+
+    carrier = EventCodedAccLiveState(logical_numel=100, threshold_abs=10)
+    indices = np.arange(20, dtype=np.int32)
+    values = np.full(20, 9, dtype=np.int16)
+    carrier._hot.replace_arrays(indices, values)
+
+    apply_event_coded_carrier_step(
+        carrier,
+        votes={int(idx): 4 for idx in indices},
+        step_index=0,
+        site_emit_enabled=False,
+        s1d7_band_counter_emit=band_counter_emit,
+        state_index=0,
+        optimizer_step_index=0,
+    )
+
+    assert len(counter_marks) >= 1
+    assert counter_marks[0]["event"] == S1D7_BAND_COUNTER_EVENT
+    assert counter_marks[0]["state_index"] == 0
+
+
 def test_band_counter_exactly_four_marks_across_sampled_states() -> None:
     import numpy as np
 

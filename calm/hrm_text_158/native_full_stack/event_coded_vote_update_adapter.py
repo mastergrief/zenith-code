@@ -1070,6 +1070,7 @@ def apply_event_coded_carrier_step(
     step_index: int,
     host_allocator_site_emit: Callable[..., None] | None = None,
     site_emit_enabled: bool = False,
+    s1d7_band_counter_emit: Callable[..., None] | None = None,
     optimizer_step_index: int | None = None,
     state_index: int | None = None,
 ) -> None:
@@ -1090,6 +1091,7 @@ def apply_event_coded_carrier_step(
     emit_kwargs = {
         "host_allocator_site_emit": host_allocator_site_emit,
         "site_emit_enabled": site_emit_enabled,
+        "s1d7_band_counter_emit": s1d7_band_counter_emit,
         "optimizer_step_index": optimizer_step_index,
         "state_index": state_index,
     }
