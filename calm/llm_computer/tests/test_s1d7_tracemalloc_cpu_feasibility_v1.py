@@ -417,3 +417,237 @@ def test_phase3_callsite_classifier_synthetic_branches() -> None:
     )
     assert missing["branch_outcome"] == "TRACEMALLOC_INCONCLUSIVE"
     assert missing["classifier_exit_code"] == 35
+
+
+def _read_profile_marks(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            rows.append(json.loads(line))
+    return rows
+
+
+def test_s1d7_tracemalloc_only_probe_emits_four_pairs(monkeypatch, tmp_path: Path) -> None:
+    import scripts.hrm_text_158_bounded_delta_acquisition_probe as probe
+
+    monkeypatch.setenv(probe.PROFILE_HOST_RSS_ENV, "1")
+    monkeypatch.setenv(probe.PROFILE_TRACEMALLOC_ENV, "1")
+    monkeypatch.setenv(probe.PROFILE_DEBUGMALLOCSTATS_ENV, "0")
+    monkeypatch.setenv(probe.PROFILE_OBMALLOC_SITE_BRACKETS_ENV, "0")
+
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        S1D7_TRACEMALLOC_POST_EVENT,
+        S1D7_TRACEMALLOC_PRE_EVENT,
+        S1D7_TRACEMALLOC_SITE_SCHEMA,
+    )
+
+    profile_path = tmp_path / "profile_b.jsonl"
+    progress = probe.PhaseProgress(
+        enabled=True,
+        device="cpu",
+        host_rss_profile_path=profile_path,
+    )
+    sampled = (0, 10, 21, 31)
+    for state_idx in sampled:
+        fields = {
+            "step": 0,
+            "optimizer_step_index": 0,
+            "state_index": int(state_idx),
+            "sampled_states": list(sampled),
+        }
+        progress._emit_s1d7_tracemalloc_site_mark(
+            event_suffix="pre",
+            origin_file="event_coded_acc_live_carrier.py",
+            origin_line=876,
+            fields=fields,
+        )
+        progress._emit_s1d7_tracemalloc_site_mark(
+            event_suffix="post",
+            origin_file="event_coded_acc_live_carrier.py",
+            origin_line=897,
+            fields=fields,
+        )
+
+    marks = _read_profile_marks(profile_path)
+    pre_events = [row for row in marks if row.get("event") == S1D7_TRACEMALLOC_PRE_EVENT]
+    post_events = [row for row in marks if row.get("event") == S1D7_TRACEMALLOC_POST_EVENT]
+    assert len(pre_events) == 4
+    assert len(post_events) == 4
+    assert all(row.get("schema") == S1D7_TRACEMALLOC_SITE_SCHEMA for row in marks)
+    assert all(row.get("tracemalloc_only") is True for row in marks)
+    assert all(row.get("s1d7_tracemalloc", {}).get("enabled") is True for row in marks)
+    assert "measurement_perturbed" not in marks[0]
+    obmalloc_events = [
+        row for row in marks if str(row.get("event", "")).startswith("obmalloc_site_")
+    ]
+    assert obmalloc_events == []
+
+
+def test_s1d7_tracemalloc_only_mutual_exclusion_still_aborts() -> None:
+    import scripts.hrm_text_158_bounded_delta_acquisition_probe as probe
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    env[probe.PROFILE_HOST_RSS_ENV] = "1"
+    env[probe.PROFILE_TRACEMALLOC_ENV] = "1"
+    env[probe.PROFILE_DEBUGMALLOCSTATS_ENV] = "1"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import scripts.hrm_text_158_bounded_delta_acquisition_probe as p; "
+            "p.assert_profile_tracemalloc_debugmallocstats_mutual_exclusion()",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert proc.returncode != 0
+    assert "profile_env_mutual_exclusion_abort" in proc.stdout
+
+
+def test_legacy_debugmallocstats_obmalloc_embed_unchanged(monkeypatch, tmp_path: Path) -> None:
+    import scripts.hrm_text_158_bounded_delta_acquisition_probe as probe
+
+    monkeypatch.setenv(probe.PROFILE_HOST_RSS_ENV, "1")
+    monkeypatch.setenv(probe.PROFILE_DEBUGMALLOCSTATS_ENV, "1")
+    monkeypatch.setenv(probe.PROFILE_OBMALLOC_SITE_BRACKETS_ENV, "1")
+    monkeypatch.setenv(probe.PROFILE_TRACEMALLOC_ENV, "0")
+
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        S1D7_POST_EVENT,
+        S1D7_PRE_EVENT,
+        S1D7_TRACEMALLOC_POST_EVENT,
+        S1D7_TRACEMALLOC_PRE_EVENT,
+    )
+
+    profile_path = tmp_path / "profile_b.jsonl"
+    progress = probe.PhaseProgress(
+        enabled=True,
+        device="cpu",
+        host_rss_profile_path=profile_path,
+    )
+    fields = {
+        "step": 0,
+        "optimizer_step_index": 0,
+        "state_index": 0,
+        "sampled_states": [0, 10, 21, 31],
+    }
+    progress._emit_obmalloc_site_bracket_mark(
+        site_id="C4.S1d.7",
+        event_suffix="pre",
+        origin_file="event_coded_acc_live_carrier.py",
+        origin_line=876,
+        fields=fields,
+    )
+    progress._emit_s1d7_tracemalloc_site_mark(
+        event_suffix="pre",
+        origin_file="event_coded_acc_live_carrier.py",
+        origin_line=876,
+        fields=fields,
+    )
+
+    marks = _read_profile_marks(profile_path)
+    assert any(row.get("event") == S1D7_PRE_EVENT for row in marks)
+    assert not any(row.get("event") == S1D7_TRACEMALLOC_PRE_EVENT for row in marks)
+    assert all("s1d7_tracemalloc" not in row for row in marks)
+
+
+def test_consumer_prefers_new_schema_over_legacy() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        S1D7_POST_EVENT,
+        S1D7_PRE_EVENT,
+        S1D7_TRACEMALLOC_POST_EVENT,
+        S1D7_TRACEMALLOC_PRE_EVENT,
+        attribute_s1d7_tracemalloc_call_site_from_marks,
+    )
+
+    marks = [
+        {
+            "event": S1D7_PRE_EVENT,
+            "state_index": 0,
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=886),
+        },
+        {
+            "event": S1D7_POST_EVENT,
+            "state_index": 0,
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(
+                traced_bytes=1_000_000,
+                carrier_line=886,
+            ),
+        },
+        {
+            "event": S1D7_TRACEMALLOC_PRE_EVENT,
+            "state_index": 0,
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+        },
+        {
+            "event": S1D7_TRACEMALLOC_POST_EVENT,
+            "state_index": 0,
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(
+                traced_bytes=1_000_000,
+                carrier_line=896,
+            ),
+        },
+    ]
+    result = attribute_s1d7_tracemalloc_call_site_from_marks(
+        marks,
+        sampled_states=(0,),
+        guards={"perturbation_delta_gib": 0.0, "perturbation_threshold_gib": 0.5},
+    )
+    assert result["s1d7_tracemalloc_mark_schema"] == "tracemalloc_only"
+    assert result["call_site_status"] == "RESOLVED"
+    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:896"
+    assert result["s1d7_call_site_candidate"] == "c"
+
+
+def test_consumer_missing_extra_pairs_fail_closed() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        S1D7_TRACEMALLOC_POST_EVENT,
+        S1D7_TRACEMALLOC_PRE_EVENT,
+        attribute_s1d7_tracemalloc_call_site_from_marks,
+    )
+
+    missing_post = [
+        {
+            "event": S1D7_TRACEMALLOC_PRE_EVENT,
+            "state_index": 0,
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+        }
+    ]
+    missing = attribute_s1d7_tracemalloc_call_site_from_marks(
+        missing_post,
+        sampled_states=(0,),
+        guards={"perturbation_delta_gib": 0.0, "perturbation_threshold_gib": 0.5},
+    )
+    assert missing["fail_closed_reason"] == "TRACEMALLOC_MISSING_PAIR"
+
+    duplicate_pre = [
+        {
+            "event": S1D7_TRACEMALLOC_PRE_EVENT,
+            "state_index": 0,
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+        },
+        {
+            "event": S1D7_TRACEMALLOC_PRE_EVENT,
+            "state_index": 0,
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+        },
+        {
+            "event": S1D7_TRACEMALLOC_POST_EVENT,
+            "state_index": 0,
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(
+                traced_bytes=1_000_000,
+                carrier_line=896,
+            ),
+        },
+    ]
+    duplicate = attribute_s1d7_tracemalloc_call_site_from_marks(
+        duplicate_pre,
+        sampled_states=(0,),
+        guards={"perturbation_delta_gib": 0.0, "perturbation_threshold_gib": 0.5},
+    )
+    assert duplicate["fail_closed_reason"] == "TRACEMALLOC_DUPLICATE_PRE"

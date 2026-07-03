@@ -348,6 +348,7 @@ PROFILE_HOST_RSS_ALLOC_HOOK_SCHEMA = "hrm_text_158_profile_host_rss_mark/v6"
 PROFILE_HOST_RSS_TRIANGULATION_SCHEMA = "hrm_text_158_profile_host_rss_mark/v7"
 PROFILE_HOST_RSS_OBMALLOC_SCHEMA = "hrm_text_158_profile_host_rss_mark/v8"
 PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v9"
+PROFILE_S1D7_TRACEMALLOC_SITE_SCHEMA = "hrm_text_158_s1d7_tracemalloc_site/v1"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
@@ -1920,6 +1921,16 @@ def profile_obmalloc_site_brackets_enabled() -> bool:
     }
 
 
+def profile_s1d7_tracemalloc_site_enabled() -> bool:
+    if not profile_host_rss_enabled():
+        return False
+    if not profile_tracemalloc_enabled():
+        return False
+    if profile_debugmallocstats_enabled():
+        return False
+    return True
+
+
 def profile_obmalloc_expanded_enabled() -> bool:
     if not profile_obmalloc_site_brackets_enabled():
         return False
@@ -2670,6 +2681,58 @@ class PhaseProgress:
             mark["s1d7_tracemalloc"] = take_tracemalloc_snapshot_dict()
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
+    def _emit_s1d7_tracemalloc_site_mark(
+        self,
+        *,
+        event_suffix: str,
+        origin_file: str,
+        origin_line: int,
+        fields: Mapping[str, Any],
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_s1d7_tracemalloc_site_enabled():
+            return
+        from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+            ensure_tracemalloc_started,
+        )
+        from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+            S1D7_SITE_ID,
+            S1D7_TRACEMALLOC_POST_EVENT,
+            S1D7_TRACEMALLOC_PRE_EVENT,
+            take_tracemalloc_snapshot_dict,
+        )
+
+        ensure_tracemalloc_started(depth=50)
+        event = (
+            S1D7_TRACEMALLOC_PRE_EVENT
+            if str(event_suffix) == "pre"
+            else S1D7_TRACEMALLOC_POST_EVENT
+        )
+        resource_snapshot = _proc_self_resource_snapshot()
+        mark: dict[str, Any] = {
+            "schema": PROFILE_S1D7_TRACEMALLOC_SITE_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": str(event),
+            "site_id": str(S1D7_SITE_ID),
+            "origin_file": str(origin_file),
+            "origin_line": int(origin_line),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+            "tracemalloc_only": True,
+            "tracemalloc_diagnostic": True,
+            "s1d7_tracemalloc": take_tracemalloc_snapshot_dict(),
+        }
+        for key in ("step", "optimizer_step_index", "state_index"):
+            if key in fields:
+                mark[key] = fields[key]
+        if "sampled_states" in fields:
+            mark["sampled_states"] = list(fields["sampled_states"])
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
     def _emit_alloc_hook_mark(
         self,
         *,
@@ -2946,6 +3009,13 @@ class PhaseProgress:
                 origin_line=int(origin_line),
                 fields=site_fields,
             )
+            if str(site_id) == "C4.S1d.7":
+                self._emit_s1d7_tracemalloc_site_mark(
+                    event_suffix=str(event_suffix),
+                    origin_file=str(origin_file),
+                    origin_line=int(origin_line),
+                    fields=site_fields,
+                )
 
         emit.site_emit = site_emit  # type: ignore[attr-defined]
 

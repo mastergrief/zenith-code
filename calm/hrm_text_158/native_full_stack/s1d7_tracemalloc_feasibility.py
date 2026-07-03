@@ -16,6 +16,9 @@ from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
 S1D7_SITE_ID = "C4.S1d.7"
 S1D7_PRE_EVENT = f"obmalloc_site_{S1D7_SITE_ID}_pre"
 S1D7_POST_EVENT = f"obmalloc_site_{S1D7_SITE_ID}_post"
+S1D7_TRACEMALLOC_PRE_EVENT = f"s1d7_tracemalloc_site_{S1D7_SITE_ID}_pre"
+S1D7_TRACEMALLOC_POST_EVENT = f"s1d7_tracemalloc_site_{S1D7_SITE_ID}_post"
+S1D7_TRACEMALLOC_SITE_SCHEMA = "hrm_text_158_s1d7_tracemalloc_site/v1"
 
 CARRIER_ORIGIN_FILE = "event_coded_acc_live_carrier.py"
 S1D7_ACCEPTANCE_LINE_MIN = 876
@@ -141,6 +144,49 @@ def branch_outcome_for_s1d7_candidate(candidate: str | None) -> str | None:
     if candidate == "ambiguous":
         return S1D7_BRANCH_CANDIDATE_AMBIGUOUS
     return None
+
+
+def has_s1d7_tracemalloc_site_marks(marks: Sequence[Mapping[str, Any]]) -> bool:
+    return any(
+        str(row.get("event") or "") in {S1D7_TRACEMALLOC_PRE_EVENT, S1D7_TRACEMALLOC_POST_EVENT}
+        for row in marks
+    )
+
+
+def resolve_s1d7_tracemalloc_mark_events(
+    marks: Sequence[Mapping[str, Any]],
+) -> tuple[str, str, str]:
+    if has_s1d7_tracemalloc_site_marks(marks):
+        return S1D7_TRACEMALLOC_PRE_EVENT, S1D7_TRACEMALLOC_POST_EVENT, "tracemalloc_only"
+    return S1D7_PRE_EVENT, S1D7_POST_EVENT, "legacy_obmalloc_embed"
+
+
+def _pair_s1d7_tracemalloc_marks_by_state(
+    marks_b: Sequence[Mapping[str, Any]],
+    *,
+    pre_event: str,
+    post_event: str,
+    sampled_states: Sequence[int],
+) -> tuple[dict[int, Mapping[str, Any]], dict[int, Mapping[str, Any]], str | None]:
+    pre_by_state: dict[int, Mapping[str, Any]] = {}
+    post_by_state: dict[int, Mapping[str, Any]] = {}
+    for row in marks_b:
+        event = str(row.get("event") or "")
+        if row.get("state_index") is None:
+            continue
+        state_idx = int(row["state_index"])
+        if event == pre_event:
+            if state_idx in pre_by_state:
+                return pre_by_state, post_by_state, "TRACEMALLOC_DUPLICATE_PRE"
+            pre_by_state[state_idx] = row
+        elif event == post_event:
+            if state_idx in post_by_state:
+                return pre_by_state, post_by_state, "TRACEMALLOC_DUPLICATE_POST"
+            post_by_state[state_idx] = row
+    for state_idx in sampled_states:
+        if int(state_idx) not in pre_by_state or int(state_idx) not in post_by_state:
+            return pre_by_state, post_by_state, "TRACEMALLOC_MISSING_PAIR"
+    return pre_by_state, post_by_state, None
 
 
 def classify_s1d7_tracemalloc_call_site(
@@ -398,14 +444,19 @@ def attribute_s1d7_tracemalloc_call_site_from_marks(
             "fail_closed_reason": "TRACEMALLOC_PERTURBED_INCONCLUSIVE",
         }
 
-    pre_by_state: dict[int, Mapping[str, Any]] = {}
-    post_by_state: dict[int, Mapping[str, Any]] = {}
-    for row in marks_b:
-        event = str(row.get("event") or "")
-        if event == S1D7_PRE_EVENT and row.get("state_index") is not None:
-            pre_by_state[int(row["state_index"])] = row
-        elif event == S1D7_POST_EVENT and row.get("state_index") is not None:
-            post_by_state[int(row["state_index"])] = row
+    pre_event, post_event, mark_schema = resolve_s1d7_tracemalloc_mark_events(marks_b)
+    pre_by_state, post_by_state, pair_error = _pair_s1d7_tracemalloc_marks_by_state(
+        marks_b,
+        pre_event=pre_event,
+        post_event=post_event,
+        sampled_states=sampled_states,
+    )
+    if pair_error is not None:
+        return {
+            **unresolved,
+            "s1d7_tracemalloc_mark_schema": mark_schema,
+            "fail_closed_reason": pair_error,
+        }
 
     per_state_diffs: list[dict[str, Any]] = []
     for state_idx in sampled_states:
@@ -420,9 +471,10 @@ def attribute_s1d7_tracemalloc_call_site_from_marks(
         per_state_diffs.append(diff_traceback_frames(baseline, current, top_n=256))
 
     unresolved["s1d7_tracemalloc_mark_pair_count"] = len(per_state_diffs)
-    if not per_state_diffs:
+    if not per_state_diffs or len(per_state_diffs) != len(tuple(sampled_states)):
         return {
             **unresolved,
+            "s1d7_tracemalloc_mark_schema": mark_schema,
             "fail_closed_reason": "TRACEMALLOC_INCONCLUSIVE",
         }
 
@@ -440,6 +492,7 @@ def attribute_s1d7_tracemalloc_call_site_from_marks(
             "top_concentration_fraction"
         ),
         "s1d7_tracemalloc_mark_pair_count": len(per_state_diffs),
+        "s1d7_tracemalloc_mark_schema": mark_schema,
         "fail_closed_reason": classified.get("fail_closed_reason"),
         "top_delta_frame": classified.get("top_delta_frame"),
     }
