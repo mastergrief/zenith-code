@@ -2066,6 +2066,43 @@ def compute_obmalloc_expanded_sampled_states(n_states: int) -> tuple[int, ...]:
     return tuple(sorted(_compute(n_states)))
 
 
+def _attribute_s1d7_tracemalloc_call_site(
+    marks_b: Sequence[Mapping[str, Any]],
+    *,
+    guards: Mapping[str, Any],
+    sampled_states: Sequence[int],
+) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        attribute_s1d7_tracemalloc_call_site_from_marks,
+    )
+
+    return attribute_s1d7_tracemalloc_call_site_from_marks(
+        marks_b,
+        sampled_states=sampled_states,
+        guards=guards,
+    )
+
+
+def _obmalloc_expanded_call_site_fields(
+    s1d7_call_site: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "call_site_status": s1d7_call_site.get("call_site_status", "UNRESOLVED"),
+        "call_site_origin_file_line": s1d7_call_site.get("call_site_origin_file_line"),
+        "s1d7_tracemalloc_diff": s1d7_call_site.get("s1d7_tracemalloc_diff"),
+        "s1d7_tracemalloc_top_concentration_fraction": s1d7_call_site.get(
+            "s1d7_tracemalloc_top_concentration_fraction"
+        ),
+        "tracemalloc_perturbed": s1d7_call_site.get("tracemalloc_perturbed"),
+        "s1d7_call_site_in_bracket_ok": s1d7_call_site.get("s1d7_call_site_in_bracket_ok"),
+        "s1d7_call_site_candidate": s1d7_call_site.get("s1d7_call_site_candidate"),
+        "s1d7_call_site_branch_outcome": s1d7_call_site.get("s1d7_call_site_branch_outcome"),
+        "s1d7_tracemalloc_mark_pair_count": s1d7_call_site.get(
+            "s1d7_tracemalloc_mark_pair_count"
+        ),
+    }
+
+
 def _obmalloc_site_mark_for_state(
     marks: Sequence[Mapping[str, Any]],
     event: str,
@@ -3155,6 +3192,12 @@ def attribute_obmalloc_expanded(
         "S1D_CHILD_COVERAGE_FAIL",
         "S1F_CHILD_COVERAGE_FAIL",
     }:
+        s1d7_call_site = _attribute_s1d7_tracemalloc_call_site(
+            marks_b,
+            guards=guards,
+            sampled_states=sampled,
+        )
+        localization["s1d7_tracemalloc_call_site"] = dict(s1d7_call_site)
         return {
             **banked,
             "guards": guards,
@@ -3162,6 +3205,7 @@ def attribute_obmalloc_expanded(
             "classifier_terminal": None,
             "fail_closed_terminal": fail_closed_terminal,
             "slice8_rewrite_authorized": False,
+            **_obmalloc_expanded_call_site_fields(s1d7_call_site),
         }
 
     if monotonic_fraction >= OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN:
@@ -3191,6 +3235,13 @@ def attribute_obmalloc_expanded(
         and monotonic_fraction < OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN
     )
 
+    s1d7_call_site = _attribute_s1d7_tracemalloc_call_site(
+        marks_b,
+        guards=guards,
+        sampled_states=sampled,
+    )
+    localization["s1d7_tracemalloc_call_site"] = dict(s1d7_call_site)
+
     return {
         **banked,
         "guards": guards,
@@ -3198,7 +3249,7 @@ def attribute_obmalloc_expanded(
         "classifier_terminal": classifier_terminal,
         "fail_closed_terminal": fail_closed_terminal,
         "slice8_rewrite_authorized": slice8_rewrite_authorized,
-        "call_site_status": "UNRESOLVED",
+        **_obmalloc_expanded_call_site_fields(s1d7_call_site),
     }
 
 

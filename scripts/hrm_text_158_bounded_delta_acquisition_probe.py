@@ -2658,6 +2658,16 @@ class PhaseProgress:
                 mark["arena_bytes_forcing"] = int(stats["arena_bytes"])
             if stats.get("bytes_in_allocated_blocks") is not None:
                 mark["allocated_blocks_holding"] = int(stats["bytes_in_allocated_blocks"])
+        if str(site_id) == "C4.S1d.7" and profile_tracemalloc_enabled():
+            from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+                ensure_tracemalloc_started,
+            )
+            from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+                take_tracemalloc_snapshot_dict,
+            )
+
+            ensure_tracemalloc_started(depth=50)
+            mark["s1d7_tracemalloc"] = take_tracemalloc_snapshot_dict()
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
     def _emit_alloc_hook_mark(
