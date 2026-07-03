@@ -32,25 +32,28 @@ PROFILE_DEBUGMALLOCSTATS_ENV = "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS"
 
 PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
     "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": (
-        "fe62aeacf4bcf541f11c60e985b1b9c149a8e3c36df175e2f04ce5c3a45f723a"
+        "ff36565da75b6edaf3c0c8319b259af9ecde1f955da37caea9c634c66976a4da"
     ),
     "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py": (
-        "5169e9f9152c39936140ef97c56d4dbf067775632581cb62d4d3a9debcf5c181"
+        "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
     ),
     "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": (
         "31ea9d1794ce3086b5204a7c3397b84e7cad9a960d0d4d568b4029523f0b6cc3"
     ),
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": (
-        "1eb3149091e2fddb39106c11e5bb8833325e90b64ca91ad4014663f1fea2d383"
+        "f6c9be4a227b46020dd3603fc51e6a717ed5c001b09e7cd5fe6a3b974ea3e941"
     ),
     "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py": (
-        "2a2d9c623dafb5cf573e445cdf2fc30a8f8ff60cdabe0a771540e316830da5ab"
+        "11f13c2238ab20c2adaef366f7adf0cd2243cd77fe0041f8f9613596fad16d26"
     ),
     "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py": (
-        "76f2ddd28cac8b29c9ab451d2a69e256fee9ca15c75629e08a70029c472bf346"
+        "515be59672cc22fa5dcb94209212f710ce1fc8753b56b1b17f0ee194a52e5621"
+    ),
+    "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py": (
+        "c1042893f728b22b3637c51e2975dfc889baab6ee7a51f2c848df9a5cda45bdd"
     ),
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "c6da2c8221da6f88583a1d15aa1d9f9e751bc90bfab12d1129cf80e3ed51d141"
+        "004cd942105f1fc0085da286b7d44939ae67df19a6d2563f8dc0161ad6826299"
     ),
 }
 
@@ -72,6 +75,9 @@ PHASE3B_PROBE_IMPORT_MODULE_BY_REL: dict[str, str] = {
     ),
     "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py": (
         "calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility"
+    ),
+    "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py": (
+        "calm.hrm_text_158.native_full_stack.s1d7_band_counter"
     ),
 }
 
