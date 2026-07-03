@@ -438,6 +438,7 @@ def test_s1d7_tracemalloc_only_probe_emits_four_pairs(monkeypatch, tmp_path: Pat
     monkeypatch.setenv(probe.PROFILE_TRACEMALLOC_ENV, "1")
     monkeypatch.setenv(probe.PROFILE_DEBUGMALLOCSTATS_ENV, "0")
     monkeypatch.setenv(probe.PROFILE_OBMALLOC_SITE_BRACKETS_ENV, "0")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_S1D7_TRACEMALLOC_FULL_TRACE", "1")
 
     from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
         S1D7_TRACEMALLOC_POST_EVENT,
@@ -498,6 +499,7 @@ def test_s1d7_tracemalloc_bracket_clears_on_post_exception(monkeypatch, tmp_path
     monkeypatch.setenv(probe.PROFILE_TRACEMALLOC_ENV, "1")
     monkeypatch.setenv(probe.PROFILE_DEBUGMALLOCSTATS_ENV, "0")
     monkeypatch.setenv(probe.PROFILE_OBMALLOC_SITE_BRACKETS_ENV, "0")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_S1D7_TRACEMALLOC_FULL_TRACE", "1")
 
     from calm.hrm_text_158.native_full_stack import host_tracemalloc_probe
 
@@ -759,3 +761,384 @@ def test_callsite_b_prime_b_arm_launch_composition_dry_check() -> None:
     assert "hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py" in " ".join(cmd)
     assert str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC) in cmd
     assert receipt["checks"]["guard_dry_check_passes"] is True
+
+
+def test_band_counter_envelope_legacy_marks_suppressed() -> None:
+    import numpy as np
+
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+    )
+
+    legacy_marks: list[dict[str, object]] = []
+    counter_marks: list[dict[str, object]] = []
+
+    def site_emit(
+        site_id: str,
+        event_suffix: str,
+        *,
+        origin_file: str,
+        origin_line: int,
+        optimizer_step_index: int,
+        state_index: int,
+    ) -> None:
+        legacy_marks.append(
+            {
+                "site_id": site_id,
+                "event_suffix": event_suffix,
+                "state_index": state_index,
+            }
+        )
+
+    def band_counter_emit(
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: dict[str, object],
+        optimizer_step_index: int,
+        state_index: int,
+    ) -> None:
+        counter_marks.append(
+            {
+                "event": S1D7_BAND_COUNTER_EVENT,
+                "state_index": state_index,
+                "counters": counters,
+            }
+        )
+
+    carrier = EventCodedAccLiveState(logical_numel=100, threshold_abs=10)
+    indices = np.arange(20, dtype=np.int32)
+    values = np.full(20, 9, dtype=np.int16)
+    carrier._hot.replace_arrays(indices, values)
+    vote_values = np.full(20, 4, dtype=np.int32)
+    carrier.apply_step(
+        0,
+        sparse_vote_indices=indices.astype(np.int64),
+        sparse_vote_values=vote_values,
+        host_allocator_site_emit=site_emit,
+        site_emit_enabled=False,
+        s1d7_band_counter_emit=band_counter_emit,
+        state_index=0,
+        optimizer_step_index=0,
+    )
+    assert legacy_marks == []
+    assert len(counter_marks) == 1
+    assert counter_marks[0]["event"] == S1D7_BAND_COUNTER_EVENT
+
+
+def test_band_counter_exactly_four_marks_across_sampled_states() -> None:
+    import numpy as np
+
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+    )
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = compute_obmalloc_expanded_sampled_states(32)
+    counter_marks: list[dict[str, object]] = []
+
+    def band_counter_emit(
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: dict[str, object],
+        optimizer_step_index: int,
+        state_index: int,
+    ) -> None:
+        counter_marks.append(
+            {
+                "event": S1D7_BAND_COUNTER_EVENT,
+                "state_index": state_index,
+                "s1d7_band_counters": counters,
+            }
+        )
+
+    carrier = EventCodedAccLiveState(logical_numel=200, threshold_abs=10)
+    indices = np.arange(50, dtype=np.int32)
+    values = np.full(50, 9, dtype=np.int16)
+    vote_values = np.full(50, 4, dtype=np.int32)
+    for state_idx in sampled:
+        carrier._hot.replace_arrays(indices, values)
+        carrier.apply_step(
+            int(state_idx),
+            sparse_vote_indices=indices.astype(np.int64),
+            sparse_vote_values=vote_values,
+            s1d7_band_counter_emit=band_counter_emit,
+            state_index=int(state_idx),
+            optimizer_step_index=int(state_idx),
+        )
+    assert len(counter_marks) == len(sampled)
+    assert {int(row["state_index"]) for row in counter_marks} == set(sampled)
+
+
+def test_band_counter_byte_model_applied_indices_shallow_copy() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        estimate_band_a_allocation_bytes,
+        PY_LIST_HEADER_BYTES,
+        PY_POINTER_SLOT_BYTES,
+        PYLONG_OBJECT_BYTES,
+    )
+
+    n = 1000
+    expected = (
+        PY_LIST_HEADER_BYTES + n * PY_POINTER_SLOT_BYTES + n * PYLONG_OBJECT_BYTES
+        + PY_LIST_HEADER_BYTES + n * PY_POINTER_SLOT_BYTES
+    )
+    assert estimate_band_a_allocation_bytes(
+        crossing_indices_len=n,
+        applied_indices_len=n,
+    ) == expected
+
+
+def test_band_counter_dominance_gate_fail_closed_on_all_zero() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        evaluate_band_dominance,
+    )
+
+    rows = [
+        {
+            "state_index": 0,
+            "s1d7_band_counters": {
+                "byte_proxies": {
+                    "band_a_bytes": 0,
+                    "band_c_bytes": 0,
+                    "band_e_bytes": 0,
+                }
+            },
+        }
+    ]
+    result = evaluate_band_dominance(rows, sampled_states=(0,))
+    assert result["band_counter_dominance_ok"] is False
+    assert result["fail_closed_reason"] == "BAND_COUNTER_ALL_ZERO_ACTIVITY"
+
+
+def test_band_counter_attribute_resolves_candidate_c() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+        attribute_s1d7_band_counter_call_site_from_marks,
+        collect_s1d7_band_counters,
+    )
+    import numpy as np
+
+    counters = collect_s1d7_band_counters(
+        crossing_indices_len=10,
+        applied_indices_len=10,
+        append_event_count=50_000,
+        event_encoded_bytes_delta=500_000,
+        q_level_writes=50_000,
+        remove_idx=np.empty(0, dtype=np.int32),
+        upd_idx=np.empty(0, dtype=np.int32),
+        upd_val=np.empty(0, dtype=np.int16),
+    )
+    marks = [
+        {
+            "event": S1D7_BAND_COUNTER_EVENT,
+            "state_index": state_idx,
+            "s1d7_band_counters": counters,
+        }
+        for state_idx in (0, 10, 21, 31)
+    ]
+    result = attribute_s1d7_band_counter_call_site_from_marks(
+        marks,
+        sampled_states=(0, 10, 21, 31),
+        guards={},
+    )
+    assert result["call_site_status"] == "RESOLVED"
+    assert result["s1d7_call_site_candidate"] == "c"
+    assert result["s1d7_band_counter_mark_count"] == 4
+    assert result["tracemalloc_perturbed"] is False
+
+
+def _band_counter_mark(
+    *,
+    state_index: int,
+    counters: dict[str, object] | None = None,
+) -> dict[str, object]:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+        collect_s1d7_band_counters,
+    )
+    import numpy as np
+
+    if counters is None:
+        counters = collect_s1d7_band_counters(
+            crossing_indices_len=10,
+            applied_indices_len=10,
+            append_event_count=50_000,
+            event_encoded_bytes_delta=500_000,
+            q_level_writes=50_000,
+            remove_idx=np.empty(0, dtype=np.int32),
+            upd_idx=np.empty(0, dtype=np.int32),
+            upd_val=np.empty(0, dtype=np.int16),
+        )
+    return {
+        "event": S1D7_BAND_COUNTER_EVENT,
+        "state_index": state_index,
+        "s1d7_band_counters": counters,
+    }
+
+
+def test_band_counter_exact_row_duplicate_state_fail_closed() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        attribute_s1d7_band_counter_call_site_from_marks,
+    )
+
+    sampled = (0, 10, 21, 31)
+    marks = [
+        _band_counter_mark(state_index=0),
+        _band_counter_mark(state_index=0),
+        _band_counter_mark(state_index=10),
+        _band_counter_mark(state_index=21),
+    ]
+    result = attribute_s1d7_band_counter_call_site_from_marks(
+        marks,
+        sampled_states=sampled,
+        guards={},
+    )
+    assert result["call_site_status"] == "UNRESOLVED"
+    assert result["fail_closed_reason"] == "BAND_COUNTER_DUPLICATE_ROW"
+
+
+def test_band_counter_exact_row_unexpected_state_fail_closed() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        attribute_s1d7_band_counter_call_site_from_marks,
+    )
+
+    sampled = (0, 10, 21, 31)
+    marks = [_band_counter_mark(state_index=state_idx) for state_idx in (0, 10, 21, 99)]
+    result = attribute_s1d7_band_counter_call_site_from_marks(
+        marks,
+        sampled_states=sampled,
+        guards={},
+    )
+    assert result["call_site_status"] == "UNRESOLVED"
+    assert result["fail_closed_reason"] == "BAND_COUNTER_UNEXPECTED_STATE"
+
+
+def test_band_counter_exact_row_count_mismatch_fail_closed() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        attribute_s1d7_band_counter_call_site_from_marks,
+    )
+
+    sampled = (0, 10, 21, 31)
+    marks = [_band_counter_mark(state_index=state_idx) for state_idx in sampled] + [
+        _band_counter_mark(state_index=5)
+    ]
+    result = attribute_s1d7_band_counter_call_site_from_marks(
+        marks,
+        sampled_states=sampled,
+        guards={},
+    )
+    assert result["call_site_status"] == "UNRESOLVED"
+    assert result["fail_closed_reason"] == "BAND_COUNTER_ROW_COUNT_MISMATCH"
+
+
+def test_band_counter_empty_path_emits_explicit_zero_row() -> None:
+    import numpy as np
+
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+
+    captured: list[dict[str, object]] = []
+
+    def band_counter_emit(
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: dict[str, object],
+        optimizer_step_index: int,
+        state_index: int,
+    ) -> None:
+        captured.append(dict(counters))
+
+    carrier = EventCodedAccLiveState(logical_numel=10, threshold_abs=10)
+    carrier.apply_step(
+        0,
+        votes={},
+        s1d7_band_counter_emit=band_counter_emit,
+        state_index=0,
+        optimizer_step_index=0,
+    )
+    assert len(captured) == 1
+    counts = dict(captured[0].get("counts") or {})
+    assert counts["append_event_count"] == 0
+    assert counts["crossing_indices_len"] == 0
+
+
+def test_band_counter_calibration_forced_c() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        calibrate_band_counters_vs_classifier,
+    )
+
+    result = calibrate_band_counters_vs_classifier(case="forced_c")
+    assert result["ok"] is True, result
+    assert result["counter_band"] == "c"
+    assert result["classifier_candidate"] == "c"
+
+
+def test_band_counter_calibration_synthetic_a() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        calibrate_band_counters_vs_classifier,
+    )
+
+    result = calibrate_band_counters_vs_classifier(case="synthetic_a")
+    assert result["ok"] is True
+    assert result["counter_band"] == "a"
+
+
+def test_band_counter_calibration_forced_e_real_path_not_classifier_aligned() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        calibrate_band_counters_vs_classifier,
+    )
+
+    result = calibrate_band_counters_vs_classifier(case="forced_e")
+    assert result["counter_band"] == "e"
+    assert result["classifier_candidate"] is None
+    assert result["ok"] is False
+
+
+def test_band_counter_calibration_synthetic_e() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
+        calibrate_band_counters_vs_classifier,
+    )
+
+    result = calibrate_band_counters_vs_classifier(case="synthetic_e")
+    assert result["ok"] is True, result
+    assert result["counter_band"] == "e"
+    assert result["classifier_candidate"] == "e"
+
+
+def test_band_counter_mode_skips_tracemalloc_marks(monkeypatch: pytest.MonkeyPatch) -> None:
+    import torch
+
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        PhaseProgress,
+        profile_s1d7_band_counter_enabled,
+        profile_s1d7_tracemalloc_full_trace_enabled,
+    )
+
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_HOST_RSS", "1")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_TRACEMALLOC", "1")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS", "0")
+    assert profile_s1d7_band_counter_enabled() is True
+    assert profile_s1d7_tracemalloc_full_trace_enabled() is False
+
+    progress = PhaseProgress(enabled=False, device=torch.device("cpu"))
+    progress.host_rss_profile_path = Path("/tmp/unused_band_counter_test.jsonl")
+    marks_before = len(progress.events)
+    progress._emit_s1d7_tracemalloc_site_mark(
+        event_suffix="pre",
+        origin_file="event_coded_acc_live_carrier.py",
+        origin_line=876,
+        fields={"state_index": 0},
+    )
+    assert len(progress.events) == marks_before

@@ -58,6 +58,27 @@ def profile_s1d7_tracemalloc_site_enabled() -> bool:
     return not debugmallocstats_on
 
 
+PROFILE_S1D7_TRACEMALLOC_FULL_TRACE_ENV = "HRM_TEXT_158_PROFILE_S1D7_TRACEMALLOC_FULL_TRACE"
+
+
+def profile_s1d7_tracemalloc_full_trace_enabled() -> bool:
+    import os
+
+    if not profile_s1d7_tracemalloc_site_enabled():
+        return False
+    return os.environ.get(PROFILE_S1D7_TRACEMALLOC_FULL_TRACE_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def profile_s1d7_band_counter_enabled() -> bool:
+    """B-arm default: cheap band counters instead of full tracemalloc (fallback D opt-in)."""
+    return profile_s1d7_tracemalloc_site_enabled() and not profile_s1d7_tracemalloc_full_trace_enabled()
+
+
 def begin_s1d7_tracemalloc_bracket(*, depth: int = 50) -> bool:
     """Open one continuous S1d.7 tracing window (defensive stop-before-start)."""
     global _tracemalloc_started

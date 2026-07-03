@@ -501,6 +501,7 @@ def sync_event_coded_carrier_from_gpu_cap(
     q_persistent_cpu: torch.Tensor,
     step_index: int,
     host_allocator_site_emit: Callable[..., None] | None = None,
+    s1d7_band_counter_emit: Callable[..., None] | None = None,
     optimizer_step_index: int | None = None,
     state_index: int | None = None,
     sampled_states: frozenset[int] | None = None,
@@ -531,9 +532,15 @@ def sync_event_coded_carrier_from_gpu_cap(
         int(state_index),
         sampled_states=sampled_states,
     )
+    band_counter_emit = (
+        s1d7_band_counter_emit
+        if s1d7_band_counter_emit is not None and site_enabled
+        else None
+    )
     carrier_emit_kwargs = {
         "host_allocator_site_emit": host_allocator_site_emit,
         "site_emit_enabled": False,
+        "s1d7_band_counter_emit": band_counter_emit,
         "optimizer_step_index": optimizer_step_index,
         "state_index": state_index,
     }
@@ -628,6 +635,7 @@ def apply_cap_tensor_result_gpu(
     merge_stats_fn: Any,
     state_index: int = -1,
     host_allocator_site_emit: Callable[..., None] | None = None,
+    s1d7_band_counter_emit: Callable[..., None] | None = None,
     sampled_states: frozenset[int] | None = None,
 ) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
     """Apply one GPU cap tensor result through the sparse event-coded carrier path."""
@@ -679,6 +687,7 @@ def apply_cap_tensor_result_gpu(
         q_persistent_cpu=vu.q_levels,
         step_index=int(local_selection_ordering_step),
         host_allocator_site_emit=dedup_site_emit,
+        s1d7_band_counter_emit=s1d7_band_counter_emit,
         optimizer_step_index=int(local_selection_ordering_step),
         state_index=int(state_index),
         sampled_states=sampled_states,

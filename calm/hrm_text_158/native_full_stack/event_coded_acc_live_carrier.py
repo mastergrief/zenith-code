@@ -668,6 +668,7 @@ class EventCodedAccLiveState:
         hot_risk_override: Iterable[int] | None = None,
         host_allocator_site_emit: Callable[..., None] | None = None,
         site_emit_enabled: bool = False,
+        s1d7_band_counter_emit: Callable[..., None] | None = None,
         optimizer_step_index: int | None = None,
         state_index: int | None = None,
     ) -> StepSurfaceRecord:
@@ -735,6 +736,9 @@ class EventCodedAccLiveState:
             _site("C4.S1d.4", "pre", 722)
             _site("C4.S1d.4", "post", 837)
             _site("C4.S1d.7", "pre", 876)
+            if s1d7_band_counter_emit is not None:
+                from calm.hrm_text_158.native_full_stack.s1d7_band_counter import maybe_emit_s1d7_band_counter_post
+                maybe_emit_s1d7_band_counter_post(s1d7_band_counter_emit, crossing_indices_len=0, applied_indices_len=0, append_event_count=0, event_encoded_bytes_delta=0, q_level_writes=0, remove_idx=np.empty(0, dtype=np.int32), upd_idx=np.empty(0, dtype=np.int32), upd_val=np.empty(0, dtype=np.int16), origin_line=897, optimizer_step_index=int(optimizer_step_index if optimizer_step_index is not None else step_index), state_index=int(state_index if state_index is not None else -1))
             _site("C4.S1d.7", "post", 897)
             _site("C4.S1d.5", "pre", 858)
             _site("C4.S1d.5", "post", 869)
@@ -887,6 +891,7 @@ class EventCodedAccLiveState:
         applied_indices = list(crossing_indices)
         demotion_on_crossing = int(np.sum(demotion_cross_mask))
         demotion_on_decay = int(np.sum(demotion_decay_mask))
+        events_bytes_before = int(self._live_carrier_events_bytes) if s1d7_band_counter_emit else 0
 
         for flat_index, post in zip(active_sorted[cross_mask], post_arr[cross_mask]):
             idx = int(flat_index)
@@ -906,6 +911,9 @@ class EventCodedAccLiveState:
         write_mask = promote_mask | update_mask
         upd_idx = active_sorted[write_mask]
         upd_val = post_arr[write_mask].astype(np.int16)
+        if s1d7_band_counter_emit is not None:
+            from calm.hrm_text_158.native_full_stack.s1d7_band_counter import maybe_emit_s1d7_band_counter_post
+            maybe_emit_s1d7_band_counter_post(s1d7_band_counter_emit, crossing_indices_len=len(crossing_indices), applied_indices_len=len(applied_indices), append_event_count=len(crossing_indices), event_encoded_bytes_delta=int(self._live_carrier_events_bytes) - events_bytes_before, q_level_writes=len(crossing_indices), remove_idx=remove_idx, upd_idx=upd_idx, upd_val=upd_val, origin_line=909, optimizer_step_index=int(optimizer_step_index if optimizer_step_index is not None else step_index), state_index=int(state_index if state_index is not None else -1))
         _site("C4.S1d.7", "post", 897)
         _site("C4.S1d.5", "pre", 858)
         new_idx, new_val = merge_hot_table_arrays(

@@ -2380,10 +2380,20 @@ def _attribute_s1d7_tracemalloc_call_site(
     guards: Mapping[str, Any],
     sampled_states: Sequence[int],
 ) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        attribute_s1d7_band_counter_call_site_from_marks,
+        has_s1d7_band_counter_marks,
+    )
     from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
         attribute_s1d7_tracemalloc_call_site_from_marks,
     )
 
+    if has_s1d7_band_counter_marks(marks_b):
+        return attribute_s1d7_band_counter_call_site_from_marks(
+            marks_b,
+            sampled_states=sampled_states,
+            guards=guards,
+        )
     return attribute_s1d7_tracemalloc_call_site_from_marks(
         marks_b,
         sampled_states=sampled_states,
@@ -2407,6 +2417,12 @@ def _obmalloc_expanded_call_site_fields(
         "s1d7_call_site_branch_outcome": s1d7_call_site.get("s1d7_call_site_branch_outcome"),
         "s1d7_tracemalloc_mark_pair_count": s1d7_call_site.get(
             "s1d7_tracemalloc_mark_pair_count"
+        ),
+        "s1d7_band_counter_mark_count": s1d7_call_site.get("s1d7_band_counter_mark_count"),
+        "s1d7_band_counter_dominance_ok": (
+            dict(s1d7_call_site.get("s1d7_band_counter_dominance") or {}).get(
+                "band_counter_dominance_ok"
+            )
         ),
     }
 

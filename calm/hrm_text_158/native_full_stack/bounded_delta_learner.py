@@ -2565,6 +2565,11 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             host_allocator_site_emit = (
                 getattr(rss_emit, "site_emit", None) if rss_emit is not None else None
             )
+            s1d7_band_counter_emit = (
+                getattr(rss_emit, "band_counter_emit", None)
+                if rss_emit is not None
+                else None
+            )
             n_c4_states = len(gpu_cap_result.tensor_results)
             from calm.hrm_text_158.native_full_stack.c4_retention_owner_census import (
                 begin_c4_retention_owner_census_session,
@@ -2578,12 +2583,14 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED", ""
             ).strip().lower() in {"1", "true", "yes", "on"}
             from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+                profile_s1d7_band_counter_enabled,
                 profile_s1d7_tracemalloc_site_enabled,
             )
 
             tracemalloc_site_on = profile_s1d7_tracemalloc_site_enabled()
+            band_counter_on = profile_s1d7_band_counter_enabled()
             sampled_states: frozenset[int] | None = None
-            if (obmalloc_expanded_on or tracemalloc_site_on) and n_c4_states > 0:
+            if (obmalloc_expanded_on or tracemalloc_site_on or band_counter_on) and n_c4_states > 0:
                 from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
                     compute_obmalloc_expanded_sampled_states,
                 )
@@ -2614,6 +2621,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     merge_stats_fn=_merge_event_coded_cap_tensor_stats,
                     state_index=int(state_index),
                     host_allocator_site_emit=host_allocator_site_emit,
+                    s1d7_band_counter_emit=s1d7_band_counter_emit,
                     sampled_states=sampled_states,
                 )
 

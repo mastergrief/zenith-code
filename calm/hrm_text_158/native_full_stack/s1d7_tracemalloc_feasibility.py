@@ -34,6 +34,8 @@ S1D7_BRANCH_CANDIDATE_C = "S1D7_CALL_SITE_CANDIDATE_C_EVENTS_JOURNAL"
 S1D7_BRANCH_CANDIDATE_E = "S1D7_CALL_SITE_CANDIDATE_E_NUMPY_ARRAYS"
 S1D7_BRANCH_CANDIDATE_AMBIGUOUS = "S1D7_CALL_SITE_RESOLVED_CANDIDATE_AMBIGUOUS"
 
+TRACEMALLOC_TRACEBACK_DEPTH = 64
+
 
 def take_tracemalloc_snapshot_dict(*, top_n: int = 256) -> dict[str, Any]:
     current, peak = tracemalloc.get_traced_memory()
@@ -47,7 +49,7 @@ def take_tracemalloc_snapshot_dict(*, top_n: int = 256) -> dict[str, Any]:
             {
                 "size_bytes": int(stat.size),
                 "count": int(stat.count),
-                "traceback": traceback_lines[:25],
+                "traceback": traceback_lines[:TRACEMALLOC_TRACEBACK_DEPTH],
                 "traceback_key": "|".join(traceback_lines[:3]),
             }
         )
@@ -281,11 +283,12 @@ def run_crossing_indices_workload(*, n_lanes: int) -> None:
     run_carrier_crossing_indices_workload(n_lanes=n_lanes)
 
 
-def run_events_journal_workload(*, n_steps: int, n_lanes: int) -> None:
-    run_carrier_events_journal_workload(n_steps=n_steps, n_lanes=n_lanes)
-
-
-def run_carrier_events_journal_workload(*, n_steps: int, n_lanes: int) -> None:
+def run_carrier_events_journal_workload(
+    *,
+    n_steps: int,
+    n_lanes: int,
+    s1d7_band_counter_emit: Callable[..., None] | None = None,
+) -> None:
     from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
         EventCodedAccLiveState,
     )
@@ -305,7 +308,135 @@ def run_carrier_events_journal_workload(*, n_steps: int, n_lanes: int) -> None:
             sparse_vote_values=vote_values,
             state_index=step % 4,
             optimizer_step_index=step,
+            s1d7_band_counter_emit=s1d7_band_counter_emit,
         )
+
+
+def run_events_journal_workload(*, n_steps: int, n_lanes: int) -> None:
+    run_carrier_events_journal_workload(n_steps=n_steps, n_lanes=n_lanes)
+
+
+def run_carrier_demotion_update_workload(
+    *,
+    n_lanes: int,
+    s1d7_band_counter_emit: Callable[..., None] | None = None,
+) -> None:
+    """Real apply_step path with demotion/update activity and zero crossings."""
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+
+    carrier = EventCodedAccLiveState(
+        logical_numel=max(int(n_lanes) * 4, int(n_lanes) + 1),
+        threshold_abs=100,
+        demotion_band=3,
+    )
+    indices = np.arange(int(n_lanes), dtype=np.int32)
+    values = np.full(int(n_lanes), 2, dtype=np.int16)
+    carrier._hot.replace_arrays(indices, values)
+    for idx in indices:
+        carrier.q_levels[int(idx)] = 50
+    carrier.apply_step(
+        step_index=0,
+        sparse_vote_indices=np.empty(0, dtype=np.int64),
+        sparse_vote_values=np.empty(0, dtype=np.int32),
+        state_index=0,
+        optimizer_step_index=0,
+        s1d7_band_counter_emit=s1d7_band_counter_emit,
+    )
+
+
+def run_demotion_update_workload(*, n_lanes: int) -> None:
+    run_carrier_demotion_update_workload(n_lanes=n_lanes)
+
+
+def collect_carrier_band_counters_for_workload(workload_fn: Callable[[Callable[..., None] | None], None]) -> dict[str, Any]:
+    captured: list[dict[str, Any]] = []
+
+    def _emit(
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: Mapping[str, Any],
+        optimizer_step_index: int,
+        state_index: int,
+    ) -> None:
+        _ = (origin_file, origin_line, optimizer_step_index, state_index)
+        captured.append(dict(counters))
+
+    workload_fn(_emit)
+    if not captured:
+        raise RuntimeError("band_counter_capture_empty")
+    return dict(captured[-1])
+
+
+def calibrate_band_counters_vs_classifier(*, case: str) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        classify_forced_calibration_case,
+        synthetic_band_a_counters,
+    )
+
+    if case == "forced_c":
+        counters = collect_carrier_band_counters_for_workload(
+            lambda emit: run_carrier_events_journal_workload(
+                n_steps=1, n_lanes=25_000, s1d7_band_counter_emit=emit
+            )
+        )
+        diff = scoped_tracemalloc_bracket_diff(
+            lambda: run_carrier_events_journal_workload(n_steps=1, n_lanes=25_000)
+        )
+        classified = classify_s1d7_tracemalloc_call_site(diff)
+        counter_band = classify_forced_calibration_case(counters)
+        return {
+            "case": case,
+            "counter_band": counter_band,
+            "classifier_candidate": classified.get("s1d7_call_site_candidate"),
+            "ok": counter_band == "c" and classified.get("s1d7_call_site_candidate") == "c",
+            "counters": counters,
+        }
+    if case == "forced_e":
+        counters = collect_carrier_band_counters_for_workload(
+            lambda emit: run_carrier_demotion_update_workload(
+                n_lanes=25_000, s1d7_band_counter_emit=emit
+            )
+        )
+        diff = scoped_tracemalloc_bracket_diff(
+            lambda: run_carrier_demotion_update_workload(n_lanes=25_000)
+        )
+        classified = classify_s1d7_tracemalloc_call_site(diff)
+        counter_band = classify_forced_calibration_case(counters)
+        return {
+            "case": case,
+            "counter_band": counter_band,
+            "classifier_candidate": classified.get("s1d7_call_site_candidate"),
+            "ok": counter_band == "e" and classified.get("s1d7_call_site_candidate") == "e",
+            "counters": counters,
+        }
+    if case == "synthetic_a":
+        counters = synthetic_band_a_counters(n_lanes=25_000)
+        counter_band = classify_forced_calibration_case(counters)
+        return {
+            "case": case,
+            "counter_band": counter_band,
+            "classifier_candidate": "a",
+            "ok": counter_band == "a",
+            "counters": counters,
+        }
+    if case == "synthetic_e":
+        from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+            synthetic_band_e_counters,
+        )
+
+        counters = synthetic_band_e_counters(n_lanes=25_000)
+        counter_band = classify_forced_calibration_case(counters)
+        return {
+            "case": case,
+            "counter_band": counter_band,
+            "classifier_candidate": "e",
+            "ok": counter_band == "e",
+            "counters": counters,
+        }
+    raise ValueError(f"unknown_calibration_case:{case}")
 
 
 def cpu_perturbation_guard_smoke(*, noise_floor_gib: float = 0.01) -> dict[str, Any]:

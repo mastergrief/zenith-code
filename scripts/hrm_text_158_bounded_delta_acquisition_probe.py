@@ -349,6 +349,7 @@ PROFILE_HOST_RSS_TRIANGULATION_SCHEMA = "hrm_text_158_profile_host_rss_mark/v7"
 PROFILE_HOST_RSS_OBMALLOC_SCHEMA = "hrm_text_158_profile_host_rss_mark/v8"
 PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v9"
 PROFILE_S1D7_TRACEMALLOC_SITE_SCHEMA = "hrm_text_158_s1d7_tracemalloc_site/v1"
+PROFILE_S1D7_BAND_COUNTER_SITE_SCHEMA = "hrm_text_158_s1d7_band_counter_site/v1"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
@@ -1931,6 +1932,22 @@ def profile_s1d7_tracemalloc_site_enabled() -> bool:
     return True
 
 
+def profile_s1d7_tracemalloc_full_trace_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        profile_s1d7_tracemalloc_full_trace_enabled as _enabled,
+    )
+
+    return _enabled()
+
+
+def profile_s1d7_band_counter_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        profile_s1d7_band_counter_enabled as _enabled,
+    )
+
+    return _enabled()
+
+
 def profile_obmalloc_expanded_enabled() -> bool:
     if not profile_obmalloc_site_brackets_enabled():
         return False
@@ -2688,6 +2705,49 @@ class PhaseProgress:
                     end_s1d7_tracemalloc_bracket()
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
+    def _emit_s1d7_band_counter_site_mark(
+        self,
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: Mapping[str, Any],
+        fields: Mapping[str, Any],
+    ) -> None:
+        if self.host_rss_profile_path is None:
+            return
+        if not profile_s1d7_band_counter_enabled():
+            return
+        from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+            S1D7_BAND_COUNTER_EVENT,
+            S1D7_BAND_COUNTER_SITE_SCHEMA,
+            S1D7_SITE_ID,
+        )
+
+        resource_snapshot = _proc_self_resource_snapshot()
+        mark: dict[str, Any] = {
+            "schema": S1D7_BAND_COUNTER_SITE_SCHEMA,
+            "phase": "sparse_cap_apply",
+            "parent_phase": "sparse_cap_apply",
+            "sub_phase": "C4_gpu_cap_apply_sync",
+            "event": str(S1D7_BAND_COUNTER_EVENT),
+            "site_id": str(S1D7_SITE_ID),
+            "origin_file": str(origin_file),
+            "origin_line": int(origin_line),
+            "elapsed_since_start_seconds": self._elapsed(),
+            "device": str(self.device),
+            "resource_snapshot": resource_snapshot,
+            "tracemalloc_only": True,
+            "tracemalloc_diagnostic": False,
+            "band_counter_only": True,
+            "s1d7_band_counters": dict(counters),
+        }
+        for key in ("step", "optimizer_step_index", "state_index"):
+            if key in fields:
+                mark[key] = fields[key]
+        if "sampled_states" in fields:
+            mark["sampled_states"] = list(fields["sampled_states"])
+        _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
+
     def _emit_s1d7_tracemalloc_site_mark(
         self,
         *,
@@ -2698,7 +2758,7 @@ class PhaseProgress:
     ) -> None:
         if self.host_rss_profile_path is None:
             return
-        if not profile_s1d7_tracemalloc_site_enabled():
+        if not profile_s1d7_tracemalloc_full_trace_enabled():
             return
         from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
             begin_s1d7_tracemalloc_bracket,
@@ -3025,14 +3085,39 @@ class PhaseProgress:
                 fields=site_fields,
             )
             if str(site_id) == "C4.S1d.7":
-                self._emit_s1d7_tracemalloc_site_mark(
-                    event_suffix=str(event_suffix),
-                    origin_file=str(origin_file),
-                    origin_line=int(origin_line),
-                    fields=site_fields,
-                )
+                if profile_s1d7_tracemalloc_full_trace_enabled():
+                    self._emit_s1d7_tracemalloc_site_mark(
+                        event_suffix=str(event_suffix),
+                        origin_file=str(origin_file),
+                        origin_line=int(origin_line),
+                        fields=site_fields,
+                    )
+
+        def band_counter_emit(
+            *,
+            origin_file: str,
+            origin_line: int,
+            counters: Mapping[str, Any],
+            optimizer_step_index: int,
+            state_index: int,
+        ) -> None:
+            site_fields = {
+                "step": int(step),
+                "optimizer_step_index": int(optimizer_step_index),
+                "state_index": int(state_index),
+            }
+            sampled_states = getattr(self, "_obmalloc_expanded_sampled_states", None)
+            if sampled_states is not None:
+                site_fields["sampled_states"] = list(sampled_states)
+            self._emit_s1d7_band_counter_site_mark(
+                origin_file=str(origin_file),
+                origin_line=int(origin_line),
+                counters=dict(counters),
+                fields=site_fields,
+            )
 
         emit.site_emit = site_emit  # type: ignore[attr-defined]
+        emit.band_counter_emit = band_counter_emit  # type: ignore[attr-defined]
 
         def triangulation_emit(
             event: str,
