@@ -40,8 +40,14 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": (
         "b9d8f94cede2b31c695da09e37684fb5750b3607465d0cda2c45733258af83a9"
     ),
+    "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py": (
+        "a1400ba26d64e192cc43879d969d0977dbc31b7a3e8550381c95d35b73ba7091"
+    ),
+    "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py": (
+        "960c40e2a96ce81f5d46c30937ad24695d4f03aeeb02688dcb56cf9b61ce43df"
+    ),
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "3fb69c95a3326af455ad5d471f4c34193f8f1c2f1b672a7404c2e31869879f22"
+        "c6da2c8221da6f88583a1d15aa1d9f9e751bc90bfab12d1129cf80e3ed51d141"
     ),
 }
 
@@ -57,6 +63,12 @@ PHASE3B_PROBE_IMPORT_MODULE_BY_REL: dict[str, str] = {
     ),
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": (
         "calm.hrm_text_158.native_full_stack.bounded_delta_learner"
+    ),
+    "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py": (
+        "calm.hrm_text_158.native_full_stack.host_tracemalloc_probe"
+    ),
+    "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py": (
+        "calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility"
     ),
 }
 

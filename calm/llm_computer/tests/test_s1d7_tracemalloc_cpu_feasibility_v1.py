@@ -363,3 +363,57 @@ def test_obmalloc_expanded_propagates_tracemalloc_call_site_when_resolved() -> N
     assert result["s1d7_call_site_branch_outcome"] == "S1D7_CALL_SITE_CANDIDATE_E_NUMPY_ARRAYS"
     assert result["s1d7_tracemalloc_mark_pair_count"] == len(sampled)
     assert float(result["s1d7_tracemalloc_top_concentration_fraction"]) >= 0.60
+
+
+def test_phase3_callsite_classifier_synthetic_branches() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        build_phase3_callsite_classifier_receipt_from_attribution_payload,
+    )
+
+    def _payload(**expanded_overrides: object) -> dict:
+        expanded = {
+            "fail_closed_terminal": None,
+            "guards": {
+                "phase3_s1d_subsplit_mode": True,
+                "obmalloc_expanded_event_validation": {"valid": True, "pair_counts_by_site": {}},
+                "obmalloc_expanded_event_counts": {"total": 190},
+                "tracemalloc_perturbed": False,
+            },
+            "localization": {
+                "phase3_s1d_subsplit_mode": True,
+                "s1d_parent_reconcile_fraction": 0.0001,
+            },
+            "call_site_status": "RESOLVED",
+            "call_site_origin_file_line": (
+                "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py:896"
+            ),
+            "s1d7_call_site_candidate": "c",
+            "s1d7_call_site_branch_outcome": "S1D7_CALL_SITE_CANDIDATE_C_EVENTS_JOURNAL",
+            "s1d7_tracemalloc_top_concentration_fraction": 0.98,
+            "tracemalloc_perturbed": False,
+            "s1d7_call_site_in_bracket_ok": True,
+            "s1d7_tracemalloc_mark_pair_count": 4,
+            **expanded_overrides,
+        }
+        return {
+            "exit_code": 0,
+            "process_exit_code": 0,
+            "runs": {"B": {"profile_mark_count": 42}},
+            "obmalloc_expanded_attribution": expanded,
+        }
+
+    resolved_c = build_phase3_callsite_classifier_receipt_from_attribution_payload(_payload())
+    assert resolved_c["branch_outcome"] == "S1D7_CALL_SITE_CANDIDATE_C_EVENTS_JOURNAL"
+    assert resolved_c["classifier_exit_code"] == 0
+
+    perturb = build_phase3_callsite_classifier_receipt_from_attribution_payload(
+        _payload(tracemalloc_perturbed=True)
+    )
+    assert perturb["branch_outcome"] == "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
+    assert perturb["classifier_exit_code"] == 35
+
+    missing = build_phase3_callsite_classifier_receipt_from_attribution_payload(
+        _payload(s1d7_tracemalloc_mark_pair_count=1)
+    )
+    assert missing["branch_outcome"] == "TRACEMALLOC_INCONCLUSIVE"
+    assert missing["classifier_exit_code"] == 35

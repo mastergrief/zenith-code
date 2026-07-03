@@ -431,6 +431,289 @@ def resolve_classifier_exit_fields_from_attribution_payload(
     }
 
 
+PHASE3_CALLSITE_EVENT_TOTAL_NOMINAL_MIN = 186
+PHASE3_CALLSITE_EVENT_TOTAL_NOMINAL_MAX = 194
+PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MIN = 174
+PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MAX = 202
+PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING = 250
+PHASE3_CALLSITE_EVENT_TOTAL_DIAGNOSTIC_CAVEAT = (
+    "event total outside 174-202 is NOT a clean post-rescope single-pair topology "
+    "confirmation without Claude/co_lead evidence review."
+)
+PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED = 4
+PHASE3_CALLSITE_TOPOLOGY_BOUNDS = {
+    "C4.S1d.3": {"max_allowed": 2, "safety_net_max": 5},
+    "C4.S1d.4": {"max_allowed": 2, "safety_net_max": 5},
+}
+
+
+def _phase3_callsite_event_topology_from_expanded(
+    expanded: Mapping[str, Any],
+    *,
+    fail_closed: str | None,
+) -> dict[str, Any]:
+    guards = dict(expanded.get("guards") or {})
+    event_counts = dict(guards.get("obmalloc_expanded_event_counts") or {})
+    event_validation = dict(guards.get("obmalloc_expanded_event_validation") or {})
+    pair_counts = dict(event_validation.get("pair_counts_by_site") or {})
+    total_events = event_counts.get("total")
+    total_events_int = int(total_events) if total_events is not None else None
+    event_stream_valid = bool(event_validation.get("valid"))
+    event_total_in_expected_clean_envelope = (
+        total_events_int is not None
+        and PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MIN <= total_events_int
+        <= PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MAX
+    )
+    event_total_diagnostic_tolerated = (
+        total_events_int is not None
+        and (
+            total_events_int < PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MIN
+            or PHASE3_CALLSITE_EVENT_TOTAL_EXPECTED_CLEAN_MAX
+            < total_events_int
+            <= PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING
+        )
+    )
+    event_total_exceeds_hard_ceiling = (
+        total_events_int is not None
+        and total_events_int > PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING
+    )
+    topology_violations: list[str] = []
+    pair_count_regression_signals: list[str] = []
+    unbalanced_pair_violations: list[str] = []
+    pair_watch: dict[str, Any] = {}
+    for site_id, per_state in pair_counts.items():
+        for state_idx, pc in per_state.items():
+            if int(pc) < 0:
+                unbalanced_pair_violations.append(f"{site_id}_state{state_idx}_pair_count_{pc}")
+    if unbalanced_pair_violations:
+        topology_violations.extend(["unbalanced_pair:" + v for v in unbalanced_pair_violations])
+    if not event_stream_valid:
+        topology_violations.append(
+            "event_stream_invalid:"
+            + ",".join(event_validation.get("corruption_reasons") or ["unknown"])
+        )
+    for site, bounds in PHASE3_CALLSITE_TOPOLOGY_BOUNDS.items():
+        site_pairs = pair_counts.get(site, {})
+        site_info: dict[str, Any] = {"per_state_pair_count": site_pairs}
+        if site_pairs:
+            balanced_counts = [int(v) for v in site_pairs.values() if int(v) >= 0]
+            site_info["n_pre_n_post_balanced"] = len(balanced_counts) == len(site_pairs)
+            if balanced_counts:
+                site_info["max_pairs"] = max(balanced_counts)
+                site_info["min_pairs"] = min(balanced_counts)
+            for state_idx, pc in site_pairs.items():
+                safety_max = int(bounds.get("safety_net_max", bounds["max_allowed"]))
+                if int(pc) > safety_max:
+                    topology_violations.append(
+                        f"{site}_state{state_idx}_pairs{pc}_exceeds_safety_net_max{safety_max}"
+                    )
+                elif int(pc) > bounds["max_allowed"]:
+                    pair_count_regression_signals.append(
+                        f"{site}_state{state_idx}_pairs{pc}_exceeds_max"
+                        f"{bounds['max_allowed']}_regression"
+                    )
+        pair_watch[site] = site_info
+    if event_total_exceeds_hard_ceiling:
+        topology_violations.append(
+            f"total_events_{total_events_int}_exceeds_hard_ceiling_"
+            f"{PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING}"
+        )
+    event_total_topology_clean_confirmed = (
+        fail_closed is None
+        and event_stream_valid
+        and len(topology_violations) == 0
+        and event_total_in_expected_clean_envelope
+    )
+    return {
+        "event_counts": event_counts,
+        "event_validation": event_validation,
+        "pair_counts": pair_counts,
+        "total_events_int": total_events_int,
+        "event_stream_valid": event_stream_valid,
+        "event_total_in_expected_clean_envelope": event_total_in_expected_clean_envelope,
+        "event_total_diagnostic_tolerated": event_total_diagnostic_tolerated,
+        "event_total_exceeds_hard_ceiling": event_total_exceeds_hard_ceiling,
+        "event_total_topology_clean_confirmed": event_total_topology_clean_confirmed,
+        "topology_violations": topology_violations,
+        "pair_count_regression_signals": pair_count_regression_signals,
+        "unbalanced_pair_violations": unbalanced_pair_violations,
+        "pair_watch": pair_watch,
+    }
+
+
+def build_phase3_callsite_classifier_receipt_from_attribution_payload(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    expanded = dict(payload.get("obmalloc_expanded_attribution") or {})
+    loc = dict(expanded.get("localization") or {})
+    guards = dict(expanded.get("guards") or {})
+    fail_closed = expanded.get("fail_closed_terminal")
+    phase3_s1d = bool(guards.get("phase3_s1d_subsplit_mode") or loc.get("phase3_s1d_subsplit_mode"))
+    s1d_reconcile = loc.get("s1d_parent_reconcile_fraction")
+    b_arm = dict((payload.get("runs") or {}).get("B") or {})
+    b_arm_profile_mark_count = int(b_arm.get("profile_mark_count") or 0)
+    exit_fields = resolve_classifier_exit_fields_from_attribution_payload(payload)
+    process_exit_code = int(exit_fields["process_exit_code"])
+    mapped_terminal_code = exit_fields.get("mapped_terminal_code")
+    exit_code_agreement = bool(exit_fields["exit_code_agreement"])
+    topology = _phase3_callsite_event_topology_from_expanded(
+        expanded,
+        fail_closed=str(fail_closed) if fail_closed is not None else None,
+    )
+    call_site_status = expanded.get("call_site_status", "UNRESOLVED")
+    call_site_origin = expanded.get("call_site_origin_file_line")
+    call_site_candidate = expanded.get("s1d7_call_site_candidate")
+    call_site_branch = expanded.get("s1d7_call_site_branch_outcome")
+    tracemalloc_perturbed = expanded.get("tracemalloc_perturbed")
+    if tracemalloc_perturbed is None:
+        tracemalloc_perturbed = guards.get("tracemalloc_perturbed")
+    mark_pair_count = expanded.get("s1d7_tracemalloc_mark_pair_count")
+    concentration = expanded.get("s1d7_tracemalloc_top_concentration_fraction")
+    in_bracket_ok = expanded.get("s1d7_call_site_in_bracket_ok")
+    fail_closed_reason = None
+    s1d7_site = dict(loc.get("s1d7_tracemalloc_call_site") or {})
+    if fail_closed_reason is None:
+        fail_closed_reason = s1d7_site.get("fail_closed_reason")
+    out: dict[str, Any] = {
+        "schema": "hrm_text_158_phase3_callsite_classifier_receipt/v1",
+        "exit_code": payload.get("exit_code"),
+        "process_exit_code": process_exit_code,
+        "mapped_terminal_code": mapped_terminal_code,
+        "exit_code_agreement": exit_code_agreement,
+        "b_arm_profile_mark_count": b_arm_profile_mark_count,
+        "fail_closed_terminal": fail_closed,
+        "phase3_s1d_subsplit_mode": phase3_s1d,
+        "s1d_parent_reconcile_fraction": s1d_reconcile,
+        "s1d_rescope_reconcile_pass": (
+            s1d_reconcile is not None and float(s1d_reconcile) <= 0.15
+        ),
+        "call_site_status": call_site_status,
+        "call_site_origin_file_line": call_site_origin,
+        "s1d7_call_site_candidate": call_site_candidate,
+        "s1d7_call_site_branch_outcome": call_site_branch,
+        "s1d7_tracemalloc_top_concentration_fraction": concentration,
+        "tracemalloc_perturbed": tracemalloc_perturbed,
+        "s1d7_call_site_in_bracket_ok": in_bracket_ok,
+        "s1d7_tracemalloc_mark_pair_count": mark_pair_count,
+        "s1d7_tracemalloc_diff": expanded.get("s1d7_tracemalloc_diff"),
+        "fail_closed_reason": fail_closed_reason,
+        "obmalloc_expanded_event_count_total": topology["total_events_int"],
+        "event_count_total_reported": topology["total_events_int"],
+        "pair_counts_by_site": topology["pair_counts"],
+        "event_stream_valid": topology["event_stream_valid"],
+        "event_total_in_expected_clean_envelope": topology["event_total_in_expected_clean_envelope"],
+        "event_total_diagnostic_tolerated": topology["event_total_diagnostic_tolerated"],
+        "event_total_diagnostic_tolerated_caveat": (
+            PHASE3_CALLSITE_EVENT_TOTAL_DIAGNOSTIC_CAVEAT
+            if topology["event_total_diagnostic_tolerated"]
+            else None
+        ),
+        "event_total_topology_clean_confirmed": topology["event_total_topology_clean_confirmed"],
+        "multi_pair_watch": topology["pair_watch"],
+        "unbalanced_pair_violations": topology["unbalanced_pair_violations"],
+        "pair_count_regression_signals": topology["pair_count_regression_signals"],
+        "topology_violations": topology["topology_violations"],
+        "attribution_fail_closed_pre_science": fail_closed is not None,
+        "multi_pair_topology_pass": topology["event_total_topology_clean_confirmed"],
+        "terminal_receipt": {
+            "fail_closed_terminal": fail_closed,
+            "event_stream_valid": topology["event_stream_valid"],
+            "event_counts_total": topology["total_events_int"],
+            "pair_counts_by_site": topology["pair_counts"],
+            "corruption_reasons": list(
+                topology["event_validation"].get("corruption_reasons") or []
+            ),
+            "event_total_in_expected_clean_envelope": topology[
+                "event_total_in_expected_clean_envelope"
+            ],
+            "event_total_diagnostic_tolerated_caveat": (
+                PHASE3_CALLSITE_EVENT_TOTAL_DIAGNOSTIC_CAVEAT
+                if topology["event_total_diagnostic_tolerated"]
+                else None
+            ),
+            "event_total_topology_clean_confirmed": topology[
+                "event_total_topology_clean_confirmed"
+            ],
+            "process_exit_code": process_exit_code,
+            "mapped_terminal_code": mapped_terminal_code,
+            "exit_code_agreement": exit_code_agreement,
+            "call_site_status": call_site_status,
+            "call_site_origin_file_line": call_site_origin,
+            "s1d7_call_site_candidate": call_site_candidate,
+            "s1d7_call_site_branch_outcome": call_site_branch,
+            "s1d7_tracemalloc_top_concentration_fraction": concentration,
+            "tracemalloc_perturbed": tracemalloc_perturbed,
+            "s1d7_call_site_in_bracket_ok": in_bracket_ok,
+            "s1d7_tracemalloc_mark_pair_count": mark_pair_count,
+        },
+    }
+    classifier_exit_code = 0
+    if b_arm_profile_mark_count <= 0:
+        out["branch_outcome"] = "EMPTY_ATTRIBUTION_STREAM"
+        out["topology_fail_reason"] = "b_arm_profile_mark_count_0"
+        classifier_exit_code = 38
+    elif topology["unbalanced_pair_violations"]:
+        out["branch_outcome"] = "UNBALANCED_PAIR_COUNT"
+        out["topology_fail_reason"] = topology["unbalanced_pair_violations"][0]
+        classifier_exit_code = 36
+    elif fail_closed is not None:
+        out["branch_outcome"] = f"ATTRIBUTION_FAIL_CLOSED_{fail_closed}"
+        classifier_exit_code = 37
+    elif topology["topology_violations"]:
+        out["branch_outcome"] = "MULTI_PAIR_COUNT_EXCEEDS_TOPOLOGY"
+        out["topology_fail_reason"] = topology["topology_violations"][0]
+        classifier_exit_code = 36
+    elif fail_closed == "CHILD_OVERLAP_DOUBLE_COUNT":
+        out["branch_outcome"] = "OVERLAP_REGRESSION_FAIL"
+        classifier_exit_code = 32
+    elif fail_closed == "S1D_CHILD_COVERAGE_FAIL":
+        out["branch_outcome"] = "S1D_CHILD_COVERAGE_FAIL"
+        classifier_exit_code = 32
+    elif fail_closed == "CHILD_PARENT_RECONCILE_FAIL":
+        out["branch_outcome"] = "S1D_RESCOPE_INSTRUMENTATION_FAIL"
+        out["branch_reason"] = "reconcile_fail_gates_science"
+        classifier_exit_code = 33
+    elif not phase3_s1d:
+        out["branch_outcome"] = "S1D_CHILD_COVERAGE_FAIL"
+        out["branch_reason"] = "phase3_s1d_subsplit_mode_false"
+        classifier_exit_code = 34
+    elif s1d_reconcile is None or float(s1d_reconcile) > 0.15:
+        out["branch_outcome"] = "RECONCILE_FAIL"
+        classifier_exit_code = 35
+    elif bool(tracemalloc_perturbed):
+        out["branch_outcome"] = "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
+        classifier_exit_code = 35
+    elif mark_pair_count != PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED:
+        out["branch_outcome"] = "TRACEMALLOC_INCONCLUSIVE"
+        out["branch_reason"] = (
+            f"s1d7_tracemalloc_mark_pair_count={mark_pair_count}"
+            f" expected={PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED}"
+        )
+        classifier_exit_code = 35
+    elif call_site_status != "RESOLVED":
+        reason = fail_closed_reason or "TRACEMALLOC_INCONCLUSIVE"
+        if reason == "CALL_SITE_OUTSIDE_S1D7_BRACKET":
+            out["branch_outcome"] = "CALL_SITE_OUTSIDE_S1D7_BRACKET"
+        elif reason == "TRACEMALLOC_CONCENTRATION_FAIL":
+            out["branch_outcome"] = "TRACEMALLOC_CONCENTRATION_FAIL"
+        else:
+            out["branch_outcome"] = "TRACEMALLOC_INCONCLUSIVE"
+        out["branch_reason"] = reason
+        classifier_exit_code = 35
+    elif call_site_branch:
+        out["branch_outcome"] = str(call_site_branch)
+    elif call_site_candidate == "ambiguous":
+        out["branch_outcome"] = "S1D7_CALL_SITE_RESOLVED_CANDIDATE_AMBIGUOUS"
+    else:
+        out["branch_outcome"] = "TRACEMALLOC_INCONCLUSIVE"
+        classifier_exit_code = 35
+    out["classifier_exit_code"] = int(classifier_exit_code)
+    if int(process_exit_code) != 0 and classifier_exit_code == 0:
+        classifier_exit_code = 31
+        out["classifier_exit_code"] = 31
+    return out
+
+
 def build_postrun_aggregate_exit_summary(
     *,
     attribution_payload: Mapping[str, Any] | None,
@@ -4951,6 +5234,7 @@ def _fixture_obmalloc_env(
     site_brackets: bool = False,
     expanded: bool = False,
     c4_retention_owner_census: bool = False,
+    tracemalloc: bool = False,
 ) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = "."
@@ -4965,6 +5249,8 @@ def _fixture_obmalloc_env(
         env[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] = "1"
     if expanded:
         env[PROFILE_OBMALLOC_EXPANDED_ENV] = "1"
+    if tracemalloc:
+        env[PROFILE_TRACEMALLOC_ENV] = "1"
     if c4_retention_owner_census:
         from calm.hrm_text_158.native_full_stack.c4_retention_owner_census import (
             PROFILE_C4_RETENTION_OWNER_CENSUS_ENV,
@@ -5059,6 +5345,7 @@ def _run_fixture_obmalloc_probe(
     site_brackets: bool = False,
     expanded: bool = False,
     c4_retention_owner_census: bool = False,
+    tracemalloc: bool = False,
 ) -> dict[str, Any]:
     out_root.mkdir(parents=True, exist_ok=True)
     scratch = out_root / scratch_name
@@ -5083,6 +5370,7 @@ def _run_fixture_obmalloc_probe(
             site_brackets=site_brackets,
             expanded=expanded,
             c4_retention_owner_census=c4_retention_owner_census,
+            tracemalloc=tracemalloc,
         )
         cmd = _fixture_probe_argv(
             scratch,
@@ -5090,12 +5378,15 @@ def _run_fixture_obmalloc_probe(
             expanded=expanded,
         )
         probe_stream_log = scratch / FIXTURE_PROBE_STREAM_LOG_NAME
+        timeout = 1200.0 if debugmallocstats else 600.0
+        if tracemalloc:
+            timeout = max(timeout, float(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC))
         subprocess_result = _run_subprocess_streaming_to_log(
             cmd,
             cwd=REPO_ROOT,
             env=env,
             log_path=probe_stream_log,
-            timeout=1200.0 if debugmallocstats else 600.0,
+            timeout=timeout,
         )
     finally:
         try:
@@ -5398,6 +5689,87 @@ def run_fixture_obmalloc_expanded_combined(
         mirror=mirror_durable_attribution,
         mirror_path=mirror_durable_path,
     )
+
+
+def run_callsite_tracemalloc_scale_smoke(out_root: Path) -> dict[str, Any]:
+    """Mandatory short tracemalloc-enabled fixture smoke before full GPU acceptance."""
+    from calm.hrm_text_158.native_full_stack.host_allocator_probe import (
+        measure_debugmallocstats_self_footprint,
+        preflight_debugmallocstats_self_test,
+    )
+
+    smoke_root = out_root / "prelaunch" / "callsite_tracemalloc_scale_smoke"
+    smoke_root.mkdir(parents=True, exist_ok=True)
+    run_a = _run_fixture_obmalloc_probe(
+        smoke_root,
+        scratch_name="obmalloc_expanded_ab",
+        debugmallocstats=False,
+    )
+    run_b = _run_fixture_obmalloc_probe(
+        smoke_root,
+        scratch_name="obmalloc_expanded_b",
+        debugmallocstats=True,
+        site_brackets=True,
+        expanded=True,
+        c4_retention_owner_census=True,
+        tracemalloc=True,
+    )
+    preflight = preflight_debugmallocstats_self_test()
+    footprint = measure_debugmallocstats_self_footprint()
+    marks_a = list(run_a.pop("marks", []))
+    marks_b = list(run_b.pop("marks", []))
+    expanded = attribute_obmalloc_expanded(
+        marks_a=marks_a,
+        marks_a_prime=marks_a,
+        marks_b=marks_b,
+        debugmallocstats_preflight=preflight,
+        self_footprint_preflight=footprint,
+    )
+    b_profile_mark_count = int((run_b.get("profile_mark_count") or 0))
+    observer_fail_closed = expanded.get("fail_closed_terminal")
+    tracemalloc_perturbed = expanded.get("tracemalloc_perturbed")
+    if tracemalloc_perturbed is None:
+        tracemalloc_perturbed = dict(expanded.get("guards") or {}).get("tracemalloc_perturbed")
+    mark_pair_count = expanded.get("s1d7_tracemalloc_mark_pair_count")
+    event_counts = dict(dict(expanded.get("guards") or {}).get("obmalloc_expanded_event_counts") or {})
+    total_events = event_counts.get("total")
+    total_events_int = int(total_events) if total_events is not None else None
+    event_total_exceeds_hard_ceiling = (
+        total_events_int is not None
+        and total_events_int > PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING
+    )
+    checks = {
+        "observer_guard_clear": observer_fail_closed != "OBSERVER_PERTURBED_INCONCLUSIVE",
+        "tracemalloc_perturbed_false": tracemalloc_perturbed is False,
+        "s1d7_tracemalloc_mark_pair_count_eq_4": (
+            mark_pair_count == PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED
+        ),
+        "b_profile_mark_count_gt_0": b_profile_mark_count > 0,
+        "event_total_within_hard_ceiling": not event_total_exceeds_hard_ceiling,
+        "no_tracemalloc_perturbed_inconclusive": (
+            observer_fail_closed != "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
+        ),
+    }
+    receipt: dict[str, Any] = {
+        "schema": "hrm_text_158_callsite_tracemalloc_scale_smoke_receipt/v1",
+        "smoke_root": str(smoke_root),
+        "checks": checks,
+        "ok": all(checks.values()),
+        "b_arm_profile_mark_count": b_profile_mark_count,
+        "fail_closed_terminal": observer_fail_closed,
+        "tracemalloc_perturbed": tracemalloc_perturbed,
+        "s1d7_tracemalloc_mark_pair_count": mark_pair_count,
+        "obmalloc_expanded_event_count_total": total_events_int,
+        "call_site_status": expanded.get("call_site_status"),
+        "runs": {
+            "A": {k: v for k, v in run_a.items() if k != "marks"},
+            "B": {k: v for k, v in run_b.items() if k != "marks"},
+        },
+    }
+    out_path = smoke_root / "callsite_tracemalloc_scale_smoke_receipt.json"
+    out_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    receipt["receipt_path"] = str(out_path)
+    return receipt
 
 
 def main() -> int:

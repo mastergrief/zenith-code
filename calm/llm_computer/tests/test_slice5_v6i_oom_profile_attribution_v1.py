@@ -5057,5 +5057,8 @@ def test_phase3_obmalloc_surface_pinned_files_role_coverage() -> None:
         "attribution_script",
         "code_currency_guard",
         "probe_bootstrap",
+        "bounded_delta_acquisition_probe",
+        "host_tracemalloc_probe",
+        "s1d7_tracemalloc_feasibility",
     } <= phase3_roles
     assert len(DEFAULT_FLOOR_PINNED_FILES) + len(PHASE3_OBMALLOC_SURFACE_PINNED_FILES) >= 10

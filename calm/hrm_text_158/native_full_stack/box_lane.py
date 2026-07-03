@@ -40,6 +40,9 @@ PHASE3_OBMALLOC_SURFACE_PINNED_FILES: tuple[tuple[str, str], ...] = (
     ("attribution_script", "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py"),
     ("code_currency_guard", "scripts/hrm_text_158_code_currency_guard.py"),
     ("probe_bootstrap", "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py"),
+    ("bounded_delta_acquisition_probe", "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"),
+    ("host_tracemalloc_probe", "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py"),
+    ("s1d7_tracemalloc_feasibility", "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py"),
 )
 
 CAPTURE_COMPLETE_RE = re.compile(
