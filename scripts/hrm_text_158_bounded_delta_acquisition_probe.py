@@ -2671,14 +2671,21 @@ class PhaseProgress:
                 mark["allocated_blocks_holding"] = int(stats["bytes_in_allocated_blocks"])
         if str(site_id) == "C4.S1d.7" and profile_tracemalloc_enabled():
             from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
-                ensure_tracemalloc_started,
+                begin_s1d7_tracemalloc_bracket,
+                end_s1d7_tracemalloc_bracket,
             )
             from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
                 take_tracemalloc_snapshot_dict,
             )
 
-            ensure_tracemalloc_started(depth=50)
-            mark["s1d7_tracemalloc"] = take_tracemalloc_snapshot_dict()
+            if str(event_suffix) == "pre":
+                begin_s1d7_tracemalloc_bracket(depth=50)
+                mark["s1d7_tracemalloc"] = take_tracemalloc_snapshot_dict()
+            else:
+                try:
+                    mark["s1d7_tracemalloc"] = take_tracemalloc_snapshot_dict()
+                finally:
+                    end_s1d7_tracemalloc_bracket()
         _append_host_rss_profile_mark(self.host_rss_profile_path, mark)
 
     def _emit_s1d7_tracemalloc_site_mark(
@@ -2694,7 +2701,8 @@ class PhaseProgress:
         if not profile_s1d7_tracemalloc_site_enabled():
             return
         from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
-            ensure_tracemalloc_started,
+            begin_s1d7_tracemalloc_bracket,
+            end_s1d7_tracemalloc_bracket,
         )
         from calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility import (
             S1D7_SITE_ID,
@@ -2703,13 +2711,20 @@ class PhaseProgress:
             take_tracemalloc_snapshot_dict,
         )
 
-        ensure_tracemalloc_started(depth=50)
         event = (
             S1D7_TRACEMALLOC_PRE_EVENT
             if str(event_suffix) == "pre"
             else S1D7_TRACEMALLOC_POST_EVENT
         )
         resource_snapshot = _proc_self_resource_snapshot()
+        if str(event_suffix) == "pre":
+            begin_s1d7_tracemalloc_bracket(depth=50)
+            snapshot = take_tracemalloc_snapshot_dict()
+        else:
+            try:
+                snapshot = take_tracemalloc_snapshot_dict()
+            finally:
+                end_s1d7_tracemalloc_bracket()
         mark: dict[str, Any] = {
             "schema": PROFILE_S1D7_TRACEMALLOC_SITE_SCHEMA,
             "phase": "sparse_cap_apply",
@@ -2724,7 +2739,7 @@ class PhaseProgress:
             "resource_snapshot": resource_snapshot,
             "tracemalloc_only": True,
             "tracemalloc_diagnostic": True,
-            "s1d7_tracemalloc": take_tracemalloc_snapshot_dict(),
+            "s1d7_tracemalloc": snapshot,
         }
         for key in ("step", "optimizer_step_index", "state_index"):
             if key in fields:

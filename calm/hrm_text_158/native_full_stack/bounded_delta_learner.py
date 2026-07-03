@@ -2577,8 +2577,13 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             obmalloc_expanded_on = os.environ.get(
                 "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED", ""
             ).strip().lower() in {"1", "true", "yes", "on"}
+            from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+                profile_s1d7_tracemalloc_site_enabled,
+            )
+
+            tracemalloc_site_on = profile_s1d7_tracemalloc_site_enabled()
             sampled_states: frozenset[int] | None = None
-            if obmalloc_expanded_on and n_c4_states > 0:
+            if (obmalloc_expanded_on or tracemalloc_site_on) and n_c4_states > 0:
                 from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
                     compute_obmalloc_expanded_sampled_states,
                 )

@@ -47,6 +47,42 @@ def ensure_tracemalloc_started(*, depth: int = 25) -> bool:
     return True
 
 
+def profile_s1d7_tracemalloc_site_enabled() -> bool:
+    import os
+
+    if not profile_tracemalloc_enabled():
+        return False
+    debugmallocstats_on = os.environ.get(
+        "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    return not debugmallocstats_on
+
+
+def begin_s1d7_tracemalloc_bracket(*, depth: int = 50) -> bool:
+    """Open one continuous S1d.7 tracing window (defensive stop-before-start)."""
+    global _tracemalloc_started
+    if tracemalloc.is_tracing():
+        try:
+            tracemalloc.stop()
+        except Exception:
+            pass
+        _tracemalloc_started = False
+    tracemalloc.start(int(depth))
+    _tracemalloc_started = True
+    return True
+
+
+def end_s1d7_tracemalloc_bracket() -> None:
+    """Close the S1d.7 tracing window and clear the module flag."""
+    global _tracemalloc_started
+    if tracemalloc.is_tracing():
+        try:
+            tracemalloc.stop()
+        except Exception:
+            pass
+    _tracemalloc_started = False
+
+
 def reset_tracemalloc_state_for_tests() -> None:
     global _tracemalloc_started
     if _tracemalloc_started:

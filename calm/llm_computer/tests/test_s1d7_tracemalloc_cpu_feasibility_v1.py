@@ -4,7 +4,10 @@ import json
 import os
 import subprocess
 import sys
+import time
+import tracemalloc
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -449,6 +452,7 @@ def test_s1d7_tracemalloc_only_probe_emits_four_pairs(monkeypatch, tmp_path: Pat
         host_rss_profile_path=profile_path,
     )
     sampled = (0, 10, 21, 31)
+    started = time.monotonic()
     for state_idx in sampled:
         fields = {
             "step": 0,
@@ -462,12 +466,15 @@ def test_s1d7_tracemalloc_only_probe_emits_four_pairs(monkeypatch, tmp_path: Pat
             origin_line=876,
             fields=fields,
         )
+        assert tracemalloc.is_tracing() is True
         progress._emit_s1d7_tracemalloc_site_mark(
             event_suffix="post",
             origin_file="event_coded_acc_live_carrier.py",
             origin_line=897,
             fields=fields,
         )
+        assert tracemalloc.is_tracing() is False
+    assert time.monotonic() - started < 30.0
 
     marks = _read_profile_marks(profile_path)
     pre_events = [row for row in marks if row.get("event") == S1D7_TRACEMALLOC_PRE_EVENT]
@@ -482,6 +489,61 @@ def test_s1d7_tracemalloc_only_probe_emits_four_pairs(monkeypatch, tmp_path: Pat
         row for row in marks if str(row.get("event", "")).startswith("obmalloc_site_")
     ]
     assert obmalloc_events == []
+
+
+def test_s1d7_tracemalloc_bracket_clears_on_post_exception(monkeypatch, tmp_path: Path) -> None:
+    import scripts.hrm_text_158_bounded_delta_acquisition_probe as probe
+
+    monkeypatch.setenv(probe.PROFILE_HOST_RSS_ENV, "1")
+    monkeypatch.setenv(probe.PROFILE_TRACEMALLOC_ENV, "1")
+    monkeypatch.setenv(probe.PROFILE_DEBUGMALLOCSTATS_ENV, "0")
+    monkeypatch.setenv(probe.PROFILE_OBMALLOC_SITE_BRACKETS_ENV, "0")
+
+    from calm.hrm_text_158.native_full_stack import host_tracemalloc_probe
+
+    profile_path = tmp_path / "profile_b.jsonl"
+    progress = probe.PhaseProgress(
+        enabled=True,
+        device="cpu",
+        host_rss_profile_path=profile_path,
+    )
+    fields = {
+        "step": 0,
+        "optimizer_step_index": 0,
+        "state_index": 0,
+        "sampled_states": [0, 10, 21, 31],
+    }
+    progress._emit_s1d7_tracemalloc_site_mark(
+        event_suffix="pre",
+        origin_file="event_coded_acc_live_carrier.py",
+        origin_line=876,
+        fields=fields,
+    )
+    with patch(
+        "calm.hrm_text_158.native_full_stack.s1d7_tracemalloc_feasibility.take_tracemalloc_snapshot_dict",
+        side_effect=RuntimeError("post snap failed"),
+    ):
+        with pytest.raises(RuntimeError, match="post snap failed"):
+            progress._emit_s1d7_tracemalloc_site_mark(
+                event_suffix="post",
+                origin_file="event_coded_acc_live_carrier.py",
+                origin_line=897,
+                fields=fields,
+            )
+    assert tracemalloc.is_tracing() is False
+    from calm.hrm_text_158.native_full_stack import host_tracemalloc_probe
+
+    assert host_tracemalloc_probe._tracemalloc_started is False
+
+
+def test_smoke_fixture_sampled_states_n32() -> None:
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    n_c4_states = 32
+    sampled = compute_obmalloc_expanded_sampled_states(n_c4_states)
+    assert sampled == frozenset({0, 10, 21, 31})
 
 
 def test_s1d7_tracemalloc_only_mutual_exclusion_still_aborts() -> None:
