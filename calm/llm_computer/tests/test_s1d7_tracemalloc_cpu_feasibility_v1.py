@@ -1200,13 +1200,37 @@ def _band_counter_scale_smoke_probe_return(
     *,
     scratch_name: str,
     marks_b: list[dict[str, object]],
+    n_c4_states: int = 4,
 ) -> dict[str, object]:
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    sampled = sorted(compute_obmalloc_expanded_sampled_states(n_c4_states))
     if scratch_name.endswith("_a"):
-        return {"marks": [], "profile_mark_count": 0, "exit_code": 0}
+        return {
+            "marks": [],
+            "profile_mark_count": 0,
+            "exit_code": 0,
+            "wall_seconds": 1.0,
+            "n_c4_states": n_c4_states,
+            "sampled_states": sampled,
+            "eligible_scope": "all-bitlinear",
+            "eligible_module_limit": n_c4_states,
+            "eligible_module_keys": [f"module_{idx}" for idx in range(n_c4_states)],
+            "c4_rss_delta_gib": 0.01,
+        }
     return {
         "marks": marks_b,
         "profile_mark_count": len(marks_b),
         "exit_code": 0,
+        "wall_seconds": 8.0,
+        "n_c4_states": n_c4_states,
+        "sampled_states": sampled,
+        "eligible_scope": "all-bitlinear",
+        "eligible_module_limit": n_c4_states,
+        "eligible_module_keys": [f"module_{idx}" for idx in range(n_c4_states)],
+        "c4_rss_delta_gib": 0.42,
     }
 
 
@@ -1220,7 +1244,7 @@ def test_band_counter_scale_smoke_receipt_surfaces_dominance_fields(
 
     marks_b = [
         _band_counter_mark(state_index=state_idx)
-        for state_idx in (0, 10, 21, 31)
+        for state_idx in (0, 1, 2, 3)
     ]
 
     def _fake_probe(
@@ -1252,6 +1276,12 @@ def test_band_counter_scale_smoke_receipt_surfaces_dominance_fields(
     assert receipt["s1d7_tracemalloc_mark_count"] == 0
     assert receipt["s1d7_call_site_candidate"] == "c"
     assert receipt["call_site_status"] == "RESOLVED"
+    assert receipt["mechanism_smoke_scale"] == "reduced_n4"
+    assert receipt["n_c4_states"] == 4
+    assert receipt["sampled_states"] == [0, 1, 2, 3]
+    assert receipt["eligible_module_limit"] == 4
+    assert receipt["per_state_timing_method"] == "approx=run_b_wall_seconds/n_c4_states"
+    assert receipt["bank_wording"]
     assert receipt["s1d7_call_site_branch_outcome"] is not None
     assert receipt["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:896"
     nested = dict(dict(receipt.get("localization") or {}).get("s1d7_tracemalloc_call_site") or {})
@@ -1311,3 +1341,259 @@ def test_run_callsite_tracemalloc_scale_smoke_unchanged_for_fallback_d() -> None
     assert "new_schema_mark_count_eq_8" in source
     assert "hrm_text_158_callsite_tracemalloc_scale_smoke_receipt/v1" in source
     assert "s1d7_band_counter_mark_count_eq_4" not in source
+
+
+def test_band_counter_smoke_passes_explicit_sampled_states_n4_not_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_callsite_tracemalloc_b_prime,
+        run_callsite_band_counter_scale_smoke,
+    )
+
+    marks_b = [_band_counter_mark(state_index=idx) for idx in (0, 1, 2, 3)]
+    captured: dict[str, object] = {}
+
+    def _fake_attribute(
+        *,
+        marks_a: list[dict[str, object]],
+        marks_b: list[dict[str, object]],
+        sampled_states: tuple[int, ...] = (0, 10, 21, 31),
+    ) -> dict[str, object]:
+        _ = marks_a
+        captured["sampled_states"] = tuple(sampled_states)
+        return attribute_callsite_tracemalloc_b_prime(
+            marks_a=marks_a,
+            marks_b=marks_b,
+            sampled_states=sampled_states,
+        )
+
+    def _fake_probe(
+        out_root: Path,
+        *,
+        scratch_name: str,
+        debugmallocstats: bool,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        _ = (out_root, debugmallocstats, kwargs)
+        return _band_counter_scale_smoke_probe_return(
+            scratch_name=scratch_name,
+            marks_b=marks_b,
+            n_c4_states=4,
+        )
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_fixture_obmalloc_probe",
+        _fake_probe,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.attribute_callsite_tracemalloc_b_prime",
+        _fake_attribute,
+    )
+    receipt = run_callsite_band_counter_scale_smoke(tmp_path)
+    expected = tuple(sorted(compute_obmalloc_expanded_sampled_states(4)))
+    assert captured["sampled_states"] == expected
+    assert captured["sampled_states"] != (0, 10, 21, 31)
+    assert receipt["ok"] is True, receipt
+
+
+def test_band_counter_smoke_false_fails_if_default_sampled_states_leaks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        attribute_callsite_tracemalloc_b_prime as original_attr,
+        run_callsite_band_counter_scale_smoke,
+    )
+
+    marks_b = [_band_counter_mark(state_index=idx) for idx in (0, 1, 2, 3)]
+
+    def _fake_probe(
+        out_root: Path,
+        *,
+        scratch_name: str,
+        debugmallocstats: bool,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        _ = (out_root, debugmallocstats, kwargs)
+        return _band_counter_scale_smoke_probe_return(
+            scratch_name=scratch_name,
+            marks_b=marks_b,
+            n_c4_states=4,
+        )
+
+    def _leak_default(
+        *,
+        marks_a: list[dict[str, object]],
+        marks_b: list[dict[str, object]],
+        sampled_states: tuple[int, ...] = (0, 10, 21, 31),
+    ) -> dict[str, object]:
+        _ = sampled_states
+        return original_attr(marks_a=marks_a, marks_b=marks_b)
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_fixture_obmalloc_probe",
+        _fake_probe,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.attribute_callsite_tracemalloc_b_prime",
+        _leak_default,
+    )
+    receipt = run_callsite_band_counter_scale_smoke(tmp_path)
+    assert receipt["ok"] is False
+    assert receipt["call_site_status"] == "UNRESOLVED"
+
+
+def test_probe_heartbeat_watchdog_resets_on_real_probe_heartbeat_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+    import threading
+    import time
+
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _run_subprocess_heartbeat_watchdog,
+    )
+
+    log_path = tmp_path / "probe_stream.log"
+    heartbeat = json.dumps(
+        {
+            "event": "heartbeat",
+            "phase": "sparse_cap_apply",
+            "active_phase_elapsed_seconds": 30,
+            "schema": "hrm_text_158_c2p2_phase_telemetry/v0",
+        }
+    )
+
+    def _fake_popen(cmd, cwd, env, stdout, stderr, text):
+        _ = (cmd, cwd, env, stderr, text)
+
+        class _Proc:
+            returncode = None
+
+            def poll(self):
+                return self.returncode
+
+            def wait(self):
+                return self.returncode if self.returncode is not None else 0
+
+            def kill(self):
+                self.returncode = -9
+
+        proc = _Proc()
+
+        def _writer() -> None:
+            time.sleep(0.05)
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(heartbeat + "\n")
+                handle.flush()
+            time.sleep(0.1)
+            proc.returncode = 0
+
+        threading.Thread(target=_writer, daemon=True).start()
+        return proc
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.subprocess.Popen",
+        _fake_popen,
+    )
+    result = _run_subprocess_heartbeat_watchdog(
+        ["python3", "-c", "import time; time.sleep(1)"],
+        cwd=tmp_path,
+        env={},
+        log_path=log_path,
+        silent_phase_seconds=2.0,
+        wall_clock_cap_seconds=5.0,
+        poll_interval_seconds=0.05,
+    )
+    assert result["subprocess_timeout_expired"] is False
+    assert result["exit_code"] == 0
+
+
+def test_probe_heartbeat_watchdog_kills_on_silent_budget_without_heartbeats(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import time
+
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _run_subprocess_heartbeat_watchdog,
+    )
+
+    log_path = tmp_path / "silent_probe_stream.log"
+
+    class _Proc:
+        returncode = None
+
+        def poll(self):
+            return None
+
+        def wait(self):
+            return -9
+
+        def kill(self):
+            self.returncode = -9
+
+    proc = _Proc()
+
+    def _fake_popen(cmd, cwd, env, stdout, stderr, text):
+        _ = (cmd, cwd, env, stdout, stderr, text)
+        return proc
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.subprocess.Popen",
+        _fake_popen,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.time.sleep",
+        lambda _seconds: None,
+    )
+    tick = {"value": 0.0}
+
+    def _monotonic() -> float:
+        tick["value"] += 1.0
+        return tick["value"]
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution.time.monotonic",
+        _monotonic,
+    )
+    result = _run_subprocess_heartbeat_watchdog(
+        ["python3", "-c", "import time; time.sleep(9)"],
+        cwd=tmp_path,
+        env={},
+        log_path=log_path,
+        silent_phase_seconds=0.5,
+        wall_clock_cap_seconds=10.0,
+        poll_interval_seconds=0.01,
+    )
+    assert result["subprocess_timeout_expired"] is True
+    assert result["subprocess_timeout_reason"] == "silent_phase"
+
+
+def test_apply_eligible_module_limit_prefix_is_deterministic() -> None:
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        apply_eligible_module_limit,
+    )
+
+    class _Module:
+        pass
+
+    eligible = {f"layers.{idx}.bitlinear": _Module() for idx in (5, 1, 3, 0, 2, 4)}
+    limited = apply_eligible_module_limit(
+        eligible,
+        eligible_scope="all-bitlinear",
+        eligible_module_limit=4,
+    )
+    assert list(limited.keys()) == sorted(eligible.keys())[:4]
+    assert list(limited.keys()) == [
+        "layers.0.bitlinear",
+        "layers.1.bitlinear",
+        "layers.2.bitlinear",
+        "layers.3.bitlinear",
+    ]

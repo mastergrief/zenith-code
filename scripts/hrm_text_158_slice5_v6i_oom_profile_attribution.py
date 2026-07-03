@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -47,6 +48,13 @@ EXTRACT_SCHEMA = "hrm_text_158_v6i_oom_profile_extract_readonly/v1"
 FIXTURE_PROBE_STREAM_LOG_NAME = "probe_stream.log"
 FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS = 600
 FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC = 900
+FIXTURE_PROBE_WRAPPER_WALL_CLOCK_CAP_SECONDS = 5400
+FIXTURE_PROBE_HEARTBEAT_POLL_INTERVAL_SECONDS = 5.0
+BAND_COUNTER_MECHANISM_SMOKE_N_C4_STATES = 4
+BAND_COUNTER_MECHANISM_SMOKE_BANK_WORDING = (
+    "reduced-scale (n=4) mechanism smoke — candidate-C dominance at reduced scale; "
+    "NOT full 32-state 430MB bank"
+)
 DEFAULT_DURABLE_MIRROR_PATH = Path(
     "/home/gabe/hrm158_v6i_slice8m_census/v6i_obmalloc_expanded_attribution_8m.json"
 )
@@ -4506,6 +4514,7 @@ def _fixture_probe_argv(
     tracemalloc: bool = False,
     debugmallocstats: bool = False,
     expanded: bool = False,
+    eligible_module_limit: int | None = None,
 ) -> list[str]:
     parent = (
         "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_"
@@ -4573,6 +4582,13 @@ def _fixture_probe_argv(
         "--scratch-root",
         str(scratch_root),
     ]
+    if eligible_module_limit is not None:
+        cmd.extend(
+            [
+                "--eligible-module-limit",
+                str(int(eligible_module_limit)),
+            ]
+        )
     if tracemalloc:
         cmd.extend(
             [
@@ -5316,6 +5332,85 @@ def _read_log_tail(log_path: Path, *, max_lines: int = 20) -> str:
     return "\n".join(lines[-max_lines:])
 
 
+def _is_probe_heartbeat_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped.startswith("{"):
+        return False
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("event") == "heartbeat":
+        return True
+    if payload.get("schema") == "hrm_text_158_c2p2_phase_telemetry/v0":
+        return True
+    return False
+
+
+def _run_subprocess_heartbeat_watchdog(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    env: Mapping[str, str],
+    log_path: Path,
+    silent_phase_seconds: float,
+    wall_clock_cap_seconds: float,
+    poll_interval_seconds: float = FIXTURE_PROBE_HEARTBEAT_POLL_INTERVAL_SECONDS,
+) -> dict[str, Any]:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    timeout_expired = False
+    timeout_reason: str | None = None
+    wall_seconds = 0.0
+    with log_path.open("w", encoding="utf-8") as log_f:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            env=env,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        started = time.monotonic()
+        last_activity = started
+        read_offset = 0
+        while proc.poll() is None:
+            now = time.monotonic()
+            wall_seconds = now - started
+            if wall_seconds >= float(wall_clock_cap_seconds):
+                timeout_expired = True
+                timeout_reason = "wall_clock_cap"
+                proc.kill()
+                break
+            if now - last_activity >= float(silent_phase_seconds):
+                timeout_expired = True
+                timeout_reason = "silent_phase"
+                proc.kill()
+                break
+            if log_path.is_file():
+                with log_path.open("r", encoding="utf-8", errors="replace") as tail_f:
+                    tail_f.seek(read_offset)
+                    chunk = tail_f.read()
+                    read_offset = tail_f.tell()
+                for line in chunk.splitlines():
+                    if _is_probe_heartbeat_line(line):
+                        last_activity = time.monotonic()
+            time.sleep(float(poll_interval_seconds))
+        proc.wait()
+        wall_seconds = time.monotonic() - started
+    return {
+        "exit_code": int(proc.returncode if proc.returncode is not None else 1),
+        "probe_stream_log": str(log_path),
+        "subprocess_timeout_expired": timeout_expired,
+        "subprocess_timeout_reason": timeout_reason,
+        "wall_seconds": float(wall_seconds),
+        "stdout_tail": _read_log_tail(log_path),
+        "stderr_tail": "",
+        "used_capture_output": False,
+    }
+
+
 def _run_subprocess_streaming_to_log(
     cmd: list[str],
     *,
@@ -5382,6 +5477,17 @@ def _maybe_mirror_durable_attribution(
     return payload
 
 
+def _read_probe_scratch_receipt(scratch: Path) -> dict[str, Any]:
+    receipt_path = scratch / "receipt.json"
+    if not receipt_path.is_file():
+        return {}
+    try:
+        payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
 def _run_fixture_obmalloc_probe(
     out_root: Path,
     *,
@@ -5391,6 +5497,7 @@ def _run_fixture_obmalloc_probe(
     expanded: bool = False,
     c4_retention_owner_census: bool = False,
     tracemalloc: bool = False,
+    eligible_module_limit: int | None = None,
 ) -> dict[str, Any]:
     out_root.mkdir(parents=True, exist_ok=True)
     scratch = out_root / scratch_name
@@ -5422,17 +5529,19 @@ def _run_fixture_obmalloc_probe(
             tracemalloc=tracemalloc,
             debugmallocstats=debugmallocstats,
             expanded=expanded,
+            eligible_module_limit=eligible_module_limit,
         )
         probe_stream_log = scratch / FIXTURE_PROBE_STREAM_LOG_NAME
-        timeout = 1200.0 if debugmallocstats else 600.0
+        silent_budget = float(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS)
         if tracemalloc:
-            timeout = max(timeout, float(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC))
-        subprocess_result = _run_subprocess_streaming_to_log(
+            silent_budget = float(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC)
+        subprocess_result = _run_subprocess_heartbeat_watchdog(
             cmd,
             cwd=REPO_ROOT,
             env=env,
             log_path=probe_stream_log,
-            timeout=timeout,
+            silent_phase_seconds=silent_budget,
+            wall_clock_cap_seconds=float(FIXTURE_PROBE_WRAPPER_WALL_CLOCK_CAP_SECONDS),
         )
     finally:
         try:
@@ -5443,6 +5552,7 @@ def _run_fixture_obmalloc_probe(
             lane_release = {"release_error": f"{type(exc).__name__}: {exc}"}
 
     marks = _read_jsonl(profile_path) if profile_path.is_file() else []
+    probe_receipt = _read_probe_scratch_receipt(scratch)
 
     return {
         "scratch_root": str(scratch),
@@ -5455,6 +5565,8 @@ def _run_fixture_obmalloc_probe(
         "subprocess_timeout_expired": bool(
             subprocess_result.get("subprocess_timeout_expired", False)
         ),
+        "subprocess_timeout_reason": subprocess_result.get("subprocess_timeout_reason"),
+        "wall_seconds": float(subprocess_result.get("wall_seconds") or 0.0),
         "used_capture_output": bool(subprocess_result.get("used_capture_output", False)),
         "resource_lane_holding": lane_holding,
         "resource_lane_release": lane_release,
@@ -5462,6 +5574,12 @@ def _run_fixture_obmalloc_probe(
         "c4_rss_delta_gib": _c4_subphase_delta_gib(marks),
         "obmalloc_mark_count": sum(1 for row in marks if _is_obmalloc_mark(row)),
         "obmalloc_site_mark_count": sum(1 for row in marks if _is_obmalloc_site_mark(row)),
+        "probe_receipt": probe_receipt,
+        "n_c4_states": probe_receipt.get("n_c4_states"),
+        "sampled_states": probe_receipt.get("sampled_states"),
+        "eligible_scope": probe_receipt.get("eligible_scope"),
+        "eligible_module_limit": probe_receipt.get("eligible_module_limit"),
+        "eligible_module_keys": probe_receipt.get("eligible_modules"),
         "marks": marks,
     }
 
@@ -6015,14 +6133,20 @@ def run_callsite_tracemalloc_scale_smoke(out_root: Path) -> dict[str, Any]:
 
 
 def run_callsite_band_counter_scale_smoke(out_root: Path) -> dict[str, Any]:
-    """Mandatory short band-counter B-prime fixture smoke before full GPU acceptance."""
+    """Mandatory reduced-scale band-counter B-prime mechanism smoke before full GPU acceptance."""
+
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
 
     smoke_root = out_root / "prelaunch" / "callsite_band_counter_scale_smoke"
     smoke_root.mkdir(parents=True, exist_ok=True)
+    module_limit = int(BAND_COUNTER_MECHANISM_SMOKE_N_C4_STATES)
     run_a = _run_fixture_obmalloc_probe(
         smoke_root,
         scratch_name="callsite_band_counter_a",
         debugmallocstats=False,
+        eligible_module_limit=module_limit,
     )
     run_b = _run_fixture_obmalloc_probe(
         smoke_root,
@@ -6030,12 +6154,22 @@ def run_callsite_band_counter_scale_smoke(out_root: Path) -> dict[str, Any]:
         debugmallocstats=False,
         tracemalloc=True,
         expanded=False,
+        eligible_module_limit=module_limit,
     )
     marks_a = list(run_a.pop("marks", []))
     marks_b = list(run_b.pop("marks", []))
+    n_c4_states = int(run_b.get("n_c4_states") or module_limit)
+    sampled_states = tuple(
+        int(x)
+        for x in (
+            run_b.get("sampled_states")
+            or sorted(compute_obmalloc_expanded_sampled_states(n_c4_states))
+        )
+    )
     expanded = attribute_callsite_tracemalloc_b_prime(
         marks_a=marks_a,
         marks_b=marks_b,
+        sampled_states=sampled_states,
     )
     localization = dict(expanded.get("localization") or {})
     s1d7_call_site = dict(localization.get("s1d7_tracemalloc_call_site") or {})
@@ -6080,9 +6214,35 @@ def run_callsite_band_counter_scale_smoke(out_root: Path) -> dict[str, Any]:
             observer_fail_closed != "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
         ),
     }
+    total_wall_seconds = float(run_a.get("wall_seconds") or 0.0) + float(
+        run_b.get("wall_seconds") or 0.0
+    )
+    per_state_wall_seconds: dict[str, float] = {}
+    per_state_timing_method = "approx=run_b_wall_seconds/n_c4_states"
+    if n_c4_states > 0:
+        approx = float(run_b.get("wall_seconds") or 0.0) / float(n_c4_states)
+        for state_idx in sampled_states:
+            per_state_wall_seconds[str(int(state_idx))] = approx
+    aggregate_band_bytes = dict(dominance.get("aggregate_band_bytes") or {})
+    band_c_share = dominance.get("band_c_share")
+    per_state_rows = list(dominance.get("per_state") or [])
     receipt: dict[str, Any] = {
         "schema": "hrm_text_158_callsite_band_counter_scale_smoke_receipt/v1",
         "smoke_root": str(smoke_root),
+        "mechanism_smoke_scale": f"reduced_n{n_c4_states}",
+        "bank_wording": BAND_COUNTER_MECHANISM_SMOKE_BANK_WORDING,
+        "n_c4_states": n_c4_states,
+        "sampled_states": list(sampled_states),
+        "eligible_scope": run_b.get("eligible_scope") or "all-bitlinear",
+        "eligible_module_limit": run_b.get("eligible_module_limit", module_limit),
+        "eligible_module_keys": list(run_b.get("eligible_module_keys") or []),
+        "total_wall_seconds": total_wall_seconds,
+        "per_state_wall_seconds": per_state_wall_seconds,
+        "per_state_timing_method": per_state_timing_method,
+        "c4_rss_delta_gib": run_b.get("c4_rss_delta_gib"),
+        "aggregate_band_bytes": aggregate_band_bytes,
+        "band_c_share": band_c_share,
+        "per_state": per_state_rows,
         "checks": checks,
         "ok": all(checks.values()),
         "b_arm_profile_mark_count": b_profile_mark_count,

@@ -4014,6 +4014,21 @@ def test_fixture_probe_argv_tracemalloc_keeps_900(tmp_path: Path) -> None:
     assert FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC == 900
 
 
+def test_fixture_probe_argv_band_counter_mechanism_limit(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BAND_COUNTER_MECHANISM_SMOKE_N_C4_STATES,
+        _fixture_probe_argv,
+    )
+
+    cmd = _fixture_probe_argv(
+        tmp_path / "scratch",
+        tracemalloc=True,
+        eligible_module_limit=BAND_COUNTER_MECHANISM_SMOKE_N_C4_STATES,
+    )
+    idx = cmd.index("--eligible-module-limit")
+    assert cmd[idx + 1] == str(BAND_COUNTER_MECHANISM_SMOKE_N_C4_STATES)
+
+
 def test_run_subprocess_streaming_to_log_returns_stream_path_no_capture_output(
     tmp_path: Path,
     monkeypatch,
@@ -4071,11 +4086,13 @@ def test_run_fixture_obmalloc_probe_lane_release_on_timeout(
         release_calls.append(out_root)
         return {"lane": "released"}
 
-    def _fake_streaming(*_args, **_kwargs):
+    def _fake_watchdog(*_args, **_kwargs):
         return {
             "exit_code": 124,
             "probe_stream_log": str(tmp_path / "probe_stream.log"),
             "subprocess_timeout_expired": True,
+            "subprocess_timeout_reason": "silent_phase",
+            "wall_seconds": 901.0,
             "stdout_tail": "",
             "stderr_tail": "",
             "used_capture_output": False,
@@ -4090,8 +4107,8 @@ def test_run_fixture_obmalloc_probe_lane_release_on_timeout(
         _fake_release,
     )
     monkeypatch.setattr(
-        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_subprocess_streaming_to_log",
-        _fake_streaming,
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_subprocess_heartbeat_watchdog",
+        _fake_watchdog,
     )
     monkeypatch.setattr(
         "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._fixture_obmalloc_env",
@@ -4105,6 +4122,65 @@ def test_run_fixture_obmalloc_probe_lane_release_on_timeout(
     )
     assert release_calls == [tmp_path]
     assert payload["subprocess_timeout_expired"] is True
+    assert payload["subprocess_timeout_reason"] == "silent_phase"
+    assert payload["resource_lane_release"] == {"lane": "released"}
+
+
+def test_run_fixture_obmalloc_probe_lane_release_on_wall_clock_cap(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """R7 lane must release on watchdog wall-clock-cap kill (not only silent-phase)."""
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        _run_fixture_obmalloc_probe,
+    )
+
+    release_calls: list[Path] = []
+
+    def _fake_acquire(out_root: Path):
+        return {"lane": "held"}
+
+    def _fake_release(out_root: Path):
+        release_calls.append(out_root)
+        return {"lane": "released"}
+
+    def _fake_watchdog(*_args, **_kwargs):
+        return {
+            "exit_code": 124,
+            "probe_stream_log": str(tmp_path / "probe_stream.log"),
+            "subprocess_timeout_expired": True,
+            "subprocess_timeout_reason": "wall_clock_cap",
+            "wall_seconds": 5401.0,
+            "stdout_tail": "",
+            "stderr_tail": "",
+            "used_capture_output": False,
+        }
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_r7_resource_lane_acquire.acquire_resource_lane",
+        _fake_acquire,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_r7_resource_lane_release.release_resource_lane",
+        _fake_release,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_subprocess_heartbeat_watchdog",
+        _fake_watchdog,
+    )
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._fixture_obmalloc_env",
+        lambda **_kwargs: {},
+    )
+
+    payload = _run_fixture_obmalloc_probe(
+        tmp_path,
+        scratch_name="wall_clock_cap_case",
+        debugmallocstats=True,
+    )
+    assert release_calls == [tmp_path]
+    assert payload["subprocess_timeout_expired"] is True
+    assert payload["subprocess_timeout_reason"] == "wall_clock_cap"
     assert payload["resource_lane_release"] == {"lane": "released"}
 
 
@@ -4146,7 +4222,7 @@ def test_run_fixture_obmalloc_probe_stale_profile_unlink_pre_probe_preserves_fre
     def _fake_release(out_root: Path):
         return {"lane": "released"}
 
-    def _fake_streaming(*_args, **_kwargs):
+    def _fake_watchdog(*_args, **_kwargs):
         profile_path.write_text(
             "\n".join(json.dumps(row) for row in fresh_marks) + "\n",
             encoding="utf-8",
@@ -4155,6 +4231,8 @@ def test_run_fixture_obmalloc_probe_stale_profile_unlink_pre_probe_preserves_fre
             "exit_code": 0,
             "probe_stream_log": str(scratch / "probe_stream.log"),
             "subprocess_timeout_expired": False,
+            "subprocess_timeout_reason": None,
+            "wall_seconds": 12.5,
             "stdout_tail": "",
             "stderr_tail": "",
             "used_capture_output": False,
@@ -4169,8 +4247,8 @@ def test_run_fixture_obmalloc_probe_stale_profile_unlink_pre_probe_preserves_fre
         _fake_release,
     )
     monkeypatch.setattr(
-        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_subprocess_streaming_to_log",
-        _fake_streaming,
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_subprocess_heartbeat_watchdog",
+        _fake_watchdog,
     )
     monkeypatch.setattr(
         "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._fixture_obmalloc_env",
@@ -5024,6 +5102,7 @@ def test_maybe_enforce_tracemalloc_only_b_arm_passes_with_clean_sys_modules() ->
     import sys
 
     from scripts.hrm_text_158_code_currency_guard import (
+        EXECUTED_GUARD_PASSED_ENV,
         EXECUTED_GUARD_SCHEMA,
         IMPORT_BYTE_PINS_ENV,
         OBMALLOC_EXPANDED_ENV,
@@ -5033,6 +5112,7 @@ def test_maybe_enforce_tracemalloc_only_b_arm_passes_with_clean_sys_modules() ->
         PROFILE_HOST_RSS_ENV,
         PROFILE_TRACEMALLOC_ENV,
         REPO_ROOT,
+        SKIP_IMPORT_BYTE_CHECK_ENV,
         hash_file_bytes,
     )
 
@@ -5054,6 +5134,8 @@ def test_maybe_enforce_tracemalloc_only_b_arm_passes_with_clean_sys_modules() ->
         "env = json.loads(sys.argv[1])\n"
         "for key, value in env.items():\n"
         "    os.environ[key] = value\n"
+        "os.environ.pop(" + repr(EXECUTED_GUARD_PASSED_ENV) + ", None)\n"
+        "os.environ.pop(" + repr(SKIP_IMPORT_BYTE_CHECK_ENV) + ", None)\n"
         "from scripts.hrm_text_158_code_currency_guard import (\n"
         "    PINNED_PROBE_MODULE_NAMES,\n"
         "    maybe_enforce_phase3b_probe_import_byte_currency,\n"
@@ -5063,10 +5145,19 @@ def test_maybe_enforce_tracemalloc_only_b_arm_passes_with_clean_sys_modules() ->
         "exit_code = maybe_enforce_phase3b_probe_import_byte_currency()\n"
         "raise SystemExit(0 if exit_code is None else int(exit_code))\n"
     )
+    subprocess_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", ""),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "PYTHONPATH": str(REPO_ROOT),
+        **b_arm_env,
+    }
+    subprocess_env.pop(EXECUTED_GUARD_PASSED_ENV, None)
+    subprocess_env.pop(SKIP_IMPORT_BYTE_CHECK_ENV, None)
     proc = subprocess.run(
         [sys.executable, "-c", script, json.dumps(b_arm_env)],
         cwd=REPO_ROOT,
-        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        env=subprocess_env,
         capture_output=True,
         text=True,
         check=False,

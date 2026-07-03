@@ -4630,6 +4630,54 @@ def select_eligible_bitlinears(model: torch.nn.Module, *, eligible_scope: str) -
     raise ValueError(f"unsupported eligible_scope {eligible_scope!r}")
 
 
+def apply_eligible_module_limit(
+    eligible: Mapping[str, BitLinear],
+    *,
+    eligible_scope: str,
+    eligible_module_limit: int | None,
+) -> dict[str, BitLinear]:
+    """Take the first N sorted module keys (prefix of all-bitlinear eligible set)."""
+
+    if eligible_module_limit is None:
+        return dict(eligible)
+    if eligible_scope != "all-bitlinear":
+        raise ValueError(
+            "eligible_module_limit requires eligible_scope=all-bitlinear; "
+            f"got {eligible_scope!r}"
+        )
+    limit = int(eligible_module_limit)
+    if limit <= 0:
+        raise ValueError(f"eligible_module_limit must be positive; got {limit}")
+    keys = sorted(eligible.keys())[:limit]
+    return {key: eligible[key] for key in keys}
+
+
+def build_eligible_scale_receipt_fields(
+    eligible: Mapping[str, BitLinear],
+    *,
+    eligible_scope: str,
+    eligible_module_limit: int | None,
+    eligible_full_count: int,
+) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    n_c4_states = len(eligible)
+    sampled = sorted(compute_obmalloc_expanded_sampled_states(n_c4_states))
+    return {
+        "eligible_scope": str(eligible_scope),
+        "eligible_module_limit": (
+            int(eligible_module_limit) if eligible_module_limit is not None else None
+        ),
+        "eligible_full_module_count": int(eligible_full_count),
+        "eligible_module_count": int(n_c4_states),
+        "eligible_modules": sorted(eligible),
+        "n_c4_states": int(n_c4_states),
+        "sampled_states": sampled,
+    }
+
+
 def build_r3_persistent_ledger_receipt(
     tensor_states: Mapping[str, Any],
     *,
@@ -7770,6 +7818,7 @@ def run_c2p1_probe(
     phase: str = "c2p1-real-model-smoke",
     device: str = "cpu",
     eligible_scope: str = "first-bitlinear",
+    eligible_module_limit: int | None = None,
     steps: int = 0,
     batch_size: int = 1,
     max_len: int | None = None,
@@ -8218,7 +8267,18 @@ def run_c2p1_probe(
         with phase_progress.phase("support_control"):
             support_control_proof = identity_full_support_control_proof(int(curriculum_seed))
         with phase_progress.phase("select_eligible"):
-            eligible = select_eligible_bitlinears(model, eligible_scope=eligible_scope)
+            eligible_full = select_eligible_bitlinears(model, eligible_scope=eligible_scope)
+            eligible = apply_eligible_module_limit(
+                eligible_full,
+                eligible_scope=eligible_scope,
+                eligible_module_limit=eligible_module_limit,
+            )
+            eligible_scale_fields = build_eligible_scale_receipt_fields(
+                eligible,
+                eligible_scope=eligible_scope,
+                eligible_module_limit=eligible_module_limit,
+                eligible_full_count=len(eligible_full),
+            )
         with phase_progress.phase("state_init"):
             tensor_states, init_fidelity = derive_tensor_states_and_check_init_fidelity(
                 eligible,
@@ -8445,9 +8505,7 @@ def run_c2p1_probe(
                 "batch": batch_proof,
                 "identity_full_control": support_control_proof,
                 "support_cycler": support_cycler_proof,
-                "eligible_scope": eligible_scope,
-                "eligible_module_count": len(eligible),
-                "eligible_modules": sorted(eligible),
+                **eligible_scale_fields,
                 "weight_level_init_fidelity": init_fidelity,
                 "forward_level_init_fidelity": forward_init_fidelity,
                 "steps_requested": int(steps),
@@ -8915,9 +8973,7 @@ def run_c2p1_probe(
             "batch": batch_proof,
             "identity_full_control": support_control_proof,
             "support_cycler": support_cycler_proof,
-            "eligible_scope": eligible_scope,
-            "eligible_module_count": len(eligible),
-            "eligible_modules": sorted(eligible),
+            **eligible_scale_fields,
             "weight_level_init_fidelity": init_fidelity,
             "forward_level_init_fidelity": forward_init_fidelity,
             "steps_requested": int(steps),
@@ -9154,6 +9210,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--batch-size", type=int, default=1)
     ap.add_argument("--max-len", type=int, default=None)
     ap.add_argument("--eligible-scope", choices=["first-bitlinear", "all-bitlinear"], default="first-bitlinear")
+    ap.add_argument(
+        "--eligible-module-limit",
+        type=int,
+        default=None,
+        help=(
+            "When set with --eligible-scope all-bitlinear, take the first N sorted "
+            "BitLinear module keys (prefix of the full eligible set)."
+        ),
+    )
     ap.add_argument("--steps", type=int, default=0)
     ap.add_argument("--require-q-change", action="store_true")
     ap.add_argument("--max-abs-per-tensor", type=int, default=4096)
@@ -9575,6 +9640,7 @@ def main(argv: list[str] | None = None) -> int:
         phase=args.phase,
         device=args.device,
         eligible_scope=args.eligible_scope,
+        eligible_module_limit=args.eligible_module_limit,
         steps=args.steps,
         batch_size=args.batch_size,
         max_len=args.max_len,
