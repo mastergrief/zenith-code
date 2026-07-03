@@ -38,7 +38,7 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
     ),
     "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": (
-        "31ea9d1794ce3086b5204a7c3397b84e7cad9a960d0d4d568b4029523f0b6cc3"
+        "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f"
     ),
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": (
         "f6c9be4a227b46020dd3603fc51e6a717ed5c001b09e7cd5fe6a3b974ea3e941"
