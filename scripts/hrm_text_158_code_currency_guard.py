@@ -29,7 +29,7 @@ OBMALLOC_EXPANDED_ENV = "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED"
 
 PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
     "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": (
-        "3286871f2906865ab69be676d290779fef72c088c750736f6761b5191a50d152"
+        "fe62aeacf4bcf541f11c60e985b1b9c149a8e3c36df175e2f04ce5c3a45f723a"
     ),
     "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py": (
         "5169e9f9152c39936140ef97c56d4dbf067775632581cb62d4d3a9debcf5c181"
@@ -41,7 +41,7 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "b9d8f94cede2b31c695da09e37684fb5750b3607465d0cda2c45733258af83a9"
     ),
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "6cd6574cbf981fc3cf3ee2ffea2a2ba3fa2b1b0b67e90853e878ead42e48993c"
+        "3fb69c95a3326af455ad5d471f4c34193f8f1c2f1b672a7404c2e31869879f22"
     ),
 }
 

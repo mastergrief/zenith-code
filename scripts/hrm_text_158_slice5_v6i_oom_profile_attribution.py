@@ -145,25 +145,37 @@ ALLOCATION_SITE_ORIGINS: dict[str, tuple[str, str]] = {
         "event_coded_vote_update_adapter.py:1077",
         "sparse_vote_numpy_detach",
     ),
+    "C4.S1d.0": (
+        "event_coded_acc_live_carrier.py:694-716",
+        "apply_step_vote_ingress",
+    ),
     "C4.S1d.2": (
-        "event_coded_acc_live_carrier.py:691",
+        "event_coded_acc_live_carrier.py:717-725",
         "apply_step_active_sorted_union",
     ),
     "C4.S1d.3": (
-        "event_coded_acc_live_carrier.py:716",
+        "event_coded_acc_live_carrier.py:750-824",
         "apply_step_int32_lane_vectors",
     ),
     "C4.S1d.4": (
-        "event_coded_acc_live_carrier.py:722",
+        "event_coded_acc_live_carrier.py:825-874",
         "apply_step_bool_mask_arrays",
     ),
     "C4.S1d.5": (
-        "event_coded_acc_live_carrier.py:858",
+        "event_coded_acc_live_carrier.py:899-909",
         "apply_step_hot_table_merge",
     ),
     "C4.S1d.6": (
-        "event_coded_acc_live_carrier.py:872",
+        "event_coded_acc_live_carrier.py:911-924",
         "apply_step_surface_record",
+    ),
+    "C4.S1d.7": (
+        "event_coded_acc_live_carrier.py:876-897",
+        "apply_step_crossing_commit",
+    ),
+    "C4.S1d.8": (
+        "event_coded_acc_live_carrier.py:661-925",
+        "apply_step_outer_audit",
     ),
     "C4.S1e": ("event_coded_vote_update_adapter.py:1112", "c8_runtime_guards"),
     "C4.S1f": ("event_coded_vote_update_adapter.py:1126", "c8_stats_assembly"),
@@ -215,6 +227,9 @@ OBMALLOC_SITE_LEAF_SITES = (
     "C4.S1d.4",
     "C4.S1d.5",
     "C4.S1d.6",
+    "C4.S1d.0",
+    "C4.S1d.7",
+    "C4.S1d.8",
     "C4.S1e",
     "C4.S1f",
     "C4.S1f.1",
@@ -233,12 +248,17 @@ OBMALLOC_SITE_CHILD_SITES = (
     "C4.S1f",
 )
 OBMALLOC_SITE_S1D_CHILD_SITES = (
+    "C4.S1d.0",
     "C4.S1d.1",
     "C4.S1d.2",
     "C4.S1d.3",
     "C4.S1d.4",
     "C4.S1d.5",
     "C4.S1d.6",
+    "C4.S1d.7",
+)
+OBMALLOC_SITE_S1D_AUDIT_SITES = (
+    "C4.S1d.8",
 )
 OBMALLOC_SITE_S1F_CHILD_SITES = (
     "C4.S1f.1",
@@ -258,8 +278,8 @@ OBMALLOC_EXPANDED_STATE_DOMINANCE_MIN = 0.75
 OBMALLOC_EXPANDED_REPRESENTATIVENESS_MIN = 0.25
 OBMALLOC_EXPANDED_CANCELLATION_NEG_FRAC = 0.10
 OBMALLOC_EXPANDED_RETENTION_MONOTONIC_MIN = 0.75
-OBMALLOC_EXPANDED_EVENT_COUNT_TARGET = 162
-OBMALLOC_EXPANDED_EVENT_COUNT_MAX = 170
+OBMALLOC_EXPANDED_EVENT_COUNT_TARGET = 186
+OBMALLOC_EXPANDED_EVENT_COUNT_MAX = 194
 OBMALLOC_EXPANDED_RETENTION_FLOOR_BYTES = 1024
 # Sites allowed to emit multiple ordered pre/post pairs in SYNTHETIC/legacy streams.
 # Real emitter (post FIX-C1) uses one pair per site; consumer aggregation still
@@ -3016,6 +3036,8 @@ def attribute_obmalloc_expanded(
         if s1d_child_sum_pos > int(parent_s1d_pos * 1.15) and s1d_parent_reconcile_fraction > OBMALLOC_SITE_REMAINDER_MAX_FRAC:
             fail_closed_terminal = "CHILD_OVERLAP_DOUBLE_COUNT"
         for state_idx in sampled:
+            if fail_closed_terminal is not None:
+                break
             signed = per_state[str(state_idx)]["signed_holding_deltas_bytes"]
             parent_hold = max(int(signed.get("C4.S1d", 0)), 0)
             s1d_state_sum = sum(
@@ -3030,6 +3052,17 @@ def attribute_obmalloc_expanded(
                 break
         if fail_closed_terminal is None and s1d_parent_reconcile_fraction > OBMALLOC_SITE_REMAINDER_MAX_FRAC:
             fail_closed_terminal = "CHILD_PARENT_RECONCILE_FAIL"
+        s1d_audit_outer_holding_bytes = {
+            site_id: int(bracket_pos_totals.get(site_id, 0))
+            for site_id in OBMALLOC_SITE_S1D_AUDIT_SITES
+        }
+        localization["s1d_audit_sites"] = list(OBMALLOC_SITE_S1D_AUDIT_SITES)
+        localization["s1d_audit_outer_holding_bytes"] = s1d_audit_outer_holding_bytes
+        audit_hold = int(s1d_audit_outer_holding_bytes.get("C4.S1d.8", 0))
+        localization["s1d_audit_outer_reconcile_fraction"] = abs(audit_hold - parent_s1d_pos) / max(
+            parent_s1d_pos,
+            1,
+        )
         s1d_aggregate_pos = sum(s1d_child_pos_totals.values())
         if s1d_aggregate_pos > 0 and fail_closed_terminal is None:
             s1d_fractions = {

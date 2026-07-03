@@ -685,19 +685,24 @@ class EventCodedAccLiveState:
                 state_index=int(state_index if state_index is not None else -1),
             )
 
+        _site("C4.S1d.8", "pre", 661)
+
         emit_kwargs = {
             "host_allocator_site_emit": host_allocator_site_emit,
             "site_emit_enabled": site_emit_enabled,
             "optimizer_step_index": optimizer_step_index,
             "state_index": state_index,
         }
+        _site("C4.S1d.0", "pre", 694)
         vote_values_sorted: np.ndarray | None = None
         if sparse_vote_indices is not None:
             idx_np = np.asarray(sparse_vote_indices, dtype=np.int64).reshape(-1)
             val_np = np.asarray(sparse_vote_values, dtype=np.int32).reshape(-1)
             if idx_np.size == 0:
-                return self.apply_step(step_index, votes={}, **emit_kwargs)
-            if idx_np.size == 1 or np.all(idx_np[1:] >= idx_np[:-1]):
+                vote_map = None
+                vote_values_sorted = None
+                touched_arr = np.array([], dtype=np.int32)
+            elif idx_np.size == 1 or np.all(idx_np[1:] >= idx_np[:-1]):
                 touched_arr = idx_np.astype(np.int32)
                 vote_values_sorted = val_np.astype(np.int32)
             else:
@@ -714,6 +719,7 @@ class EventCodedAccLiveState:
             )
         hot_indices = self._hot.indices_array()
         hot_values = self._hot.values_array()
+        _site("C4.S1d.0", "post", 716)
         _site("C4.S1d.2", "pre", 691)
         if hot_risk_override is not None:
             proxy_arr = np.unique(
@@ -728,6 +734,8 @@ class EventCodedAccLiveState:
             _site("C4.S1d.3", "post", 716)
             _site("C4.S1d.4", "pre", 722)
             _site("C4.S1d.4", "post", 837)
+            _site("C4.S1d.7", "pre", 876)
+            _site("C4.S1d.7", "post", 897)
             _site("C4.S1d.5", "pre", 858)
             _site("C4.S1d.5", "post", 869)
             _site("C4.S1d.6", "pre", 872)
@@ -744,6 +752,7 @@ class EventCodedAccLiveState:
             )
             self.step_records.append(record)
             _site("C4.S1d.6", "post", 883)
+            _site("C4.S1d.8", "post", 925)
             return record
 
         cold = int(self.cold_default)
@@ -873,6 +882,7 @@ class EventCodedAccLiveState:
         update_mask = journal_has & ~cross_mask & ~demotion_decay_mask
         _site("C4.S1d.4", "post", 837)
 
+        _site("C4.S1d.7", "pre", 876)
         crossing_indices = [int(x) for x in active_sorted[cross_mask]]
         applied_indices = list(crossing_indices)
         demotion_on_crossing = int(np.sum(demotion_cross_mask))
@@ -896,6 +906,7 @@ class EventCodedAccLiveState:
         write_mask = promote_mask | update_mask
         upd_idx = active_sorted[write_mask]
         upd_val = post_arr[write_mask].astype(np.int16)
+        _site("C4.S1d.7", "post", 897)
         _site("C4.S1d.5", "pre", 858)
         new_idx, new_val = merge_hot_table_arrays(
             hot_indices,
@@ -922,6 +933,7 @@ class EventCodedAccLiveState:
         )
         self.step_records.append(record)
         _site("C4.S1d.6", "post", 883)
+        _site("C4.S1d.8", "post", 925)
         return record
 
     def to_checkpoint_payload(self):
