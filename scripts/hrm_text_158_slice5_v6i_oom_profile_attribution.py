@@ -6014,6 +6014,102 @@ def run_callsite_tracemalloc_scale_smoke(out_root: Path) -> dict[str, Any]:
     return receipt
 
 
+def run_callsite_band_counter_scale_smoke(out_root: Path) -> dict[str, Any]:
+    """Mandatory short band-counter B-prime fixture smoke before full GPU acceptance."""
+
+    smoke_root = out_root / "prelaunch" / "callsite_band_counter_scale_smoke"
+    smoke_root.mkdir(parents=True, exist_ok=True)
+    run_a = _run_fixture_obmalloc_probe(
+        smoke_root,
+        scratch_name="callsite_band_counter_a",
+        debugmallocstats=False,
+    )
+    run_b = _run_fixture_obmalloc_probe(
+        smoke_root,
+        scratch_name="callsite_band_counter_b",
+        debugmallocstats=False,
+        tracemalloc=True,
+        expanded=False,
+    )
+    marks_a = list(run_a.pop("marks", []))
+    marks_b = list(run_b.pop("marks", []))
+    expanded = attribute_callsite_tracemalloc_b_prime(
+        marks_a=marks_a,
+        marks_b=marks_b,
+    )
+    localization = dict(expanded.get("localization") or {})
+    s1d7_call_site = dict(localization.get("s1d7_tracemalloc_call_site") or {})
+    dominance = dict(s1d7_call_site.get("s1d7_band_counter_dominance") or {})
+    b_profile_mark_count = int((run_b.get("profile_mark_count") or 0))
+    observer_fail_closed = expanded.get("fail_closed_terminal")
+    tracemalloc_perturbed = expanded.get("tracemalloc_perturbed")
+    if tracemalloc_perturbed is None:
+        tracemalloc_perturbed = dict(expanded.get("guards") or {}).get("tracemalloc_perturbed")
+    band_counter_mark_count = expanded.get("s1d7_band_counter_mark_count")
+    if band_counter_mark_count is None:
+        band_counter_mark_count = s1d7_call_site.get("s1d7_band_counter_mark_count")
+    band_counter_dominance_ok = expanded.get("s1d7_band_counter_dominance_ok")
+    if band_counter_dominance_ok is None:
+        band_counter_dominance_ok = dominance.get("band_counter_dominance_ok")
+    s1d7_tracemalloc_mark_count = sum(
+        1
+        for row in marks_b
+        if str(row.get("event") or "").startswith("s1d7_tracemalloc_site_C4.S1d.7_")
+    )
+    event_counts = dict(dict(expanded.get("guards") or {}).get("obmalloc_expanded_event_counts") or {})
+    total_events = event_counts.get("total")
+    total_events_int = int(total_events) if total_events is not None else None
+    event_total_exceeds_hard_ceiling = (
+        total_events_int is not None
+        and total_events_int > PHASE3_CALLSITE_EVENT_TOTAL_HARD_CEILING
+    )
+    checks = {
+        "observer_guard_clear": observer_fail_closed != "OBSERVER_PERTURBED_INCONCLUSIVE",
+        "tracemalloc_perturbed_false": tracemalloc_perturbed is False,
+        "s1d7_band_counter_mark_count_eq_4": (
+            band_counter_mark_count == PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED
+        ),
+        "band_counter_dominance_ok": band_counter_dominance_ok is True,
+        "tracemalloc_mark_count_eq_0": s1d7_tracemalloc_mark_count == 0,
+        "call_site_status_resolved": expanded.get("call_site_status") == "RESOLVED",
+        "s1d7_call_site_candidate_eq_c": expanded.get("s1d7_call_site_candidate") == "c",
+        "b_profile_mark_count_gt_0": b_profile_mark_count > 0,
+        "event_total_within_hard_ceiling": not event_total_exceeds_hard_ceiling,
+        "no_profile_env_mutual_exclusion_abort": int(run_b.get("exit_code", 0)) != -6,
+        "no_tracemalloc_perturbed_inconclusive": (
+            observer_fail_closed != "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
+        ),
+    }
+    receipt: dict[str, Any] = {
+        "schema": "hrm_text_158_callsite_band_counter_scale_smoke_receipt/v1",
+        "smoke_root": str(smoke_root),
+        "checks": checks,
+        "ok": all(checks.values()),
+        "b_arm_profile_mark_count": b_profile_mark_count,
+        "fail_closed_terminal": observer_fail_closed,
+        "fail_closed_reason": s1d7_call_site.get("fail_closed_reason"),
+        "tracemalloc_perturbed": tracemalloc_perturbed,
+        "s1d7_band_counter_mark_count": band_counter_mark_count,
+        "s1d7_tracemalloc_mark_count": s1d7_tracemalloc_mark_count,
+        "s1d7_band_counter_dominance": dominance,
+        "call_site_status": expanded.get("call_site_status"),
+        "s1d7_call_site_candidate": expanded.get("s1d7_call_site_candidate"),
+        "s1d7_call_site_branch_outcome": expanded.get("s1d7_call_site_branch_outcome"),
+        "call_site_origin_file_line": expanded.get("call_site_origin_file_line"),
+        "obmalloc_expanded_event_count_total": total_events_int,
+        "banked_reconcile_precondition_ok": True,
+        "localization": localization,
+        "runs": {
+            "A": {k: v for k, v in run_a.items() if k != "marks"},
+            "B": {k: v for k, v in run_b.items() if k != "marks"},
+        },
+    }
+    out_path = smoke_root / "callsite_band_counter_scale_smoke_receipt.json"
+    out_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    receipt["receipt_path"] = str(out_path)
+    return receipt
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(

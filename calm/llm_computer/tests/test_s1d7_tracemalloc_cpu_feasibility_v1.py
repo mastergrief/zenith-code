@@ -1142,3 +1142,120 @@ def test_band_counter_mode_skips_tracemalloc_marks(monkeypatch: pytest.MonkeyPat
         fields={"state_index": 0},
     )
     assert len(progress.events) == marks_before
+
+
+def _band_counter_scale_smoke_probe_return(
+    *,
+    scratch_name: str,
+    marks_b: list[dict[str, object]],
+) -> dict[str, object]:
+    if scratch_name.endswith("_a"):
+        return {"marks": [], "profile_mark_count": 0, "exit_code": 0}
+    return {
+        "marks": marks_b,
+        "profile_mark_count": len(marks_b),
+        "exit_code": 0,
+    }
+
+
+def test_band_counter_scale_smoke_receipt_surfaces_dominance_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        run_callsite_band_counter_scale_smoke,
+    )
+
+    marks_b = [
+        _band_counter_mark(state_index=state_idx)
+        for state_idx in (0, 10, 21, 31)
+    ]
+
+    def _fake_probe(
+        out_root: Path,
+        *,
+        scratch_name: str,
+        debugmallocstats: bool,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        _ = (out_root, debugmallocstats, kwargs)
+        return _band_counter_scale_smoke_probe_return(
+            scratch_name=scratch_name,
+            marks_b=marks_b,
+        )
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_fixture_obmalloc_probe",
+        _fake_probe,
+    )
+    receipt = run_callsite_band_counter_scale_smoke(tmp_path)
+    assert receipt["schema"] == "hrm_text_158_callsite_band_counter_scale_smoke_receipt/v1"
+    assert receipt["ok"] is True, receipt
+    dominance = dict(receipt.get("s1d7_band_counter_dominance") or {})
+    assert dominance.get("band_counter_dominance_ok") is True
+    assert float(dominance.get("band_c_share") or 0.0) >= 0.80
+    assert dict(dominance.get("aggregate_band_bytes") or {})
+    assert list(dominance.get("per_state") or [])
+    assert receipt["s1d7_band_counter_mark_count"] == 4
+    assert receipt["s1d7_tracemalloc_mark_count"] == 0
+    assert receipt["s1d7_call_site_candidate"] == "c"
+    assert receipt["call_site_status"] == "RESOLVED"
+    assert receipt["s1d7_call_site_branch_outcome"] is not None
+    assert receipt["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:896"
+    nested = dict(dict(receipt.get("localization") or {}).get("s1d7_tracemalloc_call_site") or {})
+    assert nested.get("s1d7_band_counter_mark_count") == 4
+    checks = dict(receipt.get("checks") or {})
+    assert checks["s1d7_band_counter_mark_count_eq_4"] is True
+    assert checks["band_counter_dominance_ok"] is True
+    assert checks["tracemalloc_mark_count_eq_0"] is True
+    assert checks["s1d7_call_site_candidate_eq_c"] is True
+
+
+def test_band_counter_scale_smoke_fail_closed_on_wrong_mark_count(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        run_callsite_band_counter_scale_smoke,
+    )
+
+    marks_b = [_band_counter_mark(state_index=0), _band_counter_mark(state_index=10)]
+
+    def _fake_probe(
+        out_root: Path,
+        *,
+        scratch_name: str,
+        debugmallocstats: bool,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        _ = (out_root, debugmallocstats, kwargs)
+        return _band_counter_scale_smoke_probe_return(
+            scratch_name=scratch_name,
+            marks_b=marks_b,
+        )
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_fixture_obmalloc_probe",
+        _fake_probe,
+    )
+    receipt = run_callsite_band_counter_scale_smoke(tmp_path)
+    assert receipt["ok"] is False
+    assert receipt["call_site_status"] == "UNRESOLVED"
+    checks = dict(receipt.get("checks") or {})
+    assert checks["s1d7_band_counter_mark_count_eq_4"] is False
+    assert checks["band_counter_dominance_ok"] is False
+    assert checks["call_site_status_resolved"] is False
+
+
+def test_run_callsite_tracemalloc_scale_smoke_unchanged_for_fallback_d() -> None:
+    import inspect
+
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        run_callsite_tracemalloc_scale_smoke,
+    )
+
+    source = inspect.getsource(run_callsite_tracemalloc_scale_smoke)
+    assert "s1d7_tracemalloc_mark_pair_count_eq_4" in source
+    assert "new_schema_mark_count_eq_8" in source
+    assert "hrm_text_158_callsite_tracemalloc_scale_smoke_receipt/v1" in source
+    assert "s1d7_band_counter_mark_count_eq_4" not in source
