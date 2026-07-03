@@ -41,10 +41,10 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "31ea9d1794ce3086b5204a7c3397b84e7cad9a960d0d4d568b4029523f0b6cc3"
     ),
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": (
-        "b9d8f94cede2b31c695da09e37684fb5750b3607465d0cda2c45733258af83a9"
+        "1eb3149091e2fddb39106c11e5bb8833325e90b64ca91ad4014663f1fea2d383"
     ),
     "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py": (
-        "a1400ba26d64e192cc43879d969d0977dbc31b7a3e8550381c95d35b73ba7091"
+        "2a2d9c623dafb5cf573e445cdf2fc30a8f8ff60cdabe0a771540e316830da5ab"
     ),
     "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py": (
         "76f2ddd28cac8b29c9ab451d2a69e256fee9ca15c75629e08a70029c472bf346"
