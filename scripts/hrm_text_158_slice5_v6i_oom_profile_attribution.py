@@ -5294,7 +5294,12 @@ def _fixture_obmalloc_env(
     expanded: bool = False,
     c4_retention_owner_census: bool = False,
     tracemalloc: bool = False,
+    band_counter_only: bool = False,
 ) -> dict[str, str]:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        PROFILE_S1D7_BAND_COUNTER_ONLY_ENV,
+    )
+
     env = os.environ.copy()
     env["PYTHONPATH"] = "."
     env["HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP"] = "1"
@@ -5306,6 +5311,7 @@ def _fixture_obmalloc_env(
     env[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] = "1" if site_brackets else "0"
     env[PROFILE_OBMALLOC_EXPANDED_ENV] = "1" if expanded else "0"
     env[PROFILE_TRACEMALLOC_ENV] = "1" if tracemalloc else "0"
+    env[PROFILE_S1D7_BAND_COUNTER_ONLY_ENV] = "1" if band_counter_only else "0"
     if c4_retention_owner_census:
         from calm.hrm_text_158.native_full_stack.c4_retention_owner_census import (
             PROFILE_C4_RETENTION_OWNER_CENSUS_ENV,
@@ -5497,6 +5503,7 @@ def _run_fixture_obmalloc_probe(
     expanded: bool = False,
     c4_retention_owner_census: bool = False,
     tracemalloc: bool = False,
+    band_counter_only: bool = False,
     eligible_module_limit: int | None = None,
 ) -> dict[str, Any]:
     out_root.mkdir(parents=True, exist_ok=True)
@@ -5523,6 +5530,7 @@ def _run_fixture_obmalloc_probe(
             expanded=expanded,
             c4_retention_owner_census=c4_retention_owner_census,
             tracemalloc=tracemalloc,
+            band_counter_only=band_counter_only,
         )
         cmd = _fixture_probe_argv(
             scratch,
@@ -6152,7 +6160,8 @@ def run_callsite_band_counter_scale_smoke(out_root: Path) -> dict[str, Any]:
         smoke_root,
         scratch_name="callsite_band_counter_b",
         debugmallocstats=False,
-        tracemalloc=True,
+        tracemalloc=False,
+        band_counter_only=True,
         expanded=False,
         eligible_module_limit=module_limit,
     )

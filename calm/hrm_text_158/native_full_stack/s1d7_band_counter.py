@@ -26,6 +26,10 @@ NUMPY_ARRAY_HEADER_BYTES = 96
 DOMINANCE_C_SHARE_MIN = 0.80
 DOMINANCE_C_MULTIPLIER_MIN = 3.0
 
+STATIC_PRE_APPEND_MEASUREMENT_CONTRACT = "static_pre_append_v1"
+S1D7_BAND_COUNTER_MARKER_SEAM_ORIGIN_LINE = 895
+S1D7_BAND_COUNTER_CANDIDATE_ORIGIN_FILE_LINE = "event_coded_acc_live_carrier.py:896"
+
 
 def estimate_band_a_allocation_bytes(
     *,
@@ -81,6 +85,86 @@ def estimate_band_e_allocation_bytes(
         + max(int(upd_val_nbytes), 0)
         + headers
     )
+
+
+def _single_crossing_encoded_byte_len(*, flat_index: int) -> int:
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
+        _encode_varint,
+    )
+
+    return int(len(_encode_varint(int(flat_index))) + 1)
+
+
+def project_crossing_event_encoded_bytes_delta(
+    active_sorted: np.ndarray,
+    cross_mask: np.ndarray,
+    post_arr: np.ndarray,
+    *,
+    threshold_abs: int,
+) -> int:
+    """Project encoded-byte delta for crossings without EventCodedAccEvent allocation."""
+    total = 0
+    for flat_index, post in zip(active_sorted[cross_mask], post_arr[cross_mask]):
+        direction = 1 if int(post) >= 0 else 0
+        residual_mag = min(abs(int(post)), int(threshold_abs) - 1)
+        _ = direction, residual_mag
+        total += _single_crossing_encoded_byte_len(flat_index=int(flat_index))
+    return int(total)
+
+
+def oracle_measure_crossing_event_encoded_bytes_delta(
+    active_sorted: np.ndarray,
+    cross_mask: np.ndarray,
+    post_arr: np.ndarray,
+    *,
+    threshold_abs: int,
+) -> int:
+    """Test oracle: post-loop measured counter semantics via encode_event_coded_acc_events."""
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
+        EventCodedAccEvent,
+        encode_event_coded_acc_events,
+    )
+
+    events: list[EventCodedAccEvent] = []
+    for flat_index, post in zip(active_sorted[cross_mask], post_arr[cross_mask]):
+        direction = 1 if int(post) >= 0 else 0
+        residual_mag = min(abs(int(post)), int(threshold_abs) - 1)
+        events.append(
+            EventCodedAccEvent(
+                flat_index=int(flat_index),
+                direction=int(direction),
+                residual_mag=int(residual_mag),
+                event_type=1,
+            )
+        )
+    return int(len(encode_event_coded_acc_events(tuple(events))))
+
+
+def _marker_origin_file_line(row: Mapping[str, Any]) -> str | None:
+    origin_line = row.get("origin_line")
+    if origin_line is None:
+        return None
+    origin_file = str(row.get("origin_file") or "event_coded_acc_live_carrier.py")
+    return f"{origin_file}:{int(origin_line)}"
+
+
+def _band_counter_origin_audit_fields(
+    ordered_rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    marker_lines = sorted(
+        {
+            line
+            for row in ordered_rows
+            if (line := _marker_origin_file_line(row)) is not None
+        }
+    )
+    marker_origin = marker_lines[0] if len(marker_lines) == 1 else marker_lines or None
+    return {
+        "s1d7_band_counter_marker_origin_file_line": marker_origin,
+        "s1d7_band_counter_candidate_origin_file_line": (
+            S1D7_BAND_COUNTER_CANDIDATE_ORIGIN_FILE_LINE
+        ),
+    }
 
 
 def collect_s1d7_band_counters(
@@ -301,16 +385,19 @@ def attribute_s1d7_band_counter_call_site_from_marks(
     rows_by_state = {int(row["state_index"]): row for row in rows}
     ordered_rows = [rows_by_state[state_idx] for state_idx in sampled_states_tuple]
     dominance = evaluate_band_dominance(ordered_rows, sampled_states=sampled_states)
+    origin_audit = _band_counter_origin_audit_fields(ordered_rows)
     if not dominance.get("band_counter_dominance_ok"):
         return {
             **unresolved,
+            **origin_audit,
             "fail_closed_reason": dominance.get("fail_closed_reason"),
             "s1d7_band_counter_mark_count": len(ordered_rows),
             "s1d7_band_counter_dominance": dominance,
         }
     return {
         "call_site_status": "RESOLVED",
-        "call_site_origin_file_line": "event_coded_acc_live_carrier.py:896",
+        "call_site_origin_file_line": S1D7_BAND_COUNTER_CANDIDATE_ORIGIN_FILE_LINE,
+        **origin_audit,
         "tracemalloc_perturbed": False,
         "s1d7_call_site_in_bracket_ok": True,
         "s1d7_call_site_candidate": "c",
@@ -377,6 +464,16 @@ def branch_outcome_for_band(band: str | None) -> str | None:
     return None
 
 
+def _call_band_counter_emit(emit: Any, **kwargs: Any) -> None:
+    import inspect
+
+    params = inspect.signature(emit).parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()):
+        emit(**kwargs)
+        return
+    emit(**{key: value for key, value in kwargs.items() if key in params})
+
+
 def maybe_emit_s1d7_band_counter_post(
     emit: Any,
     *,
@@ -404,10 +501,57 @@ def maybe_emit_s1d7_band_counter_post(
         upd_idx=upd_idx,
         upd_val=upd_val,
     )
-    emit(
+    _call_band_counter_emit(
+        emit,
         origin_file="event_coded_acc_live_carrier.py",
         origin_line=int(origin_line),
         counters=counters,
         optimizer_step_index=int(optimizer_step_index),
         state_index=int(state_index),
+    )
+
+
+def maybe_emit_s1d7_band_counter_static_pre_append(
+    emit: Any,
+    *,
+    active_sorted: np.ndarray,
+    cross_mask: np.ndarray,
+    post_arr: np.ndarray,
+    threshold_abs: int,
+    crossing_indices_len: int,
+    applied_indices_len: int,
+    q_level_writes: int,
+    remove_idx: Any,
+    upd_idx: Any,
+    upd_val: Any,
+    optimizer_step_index: int,
+    state_index: int,
+) -> None:
+    if emit is None:
+        return
+    projected_delta = project_crossing_event_encoded_bytes_delta(
+        active_sorted,
+        cross_mask,
+        post_arr,
+        threshold_abs=int(threshold_abs),
+    )
+    counters = collect_s1d7_band_counters(
+        crossing_indices_len=int(crossing_indices_len),
+        applied_indices_len=int(applied_indices_len),
+        append_event_count=int(crossing_indices_len),
+        event_encoded_bytes_delta=int(projected_delta),
+        q_level_writes=int(q_level_writes),
+        remove_idx=remove_idx,
+        upd_idx=upd_idx,
+        upd_val=upd_val,
+    )
+    _call_band_counter_emit(
+        emit,
+        origin_file="event_coded_acc_live_carrier.py",
+        origin_line=int(S1D7_BAND_COUNTER_MARKER_SEAM_ORIGIN_LINE),
+        counters=counters,
+        optimizer_step_index=int(optimizer_step_index),
+        state_index=int(state_index),
+        measurement_contract=STATIC_PRE_APPEND_MEASUREMENT_CONTRACT,
+        event_encoded_bytes_delta_source="projected",
     )

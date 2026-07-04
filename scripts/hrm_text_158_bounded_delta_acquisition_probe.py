@@ -1948,6 +1948,14 @@ def profile_s1d7_band_counter_enabled() -> bool:
     return _enabled()
 
 
+def profile_s1d7_band_counter_only_enabled() -> bool:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        profile_s1d7_band_counter_only_enabled as _enabled,
+    )
+
+    return _enabled()
+
+
 def profile_obmalloc_expanded_enabled() -> bool:
     if not profile_obmalloc_site_brackets_enabled():
         return False
@@ -2712,11 +2720,16 @@ class PhaseProgress:
         origin_line: int,
         counters: Mapping[str, Any],
         fields: Mapping[str, Any],
+        measurement_contract: str | None = None,
+        event_encoded_bytes_delta_source: str | None = None,
     ) -> None:
         if self.host_rss_profile_path is None:
             return
         if not profile_s1d7_band_counter_enabled():
             return
+        from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+            profile_s1d7_tracemalloc_site_enabled,
+        )
         from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
             S1D7_BAND_COUNTER_EVENT,
             S1D7_BAND_COUNTER_SITE_SCHEMA,
@@ -2736,11 +2749,15 @@ class PhaseProgress:
             "elapsed_since_start_seconds": self._elapsed(),
             "device": str(self.device),
             "resource_snapshot": resource_snapshot,
-            "tracemalloc_only": True,
+            "tracemalloc_only": profile_s1d7_tracemalloc_site_enabled(),
             "tracemalloc_diagnostic": False,
             "band_counter_only": True,
             "s1d7_band_counters": dict(counters),
         }
+        if measurement_contract is not None:
+            mark["measurement_contract"] = str(measurement_contract)
+        if event_encoded_bytes_delta_source is not None:
+            mark["event_encoded_bytes_delta_source"] = str(event_encoded_bytes_delta_source)
         for key in ("step", "optimizer_step_index", "state_index"):
             if key in fields:
                 mark[key] = fields[key]
@@ -3102,6 +3119,8 @@ class PhaseProgress:
             counters: Mapping[str, Any],
             optimizer_step_index: int,
             state_index: int,
+            measurement_contract: str | None = None,
+            event_encoded_bytes_delta_source: str | None = None,
         ) -> None:
             site_fields = {
                 "step": int(step),
@@ -3118,6 +3137,8 @@ class PhaseProgress:
                 origin_line=int(origin_line),
                 counters=dict(counters),
                 fields=site_fields,
+                measurement_contract=measurement_contract,
+                event_encoded_bytes_delta_source=event_encoded_bytes_delta_source,
             )
 
         emit.site_emit = site_emit  # type: ignore[attr-defined]

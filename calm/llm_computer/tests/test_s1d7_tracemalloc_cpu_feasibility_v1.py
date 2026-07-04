@@ -77,11 +77,11 @@ def test_s1d7_call_site_parser_line_range() -> None:
 
     origin_file, origin_line = parse_origin_from_traceback(
         [
-            '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 905'
+            '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 917'
         ]
     )
     assert origin_file == "event_coded_acc_live_carrier.py"
-    assert origin_line == 905
+    assert origin_line == 917
     diff = {
         "current_delta_bytes": 1000,
         "top_concentration_fraction": 0.9,
@@ -90,14 +90,14 @@ def test_s1d7_call_site_parser_line_range() -> None:
                 "delta_bytes": 1000,
                 "concentration_fraction": 0.9,
                 "traceback": [
-                    '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 905'
+                    '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 917'
                 ],
             }
         ],
     }
     inside = classify_s1d7_tracemalloc_call_site(diff)
     assert inside["s1d7_call_site_in_bracket_ok"] is True
-    assert inside["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:905"
+    assert inside["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:917"
     assert inside["s1d7_call_site_candidate"] == "e"
     outside = classify_s1d7_tracemalloc_call_site(
         {
@@ -106,7 +106,7 @@ def test_s1d7_call_site_parser_line_range() -> None:
                 {
                     **diff["top_delta_frames"][0],
                     "traceback": [
-                        '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 928'
+                        '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 960'
                     ],
                 }
             ],
@@ -114,8 +114,8 @@ def test_s1d7_call_site_parser_line_range() -> None:
     )
     assert outside["fail_closed_reason"] == "CALL_SITE_OUTSIDE_S1D7_BRACKET"
     assert outside["s1d7_call_site_in_bracket_ok"] is False
-    assert S1D7_ACCEPTANCE_LINE_MIN == 876
-    assert S1D7_ACCEPTANCE_LINE_MAX == 909
+    assert S1D7_ACCEPTANCE_LINE_MIN == 909
+    assert S1D7_ACCEPTANCE_LINE_MAX == 955
 
 
 def test_s1d7_call_site_concentration_fail_closed() -> None:
@@ -131,7 +131,7 @@ def test_s1d7_call_site_concentration_fail_closed() -> None:
                 "delta_bytes": 1000,
                 "concentration_fraction": 0.40,
                 "traceback": [
-                    '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 896'
+                    '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 946'
                 ],
             }
         ],
@@ -154,7 +154,7 @@ def test_s1d7_call_site_outside_bracket_fail_closed() -> None:
                 "delta_bytes": 1000,
                 "concentration_fraction": 0.95,
                 "traceback": [
-                    '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 875'
+                    '  File "/repo/calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py", line 908'
                 ],
             }
         ],
@@ -175,14 +175,14 @@ def test_s1d7_call_site_candidate_line_bands() -> None:
         map_s1d7_call_site_candidate,
     )
 
-    assert map_s1d7_call_site_candidate(886) == "a"
-    assert map_s1d7_call_site_candidate(891) == "c"
-    assert map_s1d7_call_site_candidate(902) == "c"
-    assert map_s1d7_call_site_candidate(905) == "e"
-    assert map_s1d7_call_site_candidate(908) == "e"
-    assert map_s1d7_call_site_candidate(903) == "ambiguous"
-    assert map_s1d7_call_site_candidate(876) == "ambiguous"
-    assert map_s1d7_call_site_candidate(875) is None
+    assert map_s1d7_call_site_candidate(910) == "a"
+    assert map_s1d7_call_site_candidate(941) == "c"
+    assert map_s1d7_call_site_candidate(952) == "c"
+    assert map_s1d7_call_site_candidate(914) == "e"
+    assert map_s1d7_call_site_candidate(917) == "e"
+    assert map_s1d7_call_site_candidate(920) == "ambiguous"
+    assert map_s1d7_call_site_candidate(909) == "ambiguous"
+    assert map_s1d7_call_site_candidate(908) is None
 
     def _diff_for_line(line: int) -> dict:
         return {
@@ -201,19 +201,19 @@ def test_s1d7_call_site_candidate_line_bands() -> None:
             ],
         }
 
-    a_result = classify_s1d7_tracemalloc_call_site(_diff_for_line(886))
+    a_result = classify_s1d7_tracemalloc_call_site(_diff_for_line(910))
     assert a_result["s1d7_call_site_candidate"] == "a"
     assert a_result["s1d7_call_site_branch_outcome"] == S1D7_BRANCH_CANDIDATE_A
 
-    c_result = classify_s1d7_tracemalloc_call_site(_diff_for_line(896))
+    c_result = classify_s1d7_tracemalloc_call_site(_diff_for_line(946))
     assert c_result["s1d7_call_site_candidate"] == "c"
     assert c_result["s1d7_call_site_branch_outcome"] == S1D7_BRANCH_CANDIDATE_C
 
-    e_result = classify_s1d7_tracemalloc_call_site(_diff_for_line(905))
+    e_result = classify_s1d7_tracemalloc_call_site(_diff_for_line(917))
     assert e_result["s1d7_call_site_candidate"] == "e"
     assert e_result["s1d7_call_site_branch_outcome"] == S1D7_BRANCH_CANDIDATE_E
 
-    ambiguous = classify_s1d7_tracemalloc_call_site(_diff_for_line(903))
+    ambiguous = classify_s1d7_tracemalloc_call_site(_diff_for_line(920))
     assert ambiguous["call_site_status"] == "RESOLVED"
     assert ambiguous["s1d7_call_site_candidate"] == "ambiguous"
     assert ambiguous["s1d7_call_site_branch_outcome"] == S1D7_BRANCH_CANDIDATE_AMBIGUOUS
@@ -250,14 +250,14 @@ def test_attribute_s1d7_tracemalloc_call_site_from_marks_resolved() -> None:
         {
             "event": S1D7_PRE_EVENT,
             "state_index": 0,
-            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=909),
         },
         {
             "event": S1D7_POST_EVENT,
             "state_index": 0,
             "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(
                 traced_bytes=1_000_000,
-                carrier_line=896,
+                carrier_line=946,
             ),
         },
     ]
@@ -268,7 +268,7 @@ def test_attribute_s1d7_tracemalloc_call_site_from_marks_resolved() -> None:
     )
     assert result["call_site_status"] == "RESOLVED"
     assert result["s1d7_call_site_in_bracket_ok"] is True
-    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:896"
+    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:946"
     assert result["s1d7_call_site_candidate"] == "c"
     assert float(result["s1d7_tracemalloc_top_concentration_fraction"]) >= 0.60
 
@@ -284,14 +284,14 @@ def test_attribute_s1d7_tracemalloc_call_site_perturbation_fail_closed() -> None
         {
             "event": S1D7_PRE_EVENT,
             "state_index": 0,
-            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=909),
         },
         {
             "event": S1D7_POST_EVENT,
             "state_index": 0,
             "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(
                 traced_bytes=1_000_000,
-                carrier_line=896,
+                carrier_line=946,
             ),
         },
     ]
@@ -340,12 +340,12 @@ def test_obmalloc_expanded_propagates_tracemalloc_call_site_when_resolved() -> N
         if event == S1D7_PRE_EVENT:
             row["s1d7_tracemalloc"] = _s1d7_tracemalloc_snapshot(
                 traced_bytes=0,
-                carrier_line=876,
+                carrier_line=909,
             )
         elif event == S1D7_POST_EVENT:
             row["s1d7_tracemalloc"] = _s1d7_tracemalloc_snapshot(
                 traced_bytes=500_000,
-                carrier_line=905,
+                carrier_line=917,
             )
     marks = (
         _c4_subphase_marks(TOTAL_C4_REFERENCE_GIB)
@@ -361,7 +361,7 @@ def test_obmalloc_expanded_propagates_tracemalloc_call_site_when_resolved() -> N
     )
     assert result["call_site_status"] == "RESOLVED"
     assert result["s1d7_call_site_in_bracket_ok"] is True
-    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:905"
+    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:917"
     assert result["s1d7_call_site_candidate"] == "e"
     assert result["s1d7_call_site_branch_outcome"] == "S1D7_CALL_SITE_CANDIDATE_E_NUMPY_ARRAYS"
     assert result["s1d7_tracemalloc_mark_pair_count"] == len(sampled)
@@ -633,27 +633,27 @@ def test_consumer_prefers_new_schema_over_legacy() -> None:
         {
             "event": S1D7_PRE_EVENT,
             "state_index": 0,
-            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=886),
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=910),
         },
         {
             "event": S1D7_POST_EVENT,
             "state_index": 0,
             "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(
                 traced_bytes=1_000_000,
-                carrier_line=886,
+                carrier_line=910,
             ),
         },
         {
             "event": S1D7_TRACEMALLOC_PRE_EVENT,
             "state_index": 0,
-            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=909),
         },
         {
             "event": S1D7_TRACEMALLOC_POST_EVENT,
             "state_index": 0,
             "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(
                 traced_bytes=1_000_000,
-                carrier_line=896,
+                carrier_line=946,
             ),
         },
     ]
@@ -664,7 +664,7 @@ def test_consumer_prefers_new_schema_over_legacy() -> None:
     )
     assert result["s1d7_tracemalloc_mark_schema"] == "tracemalloc_only"
     assert result["call_site_status"] == "RESOLVED"
-    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:896"
+    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:946"
     assert result["s1d7_call_site_candidate"] == "c"
 
 
@@ -679,7 +679,7 @@ def test_consumer_missing_extra_pairs_fail_closed() -> None:
         {
             "event": S1D7_TRACEMALLOC_PRE_EVENT,
             "state_index": 0,
-            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=909),
         }
     ]
     missing = attribute_s1d7_tracemalloc_call_site_from_marks(
@@ -693,19 +693,19 @@ def test_consumer_missing_extra_pairs_fail_closed() -> None:
         {
             "event": S1D7_TRACEMALLOC_PRE_EVENT,
             "state_index": 0,
-            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=909),
         },
         {
             "event": S1D7_TRACEMALLOC_PRE_EVENT,
             "state_index": 0,
-            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=876),
+            "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(traced_bytes=0, carrier_line=909),
         },
         {
             "event": S1D7_TRACEMALLOC_POST_EVENT,
             "state_index": 0,
             "s1d7_tracemalloc": _s1d7_tracemalloc_snapshot(
                 traced_bytes=1_000_000,
-                carrier_line=896,
+                carrier_line=946,
             ),
         },
     ]
@@ -1264,6 +1264,11 @@ def test_band_counter_attribute_resolves_candidate_c() -> None:
     assert result["s1d7_call_site_candidate"] == "c"
     assert result["s1d7_band_counter_mark_count"] == 4
     assert result["tracemalloc_perturbed"] is False
+    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:896"
+    assert (
+        result["s1d7_band_counter_candidate_origin_file_line"]
+        == "event_coded_acc_live_carrier.py:896"
+    )
 
 
 def _band_counter_mark(
@@ -1438,6 +1443,7 @@ def test_band_counter_mode_skips_tracemalloc_marks(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("HRM_TEXT_158_PROFILE_HOST_RSS", "1")
     monkeypatch.setenv("HRM_TEXT_158_PROFILE_TRACEMALLOC", "1")
     monkeypatch.setenv("HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS", "0")
+    monkeypatch.delenv("HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY", raising=False)
     assert profile_s1d7_band_counter_enabled() is True
     assert profile_s1d7_tracemalloc_full_trace_enabled() is False
 
@@ -1451,6 +1457,276 @@ def test_band_counter_mode_skips_tracemalloc_marks(monkeypatch: pytest.MonkeyPat
         fields={"state_index": 0},
     )
     assert len(progress.events) == marks_before
+
+
+def test_band_counter_only_decoupled_from_tracemalloc_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        profile_s1d7_band_counter_enabled,
+        profile_s1d7_band_counter_only_enabled,
+        profile_s1d7_tracemalloc_site_enabled,
+    )
+
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_HOST_RSS", "1")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_TRACEMALLOC", "0")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS", "0")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY", "1")
+    assert profile_s1d7_band_counter_only_enabled() is True
+    assert profile_s1d7_band_counter_enabled() is True
+    assert profile_s1d7_tracemalloc_site_enabled() is False
+
+
+def test_static_pre_append_projection_parity_varint_boundaries() -> None:
+    import numpy as np
+
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        VARINT_BOUNDARY_FLAT_INDICES,
+    )
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        oracle_measure_crossing_event_encoded_bytes_delta,
+        project_crossing_event_encoded_bytes_delta,
+    )
+
+    threshold_abs = 16
+    posts = (threshold_abs - 1, -(threshold_abs - 1))
+    for flat_index in VARINT_BOUNDARY_FLAT_INDICES:
+        for post in posts:
+            active_sorted = np.array([int(flat_index)], dtype=np.int32)
+            cross_mask = np.array([True], dtype=bool)
+            post_arr = np.array([int(post)], dtype=np.int16)
+            projected = project_crossing_event_encoded_bytes_delta(
+                active_sorted,
+                cross_mask,
+                post_arr,
+                threshold_abs=threshold_abs,
+            )
+            oracle = oracle_measure_crossing_event_encoded_bytes_delta(
+                active_sorted,
+                cross_mask,
+                post_arr,
+                threshold_abs=threshold_abs,
+            )
+            assert projected == oracle
+
+    all_indices = np.array(list(VARINT_BOUNDARY_FLAT_INDICES), dtype=np.int32)
+    cross_mask = np.ones(all_indices.shape[0], dtype=bool)
+    post_arr = np.full(all_indices.shape[0], threshold_abs - 1, dtype=np.int16)
+    projected_batch = project_crossing_event_encoded_bytes_delta(
+        all_indices,
+        cross_mask,
+        post_arr,
+        threshold_abs=threshold_abs,
+    )
+    oracle_batch = oracle_measure_crossing_event_encoded_bytes_delta(
+        all_indices,
+        cross_mask,
+        post_arr,
+        threshold_abs=threshold_abs,
+    )
+    assert projected_batch == oracle_batch
+
+
+def test_static_pre_append_emit_marker_metadata() -> None:
+    import numpy as np
+
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_live_carrier import (
+        EventCodedAccLiveState,
+    )
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        STATIC_PRE_APPEND_MEASUREMENT_CONTRACT,
+        S1D7_BAND_COUNTER_MARKER_SEAM_ORIGIN_LINE,
+    )
+
+    captured: list[dict[str, object]] = []
+
+    def band_counter_emit(
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: dict[str, object],
+        optimizer_step_index: int,
+        state_index: int,
+        measurement_contract: str | None = None,
+        event_encoded_bytes_delta_source: str | None = None,
+    ) -> None:
+        captured.append(
+            {
+                "origin_file": origin_file,
+                "origin_line": origin_line,
+                "measurement_contract": measurement_contract,
+                "event_encoded_bytes_delta_source": event_encoded_bytes_delta_source,
+                "counters": counters,
+            }
+        )
+
+    carrier = EventCodedAccLiveState(logical_numel=300, threshold_abs=10)
+    indices = np.array([127, 128], dtype=np.int32)
+    values = np.array([9, -9], dtype=np.int16)
+    vote_values = np.array([5, -5], dtype=np.int32)
+    carrier._hot.replace_arrays(indices, values)
+    carrier.apply_step(
+        0,
+        sparse_vote_indices=indices.astype(np.int64),
+        sparse_vote_values=vote_values,
+        s1d7_band_counter_emit=band_counter_emit,
+        state_index=0,
+        optimizer_step_index=0,
+    )
+    assert len(captured) == 1
+    row = captured[0]
+    assert row["origin_file"] == "event_coded_acc_live_carrier.py"
+    assert row["origin_line"] == S1D7_BAND_COUNTER_MARKER_SEAM_ORIGIN_LINE
+    assert row["measurement_contract"] == STATIC_PRE_APPEND_MEASUREMENT_CONTRACT
+    assert row["event_encoded_bytes_delta_source"] == "projected"
+
+
+def test_static_pre_append_origin_line_audit_resolves_candidate_896() -> None:
+    import numpy as np
+
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+        S1D7_BAND_COUNTER_MARKER_SEAM_ORIGIN_LINE,
+        attribute_s1d7_band_counter_call_site_from_marks,
+        collect_s1d7_band_counters,
+    )
+
+    counters = collect_s1d7_band_counters(
+        crossing_indices_len=10,
+        applied_indices_len=10,
+        append_event_count=50_000,
+        event_encoded_bytes_delta=500_000,
+        q_level_writes=50_000,
+        remove_idx=np.empty(0, dtype=np.int32),
+        upd_idx=np.empty(0, dtype=np.int32),
+        upd_val=np.empty(0, dtype=np.int16),
+    )
+    marks = [
+        {
+            "event": S1D7_BAND_COUNTER_EVENT,
+            "state_index": state_idx,
+            "origin_file": "event_coded_acc_live_carrier.py",
+            "origin_line": S1D7_BAND_COUNTER_MARKER_SEAM_ORIGIN_LINE,
+            "measurement_contract": "static_pre_append_v1",
+            "s1d7_band_counters": counters,
+        }
+        for state_idx in (0, 10, 21, 31)
+    ]
+    result = attribute_s1d7_band_counter_call_site_from_marks(
+        marks,
+        sampled_states=(0, 10, 21, 31),
+        guards={},
+    )
+    assert result["call_site_status"] == "RESOLVED"
+    assert result["call_site_origin_file_line"] == "event_coded_acc_live_carrier.py:896"
+    assert (
+        result["s1d7_band_counter_marker_origin_file_line"]
+        == "event_coded_acc_live_carrier.py:895"
+    )
+    assert (
+        result["s1d7_band_counter_candidate_origin_file_line"]
+        == "event_coded_acc_live_carrier.py:896"
+    )
+
+
+def _row18_share_fail_counters() -> dict[str, object]:
+    import numpy as np
+
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        collect_s1d7_band_counters,
+    )
+
+    n = 512
+    remove_idx = np.arange(n, dtype=np.int32)
+    upd_idx = np.arange(n, dtype=np.int32)
+    upd_val = np.full(n, 1, dtype=np.int16)
+    return collect_s1d7_band_counters(
+        crossing_indices_len=n,
+        applied_indices_len=n,
+        append_event_count=n,
+        event_encoded_bytes_delta=1536,
+        q_level_writes=n,
+        remove_idx=remove_idx,
+        upd_idx=upd_idx,
+        upd_val=upd_val,
+    )
+
+
+def test_band_counter_four_row_share_fail_is_valid_null_not_liveness_regression() -> None:
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+        S1D7_BAND_COUNTER_MARKER_SEAM_ORIGIN_LINE,
+        attribute_s1d7_band_counter_call_site_from_marks,
+    )
+
+    counters = _row18_share_fail_counters()
+    marks = [
+        {
+            "event": S1D7_BAND_COUNTER_EVENT,
+            "state_index": state_idx,
+            "origin_file": "event_coded_acc_live_carrier.py",
+            "origin_line": S1D7_BAND_COUNTER_MARKER_SEAM_ORIGIN_LINE,
+            "measurement_contract": "static_pre_append_v1",
+            "s1d7_band_counters": counters,
+        }
+        for state_idx in (0, 1, 2, 3)
+    ]
+    result = attribute_s1d7_band_counter_call_site_from_marks(
+        marks,
+        sampled_states=(0, 1, 2, 3),
+        guards={},
+    )
+    assert result["call_site_status"] == "UNRESOLVED"
+    assert result["s1d7_band_counter_mark_count"] == 4
+    assert result["fail_closed_reason"] == "BAND_COUNTER_C_SHARE_FAIL"
+    dominance = dict(result.get("s1d7_band_counter_dominance") or {})
+    assert float(dominance.get("band_c_share") or 0.0) < 0.80
+    assert (
+        result["s1d7_band_counter_marker_origin_file_line"]
+        == "event_coded_acc_live_carrier.py:895"
+    )
+    assert (
+        result["s1d7_band_counter_candidate_origin_file_line"]
+        == "event_coded_acc_live_carrier.py:896"
+    )
+
+
+def test_callsite_band_counter_scale_smoke_b_arm_uses_decoupled_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        run_callsite_band_counter_scale_smoke,
+    )
+
+    captured_kwargs: list[dict[str, object]] = []
+
+    def _fake_probe(
+        out_root: Path,
+        *,
+        scratch_name: str,
+        debugmallocstats: bool,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured_kwargs.append(
+            {
+                "scratch_name": scratch_name,
+                **kwargs,
+            }
+        )
+        return _band_counter_scale_smoke_probe_return(
+            scratch_name=scratch_name,
+            marks_b=[],
+        )
+
+    monkeypatch.setattr(
+        "scripts.hrm_text_158_slice5_v6i_oom_profile_attribution._run_fixture_obmalloc_probe",
+        _fake_probe,
+    )
+    run_callsite_band_counter_scale_smoke(tmp_path)
+    b_kwargs = next(row for row in captured_kwargs if row["scratch_name"] == "callsite_band_counter_b")
+    assert b_kwargs["tracemalloc"] is False
+    assert b_kwargs["band_counter_only"] is True
 
 
 def _band_counter_scale_smoke_probe_return(

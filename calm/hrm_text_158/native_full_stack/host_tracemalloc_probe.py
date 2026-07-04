@@ -59,6 +59,32 @@ def profile_s1d7_tracemalloc_site_enabled() -> bool:
 
 
 PROFILE_S1D7_TRACEMALLOC_FULL_TRACE_ENV = "HRM_TEXT_158_PROFILE_S1D7_TRACEMALLOC_FULL_TRACE"
+PROFILE_S1D7_BAND_COUNTER_ONLY_ENV = "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY"
+
+
+def _profile_host_rss_enabled() -> bool:
+    import os
+
+    return os.environ.get("HRM_TEXT_158_PROFILE_HOST_RSS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def profile_s1d7_band_counter_only_enabled() -> bool:
+    """Band-counter B-arm without tracemalloc on the hot cap-apply path."""
+    import os
+
+    if not _profile_host_rss_enabled():
+        return False
+    return os.environ.get(PROFILE_S1D7_BAND_COUNTER_ONLY_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def profile_s1d7_tracemalloc_full_trace_enabled() -> bool:
@@ -75,7 +101,9 @@ def profile_s1d7_tracemalloc_full_trace_enabled() -> bool:
 
 
 def profile_s1d7_band_counter_enabled() -> bool:
-    """B-arm default: cheap band counters instead of full tracemalloc (fallback D opt-in)."""
+    """Cheap band counters: decoupled-only env or legacy tracemalloc-site default."""
+    if profile_s1d7_band_counter_only_enabled():
+        return True
     return profile_s1d7_tracemalloc_site_enabled() and not profile_s1d7_tracemalloc_full_trace_enabled()
 
 
