@@ -7,7 +7,7 @@ would be easy wins but haven't been built yet, (c) the research path
 for harder capabilities. Updates as rounds ship.
 
 See `tracing_intelligence.md` for the first-principles framing and
-`capability_gain.md` for what counts as a validated win.
+`MEMORY/atlas/capability_gain_arc.md` for what counts as a validated win.
 
 ## State today (after Round 50.6)
 
@@ -183,7 +183,7 @@ Tier-2 targets (see below) absorbed: GCD at real operand sizes
 
 Rules for tier 1 rounds:
 - Must establish Gemma baseline failure BEFORE building (per
-  `capability_gain.md` §"failure-surface gate").
+  `MEMORY/atlas/capability_gain_arc.md` §"Failure-surface gate").
 - Must verify card exhaustively on its input space.
 - Must show both measurements move (raw + user-facing).
 - One round per commit with before/after table.

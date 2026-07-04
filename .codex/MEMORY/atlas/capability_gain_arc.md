@@ -1,7 +1,7 @@
 # Capability Gain — Historical receipts (Rounds 6-10, R11, R28-R46.2, R53.2-R53.36)
 
 Per-round receipts and case studies for the capability-gain
-discipline. Current methodology: `.claude/rules/capability_gain.md`.
+discipline. Current methodology: `MEMORY/atlas/capability_gain_arc.md`.
 This file exists for archaeology — "how we measured each gain", "why
 specific Rs are canonical examples", "why hint-tuning was ruled out".
 
@@ -309,6 +309,6 @@ Gemma. Measurement receipts and per-probe JSONLs in `.cache/` for replay.
 
 ## Cross-refs
 
-- Current rules: `.claude/rules/capability_gain.md`
+- Current rules (stub): `.claude/rules/capability_gain.md` — detail in this file
 - Tracing arc receipts: `MEMORY/atlas/tracing_roadmap_part_1.md`
 - DT arc receipts: `MEMORY/atlas/delta_rule_arc.md`

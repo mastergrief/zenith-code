@@ -45,7 +45,8 @@ Commit `e6f2d5c`.
 ## MQAR data-scaling curve (R13 → R14-b)
 
 Empirical rule for this architecture at d_model=64: **"+5 on N
-needs 2× data."** Canonical receipt cross-ref: `capability_gain.md`.
+needs 2× data."** Canonical receipt cross-ref:
+`MEMORY/atlas/capability_gain_arc.md`.
 
 | N | per-N training to saturate | best epoch | commit |
 |---:|---:|---:|---|
@@ -314,7 +315,8 @@ Full receipts for this arc: `.claude/MEMORY/SESSION_HANDOFF.md`
 ## Cross-refs
 
 - Current rules: `.claude/rules/delta_rule.md`
-- MQAR data-scaling rule canonical receipt: `capability_gain.md`
+- MQAR data-scaling rule canonical receipt:
+  `MEMORY/atlas/capability_gain_arc.md`
   §"MQAR data-scaling rule"
 - R-delta nulls also indexed in: `tracing_roadmap_part_2.md`
   §"R-delta arc ruled-out log"

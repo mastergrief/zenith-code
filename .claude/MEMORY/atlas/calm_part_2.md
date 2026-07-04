@@ -46,7 +46,7 @@ use `statistics.mean`, `hashlib.sha256`, etc. — csv_column_stats eval
 stuck at 0/0 even with imports injected **(pre-R53.22 fix;
 post-R53.35 reaudit csv is further unblocked by the `ast_repair`
 walker's `syntax_repair` pass — 0/0 → 8/8 on live Gemma per
-`capability_gain.md` §R53.35; post-2026-04-21 walker has 7
+`MEMORY/atlas/capability_gain_arc.md` §"R53.35"; post-2026-04-21 walker has 7
 rewrites — shadow_rename, dict-key synonym, syntax_repair (3
 original), plus `fuzzy_rename_function` driven by `NameError`
 extraction via Jaccard-similarity name matching (commit `805e539`))**.
