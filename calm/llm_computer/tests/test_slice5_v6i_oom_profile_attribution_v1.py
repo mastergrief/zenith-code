@@ -5331,13 +5331,21 @@ def test_build_ca_confirmation_receipt_emits_classifier_fields(tmp_path: Path) -
         confirmation_root=tmp_path,
         n_states=4,
         run_a={"wall_seconds": 1.0},
-        run_b={"wall_seconds": 3.0, "exit_code": 0, "profile_mark_count": 4},
+        run_b={
+            "wall_seconds": 3.0,
+            "exit_code": 0,
+            "profile_mark_count": 4,
+            "eligible_module_limit": 4,
+        },
         marks_b=marks,
         sampled_states=(0, 1, 2, 3),
     )
     assert receipt["schema"] == CA_CONFIRMATION_RECEIPT_SCHEMA
     assert receipt["mark_count"] == 4
-    assert receipt["checks"]["s1d7_band_counter_mark_count_eq_n_states"] is True
+    assert receipt["expected_mark_count"] == 4
+    assert receipt["checks"]["eligible_module_limit_eq_n_states"] is True
+    assert receipt["checks"]["s1d7_band_counter_mark_count_eq_sampled_state_count"] is True
+    assert "s1d7_band_counter_mark_count_eq_n_states" not in receipt["checks"]
     assert receipt["cb_state_count"] == 2
     assert receipt["per_cb_ca_share_by_state"]["0"] == pytest.approx(0.93, rel=1e-3)
     assert receipt["terminal_branch"] == "CA_PERSISTS"
@@ -5444,3 +5452,163 @@ def test_ca_classifier_precedence_and_zero_crossing_exclusion() -> None:
     weighted = classify_ca_band_counter_confirmation(three_cb)
     assert weighted["cb_state_count"] == 2
     assert weighted["crossing_weighted_ca_share"] == pytest.approx(1.0)
+
+
+def test_ca_confirmation_n32_four_sample_mark_gate_passes(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        CA_BRANCH_INSUFFICIENT_CB_STATES,
+        build_ca_band_counter_confirmation_receipt,
+    )
+
+    marks = [
+        _synthetic_band_counter_mark(
+            state_index=0, band_a=22640, band_c=48640, band_e=5408, crossing_indices_len=512
+        ),
+        _synthetic_band_counter_mark(
+            state_index=10, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+        _synthetic_band_counter_mark(
+            state_index=21, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+        _synthetic_band_counter_mark(
+            state_index=31, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+    ]
+    receipt = build_ca_band_counter_confirmation_receipt(
+        confirmation_root=tmp_path,
+        n_states=32,
+        run_a={"wall_seconds": 1.0},
+        run_b={
+            "wall_seconds": 35.0,
+            "exit_code": 0,
+            "profile_mark_count": 4,
+            "eligible_module_limit": 32,
+        },
+        marks_b=marks,
+        sampled_states=(0, 10, 21, 31),
+    )
+    assert receipt["checks"]["eligible_module_limit_eq_n_states"] is True
+    assert receipt["checks"]["s1d7_band_counter_mark_count_eq_sampled_state_count"] is True
+    assert receipt["infra_ok"] is True
+    assert receipt["terminal_branch"] == CA_BRANCH_INSUFFICIENT_CB_STATES
+    assert receipt["cb_state_count"] == 1
+
+
+def test_ca_confirmation_short_sample_fails_mark_delivery_check(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        build_ca_band_counter_confirmation_receipt,
+    )
+
+    marks = [
+        _synthetic_band_counter_mark(
+            state_index=0, band_a=22640, band_c=48640, band_e=5408, crossing_indices_len=512
+        ),
+        _synthetic_band_counter_mark(
+            state_index=10, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+    ]
+    receipt = build_ca_band_counter_confirmation_receipt(
+        confirmation_root=tmp_path,
+        n_states=32,
+        run_a={"wall_seconds": 1.0},
+        run_b={
+            "wall_seconds": 35.0,
+            "exit_code": 0,
+            "profile_mark_count": 2,
+            "eligible_module_limit": 32,
+        },
+        marks_b=marks,
+        sampled_states=(0, 10, 21, 31),
+    )
+    assert receipt["checks"]["s1d7_band_counter_mark_count_eq_sampled_state_count"] is False
+    assert receipt["infra_ok"] is False
+
+
+def test_ca_confirmation_wrapper_exit_insufficient_cb_states_is_valid(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        CA_BRANCH_INSUFFICIENT_CB_STATES,
+        build_ca_band_counter_confirmation_receipt,
+        build_ca_confirmation_wrapper_receipt,
+        ca_confirmation_wrapper_exit_code,
+        ca_confirmation_wrapper_should_fail_closed,
+    )
+
+    marks = [
+        _synthetic_band_counter_mark(
+            state_index=0, band_a=22640, band_c=48640, band_e=5408, crossing_indices_len=512
+        ),
+        _synthetic_band_counter_mark(
+            state_index=10, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+        _synthetic_band_counter_mark(
+            state_index=21, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+        _synthetic_band_counter_mark(
+            state_index=31, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+    ]
+    primary = build_ca_band_counter_confirmation_receipt(
+        confirmation_root=tmp_path,
+        n_states=32,
+        run_a={"wall_seconds": 1.0},
+        run_b={
+            "wall_seconds": 35.0,
+            "exit_code": 0,
+            "profile_mark_count": 4,
+            "eligible_module_limit": 32,
+        },
+        marks_b=marks,
+        sampled_states=(0, 10, 21, 31),
+    )
+    assert primary["terminal_branch"] == CA_BRANCH_INSUFFICIENT_CB_STATES
+    assert primary["infra_ok"] is True
+    assert ca_confirmation_wrapper_should_fail_closed(primary) is False
+    assert ca_confirmation_wrapper_exit_code(primary) == 0
+
+
+def test_ca_confirmation_wrapper_preserves_primary_on_rss_fallback(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        build_ca_band_counter_confirmation_receipt,
+        build_ca_confirmation_wrapper_receipt,
+        evaluate_ca_confirmation_fallback_trigger,
+    )
+
+    primary = build_ca_band_counter_confirmation_receipt(
+        confirmation_root=tmp_path / "primary",
+        n_states=32,
+        run_a={"wall_seconds": 1.0},
+        run_b={"wall_seconds": 35.0, "exit_code": 0, "eligible_module_limit": 32},
+        marks_b=[
+            _synthetic_band_counter_mark(
+                state_index=0, band_a=22640, band_c=48640, band_e=5408, crossing_indices_len=512
+            ),
+        ],
+        sampled_states=(0, 10, 21, 31),
+    )
+    primary["peak_rss_gib"] = 10.2
+    primary["runs"]["B"]["exit_code"] = 0
+    trigger = evaluate_ca_confirmation_fallback_trigger(primary)
+    assert trigger["fallback"] is True
+    fallback = build_ca_band_counter_confirmation_receipt(
+        confirmation_root=tmp_path / "fallback",
+        n_states=16,
+        run_a={"wall_seconds": 1.0},
+        run_b={"wall_seconds": 20.0, "exit_code": 0, "eligible_module_limit": 16},
+        marks_b=[
+            _synthetic_band_counter_mark(
+                state_index=0, band_a=22640, band_c=48640, band_e=5408, crossing_indices_len=512
+            ),
+        ],
+        sampled_states=(0, 5, 10, 15),
+    )
+    wrapper = build_ca_confirmation_wrapper_receipt(
+        primary_receipt=primary,
+        science_receipt=fallback,
+        science_verdict_source="fallback",
+        fallback_receipt=fallback,
+        fallback_trigger=trigger,
+    )
+    assert wrapper["runs"]["primary"]["peak_rss_gib"] == 10.2
+    assert wrapper["science_verdict_source"] == "fallback"
+    assert "runs" in wrapper["runs"]["primary"]
+    assert "A" in wrapper["runs"]["primary"]["runs"]

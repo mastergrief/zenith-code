@@ -59,6 +59,18 @@ CA_CONFIRMATION_CA_SHARE_MIN = 0.80
 CA_CONFIRMATION_RECEIPT_SCHEMA = (
     "hrm_text_158_callsite_band_counter_ca_confirmation_receipt/v1"
 )
+CA_CONFIRMATION_WRAPPER_SCHEMA = (
+    "hrm_text_158_callsite_band_counter_ca_confirmation_wrapper/v1"
+)
+CA_CONFIRMATION_VALID_SCIENCE_BRANCHES = frozenset(
+    {
+        "CA_PERSISTS",
+        "CA_MIXED",
+        "CA_DILUTES",
+        "INSUFFICIENT_CB_STATES",
+        "FEASIBILITY_SUBSAMPLE",
+    }
+)
 CA_BRANCH_INFRA_NULL = "INFRA_NULL"
 CA_BRANCH_FEASIBILITY_SUBSAMPLE = "FEASIBILITY_SUBSAMPLE"
 CA_BRANCH_INSUFFICIENT_CB_STATES = "INSUFFICIENT_CB_STATES"
@@ -6544,10 +6556,14 @@ def build_ca_band_counter_confirmation_receipt(
         if str(row.get("event") or "").startswith("s1d7_tracemalloc_site_C4.S1d.7_")
     )
     b_profile_mark_count = int(run_b.get("profile_mark_count") or mark_count)
+    expected_mark_count = len(sampled_states)
+    eligible_module_limit = int(run_b.get("eligible_module_limit") or n_states)
     checks = {
         "observer_guard_clear": True,
         "tracemalloc_perturbed_false": True,
-        "s1d7_band_counter_mark_count_eq_n_states": mark_count == int(n_states),
+        "eligible_module_limit_eq_n_states": eligible_module_limit == int(n_states),
+        "s1d7_band_counter_mark_count_eq_sampled_state_count": mark_count
+        == expected_mark_count,
         "tracemalloc_mark_count_eq_0": s1d7_tracemalloc_mark_count == 0,
         "b_profile_mark_count_gt_0": b_profile_mark_count > 0,
         "no_profile_env_mutual_exclusion_abort": int(run_b.get("exit_code", 0)) != -6,
@@ -6570,8 +6586,9 @@ def build_ca_band_counter_confirmation_receipt(
         "n_states": int(n_states),
         "sampled_states": [int(x) for x in sampled_states],
         "eligible_scope": run_b.get("eligible_scope") or "all-bitlinear",
-        "eligible_module_limit": run_b.get("eligible_module_limit", n_states),
+        "eligible_module_limit": eligible_module_limit,
         "eligible_module_keys": list(run_b.get("eligible_module_keys") or []),
+        "expected_mark_count": expected_mark_count,
         "total_wall_seconds": total_wall_seconds,
         "per_state_wall_seconds": per_state_wall_seconds,
         "per_state_timing_method": per_state_timing_method,
@@ -6598,6 +6615,130 @@ def build_ca_band_counter_confirmation_receipt(
         },
     }
     return receipt
+
+
+def apply_feasibility_subsample_terminal_to_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
+    rows = list(receipt.get("per_state") or [])
+    classifier = classify_ca_band_counter_confirmation(
+        rows,
+        feasibility_subsample=True,
+        infra_null=not bool(receipt.get("infra_ok")),
+    )
+    receipt = dict(receipt)
+    receipt["classifier"] = classifier
+    receipt["terminal_branch"] = classifier.get("terminal_branch")
+    receipt["feasibility_subsample_fallback"] = True
+    return receipt
+
+
+def evaluate_ca_confirmation_fallback_trigger(
+    primary_receipt: Mapping[str, Any],
+    *,
+    rss_fallback_gib: float = 6.5,
+) -> dict[str, Any]:
+    peak_rss = primary_receipt.get("peak_rss_gib")
+    b = primary_receipt.get("runs", {}).get("B", {})
+    exit_code = int(b.get("exit_code", 0) or 0)
+    timeout_breach = bool(b.get("subprocess_timeout_expired"))
+    rss_breach = peak_rss is not None and float(peak_rss) > float(rss_fallback_gib)
+    fail_closed_exit = exit_code in {37, -6}
+    fallback = (rss_breach or timeout_breach) and not fail_closed_exit
+    return {
+        "exit_code": exit_code,
+        "fail_closed_exit": fail_closed_exit,
+        "fallback": fallback,
+        "rss_breach": rss_breach,
+        "timeout_breach": timeout_breach,
+    }
+
+
+def build_ca_confirmation_wrapper_receipt(
+    *,
+    primary_receipt: Mapping[str, Any],
+    science_receipt: Mapping[str, Any],
+    science_verdict_source: str,
+    fallback_receipt: Mapping[str, Any] | None = None,
+    fallback_trigger: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    wrapper: dict[str, Any] = {
+        "schema": CA_CONFIRMATION_WRAPPER_SCHEMA,
+        "runs": {"primary": dict(primary_receipt)},
+        "science_verdict_source": science_verdict_source,
+        "terminal_branch": science_receipt.get("terminal_branch"),
+        "infra_ok": science_receipt.get("infra_ok"),
+        "checks": dict(science_receipt.get("checks") or {}),
+        "classifier": dict(science_receipt.get("classifier") or {}),
+        "cb_state_count": science_receipt.get("cb_state_count"),
+        "peak_rss_gib": science_receipt.get("peak_rss_gib"),
+        "primary_receipt_path": primary_receipt.get("receipt_path"),
+        "science_receipt_path": science_receipt.get("receipt_path"),
+    }
+    if fallback_receipt is not None:
+        wrapper["runs"]["fallback"] = dict(fallback_receipt)
+        wrapper["fallback_receipt_path"] = fallback_receipt.get("receipt_path")
+    if fallback_trigger is not None:
+        wrapper["fallback_trigger"] = dict(fallback_trigger)
+    return wrapper
+
+
+def ca_confirmation_wrapper_should_fail_closed(
+    science_receipt: Mapping[str, Any],
+) -> bool:
+    if not bool(science_receipt.get("infra_ok")):
+        return True
+    b = science_receipt.get("runs", {}).get("B", {})
+    if int(b.get("exit_code", 0) or 0) in {37, -6}:
+        return True
+    return science_receipt.get("terminal_branch") == CA_BRANCH_INFRA_NULL
+
+
+def ca_confirmation_wrapper_exit_code(science_receipt: Mapping[str, Any]) -> int:
+    if ca_confirmation_wrapper_should_fail_closed(science_receipt):
+        return 37
+    branch = science_receipt.get("terminal_branch")
+    if branch in CA_CONFIRMATION_VALID_SCIENCE_BRANCHES:
+        return 0
+    return 42
+
+
+def orchestrate_ca_confirmation_with_fallback(
+    run_root: Path,
+    *,
+    primary_n: int = 32,
+    fallback_n: int = 16,
+    rss_fallback_gib: float = 6.5,
+) -> dict[str, Any]:
+    primary_receipt = run_callsite_band_counter_ca_confirmation(
+        run_root,
+        n_states=primary_n,
+    )
+    trigger = evaluate_ca_confirmation_fallback_trigger(
+        primary_receipt,
+        rss_fallback_gib=rss_fallback_gib,
+    )
+    fallback_receipt: dict[str, Any] | None = None
+    science_verdict_source = "primary"
+    science_receipt: dict[str, Any] = primary_receipt
+    if trigger["fallback"]:
+        fallback_root = run_root / "feasibility_subsample_n16"
+        fallback_receipt = run_callsite_band_counter_ca_confirmation(
+            fallback_root,
+            n_states=fallback_n,
+        )
+        fallback_receipt["fallback_trigger"] = {
+            **trigger,
+            "primary_n_states": primary_n,
+            "primary_peak_rss_gib": primary_receipt.get("peak_rss_gib"),
+        }
+        science_receipt = apply_feasibility_subsample_terminal_to_receipt(fallback_receipt)
+        science_verdict_source = "fallback"
+    return build_ca_confirmation_wrapper_receipt(
+        primary_receipt=primary_receipt,
+        science_receipt=science_receipt,
+        science_verdict_source=science_verdict_source,
+        fallback_receipt=fallback_receipt,
+        fallback_trigger=trigger if trigger["fallback"] else None,
+    )
 
 
 def run_callsite_band_counter_ca_confirmation(
@@ -6635,7 +6776,7 @@ def run_callsite_band_counter_ca_confirmation(
     marks_a = list(run_a.pop("marks", []))
     marks_b = list(run_b.pop("marks", []))
     n_c4_states = int(run_b.get("n_c4_states") or module_limit)
-    sampled_states = tuple(
+    effective_sampled = tuple(
         int(x)
         for x in (
             run_b.get("sampled_states")
@@ -6658,15 +6799,16 @@ def run_callsite_band_counter_ca_confirmation(
         run_a=run_a,
         run_b=run_b,
         marks_b=marks_b,
-        sampled_states=sampled_states,
+        sampled_states=effective_sampled,
         infra_null=infra_null,
         feasibility_subsample=feasibility_subsample,
     )
+    receipt["sampled_states_source"] = "probe_default"
     if not infra_null and observer_marks:
         expanded = attribute_callsite_tracemalloc_b_prime(
             marks_a=marks_a,
             marks_b=marks_b,
-            sampled_states=sampled_states,
+            sampled_states=effective_sampled,
         )
         observer_fail_closed = expanded.get("fail_closed_terminal")
         tracemalloc_perturbed = expanded.get("tracemalloc_perturbed")
