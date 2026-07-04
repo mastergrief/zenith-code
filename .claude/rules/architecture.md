@@ -1,11 +1,8 @@
 ---
 paths:
   - "agents/**"
-  - "calm/**"
-  - "rust/**"
   - "bin/**"
-  - "scripts/**"
-  - "tests/**"
+  - "rust/**"
 ---
 
 # Architecture Rules
@@ -69,101 +66,31 @@ Subsystem specs live in their own rule files — cross-refs below.
 Detail for every subsystem lives in its own rule. This file summarizes
 interfaces, not internals.
 
-- **Substrate + cards + install modes** → `Substrate.md` (d_head=2
-  decomposition, attention partition, channel allocation, 4 install
-  modes, program_builder, persistent knowledge, auto-upgrade loop)
-- **CALM engine** → `calm.md` (Auto-CALM, Explicit CALM, 120 backends,
-  39 cognitive modules, Engine V2, verification, sandbox)
-- **PT / DT trained cards** → `delta_rule.md` (DeltaNet backbone,
-  chunkwise UT transform, MQAR install, code-skeleton open arc) +
-  `training.md` (recipes, copy-gate discipline)
-- **tq4 kernels + fused flash-attn** → `turboquant.md`
-- **Prod Gemma stack** (`gemma_substrate.py`, `tq4_triton.py`,
-  `tq4_flash_attn.py`) → `Substrate.md` §"Key Files" for install API,
-  `turboquant.md` for kernel internals
-- **Serving + VRAM + GGUF paths** → `environment.md`
-- **NIAH-validated context limits** → `niah_validation.md`
-- **CRLM convergence pipeline** (HRM emits structure → parse →
-  interpret with `safe_eval` → verified answer) → `Substrate.md` +
-  `calm.md`
+- **Substrate + cards** → `Substrate.md` (legacy/adjacent unless reopened)
+- **CALM** → `calm.md`
+- **HRM-Text-1.58** → `hrm-158.md` (checkpoints in `claw-code-hrm-text-158`)
+- **PT / DT** → `delta_rule.md` + `training.md` (legacy/adjacent)
+- **tq4 / flash-attn** → `turboquant.md`
+- **Serving + VRAM** → `environment.md`
+- **NIAH context limits** → `niah_validation.md`
 
-### Compiled-program compute stack
-
-`calm/llm_computer/` is the substrate core: `Small2DTransformer`
-(vanilla PyTorch, `d_head=2`), `HullKVCache` (108× speedup at N=2K,
-not yet wired into forward), gate-graph IR (`gate_graph.py`),
-declarative compiler (`compile.py`), auto-scheduler (`schedule.py`),
-parser (`parse.py` via `ast.parse`), interpreter (`interpret.py` via
-`safe_eval`). 24 compiled programs in `programs/`. Full inventory +
-install API: `Substrate.md` §"Key Files".
-
-**ReGLU key-squaring trick** (enables semantic-keyed lookup):
-`-k² = -k · ReLU(k)` for non-negative integer `k`. One ReGLU neuron
-in layer-0 FFN writes `-k²` to a residual channel; a later layer's
-`LookUpExact` reads it as `pos_key1` with `pos_key0_coef=2.0` on the
-raw key channel.
-
-### Substrate extensions (D2/D3/D5 + fast weights)
-
-Four opt-in primitives, additive — defaults preserve base
-`Small2DTransformer` behavior bitwise.
-
-- **D2** traces — `TracedSmall2DTransformer` emits `ComputationTrace`
-  (attention weights, FFN neuron counts, fast-weight norm).
-- **D3** mixed geometry — per-layer `layer_geometries`: `euclidean`,
-  `hyperbolic`, `spherical`, `toroidal`, `lattice` (closed-form 2D
-  ops at `d_head=2`).
-- **D5** recurrent substrate — `n_iterations` kwarg iterates same
-  layers (HRM-style L/H, Universal Transformer).
-- **Fast weights** — `FastWeightSmall2DTransformer` Schlag-style
-  Hebbian writes at inference, read via `W_fast @ q_t`. No gradient
-  descent.
-
-Full detail + combined substrate: `Substrate.md` §"Substrate
-Extensions" (files: `computation_trace.py`, `mixed_geometry.py`,
-`recurrent_substrate.py`, `combined_substrate.py`, `fast_weights.py`).
-
-### Card typology
-
-All cards are `.pt` files following `Small2DTransformer` architecture.
-
-- **Compiled** — gate-graph IR → weights, exact, no training.
-- **HRM specialists** — `HRMSeq2Seq` (NOT on the substrate). 5 at 48K
-  params via `--structure-only`. Superseded by PT for new work.
-- **SubstrateLM / SubstrateHRM / SubstrateHRLM** — decoder-only
-  `Small2DTransformer` trained on text / NL→math structure / hybrid.
-- **PT / DT** — copy-augmented attention, superseded HRM. DT default
-  for new retrieval + structure-extraction cards (`delta_rule.md`).
-
-Brain + cards composition: Gemma (thin brain, NL + routing) dispatches
-to cards. Runtime composition via shared protocols, not compile-time
-tensor fusion. Full framing: CLAUDE.md §"Substrate vs Cards vs CHRLM"
-+ `augmentation_thesis.md`.
+Substrate stack, extensions, card typology, Gemma install API, CRLM pipeline:
+`Substrate.md` + `calm.md`.
 
 ## File Organization
 
-- `agents/` — core harness code (15 files, ~4,423 LOC). No ML
-  dependencies. Must work on Windows + WSL2 with Python 3.11+.
-- `agents/distill/` — training pipeline. ML dependencies (torch,
-  unsloth, transformers) only required here. **Secondary to backends**
-  — only needed for domains that can't be computed.
-- `calm/` — CALM engine + Auto-CALM + modular backends + cognitive
-  intelligence layer. Dependencies: `wasmtime` (optional). Full spec:
-  `calm.md`.
-- `calm/hrm/` — HRM encoder-decoder + per-domain data generators
-  (`data.py`, `nl_data.py`, `word_data.py`, `gsm_data.py`,
-  `multi_data.py`). 5 production checkpoints at `checkpoints/*_best.pt`.
-- `calm/llm_computer/` — substrate core + substrate extensions +
-  prod Gemma stack + trained cards in `checkpoints/`. Tests in `tests/`.
+- `agents/` — core harness. No ML deps. Windows + WSL2, Python 3.11+.
+- `agents/distill/` — training pipeline (ML deps here only). Secondary.
+- `calm/` — CALM engine (live infrastructure). Spec: `calm.md`.
+- `calm/hrm/` + `calm/llm_computer/` — legacy/adjacent in this repo;
+  active HRM-Text-1.58 training + checkpoints live in
+  `claw-code-hrm-text-158`.
 - `models/` — Ollama Modelfiles.
-- `bin/zenith` — launcher script: auto-starts llama.cpp, `--gguf PATH`
-  first-arg flag, `ZENITH_*` env vars.
-- `scripts/` — dev tooling (training, eval, bench).
-- `.claude/MEMORY/evals/` — NIAH and A/B eval reports (authoritative
-  for `compact.py:MODEL_CONTEXT_LIMITS`).
-- `rust/` — upstream claw-code Rust port (9 crates, separate build).
-- `src/` — upstream claw-code Python port (reference, not actively
-  developed).
+- `bin/zenith` — launcher: llama.cpp auto-start, `--gguf PATH`, `ZENITH_*`.
+- `scripts/` — dev tooling. Per-subsystem rules for path-scoped detail.
+- `.claude/MEMORY/evals/` — NIAH/A/B reports (`compact.py:MODEL_CONTEXT_LIMITS`).
+- `rust/` — upstream Rust port (separate build).
+- `src/` — upstream Python port (reference, not active).
 
 ## Tools
 
@@ -261,4 +188,5 @@ Full specs live in dedicated rule files:
   §"Why Q4 KV Cache" + `turboquant.md`
 - **Training pipeline** (Stage 1 reasoning base, Stage 2 specialists,
   `train_on_responses_only`, JSONL schema, export → GGUF) →
-  `training.md` + `distillation.md`
+  `training.md` + `distillation.md`; active HRM-Text-1.58 curriculum →
+  `hrm-158.md`
