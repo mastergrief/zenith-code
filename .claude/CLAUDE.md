@@ -79,16 +79,16 @@ The repo carries four subsystems. Full details are path-scoped references; open 
 - Python agent harness: `agents/`, `bin/zenith`, and `.claude/rules/harness.md`.
 - CALM engine: `calm/` and `.claude/rules/calm.md`.
 - Rust claw-code port: `rust/`.
-- Unified Single Tensor / substrate: `calm/llm_computer/`, legacy/adjacent unless reopened; references include `.claude/rules/Substrate.md`, `architecture.md`, `delta_rule.md`, `compute_facades.md`, `recursion.md`, `retrieval.md`, and `capability_gain.md`.
+- Unified Single Tensor / substrate: `calm/llm_computer/`, legacy/adjacent unless reopened; atlas references: `.claude/MEMORY/atlas/Substrate_arc.md`, `delta_rule_arc.md`, `compute_facades_arc.md`, `recursion_arc.md`, `retrieval_arc.md`, `capability_gain_arc.md`, and `embed_intelligence_arc.md`.
 
 Serving, hardware, and VRAM details live in `.claude/rules/environment.md`. TurboQuant internals live in `.claude/rules/turboquant.md`. NIAH/model context validation lives in `.claude/rules/niah_validation.md`. Long-term commercial direction lives in `.claude/rules/commercial.md`.
 
 ## Research Pointers
 
 - VGSL post-transformer R&D: `RESEARCH/VGSL/00_INDEX.md`.
-- Substrate / cards / CHRLM vocabulary: `.claude/MEMORY/atlas/Substrate_arc.md`, `.claude/rules/Substrate.md`, `.claude/rules/delta_rule.md`.
-- Mechinterp tracing and augmentation thesis: `.claude/rules/tracing_intelligence.md`, `.claude/rules/augmentation_thesis.md`, and atlas receipts.
-- Distillation pipeline: `agents/distill/` and `.claude/rules/distillation.md`.
+- Substrate / cards / CHRLM vocabulary: `.claude/MEMORY/atlas/Substrate_arc.md`, `delta_rule_arc.md`, `embed_intelligence_arc.md`.
+- Mechinterp tracing and augmentation thesis: `.claude/MEMORY/atlas/tracing_intelligence_arc.md`, `.claude/MEMORY/atlas/workflow_part_2.md` (probing gates), `.claude/rules/augmentation_thesis.md`, and atlas receipts.
+- Distillation pipeline: `agents/distill/` and `.claude/MEMORY/atlas/distillation_arc.md`.
 
 ## Branch
 

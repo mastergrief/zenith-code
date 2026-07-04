@@ -81,16 +81,16 @@ The repo carries four subsystems. Full details are path-scoped references; open 
 - Python agent harness: `agents/`, `bin/zenith`, and `.codex/rules/harness.md`.
 - CALM engine: `calm/` and `.codex/rules/calm.md`.
 - Rust claw-code port: `rust/`.
-- Unified Single Tensor / substrate: `calm/llm_computer/`, legacy/adjacent unless reopened; references include `.codex/rules/Substrate.md`, `architecture.md`, `delta_rule.md`, `compute_facades.md`, `recursion.md`, `retrieval.md`, and `capability_gain.md`.
+- Unified Single Tensor / substrate: `calm/llm_computer/`, legacy/adjacent unless reopened; atlas references: `.codex/MEMORY/atlas/Substrate_arc.md`, `delta_rule_arc.md`, `compute_facades_arc.md`, `recursion_arc.md`, `retrieval_arc.md`, `capability_gain_arc.md`, and `embed_intelligence_arc.md`.
 
 Serving, hardware, and VRAM details live in `.codex/rules/environment.md`. TurboQuant internals live in `.codex/rules/turboquant.md`. NIAH/model context validation lives in `.codex/rules/niah_validation.md`. Long-term commercial direction lives in `.codex/rules/commercial.md`.
 
 ## Research Pointers
 
 - VGSL post-transformer R&D: `RESEARCH/VGSL/00_INDEX.md`.
-- Substrate / cards / CHRLM vocabulary: `.codex/MEMORY/atlas/Substrate_arc.md`, `.codex/rules/Substrate.md`, `.codex/rules/delta_rule.md`.
-- Mechinterp tracing and augmentation thesis: `.codex/rules/tracing_intelligence.md`, `.codex/rules/augmentation_thesis.md`, and atlas receipts.
-- Distillation pipeline: `agents/distill/` and `.codex/rules/distillation.md`.
+- Substrate / cards / CHRLM vocabulary: `.codex/MEMORY/atlas/Substrate_arc.md`, `delta_rule_arc.md`, `embed_intelligence_arc.md`.
+- Mechinterp tracing and augmentation thesis: `.codex/MEMORY/atlas/tracing_intelligence_arc.md`, `.codex/MEMORY/atlas/workflow_part_2.md` (probing gates), `.codex/rules/augmentation_thesis.md`, and atlas receipts.
+- Distillation pipeline: `agents/distill/` and `.codex/MEMORY/atlas/distillation_arc.md`.
 
 ## Branch
 
