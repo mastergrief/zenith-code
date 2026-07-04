@@ -1,7 +1,6 @@
 ---
 paths:
   - "calm/llm_computer/**"
-  - "calm/hrm/**"
   - "scripts/*substrate*.py"
   - "scripts/*unified*.py"
   - "scripts/*gemma*_demo.py"

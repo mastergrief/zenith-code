@@ -2,7 +2,6 @@
 paths:
   - "calm/llm_computer/*delta*.py"
   - "calm/llm_computer/dt_install.py"
-  - "calm/hrm/**"
   - "scripts/*delta*.py"
   - "scripts/train_code_dt*.py"
   - "scripts/train_pt_delta_mqar.py"

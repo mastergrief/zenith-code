@@ -1,7 +1,11 @@
 ---
 paths:
   - "calm/llm_computer/**"
-  - "scripts/*probe*.py"
+  - "scripts/probe_gemma*.py"
+  - "scripts/dt_install_probe.py"
+  - "scripts/*debug_probe.py"
+  - "scripts/test_*_probe.py"
+  - "scripts/r*_probe.py"
   - "scripts/*sweep*.py"
   - "scripts/*ablation*.py"
   - "scripts/*planner*.py"
