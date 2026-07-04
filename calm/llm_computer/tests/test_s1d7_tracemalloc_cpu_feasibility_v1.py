@@ -931,6 +931,263 @@ def test_band_counter_exactly_four_marks_across_sampled_states() -> None:
     assert {int(row["state_index"]) for row in counter_marks} == set(sampled)
 
 
+def test_band_counter_apply_cap_seam_n4_four_distinct_marks() -> None:
+    import torch
+
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        plan_event_coded_integer_vote_update,
+    )
+    from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapTensorResult
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+        attribute_s1d7_band_counter_call_site_from_marks,
+    )
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        apply_cap_tensor_result_gpu,
+        compute_obmalloc_expanded_sampled_states,
+        reset_obmalloc_site_emit_dedup_session,
+    )
+    from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateInputs, VoteUpdateSpec
+    from calm.llm_computer.tests.test_sparse_event_coded_planner_v1_parity_v0 import (
+        _make_state,
+        _vote_spec,
+        _votes_for_indices,
+    )
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required for apply_cap band-counter seam regression")
+
+    reset_obmalloc_site_emit_dedup_session()
+    numel = 64
+    state = _make_state(numel=numel)
+    state_key = "probe_state"
+    votes = _votes_for_indices({0: 12, 3: -9}, numel=numel)
+    inputs = VoteUpdateInputs(votes=votes)
+    spec = _vote_spec()
+    plan = plan_event_coded_integer_vote_update(state, inputs, spec)
+    event_states = {state_key: state}
+    plans_by_key = {state_key: plan}
+    inputs_by_key = {state_key: inputs}
+    vote_specs_by_key = {state_key: spec}
+    accepted_flat_by_key = {state_key: tuple(int(x) for x in plan.applied_indices.tolist())}
+    q_gpu = state.q_levels.cuda()
+    item = GlobalRateCapTensorResult(
+        state_key=state_key,
+        q_levels=q_gpu,
+        accumulators=torch.zeros(numel, dtype=torch.int16, device="cuda"),
+        stats={},
+    )
+    sampled_states = compute_obmalloc_expanded_sampled_states(4)
+    sampled_tuple = tuple(sorted(sampled_states))
+    counter_marks: list[dict[str, object]] = []
+
+    def band_counter_emit(
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: dict[str, object],
+        optimizer_step_index: int,
+        state_index: int,
+    ) -> None:
+        counter_marks.append(
+            {
+                "event": S1D7_BAND_COUNTER_EVENT,
+                "state_index": int(state_index),
+                "sampled_states": list(sampled_tuple),
+                "s1d7_band_counters": counters,
+            }
+        )
+
+    def merge_stats(a: dict[str, object], b: dict[str, object]) -> dict[str, object]:
+        merged = dict(a)
+        merged.update(b)
+        return merged
+
+    for state_index in sampled_tuple:
+        apply_cap_tensor_result_gpu(
+            item,
+            event_states=event_states,
+            plans_by_key=plans_by_key,
+            inputs_by_key=inputs_by_key,
+            vote_specs_by_key=vote_specs_by_key,
+            accepted_flat_by_key=accepted_flat_by_key,
+            local_selection_ordering_step=1,
+            cap_boundary_transient=0,
+            cap_item_stats={},
+            merge_stats_fn=merge_stats,
+            state_index=int(state_index),
+            s1d7_band_counter_emit=band_counter_emit,
+            sampled_states=sampled_states,
+        )
+
+    assert len(counter_marks) == 4
+    assert {int(row["state_index"]) for row in counter_marks} == set(sampled_tuple)
+    assert all(row.get("sampled_states") == list(sampled_tuple) for row in counter_marks)
+
+    partial_marks = [row for row in counter_marks if int(row["state_index"]) == 0]
+    partial = attribute_s1d7_band_counter_call_site_from_marks(
+        partial_marks,
+        sampled_states=sampled_tuple,
+        guards={},
+    )
+    assert partial["call_site_status"] == "UNRESOLVED"
+    assert partial["fail_closed_reason"] == "BAND_COUNTER_ROW_COUNT_MISMATCH"
+
+    duplicate_marks = [
+        counter_marks[0],
+        counter_marks[0],
+        counter_marks[1],
+        counter_marks[2],
+    ]
+    duplicate = attribute_s1d7_band_counter_call_site_from_marks(
+        duplicate_marks,
+        sampled_states=sampled_tuple,
+        guards={},
+    )
+    assert duplicate["call_site_status"] == "UNRESOLVED"
+    assert duplicate["fail_closed_reason"] == "BAND_COUNTER_DUPLICATE_ROW"
+
+
+def test_band_counter_apply_cap_seam_sampled_states_none_state_zero_only() -> None:
+    import torch
+
+    from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
+        plan_event_coded_integer_vote_update,
+    )
+    from calm.hrm_text_158.native_full_stack.global_rate_cap import GlobalRateCapTensorResult
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import S1D7_BAND_COUNTER_EVENT
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        apply_cap_tensor_result_gpu,
+        reset_obmalloc_site_emit_dedup_session,
+    )
+    from calm.hrm_text_158.native_full_stack.vote_update import VoteUpdateInputs
+    from calm.llm_computer.tests.test_sparse_event_coded_planner_v1_parity_v0 import (
+        _make_state,
+        _vote_spec,
+        _votes_for_indices,
+    )
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required for apply_cap band-counter seam regression")
+
+    reset_obmalloc_site_emit_dedup_session()
+    numel = 64
+    state = _make_state(numel=numel)
+    state_key = "probe_state"
+    votes = _votes_for_indices({0: 12, 3: -9}, numel=numel)
+    inputs = VoteUpdateInputs(votes=votes)
+    spec = _vote_spec()
+    plan = plan_event_coded_integer_vote_update(state, inputs, spec)
+    event_states = {state_key: state}
+    plans_by_key = {state_key: plan}
+    inputs_by_key = {state_key: inputs}
+    vote_specs_by_key = {state_key: spec}
+    accepted_flat_by_key = {state_key: tuple(int(x) for x in plan.applied_indices.tolist())}
+    q_gpu = state.q_levels.cuda()
+    item = GlobalRateCapTensorResult(
+        state_key=state_key,
+        q_levels=q_gpu,
+        accumulators=torch.zeros(numel, dtype=torch.int16, device="cuda"),
+        stats={},
+    )
+    counter_marks: list[dict[str, object]] = []
+
+    def band_counter_emit(
+        *,
+        origin_file: str,
+        origin_line: int,
+        counters: dict[str, object],
+        optimizer_step_index: int,
+        state_index: int,
+    ) -> None:
+        counter_marks.append(
+            {
+                "event": S1D7_BAND_COUNTER_EVENT,
+                "state_index": int(state_index),
+                "s1d7_band_counters": counters,
+            }
+        )
+
+    def merge_stats(a: dict[str, object], b: dict[str, object]) -> dict[str, object]:
+        merged = dict(a)
+        merged.update(b)
+        return merged
+
+    for state_index in (0, 1, 2, 3):
+        apply_cap_tensor_result_gpu(
+            item,
+            event_states=event_states,
+            plans_by_key=plans_by_key,
+            inputs_by_key=inputs_by_key,
+            vote_specs_by_key=vote_specs_by_key,
+            accepted_flat_by_key=accepted_flat_by_key,
+            local_selection_ordering_step=1,
+            cap_boundary_transient=0,
+            cap_item_stats={},
+            merge_stats_fn=merge_stats,
+            state_index=int(state_index),
+            s1d7_band_counter_emit=band_counter_emit,
+            sampled_states=None,
+        )
+
+    assert len(counter_marks) == 1
+    assert int(counter_marks[0]["state_index"]) == 0
+
+
+def test_band_counter_emit_reads_sampled_states_from_emit_attr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import torch
+
+    from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
+        S1D7_BAND_COUNTER_EVENT,
+        collect_s1d7_band_counters,
+    )
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import PhaseProgress
+
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_HOST_RSS", "1")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_TRACEMALLOC", "1")
+    monkeypatch.setenv("HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS", "0")
+    profile_path = tmp_path / "host_rss_profile.jsonl"
+    progress = PhaseProgress(enabled=False, device=torch.device("cpu"))
+    progress.host_rss_profile_path = profile_path
+    emit = progress.make_host_rss_subphase_emitter(step=1)
+    assert emit is not None
+    band_counter_emit = getattr(emit, "band_counter_emit")
+    sampled_tuple = tuple(sorted(compute_obmalloc_expanded_sampled_states(4)))
+    setattr(emit, "_obmalloc_expanded_sampled_states", sampled_tuple)
+    import numpy as np
+
+    band_counter_emit(
+        origin_file="event_coded_acc_live_carrier.py",
+        origin_line=909,
+        counters=collect_s1d7_band_counters(
+            crossing_indices_len=1,
+            applied_indices_len=1,
+            append_event_count=1,
+            event_encoded_bytes_delta=1,
+            q_level_writes=1,
+            remove_idx=np.empty(0, dtype=np.int32),
+            upd_idx=np.empty(0, dtype=np.int32),
+            upd_val=np.empty(0, dtype=np.int16),
+        ),
+        optimizer_step_index=1,
+        state_index=0,
+    )
+    rows = [
+        json.loads(line)
+        for line in profile_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    band_rows = [row for row in rows if row.get("event") == S1D7_BAND_COUNTER_EVENT]
+    assert len(band_rows) == 1
+    assert band_rows[0]["sampled_states"] == list(sampled_tuple)
+
+
 def test_band_counter_byte_model_applied_indices_shallow_copy() -> None:
     from calm.hrm_text_158.native_full_stack.s1d7_band_counter import (
         estimate_band_a_allocation_bytes,

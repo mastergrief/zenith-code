@@ -2571,6 +2571,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 else None
             )
             n_c4_states = len(gpu_cap_result.tensor_results)
+            eligible_c4_state_count = len(tensor_states)
             from calm.hrm_text_158.native_full_stack.c4_retention_owner_census import (
                 begin_c4_retention_owner_census_session,
                 pending_obmalloc_c4_after_state_allocation_dims,
@@ -2590,12 +2591,17 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             tracemalloc_site_on = profile_s1d7_tracemalloc_site_enabled()
             band_counter_on = profile_s1d7_band_counter_enabled()
             sampled_states: frozenset[int] | None = None
-            if (obmalloc_expanded_on or tracemalloc_site_on or band_counter_on) and n_c4_states > 0:
+            if (
+                (obmalloc_expanded_on or tracemalloc_site_on or band_counter_on)
+                and eligible_c4_state_count > 0
+            ):
                 from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
                     compute_obmalloc_expanded_sampled_states,
                 )
 
-                sampled_states = compute_obmalloc_expanded_sampled_states(n_c4_states)
+                sampled_states = compute_obmalloc_expanded_sampled_states(
+                    eligible_c4_state_count
+                )
                 if rss_emit is not None:
                     setattr(
                         rss_emit,

@@ -3067,7 +3067,9 @@ class PhaseProgress:
                 "optimizer_step_index": int(optimizer_step_index),
                 "state_index": int(state_index),
             }
-            sampled_states = getattr(self, "_obmalloc_expanded_sampled_states", None)
+            sampled_states = getattr(emit, "_obmalloc_expanded_sampled_states", None)
+            if sampled_states is None:
+                sampled_states = getattr(self, "_obmalloc_expanded_sampled_states", None)
             if sampled_states is not None:
                 site_fields["sampled_states"] = list(sampled_states)
             self._emit_allocator_site_mark(
@@ -3106,7 +3108,9 @@ class PhaseProgress:
                 "optimizer_step_index": int(optimizer_step_index),
                 "state_index": int(state_index),
             }
-            sampled_states = getattr(self, "_obmalloc_expanded_sampled_states", None)
+            sampled_states = getattr(emit, "_obmalloc_expanded_sampled_states", None)
+            if sampled_states is None:
+                sampled_states = getattr(self, "_obmalloc_expanded_sampled_states", None)
             if sampled_states is not None:
                 site_fields["sampled_states"] = list(sampled_states)
             self._emit_s1d7_band_counter_site_mark(
