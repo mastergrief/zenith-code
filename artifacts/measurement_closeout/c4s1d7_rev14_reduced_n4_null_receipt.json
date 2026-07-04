@@ -1,0 +1,144 @@
+{
+  "schema": "hrm_text_158_measurement_closeout_null_receipt/v1",
+  "task_id": "1783074444338-d3ef40af",
+  "upstream_task_id": "1782633464140-b85ec12a",
+  "fold": "fold_1_committed_informative_null_and_ca_design_spec",
+  "packet_revision_context": "v1_rev14_callsite_b_prime_9977166",
+  "git_head_at_closeout": "9977166c4f9a3f0a774e3a11464beb3596463f15",
+  "design_spec_path": "artifacts/measurement_closeout/c4s1d7_rev14_reduced_n4_null_and_ca_design_spec.md",
+  "provenance": {
+    "standing_directive": "auto-research directive (SessionStart user-input capture)",
+    "terminal_read_gate_ids": [
+      "1783184087626",
+      "1783184281293"
+    ],
+    "plan_dual_accept_gate_ids": [
+      "1783184974588",
+      "1783185252506"
+    ],
+    "frozen_plan_msg_id": "1783184921285",
+    "implement_gate_msg_id": "1783185396849"
+  },
+  "anti_overclaim_verbatim": "reduced n=4 mechanism-local only; NOT a candidate-C resolution; NOT reduction eligibility; NOT the ~430MB C4.S1d bank pin; NOT a sub-2 proof.",
+  "informative_null": {
+    "verdict": "C_ONLY_DOMINANCE_REFUTED",
+    "call_site_status": "UNRESOLVED",
+    "s1d7_call_site_candidate": null,
+    "fail_closed_reason": "BAND_COUNTER_C_NOT_TOP_IN_STATE",
+    "fail_closed_state_index": 1,
+    "infra": {
+      "rev14_guard_ordering_confirmed": true,
+      "s1d7_band_counter_mark_count": 4,
+      "observer_guard_clear": true,
+      "tracemalloc_mark_count": 0,
+      "guard_ran_before_pinned_imports": true,
+      "lane_self_managed": true,
+      "approx_wall_seconds_class": "~35s"
+    },
+    "state_0_crossing_bearing": {
+      "band_a_bytes": 22640,
+      "band_c_bytes": 48640,
+      "band_e_bytes": 5408,
+      "state_total_bytes": 76688,
+      "band_c_share_pct": 63.4,
+      "band_a_share_pct": 29.5,
+      "band_e_share_pct": 7.1,
+      "ca_composite_share_pct": 93.0,
+      "c_over_max_ae_ratio": 2.15,
+      "crossing_indices_len": 512,
+      "append_event_count": 512
+    },
+    "cross_state": {
+      "raw_mark_count": 4,
+      "dominance_per_state_row_count": 2,
+      "crossing_bearing_state_count": 1,
+      "measured_zero_crossing_state_count": 3,
+      "per_state_raw_marks": [
+        {
+          "state_index": 0,
+          "profile_line": 16,
+          "band_a_bytes": 22640,
+          "band_c_bytes": 48640,
+          "band_e_bytes": 5408,
+          "crossing_indices_len": 512,
+          "role": "crossing_bearing"
+        },
+        {
+          "state_index": 1,
+          "profile_line": 17,
+          "band_a_bytes": 112,
+          "band_c_bytes": 0,
+          "band_e_bytes": 0,
+          "crossing_indices_len": 0,
+          "role": "measured_zero_crossing"
+        },
+        {
+          "state_index": 2,
+          "profile_line": 18,
+          "band_a_bytes": 112,
+          "band_c_bytes": 0,
+          "band_e_bytes": 0,
+          "crossing_indices_len": 0,
+          "role": "measured_zero_crossing"
+        },
+        {
+          "state_index": 3,
+          "profile_line": 19,
+          "band_a_bytes": 112,
+          "band_c_bytes": 0,
+          "band_e_bytes": 0,
+          "crossing_indices_len": 0,
+          "role": "measured_zero_crossing"
+        }
+      ]
+    },
+    "cites": {
+      "smoke_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_GPU_CALLSITE_V1/prelaunch/callsite_band_counter_scale_smoke/callsite_band_counter_scale_smoke_receipt.json",
+      "raw_profiler": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_GPU_CALLSITE_V1/prelaunch/callsite_band_counter_scale_smoke/callsite_band_counter_b/host_rss_profile.jsonl",
+      "raw_profiler_lines": "16-19",
+      "state_0_crossing_counts_line": 16,
+      "seam": "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py:909-952",
+      "seam_bands": {
+        "a_line": 910,
+        "c_lines": "941-952",
+        "e_lines": "914-917",
+        "logical_marker_line": 895,
+        "candidate_metadata_line": 896
+      },
+      "dominance_c_share_min": "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py:26",
+      "dominance_fail_close": "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py:279-288"
+    }
+  },
+  "ca_reduction_design_spec": {
+    "status": "PRE_REGISTER_ONLY",
+    "implemented": false,
+    "target": "multi_band_ge_ca_composite",
+    "primary_bracket": "S1d.7 bands A+C (physical A910 + C941-952); E residual",
+    "acceptance_sketch": {
+      "ca_share_min": 0.8,
+      "scope": "crossing_bearing_states_only",
+      "crossing_bearing_predicate": "crossing_indices_len > 0",
+      "e_bound": "bounded separately or C >= 3x E"
+    },
+    "rejected": "another GPU round mass-gating C-only >=0.80 single-band bar"
+  },
+  "implementation_precondition": {
+    "n32_430mb_confirmation_required": true,
+    "reduced_n4_pins_430mb_bank": false,
+    "reduced_n4_grants_reduction_eligibility": false,
+    "rationale": "need more crossing-bearing states beyond single state-0 at n=4"
+  },
+  "smoke_gate_confound": {
+    "caveat": "per-state C-top gate confounded by measured zero-crossing states",
+    "evidence": "3 measured zero-crossing states at n=4 (states 1-3)",
+    "future_fix": "dominance scoped to crossing_indices_len > 0 states",
+    "future_fix_slice": "separate post-n32",
+    "relax_dominance_c_share_min": false
+  },
+  "dilution_risk": "if n=32 mostly zero-crossing, crossing mass concentrates in few states; aggregate cross-state share needs crossing-weighting",
+  "sequencing": [
+    "fold_1_persist_null_and_design_spec",
+    "fold_2_n32_confirmation_packet",
+    "fold_3_crossing_bearing_only_dominance_gate_revision"
+  ]
+}
