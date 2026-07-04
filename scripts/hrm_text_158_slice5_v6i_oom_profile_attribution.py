@@ -5328,6 +5328,12 @@ def _fixture_obmalloc_env(
         )
 
         env = prepare_phase3b_callsite_tracemalloc_launch_env(env, repo_root=REPO_ROOT)
+    elif band_counter_only:
+        from scripts.hrm_text_158_code_currency_guard import (
+            prepare_phase3b_band_counter_only_launch_env,
+        )
+
+        env = prepare_phase3b_band_counter_only_launch_env(env, repo_root=REPO_ROOT)
     return env
 
 
@@ -5902,13 +5908,15 @@ def attribute_callsite_tracemalloc_b_prime(
 
 
 def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
-    """Dry-check B_callsite launch composition via the real _run_fixture_obmalloc_probe seam."""
+    """Dry-check B_callsite band-counter-only launch composition via the real seam."""
 
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        PROFILE_S1D7_BAND_COUNTER_ONLY_ENV,
+    )
     from scripts.hrm_text_158_code_currency_guard import (
         IMPORT_BYTE_PINS_ENV,
         PHASE3B_PROBE_IMPORT_MODULE_BY_REL,
         hash_file_bytes,
-        phase3b_probe_python_argv_prefix,
         phase3b_probe_script_path,
     )
 
@@ -5917,25 +5925,33 @@ def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
         debugmallocstats=False,
         site_brackets=False,
         expanded=False,
-        tracemalloc=True,
+        tracemalloc=False,
+        band_counter_only=True,
     )
     cmd = _fixture_probe_argv(
         scratch,
-        tracemalloc=True,
+        tracemalloc=False,
         debugmallocstats=False,
         expanded=False,
     )
-    argv_prefix = phase3b_probe_python_argv_prefix()
-    bootstrap_path = phase3b_probe_script_path(expanded=True)
-    max_silent = str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC)
+    direct_probe_path = phase3b_probe_script_path(expanded=False)
+    max_silent = str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS)
     checks = {
+        "band_counter_only_predicate": (
+            env.get(PROFILE_HOST_RSS_ENV) == "1"
+            and env.get(PROFILE_S1D7_BAND_COUNTER_ONLY_ENV) == "1"
+            and env.get(PROFILE_TRACEMALLOC_ENV) == "0"
+            and env.get(PROFILE_DEBUGMALLOCSTATS_ENV) == "0"
+            and env.get(PROFILE_OBMALLOC_EXPANDED_ENV) == "0"
+        ),
         "env_debugmallocstats_zero": env.get(PROFILE_DEBUGMALLOCSTATS_ENV) == "0",
         "env_site_brackets_zero": env.get(PROFILE_OBMALLOC_SITE_BRACKETS_ENV) == "0",
         "env_obmalloc_expanded_zero": env.get(PROFILE_OBMALLOC_EXPANDED_ENV) == "0",
-        "env_tracemalloc_one": env.get(PROFILE_TRACEMALLOC_ENV) == "1",
-        "cmd_uses_bootstrap": bootstrap_path in cmd,
-        "cmd_has_b_flag": "-B" in argv_prefix and all(flag in cmd for flag in argv_prefix),
-        "cmd_max_silent_900": max_silent in cmd,
+        "env_tracemalloc_zero": env.get(PROFILE_TRACEMALLOC_ENV) == "0",
+        "env_band_counter_only_one": env.get(PROFILE_S1D7_BAND_COUNTER_ONLY_ENV) == "1",
+        "cmd_uses_direct_probe": direct_probe_path in cmd,
+        "cmd_no_b_flag": "-B" not in cmd,
+        "cmd_max_silent_600": max_silent in cmd,
         "import_byte_pins_present": IMPORT_BYTE_PINS_ENV in env,
     }
     if checks["import_byte_pins_present"]:
@@ -5952,12 +5968,11 @@ def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
     guard_script = (
         "import json, os, sys\n"
         "from scripts.hrm_text_158_code_currency_guard import "
-        "run_phase3b_probe_executed_code_currency_guard\n"
+        "maybe_enforce_phase3b_probe_import_byte_currency\n"
         "env = json.loads(sys.argv[1])\n"
         "for key, value in env.items():\n"
         "    os.environ[key] = value\n"
-        "exit_code = run_phase3b_probe_executed_code_currency_guard("
-        "require_obmalloc_expanded=False)\n"
+        "exit_code = maybe_enforce_phase3b_probe_import_byte_currency()\n"
         "raise SystemExit(0 if exit_code is None else int(exit_code))\n"
     )
     guard_proc = subprocess.run(
@@ -5982,9 +5997,15 @@ def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
             PROFILE_OBMALLOC_SITE_BRACKETS_ENV: env.get(PROFILE_OBMALLOC_SITE_BRACKETS_ENV),
             PROFILE_OBMALLOC_EXPANDED_ENV: env.get(PROFILE_OBMALLOC_EXPANDED_ENV),
             PROFILE_TRACEMALLOC_ENV: env.get(PROFILE_TRACEMALLOC_ENV),
+            PROFILE_S1D7_BAND_COUNTER_ONLY_ENV: env.get(PROFILE_S1D7_BAND_COUNTER_ONLY_ENV),
         },
         "guard_exit_code": guard_exit_code,
     }
+
+
+# Legacy B-arm scratch dirname retained only for historical run roots / packet migration.
+LEGACY_CALLSITE_TRACEMALLOC_B_SCRATCH = "callsite_tracemalloc_b"
+CALLSITE_BAND_COUNTER_B_SCRATCH = "callsite_band_counter_b"
 
 
 def run_fixture_callsite_b_prime_combined(
@@ -6000,16 +6021,30 @@ def run_fixture_callsite_b_prime_combined(
     )
     run_b = _run_fixture_obmalloc_probe(
         out_root,
-        scratch_name="callsite_tracemalloc_b",
+        scratch_name=CALLSITE_BAND_COUNTER_B_SCRATCH,
         debugmallocstats=False,
-        tracemalloc=True,
+        tracemalloc=False,
+        band_counter_only=True,
         expanded=False,
     )
     marks_a = list(run_a.pop("marks", []))
     marks_b = list(run_b.pop("marks", []))
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    n_c4_states = int(run_b.get("n_c4_states") or 32)
+    sampled_states = tuple(
+        int(x)
+        for x in (
+            run_b.get("sampled_states")
+            or sorted(compute_obmalloc_expanded_sampled_states(n_c4_states))
+        )
+    )
     attribution = attribute_callsite_tracemalloc_b_prime(
         marks_a=marks_a,
         marks_b=marks_b,
+        sampled_states=sampled_states,
     )
     exit_codes = [
         int(run_a.get("exit_code", 1)),

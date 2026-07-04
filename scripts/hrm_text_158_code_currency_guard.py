@@ -29,10 +29,11 @@ OBMALLOC_EXPANDED_ENV = "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED"
 PROFILE_HOST_RSS_ENV = "HRM_TEXT_158_PROFILE_HOST_RSS"
 PROFILE_TRACEMALLOC_ENV = "HRM_TEXT_158_PROFILE_TRACEMALLOC"
 PROFILE_DEBUGMALLOCSTATS_ENV = "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS"
+PROFILE_S1D7_BAND_COUNTER_ONLY_ENV = "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY"
 
 PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
     "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": (
-        "ff36565da75b6edaf3c0c8319b259af9ecde1f955da37caea9c634c66976a4da"
+        "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412"
     ),
     "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py": (
         "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
@@ -44,16 +45,16 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "58f3d2fac64e10b4e0852f6f45357c5cbf2940d227ce6c327d77ded2ce1a15fd"
     ),
     "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py": (
-        "11f13c2238ab20c2adaef366f7adf0cd2243cd77fe0041f8f9613596fad16d26"
+        "def01789884e9e4903f47baa42395bf86785d47747b3d77d82ef8eb9f5537fe1"
     ),
     "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py": (
-        "515be59672cc22fa5dcb94209212f710ce1fc8753b56b1b17f0ee194a52e5621"
+        "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794"
     ),
     "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py": (
-        "c1042893f728b22b3637c51e2975dfc889baab6ee7a51f2c848df9a5cda45bdd"
+        "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688"
     ),
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "38747b4386c01aa308b2950c174829b21f2e84a117d2f41899d6fbd3e398d5db"
+        "650980252c3c1e5582c80c2ccceea02f2a0f8f2ab907a8a40d1948caa9ec43a1"
     ),
 }
 
@@ -534,16 +535,48 @@ def profile_callsite_tracemalloc_only_enabled() -> bool:
     )
 
 
+def profile_callsite_band_counter_only_enabled() -> bool:
+    # Env-only mirror of profile_s1d7_band_counter_only_enabled (host_tracemalloc_probe.py:76-87)
+    # for callsite B-arm import-byte enforcement without importing host_tracemalloc_probe.
+    return (
+        _env_truthy(PROFILE_HOST_RSS_ENV)
+        and _env_truthy(PROFILE_S1D7_BAND_COUNTER_ONLY_ENV)
+        and not _env_truthy(PROFILE_TRACEMALLOC_ENV)
+        and not _env_truthy(PROFILE_DEBUGMALLOCSTATS_ENV)
+        and not _env_truthy(OBMALLOC_EXPANDED_ENV)
+    )
+
+
 def maybe_enforce_phase3b_probe_import_byte_currency() -> int | None:
     exit_code = run_phase3b_probe_executed_code_currency_guard(require_obmalloc_expanded=True)
     if exit_code is not None:
         return exit_code
     if profile_callsite_tracemalloc_only_enabled():
         return run_phase3b_probe_executed_code_currency_guard(require_obmalloc_expanded=False)
+    if profile_callsite_band_counter_only_enabled():
+        return run_phase3b_probe_executed_code_currency_guard(require_obmalloc_expanded=False)
     return None
 
 
 def prepare_phase3b_callsite_tracemalloc_launch_env(
+    env: Mapping[str, str],
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, str]:
+    merged = dict(env)
+    invalidate_pycache_for_source_files(repo_root, PHASE3B_PYCACHE_INVALIDATION_PATHS)
+    merged["PYTHONDONTWRITEBYTECODE"] = "1"
+    pin_payload = {
+        rel: hash_file_bytes(repo_root / rel)
+        for rel in PHASE3B_PROBE_IMPORT_MODULE_BY_REL
+        if (repo_root / rel).is_file()
+    }
+    merged[IMPORT_BYTE_PINS_ENV] = json.dumps(pin_payload, sort_keys=True)
+    merged.pop(EXECUTED_GUARD_PASSED_ENV, None)
+    return merged
+
+
+def prepare_phase3b_band_counter_only_launch_env(
     env: Mapping[str, str],
     *,
     repo_root: Path = REPO_ROOT,
