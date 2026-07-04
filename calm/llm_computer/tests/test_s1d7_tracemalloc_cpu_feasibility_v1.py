@@ -720,6 +720,9 @@ def test_consumer_missing_extra_pairs_fail_closed() -> None:
 def test_callsite_b_prime_b_arm_launch_composition_dry_check() -> None:
     import os
 
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        PROFILE_S1D7_BAND_COUNTER_ONLY_ENV,
+    )
     from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
         PROFILE_DEBUGMALLOCSTATS_ENV,
         PROFILE_OBMALLOC_EXPANDED_ENV,
@@ -727,7 +730,7 @@ def test_callsite_b_prime_b_arm_launch_composition_dry_check() -> None:
         PROFILE_TRACEMALLOC_ENV,
     )
     from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
-        FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC,
+        FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS,
         dry_check_callsite_b_prime_b_arm_launch_composition,
     )
 
@@ -736,6 +739,7 @@ def test_callsite_b_prime_b_arm_launch_composition_dry_check() -> None:
         PROFILE_OBMALLOC_SITE_BRACKETS_ENV: os.environ.get(PROFILE_OBMALLOC_SITE_BRACKETS_ENV),
         PROFILE_OBMALLOC_EXPANDED_ENV: os.environ.get(PROFILE_OBMALLOC_EXPANDED_ENV),
         PROFILE_TRACEMALLOC_ENV: os.environ.get(PROFILE_TRACEMALLOC_ENV),
+        PROFILE_S1D7_BAND_COUNTER_ONLY_ENV: os.environ.get(PROFILE_S1D7_BAND_COUNTER_ONLY_ENV),
     }
     os.environ[PROFILE_DEBUGMALLOCSTATS_ENV] = "1"
     os.environ[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] = "1"
@@ -755,12 +759,19 @@ def test_callsite_b_prime_b_arm_launch_composition_dry_check() -> None:
     assert toggles[PROFILE_DEBUGMALLOCSTATS_ENV] == "0"
     assert toggles[PROFILE_OBMALLOC_SITE_BRACKETS_ENV] == "0"
     assert toggles[PROFILE_OBMALLOC_EXPANDED_ENV] == "0"
-    assert toggles[PROFILE_TRACEMALLOC_ENV] == "1"
+    assert toggles[PROFILE_TRACEMALLOC_ENV] == "0"
+    assert toggles[PROFILE_S1D7_BAND_COUNTER_ONLY_ENV] == "1"
     cmd = receipt["cmd"]
     assert "-B" in cmd
     assert "hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py" in " ".join(cmd)
-    assert str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS_TRACEMALLOC) in cmd
-    assert receipt["checks"]["guard_dry_check_passes"] is True
+    assert str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS) in cmd
+    guard_checks = receipt["guard_receipt_checks"]
+    assert guard_checks["guard_ran_before_pinned_imports"] is True
+    assert guard_checks["sys_modules_before_guard_empty"] is True
+    assert guard_checks["executed_fingerprints_nonempty"] is True
+    assert guard_checks["import_byte_fingerprints_nonempty"] is True
+    assert guard_checks["guard_ok"] is True
+    assert guard_checks["guard_before_phase_telemetry"] is True
 
 
 def test_band_counter_envelope_legacy_marks_suppressed() -> None:

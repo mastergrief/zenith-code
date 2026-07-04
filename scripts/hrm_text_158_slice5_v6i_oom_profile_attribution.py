@@ -4514,6 +4514,7 @@ def _fixture_probe_argv(
     tracemalloc: bool = False,
     debugmallocstats: bool = False,
     expanded: bool = False,
+    band_counter_only: bool = False,
     eligible_module_limit: int | None = None,
 ) -> list[str]:
     parent = (
@@ -4525,7 +4526,11 @@ def _fixture_probe_argv(
         phase3b_probe_script_path,
     )
 
-    use_bootstrap = bool(expanded) or (tracemalloc and not debugmallocstats)
+    use_bootstrap = (
+        bool(expanded)
+        or (tracemalloc and not debugmallocstats)
+        or band_counter_only
+    )
 
     cmd = [
         sys.executable,
@@ -4604,6 +4609,73 @@ def _fixture_probe_argv(
             ]
         )
     return cmd
+
+
+def _parse_first_json_object_from_text(text: str) -> dict[str, Any] | None:
+    decoder = json.JSONDecoder()
+    idx = 0
+    while idx < len(text):
+        if text[idx] != "{":
+            idx += 1
+            continue
+        try:
+            payload, _end = decoder.raw_decode(text, idx)
+        except json.JSONDecodeError:
+            idx += 1
+            continue
+        if isinstance(payload, dict):
+            return payload
+        idx += 1
+    return None
+
+
+def _b_arm_guard_receipt_checks_from_probe_stream(text: str) -> dict[str, Any]:
+    """Load-bearing guard-ordering checks from a real bootstrap child probe_stream.log."""
+    guard_receipt = _parse_first_json_object_from_text(text)
+    if not isinstance(guard_receipt, dict):
+        return {
+            "guard_receipt_present": False,
+            "guard_ran_before_pinned_imports": False,
+            "sys_modules_before_guard_empty": False,
+            "executed_fingerprints_nonempty": False,
+            "import_byte_fingerprints_nonempty": False,
+            "guard_ok": False,
+            "fail_closed_terminal_null": False,
+            "guard_before_phase_telemetry": False,
+        }
+    telemetry_idx = min(
+        (
+            pos
+            for pos in (
+                text.find("phase_heartbeat"),
+                text.find("emit_progress"),
+            )
+            if pos >= 0
+        ),
+        default=-1,
+    )
+    guard_idx = text.find("{")
+    return {
+        "guard_receipt_present": True,
+        "guard_ran_before_pinned_imports": guard_receipt.get(
+            "guard_ran_before_pinned_imports"
+        )
+        is True,
+        "sys_modules_before_guard_empty": list(
+            guard_receipt.get("sys_modules_before_guard") or []
+        )
+        == [],
+        "executed_fingerprints_nonempty": bool(
+            guard_receipt.get("executed_code_fingerprints")
+        ),
+        "import_byte_fingerprints_nonempty": bool(
+            guard_receipt.get("import_byte_fingerprints")
+        ),
+        "guard_ok": guard_receipt.get("ok") is True,
+        "fail_closed_terminal_null": guard_receipt.get("fail_closed_terminal") is None,
+        "guard_before_phase_telemetry": guard_idx >= 0
+        and (telemetry_idx < 0 or guard_idx < telemetry_idx),
+    }
 
 
 def run_fixture_live_resident_diagnostic(out_root: Path) -> dict[str, Any]:
@@ -5543,6 +5615,7 @@ def _run_fixture_obmalloc_probe(
             tracemalloc=tracemalloc,
             debugmallocstats=debugmallocstats,
             expanded=expanded,
+            band_counter_only=band_counter_only,
             eligible_module_limit=eligible_module_limit,
         )
         probe_stream_log = scratch / FIXTURE_PROBE_STREAM_LOG_NAME
@@ -5908,7 +5981,7 @@ def attribute_callsite_tracemalloc_b_prime(
 
 
 def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
-    """Dry-check B_callsite band-counter-only launch composition via the real seam."""
+    """Dry-check B_callsite band-counter-only launch via the real bootstrap child seam."""
 
     from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
         PROFILE_S1D7_BAND_COUNTER_ONLY_ENV,
@@ -5921,6 +5994,7 @@ def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
     )
 
     scratch = REPO_ROOT / ".dry_check_callsite_b_prime_scratch"
+    scratch.mkdir(parents=True, exist_ok=True)
     env = _fixture_obmalloc_env(
         debugmallocstats=False,
         site_brackets=False,
@@ -5928,13 +6002,15 @@ def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
         tracemalloc=False,
         band_counter_only=True,
     )
+    env["PYTHONPATH"] = str(REPO_ROOT)
     cmd = _fixture_probe_argv(
         scratch,
         tracemalloc=False,
         debugmallocstats=False,
         expanded=False,
+        band_counter_only=True,
     )
-    direct_probe_path = phase3b_probe_script_path(expanded=False)
+    bootstrap_probe_path = phase3b_probe_script_path(expanded=True)
     max_silent = str(FIXTURE_PROBE_MAX_SILENT_PHASE_SECONDS)
     checks = {
         "band_counter_only_predicate": (
@@ -5949,8 +6025,9 @@ def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
         "env_obmalloc_expanded_zero": env.get(PROFILE_OBMALLOC_EXPANDED_ENV) == "0",
         "env_tracemalloc_zero": env.get(PROFILE_TRACEMALLOC_ENV) == "0",
         "env_band_counter_only_one": env.get(PROFILE_S1D7_BAND_COUNTER_ONLY_ENV) == "1",
-        "cmd_uses_direct_probe": direct_probe_path in cmd,
-        "cmd_no_b_flag": "-B" not in cmd,
+        "cmd_uses_bootstrap": bootstrap_probe_path in cmd,
+        "cmd_has_b_flag": "-B" in cmd,
+        "cmd_no_direct_probe_entry": phase3b_probe_script_path(expanded=False) not in cmd,
         "cmd_max_silent_600": max_silent in cmd,
         "import_byte_pins_present": IMPORT_BYTE_PINS_ENV in env,
     }
@@ -5964,34 +6041,38 @@ def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
     else:
         checks["import_byte_pins_match_disk"] = False
 
-    guard_exit_code: int | None = None
-    guard_script = (
-        "import json, os, sys\n"
-        "from scripts.hrm_text_158_code_currency_guard import "
-        "maybe_enforce_phase3b_probe_import_byte_currency\n"
-        "env = json.loads(sys.argv[1])\n"
-        "for key, value in env.items():\n"
-        "    os.environ[key] = value\n"
-        "exit_code = maybe_enforce_phase3b_probe_import_byte_currency()\n"
-        "raise SystemExit(0 if exit_code is None else int(exit_code))\n"
-    )
-    guard_proc = subprocess.run(
-        [sys.executable, "-c", guard_script, json.dumps(env)],
+    probe_stream_log = scratch / FIXTURE_PROBE_STREAM_LOG_NAME
+    launch_cmd = [*cmd, "--help"]
+    launch_proc = subprocess.run(
+        launch_cmd,
         cwd=REPO_ROOT,
-        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        env=env,
         capture_output=True,
         text=True,
         check=False,
     )
-    guard_exit_code = int(guard_proc.returncode)
+    probe_stream_text = launch_proc.stdout or ""
+    if launch_proc.stderr:
+        probe_stream_text = f"{probe_stream_text}\n{launch_proc.stderr}"
+    probe_stream_log.write_text(probe_stream_text, encoding="utf-8")
+    guard_checks = _b_arm_guard_receipt_checks_from_probe_stream(probe_stream_text)
+    checks.update(
+        {
+            f"launch_{key}": value
+            for key, value in guard_checks.items()
+        }
+    )
+    checks["launch_exit_zero"] = int(launch_proc.returncode) == 0
 
-    checks["guard_dry_check_passes"] = guard_exit_code == 0
     ok = all(checks.values())
     return {
         "schema": "hrm_text_158_callsite_b_prime_launch_dry_check/v1",
         "ok": ok,
         "checks": checks,
         "cmd": cmd,
+        "launch_cmd": launch_cmd,
+        "probe_stream_log": str(probe_stream_log),
+        "guard_receipt_checks": guard_checks,
         "env_profile_toggles": {
             PROFILE_DEBUGMALLOCSTATS_ENV: env.get(PROFILE_DEBUGMALLOCSTATS_ENV),
             PROFILE_OBMALLOC_SITE_BRACKETS_ENV: env.get(PROFILE_OBMALLOC_SITE_BRACKETS_ENV),
@@ -5999,7 +6080,7 @@ def dry_check_callsite_b_prime_b_arm_launch_composition() -> dict[str, Any]:
             PROFILE_TRACEMALLOC_ENV: env.get(PROFILE_TRACEMALLOC_ENV),
             PROFILE_S1D7_BAND_COUNTER_ONLY_ENV: env.get(PROFILE_S1D7_BAND_COUNTER_ONLY_ENV),
         },
-        "guard_exit_code": guard_exit_code,
+        "launch_exit_code": int(launch_proc.returncode),
     }
 
 

@@ -4029,6 +4029,19 @@ def test_fixture_probe_argv_band_counter_mechanism_limit(tmp_path: Path) -> None
     assert cmd[idx + 1] == str(BAND_COUNTER_MECHANISM_SMOKE_N_C4_STATES)
 
 
+def test_fixture_probe_argv_band_counter_only_uses_bootstrap(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import _fixture_probe_argv
+
+    cmd = _fixture_probe_argv(
+        tmp_path / "scratch",
+        tracemalloc=False,
+        band_counter_only=True,
+    )
+    assert "-B" in cmd
+    assert "hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py" in " ".join(cmd)
+    assert "hrm_text_158_bounded_delta_acquisition_probe.py" not in " ".join(cmd)
+
+
 def test_run_subprocess_streaming_to_log_returns_stream_path_no_capture_output(
     tmp_path: Path,
     monkeypatch,
