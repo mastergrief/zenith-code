@@ -106,6 +106,5 @@ to the cost asymmetry documented in R22b.
   §"R22 install — full arc"
 - Recursion pipeline: `.claude/rules/recursion.md`
 - Capability-gain measurement: `MEMORY/atlas/capability_gain_arc.md`
-  + `MEMORY/atlas/capability_gain_arc.md`
 - Session 2026-04-22 totals: `MEMORY/atlas/augmentation_thesis_arc.md`
   §"Shipped capability table"

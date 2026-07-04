@@ -5,7 +5,7 @@ that the tracing workflow (corpus + activation patching + per-head
 ablation + Q/K/V decomposition + causal forced-attention) produces
 clean compilable targets on capabilities whose information flow
 aligns with Gemma's architecture. Current first-principles framing:
-`.claude/rules/tracing_intelligence.md`. Companion full-arc narrative:
+`MEMORY/atlas/tracing_intelligence_arc.md`. Companion full-arc narrative:
 `MEMORY/atlas/tracing_roadmap_part_1.md`.
 
 ## R-by-R headline findings
@@ -117,7 +117,7 @@ localize similarly; capabilities that are inherently distributed
 
 ## Cross-refs
 
-- Current first-principles framing: `.claude/rules/tracing_intelligence.md`
+- Current first-principles framing (stub): `.claude/rules/tracing_intelligence.md` — detail in this file
 - Full R13-R50.6 narrative + further per-round detail:
   `MEMORY/atlas/tracing_roadmap_part_1.md`
 - Augmentation thesis empirical basis: `MEMORY/atlas/augmentation_thesis_arc.md`

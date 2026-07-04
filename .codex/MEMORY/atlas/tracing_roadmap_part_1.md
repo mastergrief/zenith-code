@@ -6,7 +6,7 @@ Concrete inventory of (a) compiled cards that exist, (b) cards that
 would be easy wins but haven't been built yet, (c) the research path
 for harder capabilities. Updates as rounds ship.
 
-See `tracing_intelligence.md` for the first-principles framing and
+See `MEMORY/atlas/tracing_intelligence_arc.md` for the first-principles framing and
 `MEMORY/atlas/capability_gain_arc.md` for what counts as a validated win.
 
 ## State today (after Round 50.6)

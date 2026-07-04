@@ -67,12 +67,12 @@ From the parallel decode-speedup track (commits `805e539`→`f59ae73`):
 ## Related rules
 
 - `augmentation_thesis.md` — strategic synthesis: circuit typology, tier framework, factorial scaling, anti-skepticism (settled positions from R20-R36)
-- `tracing_intelligence.md` — first-principles framing
+- `MEMORY/atlas/tracing_intelligence_arc.md` — first-principles framing
 - `capability_gain.md` — measurement discipline
 - `embed_intelligence.md` — delivery mechanisms
 - `Substrate.md` — install mechanisms
 - `workflow.md` — hypothesis-test loop
 - `retrieval.md` — hybrid retrieval architecture (R53 Phase 1)
 - `code_reasoning_db.md` — DB + generator framework (R53 Phase 1)
-- `recursion.md` — card-level self-improvement pattern
+- `MEMORY/atlas/recursion_arc.md` — card-level self-improvement pattern
 - `commercial.md` — product position this roadmap supports

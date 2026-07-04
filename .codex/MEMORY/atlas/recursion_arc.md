@@ -42,9 +42,22 @@ Currently parked pending DT code-skeleton honest-val reaching the
 ≥ 0.40 install threshold (currently 0.193 — see
 `MEMORY/atlas/delta_rule_arc.md` §"DT code-skeleton arc").
 
+## Why CALM-gated recursion is safe
+
+| Approach | Oracle | Failure mode |
+|---|---|---|
+| Self-Instruct (Wang 2022) | the generating model itself | amplifies biases, reinforces hallucinations |
+| RLAIF / constitutional AI | judge LLM | judge bias leaks into student |
+| Evol-Instruct | LLM scoring | same bias amplification |
+| **Substrate card recursion** | **deterministic CALM + compiled verification** | **cannot amplify what's verified wrong** |
+
+Every card in the recursion chain is gated by objective correctness
+checks (safe_eval oracle, `ast.parse`, live A/B with 0 regressions).
+Drift-free on compiled domains; open-ended creative tasks stay Tier 1.
+
 ## Cross-refs
 
-- Current recursion spec: `.claude/rules/recursion.md`
+- Current recursion spec (stub): `.claude/rules/recursion.md` — detail in this file
 - DT code-skeleton progress: `MEMORY/atlas/delta_rule_arc.md`
 - Capability-gain session receipts: `MEMORY/atlas/capability_gain_arc.md`
   §"2026-04-22 session receipts"

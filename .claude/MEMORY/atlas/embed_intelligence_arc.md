@@ -134,7 +134,8 @@ margin doesn't correlate with "Gemma is uncertain about format" —
 Gemma is uniformly confident on format openers.
 
 **Ruled out**: first-token bias for code. Correct tier-2: post-generation
-AST walker (see `compute_facades.md` §AST walker pattern).
+AST walker (see `MEMORY/atlas/compute_facades_arc.md` — rename-facade
+/ AST-walker tier-2 pattern).
 
 Full ruled-out entry: `MEMORY/atlas/tracing_roadmap_part_1.md`
 §"Substrate L41 install REGRESSES on code".
