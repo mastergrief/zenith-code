@@ -139,9 +139,71 @@ AST walker (see `compute_facades.md` §AST walker pattern).
 Full ruled-out entry: `MEMORY/atlas/tracing_roadmap_part_1.md`
 §"Substrate L41 install REGRESSES on code".
 
+## Operational spec — delivery mechanisms
+
+Card computation → Gemma vocab logits → emitted tokens. Install modes
+(where computation lives) are in `MEMORY/atlas/Substrate_arc.md`
+§"Card Installation".
+
+| Mechanism | Where it acts | Scope |
+|---|---|---|
+| **VerificationHook** | Head logits, after softcapping | Bias one Gemma token id by +boost |
+| **Token-embedding projection** | Residual at position -1, late layer | Add `token_embd[answer_id]` to residual |
+| **Step-through digit bias** | Head logits, once per generation step | Bias next-expected token each decode step |
+
+(1) and (2) are equivalent for single-token answers at late layers.
+(3) generalizes to multi-token answers.
+
+### VerificationHook
+
+```python
+hook = VerificationHook(card_slot,
+                        vocab_mapping={card_vocab_id: gemma_token_id},
+                        boost=50.0, min_margin=0.5)
+gemma.verification_hooks.append(hook)
+```
+
+- Fires after head + softcapping; reads `card_slot.last_output[0, -1]`.
+- `min_margin` gates on `(peak - median)` — mandatory for recall cards.
+- Tune per-card AND per-input-distribution bucket (not fixed 0.5).
+- `write_margin == min_margin` on paired `card_output_fn`.
+
+### Token-embedding projection
+
+Late layers (33-41) only. Strength binary: α < 1 silent, α ≥ 1 fires.
+Scale injected embedding by `sqrt(d_model)`. Late-layer head bias, not
+deep integration.
+
+### Step-through digit bias
+
+Required for multi-token answers. Strip BOS + leading `▁` for integer
+facades; `POST_BIAS_BUDGET=4` after bias chain. Text-answer facades:
+do NOT strip `▁`.
+
+### Which mechanism to use
+
+| Situation | Mechanism |
+|---|---|
+| Single Gemma BPE token | VerificationHook or token-embd projection |
+| Multi-digit arithmetic | Step-through digit bias |
+| Multi-word / code | Step-through token bias |
+| Recall card with unmatched key | `min_margin` gate always |
+
+### Avoiding regressions
+
+1. **Parse-state flag** in CardSlot writer — zero `card_out` in-place
+   when parse fails.
+2. **`min_margin` on VerificationHook** — silences low-confidence fires.
+
+### Ruled out
+
+First-token bias for code — Gemma's format openers are uniformly
+confident; use post-generation AST walker instead. Receipt:
+§"R53.14 / R53.20a / R53.20b" above.
+
 ## Cross-refs
 
-- Current rules: `.claude/rules/embed_intelligence.md`
+- Current rules: `.claude/rules/embed_intelligence.md` (stub; detail in this file)
 - Retrieval-card install: `.claude/rules/delta_rule.md` + `MEMORY/atlas/delta_rule_arc.md`
 - Decode-path facades using step-through bias: `.claude/rules/compute_facades.md` + `MEMORY/atlas/compute_facades_arc.md`
 - Tier-2 AST walker (ruled-out-FirstTokenHook replacement):

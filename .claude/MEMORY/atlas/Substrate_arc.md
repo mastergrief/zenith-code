@@ -3,7 +3,7 @@
 Per-level validation receipts, session-32 prod Gemma port detail,
 Round 11 hybrid-finding origin, R22 retrieval-card install calibration
 arc, and R-delta-20 DT defaults-shipping receipt. Current install
-patterns: `.claude/rules/Substrate.md`. This file exists for
+patterns: `.codex/rules/Substrate.md`. This file exists for
 archaeology — "which round proved which level", "what commit
 introduced which install pattern", "why the R22 thresholds are
 what they are".
@@ -18,8 +18,8 @@ coefs.
 Fix: `HybridGroupedSmall2DTransformer` with per-layer linear type.
 Validated real Gemma 4 E4B attn_q.weight (2560×2048, 20480 tq4 blocks)
 padded to (4096, 4096) → dequant → top-left matches original to
-atol=1e-5. Current rule in `Substrate.md` §"Hybrid Per-Layer Linear
-Type"; full bench in `MEMORY/atlas/turboquant_arc.md`.
+atol=1e-5. Hybrid per-layer linear type detail in
+`MEMORY/atlas/turboquant_arc.md` §"Round 11 hybrid-substrate origin".
 
 ## d_head=2 decomposition provenance
 
@@ -151,8 +151,8 @@ params, MQAR N=5-15 @ 100% held-out). Full arc in
 problems. NOT install-viable — threshold is ≥ 0.40 honest val
 before wiring to Gemma. Recipe differs from MQAR/NL defaults
 (requires R26 aux copy-loss + R27 split-before-aug + gate init -1.0
-+ EMA 0.995). See `delta_rule.md` §"Code-skeleton recipe" for current
-canonical flags; full arc in `MEMORY/atlas/delta_rule_arc.md`.
++ EMA 0.995). See `MEMORY/atlas/delta_rule_arc.md` §"Code-skeleton DT
+open arc" for canonical flags; full arc in same file.
 
 ## KVCacheTq4 multi-token prefill (R53.28)
 
@@ -169,17 +169,95 @@ layers fused; global layers (d_head=512) fall back to memoized
 dequant. Full bench receipt + policy rationale:
 `MEMORY/atlas/turboquant_arc.md`.
 
+## Channel allocation protocol
+
+```
+Channels 0..2559:     Gemma residual (pretrained, frozen)
+Channels 2560..2623:  HRM I/O (per specialist: 32 channels)
+Channels 2624..3205:  Compiled card I/O (dispatched_v4: 582 ch)
+Channels 3206..3225:  Knowledge DB (recall channels)
+Channels 3226..4095:  FREE (870 channels for future domains)
+```
+
+Each domain owns a disjoint channel rectangle. Writes are additive
+via W_out (each domain's W_out rows are nonzero only in its channel
+range). No domain can corrupt another's residual.
+
+## Card Installation — operational reference
+
+Two install modes on prod `GemmaSubstrate`, architecturally distinct.
+Pick per card.
+
+| Aspect | In-attention | CardSlot (residual-additive) |
+|---|---|---|
+| Card compute | Inside Gemma's `attn_q/k/v/output` matmul | Separate Module, appended after layer |
+| Upgrades attention directly | Yes (same kernel) | No (runs alongside) |
+| Sub-head budget | Consumes reserved sub-heads | None |
+| FP32 cost | ~330 MB SWA / ~600 MB global per host | Zero |
+| Card types | Pure-attention only today | Any `nn.Module` incl. PT, FFN cards |
+| Custom attention (PT copy gate) | Impossible | Required |
+| Perf | Zero overhead | Small extra matmul per slot |
+
+**Known limit**: `install_card_in_attention` writes `attn_q/k/v/output`
+only. Cards with ReGLU/FFN need an FFN migration (not yet shipped)
+before full in-attention install. Pure-attention cards work today.
+
+Four install paths:
+1. **In-attention** — surgical `attn_q/k/v/output` writes +
+   `convert_layer_to_fp32` once per host layer.
+2. **CardSlot (residual-additive)** — 4-gate retrieval pattern:
+   `write_margin`, `hook.min_margin`, `preserve=False` default,
+   N-range gate in adapter.
+3. **HubInjectionCard** — forced-attention on validated hub heads
+   (L23 H1/H4).
+4. **VerificationHook** — card → Gemma logit bias after softcapping.
+
+Margin-gate alignment: `write_margin == min_margin`. Threshold
+calibration: per input-distribution bucket, set below lowest p5
+across buckets. Full R22 arc above.
+
+## Install Workflow (checklist)
+
+When installing a card into prod Gemma:
+
+1. **Allocate**: read `substrate_registry.md`. Pick `host_layer`,
+   channel range `[ch_off : ch_off + d_card]`, and `sub_head_offset`
+   (in-attention) with no collision on the same host_layer.
+2. **Convert** (in-attention only): `m.convert_layer_to_fp32(host_layer)`
+   once per host (~330 MB SWA / ~600 MB global).
+3. **Install**:
+   - `install_card_in_attention(card, ..., mode='hard_max')` for compiled.
+   - OR 4-gate CardSlot default for retrieval PTs (`write_margin=T`,
+     `hook.min_margin=T`, adapter N-range gate, `preserve=False`).
+   - `CardSlot(..., preserve=True)` ONLY when channel isolation is
+     load-bearing (chained cards).
+4. **Verify — BOTH raw path AND user-facing path** on a representative
+   corpus (not hand-crafted sanity cases). `VerificationHook` flips
+   argmax only when margin exceeds `min_margin`.
+5. **Register**: append row to `substrate_registry.md`.
+6. **Commit**: one commit per domain, registry row included.
+
+End-to-end demo: `scripts/gemma_learning_loop_demo.py`.
+
+## GPU scaling
+
+| Hardware | Capacity | Params |
+|---|---|---|
+| RTX 4070 (8 GB) | 50 HRM slots + card | 889M, 68.6× speedup, 3.56 GB VRAM |
+| RTX 4090 (24 GB) | ~100 domains | ~3B |
+| A100 (80 GB) | ~500 domains, team substrate | ~10B |
+
 ## Cross-refs
 
-- Current install patterns: `.claude/rules/Substrate.md`
+- Current install patterns: `.codex/rules/Substrate.md` (stub; detail in this file)
 - DT install full arc: `MEMORY/atlas/delta_rule_arc.md`
 - tq4 kernel + flash-attn receipts: `MEMORY/atlas/turboquant_arc.md`
 - Tracing-arc validation (R28/R42/R43 etc.): `MEMORY/atlas/tracing_roadmap_part_1.md`
-- Auto-upgrade CALM integration: `.claude/rules/calm_part_2.md` §"Auto-Upgrade Loop"
+- Auto-upgrade CALM integration: `.codex/rules/calm_part_2.md` §"Auto-Upgrade Loop"
 
 ## Substrate vs Cards vs CHRLM — vocabulary (parked-stack glossary)
 
-Relocated from `.claude/CLAUDE.md` during the 2026-05-26 convention-only
+Relocated from `.codex/AGENTS.md` during the 2026-05-26 convention-only
 eager-doc trim (active lane is native HRM-Text-1.58; this stack is parked).
 Lock-in terms for the substrate/card stack — use precisely when working in it;
 don't conflate.
@@ -200,7 +278,7 @@ don't conflate.
 - **DT** (Delta-Transducer) = `CopyAugmentedDeltaNet` card (2026-04-22 rename of
   PT+Delta). Default trained-card arch for retrieval/structure-extraction
   (MQAR, NL→math). Code-skeleton DT open arc (0.193 honest val, v13 ep16). See
-  `.claude/rules/delta_rule.md`.
+  `.codex/rules/delta_rule.md`.
 - **Output-language family** = class of expression syntax (function-call, infix
   arithmetic, boolean logic). ~3-5 families cover 30+ domains; adding a domain
   within an existing family is a data-only operation.
@@ -209,8 +287,9 @@ don't conflate.
 
 **Brain + Cards model**: Gemma (language + routing) dispatched to cards
 (compiled programs, HRM specialists, PTs). Three install paths — decode-path
-facade (zero VRAM, cheapest), CardSlot residual-additive, in-tensor. Full spec:
-`.claude/rules/Substrate.md` §"Card Installation", `.claude/rules/compute_facades.md`,
-`.claude/rules/delta_rule.md` §"Retrieval card install". Auto-generation:
+facade (zero VRAM, cheapest), CardSlot residual-additive, in-tensor. Full spec: `MEMORY/atlas/Substrate_arc.md` §"Card Installation",
+`.codex/rules/compute_facades.md` (stub),
+`MEMORY/atlas/delta_rule_arc.md` §"R22 retrieval-card install
+calibration arc". Auto-generation:
 `calm/llm_computer/recursion.py` (`FacadeSpec` + `MetaFacade`), see
-`.claude/rules/recursion.md`.
+`.codex/rules/recursion.md`.

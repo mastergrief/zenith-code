@@ -146,7 +146,8 @@ pipeline: `calm_part_2.md` §"Cognitive Intelligence Layer".
 CALM corrections → `KnowledgeStore` → compile into substrate weights →
 save `.pt` → next session fixed. Oracle: `calm/llm_computer/calm_verifier.py`
 (`verify_nl` → `add_correction`). Install mechanics:
-`Substrate.md` §"Persistent Knowledge + Auto-Upgrade". Session receipts:
+`calm_part_2.md` §"Auto-Upgrade Loop" + `MEMORY/atlas/Substrate_arc.md`
+§"Card Installation". Session receipts:
 `calm_part_2.md` §"Auto-Upgrade Loop".
 
 ## Related rules

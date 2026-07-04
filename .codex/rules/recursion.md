@@ -223,7 +223,8 @@ Shipped-facade dated inventory + eval file cross-refs:
   is the upper bound of the present system.
 - **Code DT self-distill** (roadmap): train code-skeleton DT on DB,
   install via CardSlot, run `CodeVerifierFacade`-gated
-  self-distillation loop. See `delta_rule.md` §"Code-skeleton recipe".
+  self-distillation loop. See `MEMORY/atlas/delta_rule_arc.md`
+  §"Code-skeleton DT open arc".
 - **Commercial vertical decks**: use Level-2 MetaFacade to rapidly
   stand up hospital / legal / financial card decks (each is ~5-10
   domain-specific `FacadeSpec`s produced by hand + MetaFacade).
@@ -236,7 +237,7 @@ Shipped-facade dated inventory + eval file cross-refs:
 
 - `augmentation_thesis.md` §"Auto-upgrade loop" — the factorial
   scaling property that makes recursion economically viable
-- `Substrate.md` §"Auto-Upgrade Loop" — technical install path for
+- `calm_part_2.md` §"Auto-Upgrade Loop" — technical install path for
   compiled recall cards
 - `calm.md` §"Auto-Upgrade Loop" — CALM's role as oracle
 - `capability_gain.md` — measurement discipline per recursion step

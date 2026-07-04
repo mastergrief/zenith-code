@@ -134,7 +134,7 @@ The GSM shortfall was digit transposition — **fixed by copy mechanism in sessi
 - **Balanced `_sample_operand()`**: uniform across digit-length buckets [1-9]/[10-99]/[100+]. Without this, small operands get 0%.
 - **`max_len` ≥ max_prefix + max_expression + decode_headroom**: positional embeddings cap sequence length. CUDA assert if autoreg exceeds it.
 - **One PT per output-language family**: function-call, infix arithmetic, boolean logic. Combined model plateaus at 74%; split recovers 86-88%.
-- **Autoreg eval is the gate**: teacher-forced val_acc is misleading (99.6% while autoreg is 74%). Always use `_autoreg_eval` — *on raw/unaugmented val*. If val is drawn AFTER `_paraphrase_augment()`, it contains paraphrase variants of train problems and autoreg is still memorization. **Split BEFORE aug** (R27, `fa654bb`) — v9's 0.75 "autoreg" was paraphrase-leakage; honest unaug val was 0.284. See `delta_rule.md` §DT code-skeleton arc.
+- **Autoreg eval is the gate**: teacher-forced val_acc is misleading (99.6% while autoreg is 74%). Always use `_autoreg_eval` — *on raw/unaugmented val*. If val is drawn AFTER `_paraphrase_augment()`, it contains paraphrase variants of train problems and autoreg is still memorization. **Split BEFORE aug** (R27, `fa654bb`) — v9's 0.75 "autoreg" was paraphrase-leakage; honest unaug val was 0.284. See `MEMORY/atlas/delta_rule_arc.md` §"DT code-skeleton arc".
 - **Copy gate bias = -2.0**: initializes toward generation, learns to copy. *Stable on retrieval / NL-math.* Code-skeleton regime needs `-1.0` + R26 aux copy-loss (`--copy-aux-weight 0.5`) — without aux, gate collapses to ~0.018 and model becomes gen-only (v9 receipt).
 - **VOCAB_SIZE = 82** (added `><` in session 31). Old checkpoints use 80 and load fine.
 
@@ -186,12 +186,12 @@ Scratchpad-with-intermediate-values forces memorization that small models can't 
   held-out unaug problems** (v9's 0.75 was augmented-val
   inflation; honest v9 unaug was 0.284). Install threshold ≥ 0.40
   before wiring to Gemma — not yet shipped. Trained by
-  `scripts/train_code_dt.py`. See `delta_rule.md` §DT code-skeleton
-  arc for full R1-R27 receipt.
+  `scripts/train_code_dt.py`. See `MEMORY/atlas/delta_rule_arc.md` §"DT
+  code-skeleton arc" for full R1-R27 receipt.
 
 Default config for MQAR/NL-math cards (commit `63a49fc`):
 `use_chunkwise=True, n_delta_heads=1, n_iterations=1, chunk_size=32`.
-Full rule: `.claude/rules/delta_rule.md`.
+Full rule: `MEMORY/atlas/delta_rule_arc.md`.
 
 Training recipe differs from plain PT: `F.nll_loss` (not
 `F.cross_entropy`) because forward returns log-probs; chunkwise
@@ -206,7 +206,8 @@ output classes, Zipf-distributed. Lower copyable-token density than
 MQAR (most tokens in `def`/`FN`/`(`/`:` must be generated, not copied)
 → MQAR defaults DON'T transfer.
 
-Canonical flags for `scripts/train_code_dt.py` (per `delta_rule.md` §DT):
+Canonical flags for `scripts/train_code_dt.py` (per
+`MEMORY/atlas/delta_rule_arc.md` §"DT code-skeleton arc"):
 ```
 --balanced-sampler sqrt_inverse   # R3 — counter Zipf
 --copy-gate-bias-init -1.0        # R5 — neutral; 0.0 collapses, +1.0 fabricates

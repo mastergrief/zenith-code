@@ -265,10 +265,10 @@ errors" to "errors never recur" without retraining. See
 `.claude/rules/calm.md` "Auto-Upgrade Loop" and
 `calm/llm_computer/auto_upgrade.py`.
 
-## Substrate install workflow (see `Substrate.md`)
+## Substrate install workflow (see `MEMORY/atlas/Substrate_arc.md`)
 
 Checklist for installing a card into prod Gemma lives in
-`.claude/rules/Substrate.md` §"Install Workflow (checklist)".
+`MEMORY/atlas/Substrate_arc.md` §"Install Workflow (checklist)".
 6-step Allocate → Convert → Install → Verify → Register → Commit.
 
 ## When this workflow doesn't apply

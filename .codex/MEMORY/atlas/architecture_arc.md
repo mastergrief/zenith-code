@@ -46,8 +46,8 @@ Full DT arc: `MEMORY/atlas/delta_rule_arc.md`.
 
 Code-skeleton DT recipe requires R26 aux copy-loss + R27 split-before-aug
 + gate init -1.0 + EMA decay 0.995. Don't extrapolate retrieval
-defaults. Full recipe: `.claude/rules/delta_rule.md` §"Code-skeleton
-recipe" + `MEMORY/atlas/delta_rule_arc.md`.
+defaults. Full recipe: `MEMORY/atlas/delta_rule_arc.md` §"Code-skeleton
+DT open arc".
 
 ## Decode bench receipts (2026-04-21 clean, median-of-5, RTX 4070)
 
@@ -152,7 +152,7 @@ gating), `composed_sum_threshold` (inter-slot), `depth_compound`
 `compiled_in_gemma` (inside Gemma layer), `three_in_one_layer`
 (Level 5: 3 modes one layer).
 
-Full inventory: `.claude/rules/Substrate.md` §"Key Files" + atlas
+Full inventory: `MEMORY/atlas/Substrate_arc.md` + atlas
 §"Compiled-program validation receipts" in `Substrate_arc.md`.
 
 ## CRLM scaling-law empirics (session 26)
@@ -213,7 +213,7 @@ Session 31 priority-order finding: steps 1-3 took 0%→100% (data),
 ## Cross-refs
 
 - Current architecture spec: `.claude/rules/architecture.md`
-- Substrate install detail: `.claude/rules/Substrate.md` + `MEMORY/atlas/Substrate_arc.md`
+- Substrate install detail: `MEMORY/atlas/Substrate_arc.md`
 - DT install arc: `MEMORY/atlas/delta_rule_arc.md`
 - tq4 kernel + flash-attn bench: `MEMORY/atlas/turboquant_arc.md`
 - Training session-by-session: `MEMORY/atlas/training_part_1.md` + `_part_2.md`

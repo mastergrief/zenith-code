@@ -54,7 +54,7 @@ text/thesis lives in `rules/augmentation_thesis.md`)
 | R46.2 `MultiStepReasoningFacade` (17/17 fixes) | Tier-2 stack | NL parser + `safe_eval` + step-through bias |
 | `KnowledgeStore` recall cards | Tier-2 at output | Step-function indicators + `CardSlot` + `VerificationHook` |
 | `programs/gcd`, `adder`, `multiplier` (compiled) | Tier-2 integration | Compiled compute + tier-2 output hook |
-| R-delta-21 `CopyAugmentedDeltaNet` MQAR card | Tier-2/3 retrieval | 4-gate CardSlot. 2026-04-21 ship at 22.0 → 2026-04-22 R22f recalibration to **14.5 → 60/60 (+18, 0 regressions, commits `9691e06` + `c3cc73f`)**. See `delta_rule.md` §R22. |
+| R-delta-21 `CopyAugmentedDeltaNet` MQAR card | Tier-2/3 retrieval | 4-gate CardSlot. 2026-04-21 ship at 22.0 → 2026-04-22 R22f recalibration to **14.5 → 60/60 (+18, 0 regressions, commits `9691e06` + `c3cc73f`)**. See `MEMORY/atlas/delta_rule_arc.md` §"R22 retrieval-card install calibration arc". |
 | `BaseConversionFacade` R22c (`7db6eb9`) | Tier-2 decode-path | Parser + `int(x, base)` + digit bias. 10/10 vs 7/10 (+3, 30% lift). |
 | `NumberTheoryFacade` R53a mod/GCD/LCM (`69279d4`) | Tier-2 decode-path | Parser + `safe_eval` + digit bias. **15/15 vs 8/15 (+7, 47% lift).** Exposed the `▁`-strip + POST_BIAS_BUDGET=4 discipline. |
 | `NumericEncodeFacade` F2 int→hex/binary/octal (`5ee61a5`) | Tier-2 decode-path | 12/12 on chain corpus. First facade with letter-answer (e.g. "DEADBEEF"). |

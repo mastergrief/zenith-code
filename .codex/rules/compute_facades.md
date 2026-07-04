@@ -198,7 +198,7 @@ under distractor prose).
 - `augmentation_thesis.md` §"Tier-2 stacking" — strategic framing
 - `capability_gain.md` — two-measurement A/B discipline
 - `embed_intelligence.md` — step-through bias first-principles
-- `Substrate.md` §"Card Installation" — three-install typology
+- `MEMORY/atlas/Substrate_arc.md` §"Card Installation" — three-install typology
 - `delta_rule.md` — retrieval-card install contrast (CardSlot with 4 gates)
 - `commercial.md` — decode-path facades as cheapest domain-coverage lever
 - `MEMORY/atlas/compute_facades_arc.md` — shipped-facade receipts

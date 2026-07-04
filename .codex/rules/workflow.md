@@ -166,8 +166,8 @@ Pattern: `workflow_part_2.md` §"CALM iteration pattern".
 
 ## Substrate install workflow
 
-`Substrate.md` §"Install Workflow". Arc: `workflow_part_2.md` §"Substrate
-install workflow".
+Checklist: `MEMORY/atlas/Substrate_arc.md` §"Install Workflow (checklist)".
+Arc summary: 6-step Allocate → Convert → Install → Verify → Register → Commit.
 
 ## When this workflow doesn't apply
 
