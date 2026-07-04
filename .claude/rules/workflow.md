@@ -2,431 +2,176 @@
 
 # Workflow — hypothesis, test, iterate
 
-**This is the default working loop for all work in this project.**
-Apply it to CUDA kernels, Python harness changes, training scripts,
-quantize runs, config edits — anything that has a measurable outcome.
-
-> Historical receipts (session-16 perf anecdote, canonical adapter-
-> robustness / MAX_TOKENS / GPU-bench / null-commit case studies,
-> session-25 sweet-spot journey): see
-> `MEMORY/atlas/workflow_part_1.md` + `MEMORY/atlas/workflow_part_2.md`.
+**Default working loop for all measurable work** (kernels, harness, training,
+config). Historical receipts: `MEMORY/atlas/workflow_part_1.md` +
+`MEMORY/atlas/workflow_part_2.md`.
 
 ## Core principle — it works or it doesn't
 
-**No vibes.** Every claim of "done", "working", "better", "fixed"
-must be backed by a measurement that came *after* the change. If
-you can't point to a number, a passing test, a correct output, or
-a diff on an artifact — you don't know.
-
-- "Looks right" — not done.
-- "Should be faster" — not better.
-- "I think it's working now" — not working.
-- "Probably fine" — not fine.
-
-The only exit from an iteration is a measurement that says "yes, it
-moved" or "no, it didn't". Intermediate states (half-applied edits,
-unrun tests, partial builds) aren't progress — they're liabilities.
-
-If there's no way to measure it (pure UI/frontend judgment, brand
-tone), say so explicitly and ask the user to make the call.
+**No vibes.** "Done", "working", "better", "fixed" require a post-change
+measurement — number, test, output, or artifact diff. Intermediate states
+(half-applied edits, unrun tests) are liabilities. Pure UI/brand judgment:
+say so and ask the user.
 
 ## The loop
 
-1. **State the hypothesis.** One sentence: "X is the bottleneck / bug
-   / missing piece because Y. Changing it to Z should move metric M
-   by N%." Write it down.
-2. **Pick the measurement first, not after.** If you can't specify
-   the number that would prove the hypothesis, sharpen the hypothesis.
-3. **Minimal edit.** Smallest change that tests the hypothesis. Don't
-   bundle unrelated improvements — they poison the measurement.
+1. **State the hypothesis** (one sentence with predicted metric movement).
+2. **Pick the measurement first** — if you can't specify it, sharpen the hypothesis.
+3. **Minimal edit** — don't bundle unrelated changes.
 4. **Build / run / test.**
-5. **Measure.** Run twice if noisy.
-6. **Binary decision.** Real movement (> noise, matches prediction)
-   → ship. Didn't move or wrong direction → revert. No "maybe".
-7. **Ruled-out log.** If you reverted, write one line saying what
-   you tried + the delta. Future-you won't retry the known-bad path.
-8. **Next hypothesis.**
+5. **Measure** (twice if noisy).
+6. **Binary decision** — ship, or revert with a one-line ruled-out log.
+7. **Next hypothesis.**
 
-Target: **< 5 minutes per round.** If longer, the measurement is too
-heavy — find a lighter proxy.
+Target: **< 5 minutes per round**; use a lighter proxy if slower.
 
 ## Always check two things
 
-Run a **raw-path measurement** AND a **user-facing measurement** on
-the same change. The single most important discipline here.
-
-- Win on raw path that doesn't move user-facing → fixed wrong thing.
-- User-only "win" is usually noise.
-- Both move → real.
+Raw-path AND user-facing measurement on the same change. Raw-only win →
+wrong path. User-only win → usually noise. Both move → real.
 
 | Work type | Raw path | User-facing path |
 |---|---|---|
 | CUDA kernel opt | `llama-bench -n 64 -p 0 -r 3` | chat completion w/ fixed prompt |
-| Python harness fix | unit test / pytest | `printf "prompt\n/exit\n" \| zenith` |
-| Config / prompt | output on N fixed prompts | real conversation turn |
-| Training data filter | schema validation + dedup count | loss curve on a few hundred steps |
-| New CALM backend | function count + `pytest calm/tests/` | Gemma `run_auto()` — does precompute fire? |
-| Cognitive module | router on flawed response (quality + issue count) | Engine V2 Gemma test — quality gap bad vs good |
-| Substrate card install | card.forward on REAL adapter-extracted inputs | Gemma+card A/B vs baseline |
-| Triton kernel | bit-equiv to PyTorch (max abs diff < 1e-5) | end-to-end tok/s on 30+ tok decode |
+| Python harness | unit test / pytest | `printf "prompt\n/exit\n" \| zenith` |
+| Training filter | schema + dedup count | loss curve on few hundred steps |
 
-If you only have one path, say so out loud and accept reduced confidence.
-
-### Adapter-robustness rule
-
-If a card install shows low effective precision on live inputs, run
-the card STANDALONE on the adapter's extracted strings BEFORE
-hypothesizing calibration, distribution-shift, or architectural gaps.
-30-second standalone diagnostic exposes adapter regex bugs that would
-otherwise eat multiple rounds of threshold-tuning.
-
-Rule: for install work with an adapter or parser, the two-measurement
-pair is **(raw on REAL adapter outputs) + (user-facing A/B)**, not
-(raw on synthetic inputs) + (user-facing). Synthetic sanity cases
-skip the adapter entirely, so adapter bugs are invisible.
+Card installs with adapters: **(raw on REAL adapter outputs) + (A/B)**.
+Full table + adapter-robustness: `workflow_part_1.md` §"Always check two things".
 
 ## Plateau detection
 
-**3 iterations < 2% each → it's a bug, not a tuning problem.** Stop
-micro-tuning, find the one wrong line.
-
-Symptoms you're in a bug-not-tuning situation:
-- Ratio to a known-good reference is suspiciously large (>2× perf,
-  off by suspect constants for correctness).
-- Occupancy / resource budgets say there's headroom but you're not
-  using it.
-- Compute/bandwidth math says it should be N× faster than you see.
+**3 iterations < 2% each → bug, not tuning.** Stop micro-tuning; find the
+wrong line (suspicious ratio to reference, unused headroom, compute/bandwidth
+math mismatch).
 
 ## Empirical pace
 
-Project's measured pace on this stack is minutes-to-hours, not the
-weeks-to-months inherited from mechinterp literature. If a step looks
-like days, methodology is wrong. Revisit. Full detail:
-`probing_methodology.md` §"Empirical timeline".
+Minutes-to-hours on this stack, not mechinterp weeks-to-months. If a step
+looks like days, revisit methodology. Detail: `probing_methodology.md`
+§"Empirical timeline".
 
 ## MAX_TOKENS budget discipline
 
-Before diagnosing logic / substrate / sandbox / import failures,
-verify output budget isn't clipping. Gemma 4 E4B trains at 131K ctx.
-Eval `max_tokens` defaults should be ≥ 4K, not ≤ 400.
-
-**Centralized**: `calm/llm_computer/eval_defaults.py` exports
-`EVAL_CTX_SIZE=32768`, `EVAL_MAX_TOKENS=16384`, `ITERATION_N=5`,
-`FINAL_N=20`. Every eval script imports from here — changing the
-numbers changes every eval consistently.
-
-**ITERATION_N / FINAL_N pattern**: every eval with a configurable
-problem count defaults to `ITERATION_N` for the fast-iteration loop.
-Bump to `FINAL_N` only for the round that goes into a commit receipt.
-Pattern: `MBPP_N = FINAL_N if os.environ.get("MBPP_FINAL") == "1" else ITERATION_N`.
-Never iterate at FINAL_N — violates the <5 min loop target.
-
-Rule: when a Gemma failure is "no output / NoCode", check
-`max_tokens` ≥ prompt + `<think>` + expected output BEFORE any
-deeper diagnosis. When adding a new eval script, import from
-`eval_defaults` rather than picking a number locally.
+Before logic/substrate/sandbox diagnosis, verify output budget isn't clipping
+(≥ 4K eval default, not ≤ 400). Import `EVAL_CTX_SIZE`, `EVAL_MAX_TOKENS`,
+`ITERATION_N`, `FINAL_N` from `calm/llm_computer/eval_defaults.py`.
+Iterate at `ITERATION_N`; `FINAL_N` only for commit receipts. "No output /
+NoCode" → check `max_tokens` first. Receipt: `workflow_part_1.md` §"MAX_TOKENS
+budget discipline".
 
 ## GPU bench discipline
 
-Triton kernel bench variance on the 4070 Laptop is 20-30% run-to-run
-without stabilization:
-
-1. `heavy_warmup(3.0s)` — dense fp16 matmul to steady-state clock.
-2. `torch.cuda.Event(enable_timing=True)` — GPU-side timestamps.
-3. Median of 5 × 2000 iters per shape.
-4. Same-process A/B, paired per-shape (not full-sweep × 2).
-5. Correctness check (`torch.allclose`) BEFORE timing.
-
-Reference: `scripts/bench_tq4_matvec.py` +
-`scripts/test_tq4_matvec_v2_correctness.py`.
-
-Rule: never declare a Triton kernel win on one run. Median ≥ 3;
-A/B deltas must agree in SIGN across runs even if magnitude varies.
-Sign flips = noise.
+Warmup, GPU events, median-of-N, paired A/B, correctness before timing.
+Protocol: `workflow_part_1.md` §"GPU bench discipline".
 
 ## Daemon state invariants
 
-The Gemma daemon (`bin/gemma_daemon.py` + `bin/gemma-run`) preserves
-`m` and `tok` across script runs but mutates hidden state that MUST
-be reset:
-
-1. `m.verification_hooks` is a list. Every script installing a
-   `CardSlot` or `VerificationHook` appends. `RESET_GLOBALS` does
-   NOT clear it.
-2. `m.reserved_channels` + `m.layers[idx].card_slots` — same mode.
-3. Module cache: `sys.modules` is shared. Editing a facade module
-   and re-running picks up NEW script text but IMPORT returns cached.
-   `--reset` doesn't help; `--quit` + `--start` does.
-
-**Mandatory pattern**: every facade A/B script calls `clear_card_state()`
-at startup:
-```python
-def clear_card_state():
-    for lyr in m.layers:
-        if hasattr(lyr, "card_slots"):
-            lyr.card_slots = []
-    m.verification_hooks = []
-    m.reserved_channels = []
-
-clear_card_state()
-```
-
-**Diagnostic rule**: if script output shows digit-bias artifacts on
-prompts it shouldn't bias ("hello" → "0000..."), lingering hook is
-the first hypothesis before suspecting new code.
+Gemma daemon scripts: `clear_card_state()` at startup (hooks, `card_slots`,
+`reserved_channels` persist). Pattern: `workflow_part_1.md` §"Daemon state
+invariants".
 
 ## Commit discipline — git log as progress changelog
 
-- **Commit completed work BEFORE starting the next round.** Default
-  rule. Uncommitted measured work is a liability — a crash, an
-  accidental `git stash`, a `reset --hard` silently destroys hours.
-- **One round per commit.** Don't stack unrelated optimizations.
-- **Measurement in the message.** Every perf / correctness commit
-  has a short before/after table in the body:
-  ```
-  <subsystem>: <one-line what>
-
-  <3-5 lines explaining why and how — the hypothesis>
-
-  Metric (context + hardware):
-    metric                before   after
-    -----------           ------   ------
-    <name>                <N>      <N>
-
-  Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
-  ```
-- **Checkpoint before risky swings.** Re-quantize, struct layout,
-  kernel rewrite, training run — commit current state so
-  `git reset --hard HEAD` is your rollback.
-- **`git log --oneline` is a readable perf history.**
+Commit completed measured work before the next round; one round per commit;
+before/after table in perf/correctness messages; checkpoint before risky
+swings. Template: `workflow_part_1.md` §"Commit discipline".
 
 ## Informative null results
 
-A null that diagnoses the failure mode IS shippable. Commit with the
-same before/after discipline — the diagnostic value is the contribution.
-
-Pattern:
-```
-<subsystem>: <mechanism> clean null (Round N)
-
-Hypothesis: <one line>
-Result: <metric table showing the null>
-Diagnosis: <what we learned about the failure mode>
-Next round: <specific scope change justified by the null>
-```
+A null that diagnoses the failure mode IS shippable (same before/after
+discipline). Pattern: `workflow_part_2.md` §"Informative null results".
 
 ## Curriculum nulls: change supervision shape
 
-Train-perfect with held-recombination failure is a useful null: answer-only rows were learned, but procedure was not. Next hypothesis changes supervision shape (`input/question → planning → reasoning → computing → answer/output`) before touching range/runway/LR/model size. Measure trace/structure and final answer separately, then fade scaffolds only after held recombination transfers.
+Train-perfect + held-recombination failure → change supervision shape
+(`input/question → planning → reasoning → computing → answer/output`) before
+range/runway/LR/model size. Fade scaffolds only after held recombination
+transfers.
 
 ## Long-running training supervision
 
-**Review routing (ai-room):** thinking stays parallel; artifact review gates are
-sequential (claude gate-1 → co_lead gate-2 on frozen handoff). **Passive-wait-
-don't-poll** at gates — no inbox polling or sleep-recheck loops on healthy peers.
+**Review routing (ai-room):** thinking parallel; artifact gates sequential
+(claude gate-1 → co_lead gate-2 on frozen handoff). **Passive-wait-don't-poll**
+at gates.
 
-Foreground-session + Monitor pattern:
-```bash
-# In a dedicated shell/session, run the job as the foreground process
-# and write its output to a log. Do not use setsid, nohup, disown,
-# run_in_background, or a trailing-& detach from Bash.
-env PYTHONPATH=. python3 -u -m calm.hrm.train ... \
-  > /tmp/train.log 2>&1
-```
-
-Then arm Monitor on the log:
-
-```
-Monitor(command="bin/watch-wrap --log /tmp/train.log --heartbeat 180 --error 'Traceback|Error|Killed|OOM|FAILED|assert' --progress 'epoch.*done|eval:|DECISION:' --success 'training complete|DONE' --stop-on 'training complete|DONE' --replay 20")
-```
-
-- `-u` on python: unbuffered stdout.
-- `bin/watch-wrap`: required for Monitor log streams; it adds heartbeat,
-  category tags, replay, and `--stop-on` terminal conditions.
-- **Filter MUST cover failure signatures** not just success — silent
-  monitor through OOM is indistinguishable from healthy. Include
-  `Traceback|Error|Killed|OOM|FAILED|assert`.
-
-Each notification = plateau-detection checkpoint. Loss-crashes-while-
-val-flat for 2-3 evals → kill, change one hypothesis, restart.
+**Foreground only — no detach:** forbid `setsid`, `nohup`, `disown`,
+`run_in_background`, trailing `&`. Run training foreground in a dedicated
+shell; log to file; arm `bin/watch-wrap` Monitor with failure signatures
+(`Traceback|Error|Killed|OOM|FAILED|assert`) plus progress/success/stop-on.
+`-u` for unbuffered stdout. Each notification = plateau checkpoint; kill
+after 2-3 flat evals. Full pattern: `workflow_part_2.md` §"Long-running
+training supervision".
 
 ### HRM-Text-1.58 curriculum extension
 
-The generic <5-min loop does NOT mean finishing every training run. The
-`hrm-158-base` curriculum runs in **gated slices**: default atom is auditable
-full-density finite support (usually ~100-150 rows / ~120 natural)
-trained slow-safe (lr 5e-5, replay .80, n-train 12000, heldout/eval 200
-diagnostic unless promoted, seeds 17/17, pc/temp 1.0, Tier-B fixed, saves
-250..1500). Bank earliest all-clear save under 90/90; step250 is plumbing/
-liveness/catastrophic-retention, step500 first climb-rate read. On misses,
-classify + split/protect/redesign — no LR/runway/model escalation. Full workflow: `rules/hrm-158.md`.
+Generic <5-min loop ≠ finish every training run. `hrm-158-base` runs in
+**gated slices**: auditable full-density finite support (~100-150 rows),
+slow-safe, **90/90 bank gate** (acquire ≥90% / retain ≥90%). On misses:
+classify + split/protect/redesign — **no LR/runway/model escalation**.
+Recipe knobs: `hrm-158.md` §"Recipe band". Full workflow: `hrm-158.md`.
 
-## Sweet-spot search for tiny models
+## Sweet-spot search / tool priority
 
-When goal is **maximum capability per parameter**, search downward:
-
-1. Start with smallest config that could plausibly work (`hidden=16-32`).
-2. Train. If the user-facing gate fails, scale smallest knob first:
-   more data → more epochs → capacity.
-3. Only scale capacity when data + epochs plateau below gate.
-4. **The point isn't smallest possible — it's smallest sufficient.**
-
-Corollary: **Per-token accuracy is misleading on trace-shaped targets.**
-Trace targets contain many trivially-predictable tokens (operators,
-parens, copies of input). Per-token can be 94% while full-expression
-sits at 43%. Always measure the user-facing gate.
-
-## Tool priority for diagnostics
-
-Escalate in order of cost. Stop at the first one that tells you what
-you need.
-
-1. **Existing fast bench / test.** Always try this first.
-2. **Pre-build static inspection** — `nvcc -Xptxas=-v` for CUDA,
-   `python -c "import ..."` for Python, `cargo check` for Rust. Free.
-3. **Print / counter instrumentation.** Hand-rolled instrumentation
-   is usually faster than external profilers on this WSL setup.
-4. **"Remove it and see."** Wrap in `if (false)`, comment out, swap
-   stub. If metric barely moves, component isn't the bottleneck.
-5. **External profilers (`ncu`, `nsys`, `perf`)** — known broken on
-   this WSL setup. Don't block optimization on profilers.
+Search downward for max capability/parameter; measure user-facing gate.
+Diagnostic escalation ladder (bench → static → print → remove-it → profilers
+last). `workflow_part_2.md` §"Sweet-spot search" + §"Tool priority".
 
 ## Full-GPU for trainer-loop work; CPU only for non-loop checks
 
-**The dividing line is loop entry** (gabe directive: "full gpu going
-forward"). Anything that enters the model/trainer loop — forward/backward,
-probes, q/acc update, OR checkpoint-load-and-step — runs on **GPU**, even a
-"1-step smoke." **CPU is allowed ONLY for checks that never enter the loop**:
-`py_compile`, import/argparse, schema parser over a FIXTURE object,
-dry-run/unit codepath checks (assert a flag gates emission / default-off),
-hash + preflight + git-state. A real checkpoint-loading 1-step trainer smoke
-is NOT a CPU pre-gate — it's GPU. Any CPU check that would enter the loop or
-exceed a tiny (seconds) budget: classify **`cpu_guardrail_too_heavy`**,
-hard-timeout it, route to a GPU gate. Don't normalize a multi-minute CPU
-"pre-gate."
+**Dividing line = loop entry.** Forward/backward, probes, q/acc update,
+checkpoint-load-and-step → **GPU** (even 1-step smoke). CPU only for
+non-loop checks: `py_compile`, import/argparse, fixture schema parse,
+dry-run flag gates, hash/preflight/git-state. Checkpoint 1-step smoke is
+GPU. Heavy CPU pre-gates → `cpu_guardrail_too_heavy`, hard-timeout, route
+to GPU.
 
-**GPU-hot-loop convention**: "GPU" means the hot path is GPU-resident and
-kernelized, not merely `device=cuda:0` plus allocated VRAM. A launch packet
-must declare a visible per-phase first-milestone **phase budget** for
-forward/backward, update, emission/accounting, and artifact flush. A
-watch-wrap heartbeat is not hot-loop progress; per-phase milestones are the
-progress source. No progress past the phase budget is a **liveness failure**:
-stack-sample, kill/release, and classify the run instead of waiting for the
-total timeout. A materialization/CPU liveness failure additionally triggers a
-**class audit before relaunch**: enumerate every caller of the offending helper
-AND every full-population `.tolist()`/dict/list build on the hot path, and fix
-the whole class in one slice — chasing sibling sites one launch at a time is
-whack-a-mole (a shared helper has >1 caller; a fixed site usually has a parallel
-one). New observer/emitter/collector code at representative scale
-requires a prior **scale-smoke** or cost model; a co-lead-flagged de-risk smoke
-is not overridable on one-run EV grounds. Receipts must separate DEVICE
-residency from HOT-LOOP residency.
+**GPU-hot-loop**: hot path GPU-resident + kernelized, not just `device=cuda`.
+Launch packets declare per-phase **phase budgets** (forward/backward, update,
+emission, flush). Watch-wrap heartbeat ≠ hot-loop progress. Past phase budget
+→ liveness failure: stack-sample, kill/release, classify. Materialization
+failures → **class audit** (all callers + hot-path `.tolist()`/dict builds)
+before relaunch. New observers need scale-smoke or cost model. Receipts
+separate DEVICE vs HOT-LOOP residency.
 
-**Two proportionate GPU gate weights** (don't make every smoke a launch
-ceremony):
-- **GPU correctness smoke** = lightweight gate: pinned hashes + fresh scratch
-  path + pipefail/exit-code + banked read-only/re-hash + a **hard step/probe
-  bound** + artifact paths + duration. If it starts answering dynamics or runs
-  long → reclassify + escalate to the full gate (else you recreate the CPU
-  problem on GPU under a lighter name).
-- **GPU dynamics run** = the lightweight set PLUS watcher + stop conditions.
-
-The "minutes to write a GPU run" tradeoff holds ONLY when the native GPU path
-exists + is parity-validated (a NEW native GPU kernel is the expensive lane),
-AND the minutes INCLUDE the launch-contract discipline above — that contract
-is what makes the receipt trustworthy, not optional overhead. On this fleet
-GPU = the 4070; the 1070 box is the audit/probe lane, not a CPU-substitute.
+**Gate weights**: (1) **GPU correctness smoke** — hashes, scratch path,
+pipefail, re-hash, hard step bound, artifacts, duration. (2) **GPU dynamics
+run** — smoke set + watcher + stop conditions. Minutes-to-write tradeoff
+only when native GPU path exists + parity-validated AND includes launch
+contract. Fleet: 4070 = GPU; 1070 = audit/probe lane.
 
 ## Probing-specific methodology gates
 
-Three gates from mechinterp work. Full spec: `probing_methodology.md`.
-
-- **Prompt-format gate**: verify baseline argmax-correct rate > 50%
-  before interpreting ablation, else you're measuring shortcut circuits.
-- **Task-rank vs PCA-rank**: variance rank is a lower bound on
-  task-rank; validate with a projection-or-ablation test that
-  measures accuracy preservation.
-- **Superposition blinds ablation**: "diffuse at neurons + strong at
-  layer" = superposition suspect. Reach for TopK SAE, not L1.
+Three mechinterp gates — full spec: `probing_methodology.md`. Prompt-format
+(>50% baseline before ablation); task-rank vs PCA-rank (projection test);
+superposition suspect → TopK SAE not L1.
 
 ## Pitfalls
 
-- **Bundling.** Two changes in one build → can't attribute the delta.
-- **"Didn't crash" ≠ passing test.** No error is one signal.
-  Correctness assertion + perf are separate signals.
-- **Drift justifying itself.** 24.1 → 24.3 is noise, not improvement.
-- **Skipping correctness when chasing perf.** Canonical math smoke:
-  `17×23=391` via chat API. CALM multi-domain smoke:
-  `run_auto("What is sin(30°)? Is 4181 a Fibonacci number? Capital of France?")`.
-- **Trusting one number.** llama-bench `-r 3` minimum; chat prompts twice.
-- **Editing before benching baseline.** Re-bench after pull / merge /
-  env change before claiming the next optimization moved anything.
+No bundling; "didn't crash" ≠ pass; drift ≠ improvement; perf needs
+correctness smoke (`17×23=391`); trust ≥3 bench reps; re-bench baseline
+after env change. Extended: `workflow_part_2.md` §"Pitfalls to avoid".
 
 ## Feedback-loop validation pattern
 
-For any system with a `learn` phase and an `apply` phase — write
-three layers of tests in this order:
-
-1. **Unit tests that prove the cycle closes.** Feed in correction;
-   assert pattern recorded; assert next matching input produces the
-   right apply-phase output. If this fails, the loop is open.
-2. **Quantitative effectiveness harness.** Script that runs N
-   corrections then measures hit rate on held-out inputs. Report
-   delta round-over-round.
-3. **End-to-end integration test with mocked dependencies.** Mock
-   the expensive component; assert learned patterns get injected
-   upstream at the next invocation.
-
-**Shape gates on apply phase matter.** Require a shape keyword before
-instantiating a pattern (function name, operator, or NL alias) — else
-patterns fire on every numeric prompt, flooding the system prompt
-with irrelevant precomputes.
-
-**Visibility**: `scripts/learning_dashboard.py` prints the current
-state of both loops in one command. Build the equivalent for any new
-loop you add.
+Learn+apply systems need: (1) loop-closes unit test, (2) effectiveness
+harness on held-out inputs, (3) E2E integration with mocked upstream.
+Shape-gate apply phase; visibility via `scripts/learning_dashboard.py`.
+Full spec: `workflow_part_2.md` §"Feedback-loop validation pattern".
 
 ## CALM iteration pattern
 
-Hypothesis-test-iterate applied to CALM intelligence scaling:
-
-1. **Hypothesis**: "Adding backend X will make Gemma answer domain Y"
-   or "Fixing module Z's triggers catches failure mode W."
-2. **Raw measurement**: function count, NL pattern count, module
-   count, `pytest calm/tests/` passing.
-3. **Build**: minimal — one domain, one module, one fix per iteration.
-4. **User-facing**: Gemma test via `run_auto()` or Engine V2. Did
-   precompute fire? Did module catch the issue? Quality score change?
-   Self-heal trigger?
-5. **Quality gap test**: router on flawed response AND good response.
-   Bad < 75%, good > 90%. If gap < 15%, modules aren't discriminating.
-6. **Commit with before/after table** including counts + scores.
-
-Full CALM cycle: 3-5 minutes (backends are pure Python, no GPU).
-Cognitive module changes need inference time (~30-60s per prompt).
-
-### Auto-upgrade extension
-
-CALM corrections feed the substrate's persistent knowledge layer:
-CALM catches error → `AutoUpgradeEngine.commit()` → corrections
-compile into substrate weights → save `.pt` → next session the error
-is permanently fixed. Closes the loop from "CALM catches errors" to
-"errors never recur" without retraining. See `calm.md` §"Auto-Upgrade
-Loop" and `calm/llm_computer/auto_upgrade.py`.
+Hypothesis-test-iterate for CALM backends/modules/quality-gap. Ops: `calm.md`.
+Pattern: `workflow_part_2.md` §"CALM iteration pattern".
 
 ## Substrate install workflow
 
-Checklist for installing a card into prod Gemma lives in `Substrate.md`
-§"Install Workflow". 6-step: Allocate → Convert → Install → Verify →
-Register → Commit.
+`Substrate.md` §"Install Workflow". Arc: `workflow_part_2.md` §"Substrate
+install workflow".
 
 ## When this workflow doesn't apply
 
-- **UI / frontend / design work.** Subjective judgment. Defer to user.
-- **Exploratory research with no defined target.** Demos and qualitative
-  reads are the measurement at that stage. Still write down what
-  you're looking for.
-- **Pure discovery reading.** Reading code to understand doesn't need
-  a metric. Once you start *changing* it, it does.
+UI/design judgment; exploratory research without a target (qualitative reads
+OK); pure discovery reading (metric required once you edit).
 
 **IMPORTANT**: Assume nothing. Hypothesis, Build, Test, Commit & Iterate. First Principles thinking. Do not discount anything until it's built and tested!

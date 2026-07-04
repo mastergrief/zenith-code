@@ -288,42 +288,23 @@ hidden state on `m` that MUST be reset between unrelated runs:
 
 ## Long-running training supervision
 
-Training runs that emit sparse eval lines (every N epochs, every M steps)
-are the perfect use case for **Monitor + filtered tail**. The raw log
-stays on disk; only the eval/error lines arrive in context as
-notifications, so you can apply the plateau-detection loop in real time
-instead of waiting out a full run.
+**Current rule (eager `workflow.md`):** foreground training in a dedicated
+shell; log to file; **no detach** (`setsid`, `nohup`, `disown`,
+`run_in_background`, trailing `&` forbidden). Arm `bin/watch-wrap` Monitor
+with failure + progress + stop-on filters. Canonical copy:
+`workflow_part_2.md` §"Long-running training supervision (current — foreground,
+no detach)".
 
-Pattern:
+**Historical receipts** (session-25 plateau kills, monitor-ship-at-right-
+checkpoint examples) retained below for forensics only — do not revive
+detached launch patterns.
 
-```bash
-# Kick off detached so CC/WSL crashes don't kill it
-setsid env PYTHONPATH=. python3 -u -m calm.hrm.train --... \
-  < /dev/null > /tmp/train.log 2>&1 &
-disown -a
-```
+Session-25 HRM autoregressive retraining killed a 1000-epoch run at epoch
+200 when loss=0.04 but val_acc=51% — classic 900-sample / 108K-param
+memorization gap; restarted with 2× data rather than waiting out 800 more
+epochs.
 
-```
-Monitor(command="tail -f /tmp/train.log | grep --line-buffered -E 'epoch|Error|Traceback'")
-```
-
-- `-u` on python to avoid stdout buffering (eval lines arrive immediately).
-- `grep --line-buffered` is mandatory — without it pipe buffering holds
-  events for minutes.
-- Redirect stdin from `/dev/null` to avoid WSL interop stdin
-  consumption (same class of bug as the `bin/zenith` tasklist.exe fix).
-
-Each monitor notification is a plateau-detection checkpoint (see the
-loop above). If training loss crashes to near-zero while val/eval
-accuracy stays flat for 2–3 consecutive eval intervals, **kill and
-intervene** on one hypothesis (data, capacity, LR, regularization).
-Don't ride out the remaining epochs. Session-25 HRM autoregressive
-retraining killed a 1000-epoch run at epoch 200 when loss=0.04 but
-val_acc=51% — classic 900-sample / 108K-param memorization gap;
-restarted with 2× data rather than waiting out 800 more epochs.
-
-The same monitor pattern caught a more subtle case later in session 25:
-a 500-epoch HRM run hit 99.7% per-token at epoch 100 → killed early
-because the structurally-relevant gate (full-expression via verified
-mode) was already saturated. Monitor lets you ship at the right
-checkpoint, not the scheduled-end checkpoint.
+A 500-epoch HRM run hit 99.7% per-token at epoch 100 → killed early because
+the structurally-relevant gate (full-expression via verified mode) was already
+saturated. Monitor lets you ship at the right checkpoint, not the scheduled-end
+checkpoint.

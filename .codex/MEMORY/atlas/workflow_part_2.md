@@ -1,17 +1,35 @@
 Workflow Part 2
 
-**Harness shorthand**: `Bash(run_in_background=True)` launches the
-training; `Monitor` with `tail -f /tmp/train.log | grep --line-buffered
--E "epoch.*done|eval:|DECISION:|Traceback|Error|Killed"` streams
-milestones into the conversation. Don't poll — wait for monitor
-notifications and continue other work in the meantime. This session
-used the pattern for SubstrateLM, hybrid v1, Round 3, Round 4, and
-v2 GPU runs without burning context on raw training logs.
+## Long-running training supervision (current — foreground, no detach)
 
-The filter MUST cover failure signatures too, not just success — a
-monitor that only matches "epoch done" stays silent through a crashloop
-or OOM, making silence indistinguishable from "still running." Include
-`Traceback|Error|Killed|OOM|FAILED|assert` in the alternation.
+**SUPERSEDES** any detached-launch guidance (`setsid`, `nohup`, `disown`,
+`run_in_background`, trailing `&`, `Bash(run_in_background=True)`).
+
+**Review routing (ai-room):** thinking stays parallel; artifact review
+gates are sequential (claude gate-1 → co_lead gate-2 on frozen handoff).
+**Passive-wait-don't-poll** at gates.
+
+Foreground-session + Monitor pattern:
+
+```bash
+env PYTHONPATH=. python3 -u -m calm.hrm.train ... \
+  > /tmp/train.log 2>&1
+```
+
+```
+Monitor(command="bin/watch-wrap --log /tmp/train.log --heartbeat 180 --error 'Traceback|Error|Killed|OOM|FAILED|assert' --progress 'epoch.*done|eval:|DECISION:' --success 'training complete|DONE' --stop-on 'training complete|DONE' --replay 20")
+```
+
+- `-u` on python: unbuffered stdout.
+- `bin/watch-wrap`: heartbeat, category tags, replay, `--stop-on`.
+- **Filter MUST cover failure signatures** — include
+  `Traceback|Error|Killed|OOM|FAILED|assert`.
+
+Each notification = plateau-detection checkpoint. Loss-crashes-while-val-flat
+for 2-3 evals → kill, change one hypothesis, restart.
+
+**Historical note:** earlier sessions used detached `setsid`/`disown` and
+`run_in_background` harness shorthand — retired; do not copy.
 
 ## Training-specific discipline (see `training.md`)
 
@@ -64,6 +82,15 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
 ```
 
 Rounds 3 and 4 commit bodies are the canonical templates.
+
+## Curriculum nulls: change supervision shape
+
+Train-perfect with held-recombination failure: answer-only rows were learned
+but procedure was not. Next hypothesis changes supervision shape
+(`input/question → planning → reasoning → computing → answer/output`) before
+touching range/runway/LR/model size. Measure trace/structure and final answer
+separately; fade scaffolds only after held recombination transfers. Eager
+invariant: `workflow.md` §"Curriculum nulls".
 
 ## Sweet-spot search for tiny models
 
