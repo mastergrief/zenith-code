@@ -53,7 +53,7 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "c1042893f728b22b3637c51e2975dfc889baab6ee7a51f2c848df9a5cda45bdd"
     ),
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "004cd942105f1fc0085da286b7d44939ae67df19a6d2563f8dc0161ad6826299"
+        "38747b4386c01aa308b2950c174829b21f2e84a117d2f41899d6fbd3e398d5db"
     ),
 }
 
