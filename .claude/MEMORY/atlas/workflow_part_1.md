@@ -61,8 +61,8 @@ call instead of a full eval).
 Project's measured pace on this stack is minutes-to-hours, not the
 weeks-to-months inherited from mechinterp literature. If a step
 looks like it'll take days, your methodology or tooling is wrong;
-revisit before committing the time. Full detail + reference points:
-`.claude/rules/probing_methodology.md` §"Empirical timeline".
+revisit before committing the time. Full measured table:
+`MEMORY/atlas/workflow_part_2.md` §"Empirical timeline — full reference".
 
 ## Always check two things
 

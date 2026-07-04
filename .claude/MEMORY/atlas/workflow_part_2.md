@@ -148,21 +148,86 @@ first one that tells you what you need.
    Ubuntu package. **Don't block optimization on profilers.** Fall
    back to step 3 instrumentation.
 
+## Empirical timeline — full reference
+
+Published mechinterp literature routinely quotes "weeks to months per
+capability." **This project's measured pace on this stack is
+minutes-to-hours.** If a step looks like it'll take days, your
+methodology or tooling is wrong; revisit before committing the time.
+
+Measured on this project (RTX 4070 Laptop, 8 GB VRAM, WSL2):
+
+| work | literature estimate | actual |
+|---|---|---|
+| Activation patching across 42 layers × 10 prompts | days | ~14 min |
+| Per-head ablation at one layer × 10 prompts | days | ~3 min |
+| Q/K/V decomposition on candidate head | days | ~30 min |
+| Forced-attention causal validation | weeks | ~20 min |
+| Full 6-capability atlas | weeks/months | ~6 hours |
+| SAE training (~8K samples, K=100, 3000 steps) | days | ~3 min on cached |
+| Multi-step reverse-engineering arc | months | ~3 hours |
+| Facade ship (HubInjectionCard + generate) | weeks | ~1 hour |
+| Multi-step product shipped (17/17 fixes) | weeks | ~1.5 hours |
+
+What compounds the speed on this stack:
+- Prod Gemma substrate with fused tq4 kernels (~100ms/forward)
+- Triton + CUDA Graphs for tq4 matmul/dequant
+- Hypothesis-test-iterate loop (one question per round)
+- Committed artifacts (no context re-acquisition across rounds)
+- `bin/gemma-run` daemon (eliminates ~3 min/round reload cost once
+  started)
+- Disk caching of expensive captures
+- Monitor + filtered tail for streaming log (notification-driven,
+  not polling)
+
+Never let inherited literature estimates set your expectation for the
+project's own pace.
+
 ## Probing-specific methodology gates
 
 Three gates from session 33's R47-R50 arc that apply when probing an
-LLM's activations. Full spec + examples:
-`.claude/rules/probing_methodology.md`.
+LLM's activations:
 
 - **Prompt-format gate** (R47.2): verify baseline argmax-correct
   rate > 50% before interpreting ablation, else you're measuring
-  shortcut circuits.
+  shortcut circuits. On `"{a} times {b} plus {c} equals "` Gemma
+  often echoes `c`; rephrase to `"What is ({a} * {b}) + {c}? Answer: "`.
 - **Task-rank vs PCA-rank** (R49.2, R50.5): variance rank is a lower
   bound on task-rank; validate with a projection-or-ablation test
   that measures accuracy preservation.
 - **Superposition blinds ablation** (R48.1 → R50.3): "diffuse at
   neurons + strong at layer" = superposition suspect. Reach for
   TopK SAE, not L1.
+
+## Tool-tier selection for probing
+
+Pick the tool tier based on the superposition problem:
+
+- **Ablation** (torchlight): points at a layer/head/neuron, asks "is
+  anything happening here?" Binary, coarse. Use for initial
+  localization.
+- **Linear probes** (filtered torchlight): "is *this specific thing*
+  readable?" Only finds what you guess to test for.
+- **PCA/SVD** (prism): shows the raw spectrum of variance but
+  doesn't interpret the colors. Don't trust rank as task-relevant.
+- **SAE** (microscope): overcomplete dictionary learns *which*
+  features exist without being told. Use when ablation + PCA say
+  "diffuse" but full-layer says "load-bearing".
+
+All four are complementary. Invest in SAE AFTER ablation has given
+you a concrete target — not as a first pass.
+
+## Causal validation is non-negotiable
+
+SAE reconstruction quality and task-relevance are different metrics.
+Installing a 99.6%-reconstruction SAE preserves 100% task accuracy —
+good. Ablating the top-50 correlation-ranked features has 0% effect
+on accuracy — bad. Both are true simultaneously.
+
+Rule: after identifying candidate features via correlation,
+attribution, or activation difference, **always test them causally
+via ablation**. Don't ship "composition-specific features" based on
+ratio alone — they may be epiphenomenal.
 
 ## Pitfalls to avoid
 

@@ -48,8 +48,8 @@ math mismatch).
 ## Empirical pace
 
 Minutes-to-hours on this stack, not mechinterp weeks-to-months. If a step
-looks like days, revisit methodology. Detail: `probing_methodology.md`
-§"Empirical timeline".
+looks like days, revisit methodology. Detail:
+`MEMORY/atlas/workflow_part_2.md` §"Empirical timeline — full reference".
 
 ## MAX_TOKENS budget discipline
 
@@ -142,9 +142,10 @@ contract. Fleet: 4070 = GPU; 1070 = audit/probe lane.
 
 ## Probing-specific methodology gates
 
-Three mechinterp gates — full spec: `probing_methodology.md`. Prompt-format
-(>50% baseline before ablation); task-rank vs PCA-rank (projection test);
-superposition suspect → TopK SAE not L1.
+Three mechinterp gates — full spec:
+`MEMORY/atlas/workflow_part_2.md` §"Probing-specific methodology gates".
+Prompt-format (>50% baseline before ablation); task-rank vs PCA-rank
+(projection test); superposition suspect → TopK SAE not L1.
 
 ## Pitfalls
 
