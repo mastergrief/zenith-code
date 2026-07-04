@@ -50,8 +50,8 @@ Answer-only loss can prove finite row behavior without learning the algorithm. I
    otherwise — e.g. K=N addition under a carry-stratified partition, or a
    paraphrase block).
 3. **Replay important prior rungs** in the same training run; do NOT
-   train new-data-only. Fragile slices default to `--replay-ratio 0.80`
-   (80% replay, 20% new rung data); simple non-fragile rungs may use
+   train new-data-only. Fragile slices default to the replay-heavy band
+   (`rules/hrm-158.md` §"Recipe band"); simple non-fragile rungs may use
    `0.65`.
 4. **Keep tokenizer broad and fixed** across math / language / code.
 5. **Promote a checkpoint only after** sampled probes + A0 exhaustive
@@ -70,9 +70,7 @@ Answer-only loss can prove finite row behavior without learning the algorithm. I
 banked full-density recipe is full-density support PLUS slow-safe learning (one
 atom — full-density without slow-safe is not the method). Lower update pressure
 is the retention knob; higher lr migrates digit/template clusters into prior
-rungs. `rules/hrm-158.md` §"Recipe band" is canonical; the band: LR ~`5e-5`,
-replay ~`.80`, `--curriculum-n-train 12000`, heldout/eval 200 diagnostic unless
-promoted, seeds 17/17 aligned, pc/temp `1.0`, fixed Tier-B, saves through 1500,
+rungs. `rules/hrm-158.md` §"Recipe band" is canonical for all numeric knobs;
 **no LR/runway/model escalation on a miss**. The producer/consumer audit watcher
 (`scripts/parallel_audit_watcher.py`) is **required** (must prove OVERLAP per
 save step — only OVERLAP-clean saves are bank-eligible; else
@@ -96,10 +94,12 @@ code-currency** (probe/watcher/rung files synced), not just reachability.
 --save-at-step 1000 --save-at-step 1250 --save-at-step 1500
 ```
 
-Run contracts also name heldout/eval size (default 200), align probe/audit seed
-17, and list extra run-specific retained-support KL pins; non-dry launch must
-report ENABLED count/hash and never pin the target. Faster lr / lower replay is
-an explicit run-contract exception only, never default or miss rescue.
+Run contracts also name heldout/eval sizing and probe/audit seed alignment per
+`rules/hrm-158.md` §"Recipe band". Extra run-specific retained-support KL pins
+must be launch-command entries with ENABLED count/hash proof, never default-on,
+and never on the target; non-dry launch must report ENABLED count/hash and never
+pin the target. Faster lr / lower replay is an explicit run-contract exception
+only, never default or miss rescue.
 
 For targeted-repair runs that need to replay over positionally-future
 rungs, add `--allow-future-replay`.
@@ -179,6 +179,6 @@ experts.**
 - **Substrate-native training** (SubstrateLM/HRM, scheduled sampling, cross-task transfer) → `architecture.md`, `MEMORY/atlas/training_part_2.md`
 - **CRLM HRM** (structure-only recipe, sweet-spot configs, epoch-budget rule) → `MEMORY/atlas/training_part_1.md`
 - **Quantization** (tq4/tq3 commands + block format) → `turboquant.md`
-- **Export & serving** → `environment.md`, `.codex/AGENTS.md` §"Serving Architecture"
+- **Export & serving** → `environment.md` §"Serving Architecture"
 - **Backend-first priority + Auto-CALM training-data cycle** → `calm.md`
 - **Substrate eval defaults** → `workflow.md`, `calm/llm_computer/eval_defaults.py`

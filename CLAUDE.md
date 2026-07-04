@@ -17,12 +17,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   **classify + split smaller** — don't stretch the run, bump LR, or
   add layers.
 - **Default slice** (gabe-locked, one atom): **auditable full-density finite
-  support trained slow-safe** (LR ~5e-5, replay ~0.80, pc on acquired priors,
-  ≤1500-step, no knob escalation). Full coverage of a small completely-auditable
-  support DRIVES acquisition (banked identity 90/90) where sparse sub-sampling
-  regressed to nearest-memorized retrieval. **Bounded stair-step (~230) is the
-  FALLBACK** after a classified collision / oversized support; don't
-  continue+re-warm a fragile dense surface.
+  support trained slow-safe** under the 90/90 bank gate; numeric recipe band →
+  `.claude/rules/hrm-158.md` §"Recipe band" (no knob escalation on a miss).
+  Full coverage of a small completely-auditable support DRIVES acquisition
+  (banked identity 90/90) where sparse sub-sampling regressed to
+  nearest-memorized retrieval. **Bounded stair-step is the FALLBACK** after a
+  classified collision / oversized support; don't continue+re-warm a fragile
+  dense surface.
 - **Retention (load-bearing)**: explicit replay + parent consistency +
   broad retained supports (L0b, math_a0) + **direct close-sibling protection**
   when the target shares a template/emission surface (L0c1 lesson); anchors are

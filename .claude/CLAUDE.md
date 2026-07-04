@@ -20,7 +20,7 @@ Active fork target: **`hrm-158-base`**, a robust all-rounder native HRM-Text-1.5
 
 **Where it lives.** hrm-158 native training stack + curriculum checkpoints (the `--repo-root` for runs/probes): `/mnt/c/Users/gabes/projects/claw-code-hrm-text-158` → `calm/hrm/checkpoints/`. Ternary-hybrid science/credit tree: `/home/gabe/claw-code-creditdir/transient_fp_credit/`. THIS repo (`zenith-code` fork) = multi-agent harness + CALM + rules/orchestration — NOT the hrm-158 training repo; its own `calm/hrm/checkpoints/` are legacy/adjacent.
 
-Default slice is one atom: **auditable full-density finite support** (usually ~100-150 rows / ~120 natural), trained slow-safe with LR ~5e-5, replay .80, n-train 12000, heldout/eval 200 diagnostic unless promoted, seeds 17/17, pc/temp 1.0, fixed Tier-B, saves 250..1500.
+Default slice is one atom: **auditable full-density finite support** (usually ~100-150 rows / ~120 natural), trained slow-safe under the 90/90 bank gate; numeric recipe band → `.claude/rules/hrm-158.md` §"Recipe band".
 
 Bank gate is acquire ≥90% / retain ≥90% per slice. Bank earliest all-clear save; final has no privilege. Close siblings clear by numeric gate OR no-new-broad-cluster/parent-floor. Retention uses explicit replay + parent consistency + broad retained supports (L0b, math_a0) + direct close-sibling protection for shared template/emission surfaces; extra run-specific KL pins must be launch-command entries with ENABLED count/hash proof, never default-on and never on the target. Anchors are sentinels, not the primary retention mechanism.
 
@@ -92,4 +92,4 @@ Serving, hardware, and VRAM details live in `.claude/rules/environment.md`. Turb
 
 ## Branch
 
-`feature/multi-agent-qwen` on `mastergrief/zenith-code` (forked from `ultraworkers/claw-code`).
+`feature/hrm-158` on `mastergrief/zenith-code` (forked from `ultraworkers/claw-code`).
