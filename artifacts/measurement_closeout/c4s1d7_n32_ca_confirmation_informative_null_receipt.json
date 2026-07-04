@@ -1,0 +1,166 @@
+{
+  "schema": "hrm_text_158_measurement_closeout_null_receipt/v1",
+  "task_id": "1783074444338-d3ef40af",
+  "upstream_task_id": "1782633464140-b85ec12a",
+  "fold": "fold_2d_c_n32_ca_confirmation_informative_null_and_sampling_fork",
+  "packet_revision_context": "v1_n32_ca_confirmation_4c355f7",
+  "git_head_at_closeout": "a34d508c5b605d294eaac2eec3ac11fdf67c34ba",
+  "design_spec_path": "artifacts/measurement_closeout/c4s1d7_n32_ca_confirmation_informative_null_and_sampling_fork_spec.md",
+  "provenance": {
+    "standing_directive": "auto-research directive (SessionStart user-input capture)",
+    "plan_msg_id": "1783201482322",
+    "implement_gate_msg_id": "1783201548146",
+    "dispatch_msg_id": "1783201420703",
+    "fold2d_a_source_commit": "4c355f720d666dab80028d8911f457b52637c77c",
+    "fold2d_b_packet_commit": "a34d508c5b605d294eaac2eec3ac11fdf67c34ba"
+  },
+  "anti_overclaim_verbatim": "informative null; NO CA verdict; NO candidate-C resolution; NO reduction eligibility; NOT the ~430MB C4.S1d bank pin; NOT a sub-2 proof.",
+  "informative_null": {
+    "verdict": "INSUFFICIENT_CB_STATES",
+    "terminal_branch": "INSUFFICIENT_CB_STATES",
+    "cb_state_count": 1,
+    "crossing_weighted_ca_share": null,
+    "crossing_weighted_ca_share_ok": null,
+    "per_cb_ca_share_ok": null,
+    "infra_ok_false_negative": {
+      "recovered_receipt_infra_ok": false,
+      "recovered_receipt_ok": false,
+      "cause": "pre_fold2d_a_mark_count_mis_spec",
+      "stale_check": "checks.s1d7_band_counter_mark_count_eq_n_states",
+      "stale_check_value": false,
+      "actual_mark_count": 4,
+      "actual_n_states": 32,
+      "actual_sampled_states": [0, 10, 21, 31],
+      "correction_commit": "4c355f720d666dab80028d8911f457b52637c77c",
+      "correction_checks": [
+        "eligible_module_limit_eq_n_states",
+        "s1d7_band_counter_mark_count_eq_sampled_state_count"
+      ],
+      "interpretation": "instrument_gate_false_negative_not_liveness_failure"
+    },
+    "infra": {
+      "infra_healthy": true,
+      "checks": {
+        "observer_guard_clear": true,
+        "tracemalloc_mark_count_eq_0": true,
+        "tracemalloc_perturbed_false": true,
+        "infra_not_null": true,
+        "no_profile_env_mutual_exclusion_abort": true,
+        "b_profile_mark_count_gt_0": true,
+        "s1d7_band_counter_mark_count_eq_n_states": false
+      },
+      "s1d7_band_counter_mark_count": 4,
+      "s1d7_tracemalloc_mark_count": 0,
+      "mark_count": 4,
+      "eligible_module_limit": 32,
+      "sampled_states": [0, 10, 21, 31],
+      "runs_a_exit_code": 0,
+      "runs_b_exit_code": 0,
+      "runs_a_subprocess_timeout_expired": false,
+      "runs_b_subprocess_timeout_expired": false,
+      "total_wall_seconds": 350.0399278660043,
+      "guard_enter_telemetry_misread_withdrawn": true
+    },
+    "state_0_crossing_bearing": {
+      "state_index": 0,
+      "is_crossing_bearing": true,
+      "band_a_bytes": 22640,
+      "band_c_bytes": 48640,
+      "band_e_bytes": 5408,
+      "state_total_bytes": 76688,
+      "per_cb_ca_share": 0.9294804923847277,
+      "per_cb_ca_share_pct": 92.9,
+      "crossing_indices_len": 512
+    },
+    "cross_state_primary_n32": {
+      "raw_mark_count": 4,
+      "crossing_bearing_state_count": 1,
+      "measured_zero_crossing_sampled_state_count": 3,
+      "per_state": [
+        {
+          "state_index": 0,
+          "profile_line": 16,
+          "is_crossing_bearing": true,
+          "band_a_bytes": 22640,
+          "band_c_bytes": 48640,
+          "band_e_bytes": 5408,
+          "crossing_indices_len": 512,
+          "per_cb_ca_share": 0.9294804923847277,
+          "role": "crossing_bearing"
+        },
+        {
+          "state_index": 10,
+          "profile_line": 17,
+          "is_crossing_bearing": false,
+          "band_a_bytes": 112,
+          "band_c_bytes": 0,
+          "band_e_bytes": 0,
+          "crossing_indices_len": 0,
+          "per_cb_ca_share": null,
+          "role": "measured_zero_crossing"
+        },
+        {
+          "state_index": 21,
+          "profile_line": 18,
+          "is_crossing_bearing": false,
+          "band_a_bytes": 112,
+          "band_c_bytes": 0,
+          "band_e_bytes": 0,
+          "crossing_indices_len": 0,
+          "per_cb_ca_share": null,
+          "role": "measured_zero_crossing"
+        },
+        {
+          "state_index": 31,
+          "profile_line": 19,
+          "is_crossing_bearing": false,
+          "band_a_bytes": 112,
+          "band_c_bytes": 0,
+          "band_e_bytes": 0,
+          "crossing_indices_len": 0,
+          "per_cb_ca_share": null,
+          "role": "measured_zero_crossing"
+        }
+      ]
+    },
+    "feasibility_subsample_n16": {
+      "peak_rss_gib": 5.699348449707031,
+      "terminal_branch": "INSUFFICIENT_CB_STATES",
+      "cb_state_count": 1,
+      "sampled_states": [0, 5, 10, 15],
+      "mark_count": 4,
+      "total_wall_seconds": 155.01649010899564,
+      "runs_a_exit_code": 0,
+      "runs_b_exit_code": 0
+    },
+    "pattern_across_scales": {
+      "n4_sampled_states": [0, 1, 2, 3],
+      "n16_sampled_states": [0, 5, 10, 15],
+      "n32_sampled_states": [0, 10, 21, 31],
+      "state0_only_crossing_bearing_under_4_point_sampler": true
+    },
+    "cites": {
+      "primary_confirmation_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "fallback_n16_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/feasibility_subsample_n16/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "raw_profiler": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/host_rss_profile.jsonl",
+      "raw_profiler_lines": "16-19",
+      "fold1_reduced_n4_spec": "artifacts/measurement_closeout/c4s1d7_rev14_reduced_n4_null_and_ca_design_spec.md",
+      "sampler_rule": "sparse_cap_gpu_seam_adapter.py:474-479 compute_obmalloc_expanded_sampled_states",
+      "fold2d_a_fix": "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py @ 4c355f7"
+    }
+  },
+  "open_fork": {
+    "status": "UNRESOLVED",
+    "hypothesis_structural": "only_state0_has_crossings_at_this_bank_scale",
+    "hypothesis_sampling_artifact": "crossing_bearing_states_in_1_to_9_missed_by_4_point_sampler",
+    "decider": "dense_contiguous_early_sample_states_0_through_9_at_n32",
+    "prerequisite_slice": "FIX_C_PROPER_probe_consumes_dense_sampled_states",
+    "prerequisite_note": "fold2d_a_descoped_OBMALLOC_EXPANDED_SAMPLED_STATES_env_was_dead_plumbing",
+    "launch_gate_after_prerequisite": "dense_0_9_gpu_confirmation_separate_plus1_launch"
+  },
+  "pre_registered_next_slices": [
+    "FIX_C_PROPER_source_probe_sampled_states_wiring",
+    "dense_0_9_gpu_launch_after_FIX_C_PROPER",
+    "fold_3_crossing_bearing_only_dominance_gate_revision"
+  ]
+}
