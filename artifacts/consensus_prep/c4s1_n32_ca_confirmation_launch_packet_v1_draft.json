@@ -1,0 +1,455 @@
+{
+  "acceptance_gate_order": [
+    "CURRENCY_OK (executed guard + box preflight)",
+    "INFRA_OK (mark_count==32, observer clear, tracemalloc_mark_count==0)",
+    "SCIENCE_BRANCH (terminal_branch classifier \u2014 NOT receipt.ok)",
+    "CA_PERSISTS satisfies precondition ONLY \u2014 NOT reduction eligibility"
+  ],
+  "bounded_steps_budget": {
+    "fixture_a_arm_subprocess_timeout_seconds": 900,
+    "fixture_b_arm_subprocess_timeout_seconds": 1800,
+    "liveness_coherence": "max_silent(900) < phase(1800) < total(3600)",
+    "max_silent_phase_seconds": 900,
+    "max_steps_hard": 1,
+    "phase_heartbeat_seconds": 30,
+    "phase_timeout_seconds": 1800,
+    "total_timeout_seconds": 3600
+  },
+  "box_preflight_role_pins": {
+    "attribution_script": {
+      "rel_path": "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py",
+      "sha256": "75e9e33f916c7f1880a3aa0cd844f46f95353ac11256f5a95f4d88b2dc94fa4c"
+    },
+    "bounded_delta_acquisition_probe": {
+      "rel_path": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "sha256": "0507f4ea26ccfd6c3cb5268b6f046318edaca97dec0d9895fecd7967331f7d54"
+    },
+    "bounded_delta_learner": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "sha256": "58f3d2fac64e10b4e0852f6f45357c5cbf2940d227ce6c327d77ded2ce1a15fd"
+    },
+    "code_currency_guard": {
+      "rel_path": "scripts/hrm_text_158_code_currency_guard.py",
+      "sha256": "487d26a3607844bdedcc68576f99c1c70a188cd01af60a7d21f72987944a2a70"
+    },
+    "event_coded_acc_live_carrier": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
+      "sha256": "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412"
+    },
+    "event_coded_vote_update_adapter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
+      "sha256": "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f"
+    },
+    "host_tracemalloc_probe": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py",
+      "sha256": "def01789884e9e4903f47baa42395bf86785d47747b3d77d82ef8eb9f5537fe1"
+    },
+    "probe_bootstrap": {
+      "rel_path": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+      "sha256": "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f"
+    },
+    "s1d7_band_counter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py",
+      "sha256": "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688"
+    },
+    "s1d7_tracemalloc_feasibility": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py",
+      "sha256": "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794"
+    },
+    "sparse_cap_gpu_seam_adapter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+      "sha256": "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
+    }
+  },
+  "branch": "feature/hrm-text-1.58",
+  "ca_confirmation_objective": {
+    "anti_overclaim": "n=32 CONFIRMATION/precondition only; even CA_PERSISTS grants NO reduction implementation/eligibility; NOT candidate-C; NOT sub-2 proof; NOT 430MB bank pin",
+    "cb_share_min": 0.8,
+    "crossing_bearing_predicate": "crossing_indices_len > 0",
+    "feasibility_subsample_trigger": {
+      "exclude_exit_codes": [
+        37,
+        -6
+      ],
+      "executable_via": "packet wrapper: runs.B.subprocess_timeout_expired OR peak_rss_gib>6.5 \u2192 run_callsite_band_counter_ca_confirmation(n_states=16) \u2192 classify_ca_band_counter_confirmation(feasibility_subsample=True); exit 37/-6 stay INFRA_NULL",
+      "fallback_n_states": 16,
+      "or_subprocess_timeout_expired": true,
+      "peak_rss_gib_gt": 6.5
+    },
+    "not_science_gate_fields": [
+      "ok",
+      "infra_ok"
+    ],
+    "science_gate_field": "terminal_branch",
+    "science_question": "Does state-0 (C+A) multi-band split persist across crossing-bearing states at n=32?",
+    "terminal_branches": [
+      "CA_PERSISTS",
+      "CA_MIXED",
+      "CA_DILUTES",
+      "INSUFFICIENT_CB_STATES",
+      "INFRA_NULL",
+      "FEASIBILITY_SUBSAMPLE"
+    ]
+  },
+  "callsite_band_counter_currency_coverage": {
+    "box_preflight": "10 phase3 roles on disk via box_lane --include-phase3-obmalloc-surfaces",
+    "executed_guard": "probe_bootstrap.py -B entry \u2192 maybe_enforce_phase3b_probe_import_byte_currency BEFORE bounded_delta_acquisition_probe import (band_counter_only env; guard-ordering decoupled from tracemalloc)",
+    "preflight_dry_check": "proof.callsite_currency_dry_check_command",
+    "prepare_env": "prepare_phase3b_band_counter_only_launch_env sets IMPORT_BYTE_PINS"
+  },
+  "canonical_lane": "test-operator_gpu_diagnostic",
+  "child_emission_contract": {
+    "band_counter_enable": {
+      "env": "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY=1 + HOST_RSS=1 + TRACEMALLOC=0",
+      "events": "s1d7_band_counter_site_C4.S1d.7_post (32 sampled states)",
+      "measurement_contract": "static_pre_append_v1",
+      "n_states": 32,
+      "new_mark_events": 32,
+      "schema": "hrm_text_158_s1d7_band_counter_site/v1",
+      "tracemalloc_site_events": 0
+    },
+    "env_source": "B-prime band-counter-only: tracemalloc=False, band_counter_only=True; bootstrap -B guard-ordering decoupled from tracemalloc",
+    "env_toggles_b_arm": {
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+      "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS": "0",
+      "HRM_TEXT_158_PROFILE_HOST_RSS": "1",
+      "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED": "0",
+      "HRM_TEXT_158_PROFILE_OBMALLOC_SITE_BRACKETS": "0",
+      "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY": "1",
+      "HRM_TEXT_158_PROFILE_TRACEMALLOC": "0",
+      "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+      "HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP": "1",
+      "HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY": "1"
+    },
+    "line_split_surfaces": {
+      "band_counter_logical_candidate": "event_coded_acc_live_carrier.py:896",
+      "band_counter_logical_marker": "event_coded_acc_live_carrier.py:895",
+      "tracemalloc_classifier_candidate_bands": "A910 / C941-952 / E914-917",
+      "tracemalloc_classifier_physical_bracket": "[909,955]"
+    }
+  },
+  "code_pin_coverage": {
+    "box_preflight": {
+      "note": "box attests file bytes on disk; executed guard attests imported bytecode",
+      "surfaces": [
+        "DEFAULT_FLOOR_PINNED_FILES + PHASE3_OBMALLOC_SURFACE_PINNED_FILES (10 roles)"
+      ],
+      "via": "box_lane_code_currency_preflight.py --include-phase3-obmalloc-surfaces"
+    },
+    "executed_code_guard": {
+      "surfaces": [
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
+        "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
+        "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py",
+        "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py",
+        "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py",
+        "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+        "scripts/box_lane_code_currency_preflight.py",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+        "scripts/hrm_text_158_code_currency_guard.py",
+        "scripts/hrm_text_158_r7_resource_lane_acquire.py",
+        "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py"
+      ],
+      "via": "PHASE3B_PINNED_SOURCE_FILES + bootstrap executed guard (test_slice5 intentionally omitted \u2014 not launch-executed)"
+    }
+  },
+  "code_pins": {
+    "bounded_delta_acquisition_probe_sha256": "0507f4ea26ccfd6c3cb5268b6f046318edaca97dec0d9895fecd7967331f7d54",
+    "bounded_delta_learner_sha256": "58f3d2fac64e10b4e0852f6f45357c5cbf2940d227ce6c327d77ded2ce1a15fd",
+    "box_lane_code_currency_preflight_sha256": "c0358fca7deb913071d7c6b3925233ed643caa51c94ddd93894c76450113be2e",
+    "event_coded_acc_live_carrier_sha256": "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412",
+    "event_coded_vote_update_adapter_sha256": "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f",
+    "git_head": "c0371f18331059df0f91d793d119a0cf8010ec54",
+    "host_tracemalloc_probe_sha256": "def01789884e9e4903f47baa42395bf86785d47747b3d77d82ef8eb9f5537fe1",
+    "hrm_text_158_bounded_delta_acquisition_probe_sha256": "0507f4ea26ccfd6c3cb5268b6f046318edaca97dec0d9895fecd7967331f7d54",
+    "hrm_text_158_code_currency_guard_sha256": "487d26a3607844bdedcc68576f99c1c70a188cd01af60a7d21f72987944a2a70",
+    "hrm_text_158_slice5_v6i_oom_profile_attribution_sha256": "75e9e33f916c7f1880a3aa0cd844f46f95353ac11256f5a95f4d88b2dc94fa4c",
+    "probe_bootstrap_sha256": "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f",
+    "r7_resource_lane_acquire_sha256": "c69fd07f9416f15bb2fdc0c6d11b4c10d85c145c57d015e929653ac7f25df027",
+    "s1d7_band_counter_sha256": "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688",
+    "s1d7_tracemalloc_feasibility_sha256": "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794",
+    "sparse_cap_gpu_seam_adapter_sha256": "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
+  },
+  "code_pins_note": "test_slice5_v6i_oom_profile_attribution_sha256 intentionally omitted \u2014 not imported/executed by the launch run",
+  "consumption_matrix": {
+    "A_freshness_guard": {
+      "bootstrap_launch": "python3 -B probe_bootstrap.py entry; band_counter_only env; guard runs before pinned imports",
+      "box_preflight": "box_lane_code_currency_preflight.py --include-phase3-obmalloc-surfaces",
+      "guard_entry": "bootstrap.main \u2192 run_phase3b_probe_executed_code_currency_guard BEFORE bounded_delta_acquisition_probe import (band_counter_only)",
+      "pycache_invalidation": "prepare_phase3b_band_counter_only_launch_env + guard-internal invalidation"
+    },
+    "B_confirmation_receipt": {
+      "builder": "run_callsite_band_counter_ca_confirmation + classify_ca_band_counter_confirmation",
+      "fallback": "RSS>6.5 GiB or runs.B.subprocess_timeout_expired on n=32 \u2192 n=16 with feasibility_subsample=True; exit 37/-6 fail-closed (no fallback)",
+      "science_gate": "terminal_branch (NOT receipt.ok / infra_ok)"
+    }
+  },
+  "decision_contract": {
+    "chosen_path": "run_callsite_band_counter_ca_confirmation @ c0371f1 n_states=32 via import heredoc; band_counter_only bootstrap/-B guard-ordering",
+    "forbidden": [
+      "direct probe.py launch without bootstrap for band_counter_only B-arm",
+      "TRACEMALLOC=1 on band_counter_only confirmation subprocess",
+      "reading receipt.ok or infra_ok as CA_PERSISTS science verdict",
+      "treating CA_PERSISTS as reduction implementation eligibility",
+      "candidate-C single-band resolution claim from this run"
+    ],
+    "forbidden_at_launch": [
+      "launch without box code-currency preflight",
+      "launch with claude pre-holding gpu:hrm-text-158 lane (run self-acquires)",
+      "direct probe.py launch without bootstrap for band_counter_only B-arm",
+      "TRACEMALLOC=1 band_counter_only subprocess"
+    ]
+  },
+  "design_binding": {
+    "chosen_option": "n32_ca_band_counter_confirmation_precondition",
+    "fold1_spec_sha256": "25d0864bcc8dfc3a9df70be60206ec96fabb685835330b340f0b761840864a61",
+    "fold2_design_msg_id": "1783186409528",
+    "fold2a_source_commit": "c0371f18331059df0f91d793d119a0cf8010ec54"
+  },
+  "executed_code_currency_guard_contract": {
+    "bootstrap_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+    "fail_closed_exit_code": 37,
+    "pre_measurement": true,
+    "proof_method": "reachable_code_object_fingerprint_method_a",
+    "required_receipt_fields": [
+      "ok",
+      "guard_ran_before_pinned_imports",
+      "sys_modules_before_guard",
+      "sys_modules_after_guard",
+      "executed_code_fingerprints",
+      "import_byte_fingerprints",
+      "child_orig_argv",
+      "child_sys_argv",
+      "child_post_script_cli_argv",
+      "env.PYTHONDONTWRITEBYTECODE",
+      "sys_flags.dont_write_bytecode",
+      "pycache_invalidated_paths"
+    ],
+    "schema": "hrm_text_158_code_currency_executed_guard/v1"
+  },
+  "execution_order": [
+    "dispatch_run_claim",
+    "preflight",
+    "parent_checkpoint_rehash_before",
+    "resource_lane_acquire",
+    "install_lane_release_trap",
+    "ca_confirmation_primary_or_fallback",
+    "parent_checkpoint_rehash_after",
+    "resource_lane_release"
+  ],
+  "forbidden": [
+    "mutate banked .pt checkpoint",
+    "pass --mirror-durable-attribution at launch",
+    "v6i-unpark",
+    "claim reduction implementation eligibility from this confirmation run",
+    "stage/commit/push from test-operator",
+    "edit code beyond c0371f1 pins",
+    "launch conflated profiler envs (TRACEMALLOC=1 on band-counter-only subprocess)",
+    "set DEBUGMALLOCSTATS and TRACEMALLOC on same subprocess",
+    "treat FEASIBILITY_SUBSAMPLE as reduction eligibility",
+    "legacy callsite classifier or candidate-band routing from this packet"
+  ],
+  "git_head_required": "c0371f18331059df0f91d793d119a0cf8010ec54",
+  "gpu_lane": {
+    "canonical_name": "gpu:TheRig:uuid:GPU-4c376502-9cde-e181-ec2b-9773b307342e",
+    "hardware": "RTX 4070 Laptop (8 GB VRAM)",
+    "request_alias": "gpu:hrm-text-158"
+  },
+  "monitor": {
+    "primary_tail_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log",
+    "probe_stream_log_paths": [
+      "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_a/probe_stream.log",
+      "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log"
+    ],
+    "run_root": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1",
+    "scratch_root": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b"
+  },
+  "packet_id": "c4s1_phase3_n32_ca_confirmation_v1",
+  "packet_revision": "v1_n32_ca_confirmation_c0371f1",
+  "parent_checkpoint": {
+    "absolute_path": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "pass_criterion": "sha256 equals 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec before AND after run",
+    "read_only": true,
+    "rehash_after_command": "sha256sum /mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}'",
+    "rehash_before_command": "sha256sum /mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}'",
+    "relative_path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+  },
+  "perturbation_risk_classification": {
+    "ca_confirmation_mandatory": {
+      "command": "proof.ca_confirmation_command",
+      "exit_code_fail_infra": 37,
+      "exit_code_fail_mark_count": 42,
+      "gates": [
+        "observer_guard_clear",
+        "tracemalloc_perturbed_false",
+        "s1d7_band_counter_mark_count_eq_n_states",
+        "tracemalloc_mark_count_eq_0",
+        "b_profile_mark_count_gt_0",
+        "no_profile_env_mutual_exclusion_abort",
+        "no_tracemalloc_perturbed_inconclusive",
+        "infra_not_null"
+      ],
+      "ordering": "PRIMARY confirmation run; science read from terminal_branch NOT ok",
+      "science_branches": [
+        "CA_PERSISTS",
+        "CA_MIXED",
+        "CA_DILUTES",
+        "INSUFFICIENT_CB_STATES",
+        "INFRA_NULL",
+        "FEASIBILITY_SUBSAMPLE"
+      ],
+      "science_gate": "terminal_branch"
+    }
+  },
+  "phase_budgets_and_watcher": {
+    "convention": "fold-2b confirmation budgets: max_silent(900) < phase(1800) < total(3600); milestone budgets report-only",
+    "heartbeat_interval_seconds": 30,
+    "heartbeat_supplementary_only": true,
+    "interrupt_authority": {
+      "first_milestone_budgets_report_only": true,
+      "interrupt_authority": "faulthandler_silent_phase_guard",
+      "interrupt_timeout_seconds": 900.0,
+      "milestone_budget_breach_triggers_interrupt": false,
+      "schema": "hrm_text_158_phase_budget_interrupt_authority/v1"
+    },
+    "liveness_contract": {
+      "coherence": "max_silent(900) < phase(1800) < total(3600)",
+      "max_silent_phase_seconds": 900,
+      "per_arm_subprocess_timeout_seconds": 1800,
+      "phase_heartbeat_seconds": 30,
+      "phase_timeout_seconds": 1800,
+      "total_timeout_seconds": 3600,
+      "watcher_stall_seconds": 900
+    },
+    "max_silent_phase_seconds": 900,
+    "phase_timeout_seconds": 1800,
+    "stop_conditions": [
+      "executed guard receipt missing or guard_ran_before_pinned_imports false",
+      "ca_confirmation subprocess exit 37 (infra_null / currency fail-closed)",
+      "ca_confirmation subprocess exit 42 (mark_count != n_states)",
+      "no phase_heartbeat within watcher_stall_seconds(900)",
+      "parent checkpoint sha256 mismatch pre/post",
+      "peak_rss_gib > 6.5 on primary n=32 triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
+      "primary runs.B.subprocess_timeout_expired triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
+      "primary exit_code 37/-6 MUST NOT trigger fallback (fail-closed INFRA_NULL)"
+    ],
+    "total_timeout_seconds": 3600,
+    "watcher_liveness_fail_regex": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL"
+  },
+  "preflight": {
+    "a_freshness_guard": {
+      "bootstrap_required": true,
+      "bootstrap_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+      "box_preflight_n_files_lower_bound": 10,
+      "box_preflight_roles": [
+        "event_coded_acc_live_carrier",
+        "sparse_cap_gpu_seam_adapter",
+        "event_coded_vote_update_adapter",
+        "bounded_delta_learner",
+        "attribution_script",
+        "code_currency_guard",
+        "probe_bootstrap",
+        "bounded_delta_acquisition_probe",
+        "host_tracemalloc_probe",
+        "s1d7_tracemalloc_feasibility"
+      ],
+      "direct_probe_required": false,
+      "executed_proof_method": "reachable_code_object_fingerprint_method_a",
+      "fail_closed_exit_code": 37,
+      "fail_closed_terminals": [
+        "CODE_CURRENCY_GUARD_NOT_RUN_INCONCLUSIVE",
+        "CODE_CURRENCY_EXECUTED_MISMATCH_INCONCLUSIVE",
+        "CODE_CURRENCY_MISMATCH_INCONCLUSIVE"
+      ],
+      "probe_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "probe_subprocess": "python3 -B probe_bootstrap.py via _fixture_probe_argv(band_counter_only=True) @ attribution.py:5404; bootstrap=guard-ordering only; env decoupled (TRACEMALLOC=0, BAND_COUNTER_ONLY=1)",
+      "pycache_invalidation": "prepare_phase3b_band_counter_only_launch_env + guard-internal invalidation"
+    },
+    "command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; HEAD=$(git rev-parse HEAD); test \"$HEAD\" = 'c0371f18331059df0f91d793d119a0cf8010ec54'; PARENT=/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt; PARENT_SHA=$(sha256sum \"$PARENT\" | awk '{print $1}'); test -f \"$PARENT\"; test \"$PARENT_SHA\" = '9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'; PYTHONPATH=. python3 - <<'PY'\nimport hashlib, subprocess, sys\nfrom pathlib import Path\nREPO = Path('/mnt/c/Users/gabes/projects/claw-code-hrm-text-158')\nPINS = {\n    'calm/hrm_text_158/native_full_stack/bounded_delta_learner.py': '58f3d2fac64e10b4e0852f6f45357c5cbf2940d227ce6c327d77ded2ce1a15fd',\n    'calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py': '624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412',\n    'calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py': 'af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f',\n    'calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py': 'def01789884e9e4903f47baa42395bf86785d47747b3d77d82ef8eb9f5537fe1',\n    'calm/hrm_text_158/native_full_stack/s1d7_band_counter.py': '1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688',\n    'calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py': 'f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794',\n    'calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py': '0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d',\n    'scripts/box_lane_code_currency_preflight.py': 'c0358fca7deb913071d7c6b3925233ed643caa51c94ddd93894c76450113be2e',\n    'scripts/hrm_text_158_bounded_delta_acquisition_probe.py': '0507f4ea26ccfd6c3cb5268b6f046318edaca97dec0d9895fecd7967331f7d54',\n    'scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py': 'c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f',\n    'scripts/hrm_text_158_code_currency_guard.py': '487d26a3607844bdedcc68576f99c1c70a188cd01af60a7d21f72987944a2a70',\n    'scripts/hrm_text_158_r7_resource_lane_acquire.py': 'c69fd07f9416f15bb2fdc0c6d11b4c10d85c145c57d015e929653ac7f25df027',\n    'scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py': '75e9e33f916c7f1880a3aa0cd844f46f95353ac11256f5a95f4d88b2dc94fa4c',\n}\nfor rel, expected in PINS.items():\n    actual = hashlib.sha256((REPO / rel).read_bytes()).hexdigest()\n    if actual != expected:\n        print(f'PIN_MISMATCH {rel}: got {actual} expected {expected}', file=sys.stderr)\n        raise SystemExit(11)\nprint('preflight_pins_ok')\nPY\nRUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1; mkdir -p \"$RUN_ROOT/prelaunch\"; PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --chain-id c4s1_phase3_n32_ca_confirmation_v1 --head-expected c0371f18331059df0f91d793d119a0cf8010ec54 --skip-fetch --include-phase3-obmalloc-surfaces --output \"$RUN_ROOT/prelaunch/box_code_currency_preflight.json\"; python3 -c \"import json;d=json.load(open('$RUN_ROOT/prelaunch/box_code_currency_preflight.json')); assert d['code_currency_pass']; assert d.get('n_files',0)>=10\"; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; PYTHONPATH=. python3 - <<'PY'\nimport json\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    dry_check_callsite_b_prime_b_arm_launch_composition,\n)\nreceipt = dry_check_callsite_b_prime_b_arm_launch_composition()\nprint(json.dumps({'launch_composition_dry_check_ok': receipt.get('ok')}, sort_keys=True))\nif not receipt.get('ok'):\n    raise SystemExit(43)\nPY",
+    "pass_criterion": "exit 0; HEAD==c0371f1; parent sha match; all pinned surfaces hash-match and clean; box code-currency pass; band_counter_only currency dry-check ok"
+  },
+  "probe_stream_log_paths": [
+    "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_a/probe_stream.log",
+    "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log"
+  ],
+  "process_exit_precedence": {
+    "ca_confirmation_exits": {
+      "37": "infra_null / currency fail-closed / guard not proven",
+      "42": "s1d7_band_counter_mark_count != n_states"
+    },
+    "description": "fold-2b CA confirmation fail-closed exits; science read from terminal_branch after infra_ok",
+    "subprocess_pre_measurement": {
+      "enforced_by": "probe_bootstrap.py entry \u2192 maybe_enforce before probe import (band_counter_only)",
+      "exit_code": 37,
+      "order": 1,
+      "rule": "executed-code currency guard MUST fail-close exit 37 BEFORE phase telemetry if freshness cannot be proven",
+      "terminals": [
+        "CODE_CURRENCY_GUARD_NOT_RUN_INCONCLUSIVE",
+        "CODE_CURRENCY_EXECUTED_MISMATCH_INCONCLUSIVE",
+        "CODE_CURRENCY_MISMATCH_INCONCLUSIVE"
+      ]
+    }
+  },
+  "proof": {
+    "artifacts": {
+      "b_host_rss_profile": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/host_rss_profile.jsonl",
+      "b_probe_stream_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log",
+      "ca_confirmation_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "exit_code": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/exit_code.txt",
+      "feasibility_subsample_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/feasibility_subsample_n16/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "lane_release_trap_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/postrun/lane_release_trap.log",
+      "prelaunch_code_currency": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/prelaunch/box_code_currency_preflight.json"
+    },
+    "branch_outcomes": {
+      "CA_DILUTES": "crossing-bearing W/P partition: neither crossing-weighted nor per-state (C+A) share meets ca_share_min \u2014 informative null",
+      "CA_MIXED": "crossing-weighted (C+A) share ok XOR per-state ok \u2014 mixed persistence signal",
+      "CA_PERSISTS": "both crossing-weighted and per-state (C+A) shares meet ca_share_min \u2014 fold-1 precondition ONLY; NOT reduction eligibility",
+      "FEASIBILITY_SUBSAMPLE": "primary n=32 RSS>6.5 GiB or runs.B.subprocess_timeout_expired \u2192 rerun n=16; exit 37/-6 NEVER fallback; terminal_branch via classify_ca_band_counter_confirmation(feasibility_subsample=True)",
+      "INFRA_NULL": "infra_ok false or guard/observer fail-closed \u2014 no science branch",
+      "INSUFFICIENT_CB_STATES": "fewer than 2 crossing-bearing states \u2014 informative null"
+    },
+    "ca_confirmation_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; RUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1; mkdir -p \"$RUN_ROOT/prelaunch\" \"$RUN_ROOT/callsite_band_counter_a\" \"$RUN_ROOT/callsite_band_counter_b\" \"$RUN_ROOT/postrun\"; rm -f \"$RUN_ROOT/run_nonce.txt\" \"$RUN_ROOT/exit_code.txt\"; RUN_NONCE=\"$(git -C /mnt/c/Users/gabes/projects/claw-code-hrm-text-158 rev-parse HEAD)-$(date -u +%Y%m%dT%H%M%SZ)-$$\"; printf '%s\\n' \"$RUN_NONCE\" > \"$RUN_ROOT/run_nonce.txt\"; export PYTHONPATH=.; cleanup_lane_release() { PYTHONPATH=. python3 -c \"from pathlib import Path; from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane; import json; print(json.dumps(release_resource_lane(Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1'))))\" >>\"$RUN_ROOT/postrun/lane_release_trap.log\" 2>&1 || true; }; trap cleanup_lane_release EXIT ERR INT TERM; timeout 3600 python3 - \"$RUN_ROOT\" <<'PY'\nimport json, sys\nfrom pathlib import Path\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    classify_ca_band_counter_confirmation,\n    run_callsite_band_counter_ca_confirmation,\n)\n\nPRIMARY_N = 32\nFALLBACK_N = 16\nRSS_FALLBACK_GIB = 6.5\n\nrun_root = Path(sys.argv[1])\n\n\ndef _apply_feasibility_subsample_terminal(receipt: dict) -> dict:\n    rows = list(receipt.get(\"per_state\") or [])\n    classifier = classify_ca_band_counter_confirmation(\n        rows,\n        feasibility_subsample=True,\n        infra_null=not bool(receipt.get(\"infra_ok\")),\n    )\n    receipt[\"classifier\"] = classifier\n    receipt[\"terminal_branch\"] = classifier.get(\"terminal_branch\")\n    receipt[\"feasibility_subsample_fallback\"] = True\n    return receipt\n\n\nprimary_receipt = run_callsite_band_counter_ca_confirmation(run_root, n_states=PRIMARY_N)\npeak_rss = primary_receipt.get(\"peak_rss_gib\")\nb = primary_receipt.get(\"runs\", {}).get(\"B\", {})\nexit_code = int(b.get(\"exit_code\", 0) or 0)\ntimeout_breach = bool(b.get(\"subprocess_timeout_expired\"))\nrss_breach = peak_rss is not None and float(peak_rss) > RSS_FALLBACK_GIB\nfail_closed_exit = exit_code in (37, -6)\nfallback = (rss_breach or timeout_breach) and not fail_closed_exit\n\nif fallback:\n    fallback_root = run_root / \"feasibility_subsample_n16\"\n    receipt = run_callsite_band_counter_ca_confirmation(\n        fallback_root, n_states=FALLBACK_N\n    )\n    receipt[\"fallback_trigger\"] = {\n        \"exit_code\": exit_code,\n        \"fail_closed_exit\": fail_closed_exit,\n        \"primary_n_states\": PRIMARY_N,\n        \"primary_peak_rss_gib\": peak_rss,\n        \"rss_breach\": rss_breach,\n        \"timeout_breach\": timeout_breach,\n    }\n    receipt = _apply_feasibility_subsample_terminal(receipt)\nelse:\n    receipt = primary_receipt\n\nprint(json.dumps(receipt, indent=2, sort_keys=True))\nbranch = receipt.get(\"terminal_branch\")\nif not receipt.get(\"checks\", {}).get(\"s1d7_band_counter_mark_count_eq_n_states\"):\n    raise SystemExit(42)\nif branch == \"INFRA_NULL\" or not receipt.get(\"infra_ok\"):\n    raise SystemExit(37)\n\nPY",
+    "callsite_currency_dry_check_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; PYTHONPATH=. python3 - <<'PY'\nimport json\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    dry_check_callsite_b_prime_b_arm_launch_composition,\n)\nreceipt = dry_check_callsite_b_prime_b_arm_launch_composition()\nprint(json.dumps(receipt, indent=2, sort_keys=True))\nif not receipt.get('ok'):\n    raise SystemExit(43)\nPY",
+    "description": "fold-2b n=32 (C+A) band-counter confirmation via run_callsite_band_counter_ca_confirmation import heredoc; RSS>6.5 GiB or runs.B.subprocess_timeout_expired triggers n=16 FEASIBILITY_SUBSAMPLE fallback; exit 37/-6 fail-closed",
+    "feasibility_subsample_classification": {
+      "grounding": "run_callsite_band_counter_ca_confirmation accepts n_states; classify_ca_band_counter_confirmation accepts feasibility_subsample=True; runner hardcodes feasibility_subsample=False \u2014 packet wrapper orchestrates pilot RSS/budget gate then applies classifier override on n=16 fallback",
+      "path": "(a) EXECUTABLE-VIA-PACKET",
+      "runner_commit": "c0371f18331059df0f91d793d119a0cf8010ec54"
+    },
+    "interpretation_rule": "Science read from receipt.terminal_branch ONLY (NOT receipt.ok/infra_ok). CA_PERSISTS satisfies fold-1 precondition; grants NO reduction implementation eligibility. FEASIBILITY_SUBSAMPLE only under RSS/timeout resource gate; exit 37/-6 currency/mutual-exclusion failures stay INFRA_NULL. No legacy callsite classifier or reduction-route claims from this packet.",
+    "pass_criteria": {
+      "ca_persists_precondition_only": "CA_PERSISTS satisfies fold-1 precondition; NOT reduction eligibility",
+      "feasibility_subsample_executable": "packet wrapper: primary n=32 \u2192 RSS/timeout gate (NOT exit 37/-6) \u2192 n=16 + classify(feasibility_subsample=True)",
+      "infra_ok_required": "infra_ok==true for launch validity",
+      "mark_count_eq_n_states": "s1d7_band_counter_mark_count==32 (or 16 on fallback)",
+      "science_terminal_branch": "terminal_branch in CA_PERSISTS|CA_MIXED|CA_DILUTES|INSUFFICIENT_CB_STATES|FEASIBILITY_SUBSAMPLE (informative null branches valid; NOT read from receipt.ok)",
+      "tracemalloc_mark_count_zero": "s1d7_tracemalloc_mark_count==0"
+    },
+    "primary_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; RUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1; mkdir -p \"$RUN_ROOT/prelaunch\" \"$RUN_ROOT/callsite_band_counter_a\" \"$RUN_ROOT/callsite_band_counter_b\" \"$RUN_ROOT/postrun\"; rm -f \"$RUN_ROOT/run_nonce.txt\" \"$RUN_ROOT/exit_code.txt\"; RUN_NONCE=\"$(git -C /mnt/c/Users/gabes/projects/claw-code-hrm-text-158 rev-parse HEAD)-$(date -u +%Y%m%dT%H%M%SZ)-$$\"; printf '%s\\n' \"$RUN_NONCE\" > \"$RUN_ROOT/run_nonce.txt\"; export PYTHONPATH=.; cleanup_lane_release() { PYTHONPATH=. python3 -c \"from pathlib import Path; from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane; import json; print(json.dumps(release_resource_lane(Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1'))))\" >>\"$RUN_ROOT/postrun/lane_release_trap.log\" 2>&1 || true; }; trap cleanup_lane_release EXIT ERR INT TERM; timeout 3600 python3 - \"$RUN_ROOT\" <<'PY'\nimport json, sys\nfrom pathlib import Path\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    classify_ca_band_counter_confirmation,\n    run_callsite_band_counter_ca_confirmation,\n)\n\nPRIMARY_N = 32\nFALLBACK_N = 16\nRSS_FALLBACK_GIB = 6.5\n\nrun_root = Path(sys.argv[1])\n\n\ndef _apply_feasibility_subsample_terminal(receipt: dict) -> dict:\n    rows = list(receipt.get(\"per_state\") or [])\n    classifier = classify_ca_band_counter_confirmation(\n        rows,\n        feasibility_subsample=True,\n        infra_null=not bool(receipt.get(\"infra_ok\")),\n    )\n    receipt[\"classifier\"] = classifier\n    receipt[\"terminal_branch\"] = classifier.get(\"terminal_branch\")\n    receipt[\"feasibility_subsample_fallback\"] = True\n    return receipt\n\n\nprimary_receipt = run_callsite_band_counter_ca_confirmation(run_root, n_states=PRIMARY_N)\npeak_rss = primary_receipt.get(\"peak_rss_gib\")\nb = primary_receipt.get(\"runs\", {}).get(\"B\", {})\nexit_code = int(b.get(\"exit_code\", 0) or 0)\ntimeout_breach = bool(b.get(\"subprocess_timeout_expired\"))\nrss_breach = peak_rss is not None and float(peak_rss) > RSS_FALLBACK_GIB\nfail_closed_exit = exit_code in (37, -6)\nfallback = (rss_breach or timeout_breach) and not fail_closed_exit\n\nif fallback:\n    fallback_root = run_root / \"feasibility_subsample_n16\"\n    receipt = run_callsite_band_counter_ca_confirmation(\n        fallback_root, n_states=FALLBACK_N\n    )\n    receipt[\"fallback_trigger\"] = {\n        \"exit_code\": exit_code,\n        \"fail_closed_exit\": fail_closed_exit,\n        \"primary_n_states\": PRIMARY_N,\n        \"primary_peak_rss_gib\": peak_rss,\n        \"rss_breach\": rss_breach,\n        \"timeout_breach\": timeout_breach,\n    }\n    receipt = _apply_feasibility_subsample_terminal(receipt)\nelse:\n    receipt = primary_receipt\n\nprint(json.dumps(receipt, indent=2, sort_keys=True))\nbranch = receipt.get(\"terminal_branch\")\nif not receipt.get(\"checks\", {}).get(\"s1d7_band_counter_mark_count_eq_n_states\"):\n    raise SystemExit(42)\nif branch == \"INFRA_NULL\" or not receipt.get(\"infra_ok\"):\n    raise SystemExit(37)\n\nPY"
+  },
+  "provenance": {
+    "fold1_commit": "d981582",
+    "fold2_design_dual_accept": [
+      "1783186596758",
+      "1783186683459"
+    ],
+    "fold2a_source_commit": "c0371f18331059df0f91d793d119a0cf8010ec54",
+    "gabe_standing_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs",
+    "upstream_task_id": "1782633464140-b85ec12a",
+    "upstream_task_id_note": "Arc #2b historical upstream; active task_id is top-level"
+  },
+  "replay_commands_artifact": "artifacts/consensus_prep/c4s1_n32_ca_confirmation_launch_packet_v1_replay_commands.json",
+  "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "resource_lane_release_trap": {
+    "description": "Run self-acquires/releases gpu:hrm-text-158; shell trap on EXIT/ERR/INT/TERM",
+    "log_artifact": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1/postrun/lane_release_trap.log"
+  },
+  "run_id": "C4S1_PHASE3_N32_CA_CONFIRMATION_V1",
+  "run_root_template": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/{run_id}",
+  "schema_version": "hrm_text_158_c4s1_n32_ca_confirmation_launch_packet/v1",
+  "supersedes_packet_sha256": "bc249a77c02a4d67bb4dc928aac1d33bead2021af393f6726b1ce595221cb467",
+  "task_id": "1783074444338-d3ef40af"
+}

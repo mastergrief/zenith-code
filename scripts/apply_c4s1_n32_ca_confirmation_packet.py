@@ -1,0 +1,1168 @@
+#!/usr/bin/env python3
+"""Apply fold-2b n=32 (C+A) band-counter confirmation packet (forked from rev14 family)."""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import re
+import subprocess
+from pathlib import Path
+from typing import Any
+
+REPO = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158")
+REV14_DRAFT = (
+    REPO / "artifacts/consensus_prep/c4s1_phase3_gpu_callsite_acceptance_launch_packet_v1_draft.json"
+)
+REV14_REPLAY = (
+    REPO
+    / "artifacts/consensus_prep/c4s1_phase3_gpu_callsite_acceptance_launch_packet_v1_replay_commands.json"
+)
+DRAFT = REPO / "artifacts/consensus_prep/c4s1_n32_ca_confirmation_launch_packet_v1_draft.json"
+REPLAY = REPO / "artifacts/consensus_prep/c4s1_n32_ca_confirmation_launch_packet_v1_replay_commands.json"
+HEAD = "c0371f18331059df0f91d793d119a0cf8010ec54"
+ACTIVE_TASK_ID = "1783074444338-d3ef40af"
+UPSTREAM_TASK_ID = "1782633464140-b85ec12a"
+RUN_ROOT = "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1"
+RUN_ID = "C4S1_PHASE3_N32_CA_CONFIRMATION_V1"
+N_STATES = 32
+PACKET_REVISION = "v1_n32_ca_confirmation_c0371f1"
+FOLD1_SPEC = (
+    "artifacts/measurement_closeout/c4s1d7_rev14_reduced_n4_null_and_ca_design_spec.md"
+)
+RSS_FALLBACK_GIB = 6.5
+
+PINS: dict[str, str] = {
+    "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
+        "75e9e33f916c7f1880a3aa0cd844f46f95353ac11256f5a95f4d88b2dc94fa4c"
+    ),
+    "scripts/hrm_text_158_code_currency_guard.py": (
+        "487d26a3607844bdedcc68576f99c1c70a188cd01af60a7d21f72987944a2a70"
+    ),
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": (
+        "0507f4ea26ccfd6c3cb5268b6f046318edaca97dec0d9895fecd7967331f7d54"
+    ),
+    "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py": (
+        "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f"
+    ),
+    "scripts/box_lane_code_currency_preflight.py": (
+        "c0358fca7deb913071d7c6b3925233ed643caa51c94ddd93894c76450113be2e"
+    ),
+    "scripts/hrm_text_158_r7_resource_lane_acquire.py": (
+        "c69fd07f9416f15bb2fdc0c6d11b4c10d85c145c57d015e929653ac7f25df027"
+    ),
+    "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": (
+        "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412"
+    ),
+    "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": (
+        "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f"
+    ),
+    "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py": (
+        "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
+    ),
+    "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py": (
+        "def01789884e9e4903f47baa42395bf86785d47747b3d77d82ef8eb9f5537fe1"
+    ),
+    "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py": (
+        "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688"
+    ),
+    "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py": (
+        "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794"
+    ),
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": (
+        "58f3d2fac64e10b4e0852f6f45357c5cbf2940d227ce6c327d77ded2ce1a15fd"
+    ),
+}
+
+# Every code_pins field (except git_head) maps to a launch-executed repo path.
+# test_slice5 is intentionally omitted — not imported/executed by the GPU run.
+CODE_PIN_FIELD_TO_REL: dict[str, str] = {
+    "bounded_delta_learner_sha256": (
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py"
+    ),
+    "event_coded_acc_live_carrier_sha256": (
+        "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py"
+    ),
+    "event_coded_vote_update_adapter_sha256": (
+        "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py"
+    ),
+    "sparse_cap_gpu_seam_adapter_sha256": (
+        "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py"
+    ),
+    "host_tracemalloc_probe_sha256": (
+        "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py"
+    ),
+    "s1d7_band_counter_sha256": "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py",
+    "s1d7_tracemalloc_feasibility_sha256": (
+        "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py"
+    ),
+    "hrm_text_158_bounded_delta_acquisition_probe_sha256": (
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"
+    ),
+    "bounded_delta_acquisition_probe_sha256": (
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py"
+    ),
+    "hrm_text_158_slice5_v6i_oom_profile_attribution_sha256": (
+        "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py"
+    ),
+    "hrm_text_158_code_currency_guard_sha256": (
+        "scripts/hrm_text_158_code_currency_guard.py"
+    ),
+    "probe_bootstrap_sha256": (
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py"
+    ),
+    "r7_resource_lane_acquire_sha256": (
+        "scripts/hrm_text_158_r7_resource_lane_acquire.py"
+    ),
+    "box_lane_code_currency_preflight_sha256": (
+        "scripts/box_lane_code_currency_preflight.py"
+    ),
+}
+
+RSS_FALLBACK_GIB = 6.5
+FALLBACK_N_STATES = 16
+OLD_CALLSITE_RUN_ID = "C4S1_PHASE3_GPU_CALLSITE_V1"
+FAIL_CLOSED_B_ARM_EXIT_CODES = frozenset({37, -6})
+
+
+def evaluate_feasibility_subsample_fallback_trigger(
+    primary_receipt: dict[str, Any],
+) -> dict[str, Any]:
+    """Packet-only trigger: resource evidence (timeout/RSS), never exit 37/-6 fail-closed."""
+    peak_rss = primary_receipt.get("peak_rss_gib")
+    b = primary_receipt.get("runs", {}).get("B", {})
+    exit_code = int(b.get("exit_code", 0) or 0)
+    timeout_breach = bool(b.get("subprocess_timeout_expired"))
+    rss_breach = peak_rss is not None and float(peak_rss) > RSS_FALLBACK_GIB
+    fail_closed_exit = exit_code in FAIL_CLOSED_B_ARM_EXIT_CODES
+    fallback = (rss_breach or timeout_breach) and not fail_closed_exit
+    return {
+        "exit_code": exit_code,
+        "fail_closed_exit": fail_closed_exit,
+        "fallback": fallback,
+        "rss_breach": rss_breach,
+        "timeout_breach": timeout_breach,
+    }
+
+
+CA_CONFIRMATION_HEREDOC = r"""import json, sys
+from pathlib import Path
+from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+    classify_ca_band_counter_confirmation,
+    run_callsite_band_counter_ca_confirmation,
+)
+
+PRIMARY_N = 32
+FALLBACK_N = 16
+RSS_FALLBACK_GIB = 6.5
+
+run_root = Path(sys.argv[1])
+
+
+def _apply_feasibility_subsample_terminal(receipt: dict) -> dict:
+    rows = list(receipt.get("per_state") or [])
+    classifier = classify_ca_band_counter_confirmation(
+        rows,
+        feasibility_subsample=True,
+        infra_null=not bool(receipt.get("infra_ok")),
+    )
+    receipt["classifier"] = classifier
+    receipt["terminal_branch"] = classifier.get("terminal_branch")
+    receipt["feasibility_subsample_fallback"] = True
+    return receipt
+
+
+primary_receipt = run_callsite_band_counter_ca_confirmation(run_root, n_states=PRIMARY_N)
+peak_rss = primary_receipt.get("peak_rss_gib")
+b = primary_receipt.get("runs", {}).get("B", {})
+exit_code = int(b.get("exit_code", 0) or 0)
+timeout_breach = bool(b.get("subprocess_timeout_expired"))
+rss_breach = peak_rss is not None and float(peak_rss) > RSS_FALLBACK_GIB
+fail_closed_exit = exit_code in (37, -6)
+fallback = (rss_breach or timeout_breach) and not fail_closed_exit
+
+if fallback:
+    fallback_root = run_root / "feasibility_subsample_n16"
+    receipt = run_callsite_band_counter_ca_confirmation(
+        fallback_root, n_states=FALLBACK_N
+    )
+    receipt["fallback_trigger"] = {
+        "exit_code": exit_code,
+        "fail_closed_exit": fail_closed_exit,
+        "primary_n_states": PRIMARY_N,
+        "primary_peak_rss_gib": peak_rss,
+        "rss_breach": rss_breach,
+        "timeout_breach": timeout_breach,
+    }
+    receipt = _apply_feasibility_subsample_terminal(receipt)
+else:
+    receipt = primary_receipt
+
+print(json.dumps(receipt, indent=2, sort_keys=True))
+branch = receipt.get("terminal_branch")
+if not receipt.get("checks", {}).get("s1d7_band_counter_mark_count_eq_n_states"):
+    raise SystemExit(42)
+if branch == "INFRA_NULL" or not receipt.get("infra_ok"):
+    raise SystemExit(37)
+"""
+
+SCIENCE_BRANCHES = (
+    "CA_PERSISTS",
+    "CA_MIXED",
+    "CA_DILUTES",
+    "INSUFFICIENT_CB_STATES",
+    "INFRA_NULL",
+    "FEASIBILITY_SUBSAMPLE",
+)
+
+CONFIRMATION_GATES = [
+    "observer_guard_clear",
+    "tracemalloc_perturbed_false",
+    "s1d7_band_counter_mark_count_eq_n_states",
+    "tracemalloc_mark_count_eq_0",
+    "b_profile_mark_count_gt_0",
+    "no_profile_env_mutual_exclusion_abort",
+    "no_tracemalloc_perturbed_inconclusive",
+    "infra_not_null",
+]
+
+
+def sha256_git_blob(commit: str, rel: str) -> str:
+    data = subprocess.check_output(["git", "-C", str(REPO), "show", f"{commit}:{rel}"])
+    return hashlib.sha256(data).hexdigest()
+
+
+def ca_confirmation_command() -> str:
+    return (
+        f"set -euo pipefail; cd {REPO}; RUN_ROOT={RUN_ROOT}; "
+        f'mkdir -p "$RUN_ROOT/prelaunch" "$RUN_ROOT/callsite_band_counter_a" '
+        f'"$RUN_ROOT/callsite_band_counter_b" "$RUN_ROOT/postrun"; '
+        f'rm -f "$RUN_ROOT/run_nonce.txt" "$RUN_ROOT/exit_code.txt"; '
+        f'RUN_NONCE="$(git -C {REPO} rev-parse HEAD)-$(date -u +%Y%m%dT%H%M%SZ)-$$"; '
+        f'printf \'%s\\n\' "$RUN_NONCE" > "$RUN_ROOT/run_nonce.txt"; '
+        f"export PYTHONPATH=.; "
+        f'cleanup_lane_release() {{ PYTHONPATH=. python3 -c "from pathlib import Path; '
+        f"from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane; "
+        f'import json; print(json.dumps(release_resource_lane(Path(\'{RUN_ROOT}\'))))" '
+        f'>>"$RUN_ROOT/postrun/lane_release_trap.log" 2>&1 || true; }}; '
+        f"trap cleanup_lane_release EXIT ERR INT TERM; "
+        f"timeout 3600 python3 - \"$RUN_ROOT\" <<'PY'\n"
+        f"{CA_CONFIRMATION_HEREDOC}\n"
+        "PY"
+    )
+
+
+def build_preflight_command() -> str:
+    pin_lines = []
+    for rel, expected in sorted(PINS.items()):
+        pin_lines.append(f"    '{rel}': '{expected}',")
+    pins_block = "\n".join(pin_lines)
+    return (
+        "set -euo pipefail; "
+        f"cd {REPO}; "
+        f"HEAD=$(git rev-parse HEAD); test \"$HEAD\" = '{HEAD}'; "
+        f"PARENT={REPO}/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt; "
+        "PARENT_SHA=$(sha256sum \"$PARENT\" | awk '{print $1}'); "
+        "test -f \"$PARENT\"; "
+        "test \"$PARENT_SHA\" = '9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'; "
+        "PYTHONPATH=. python3 - <<'PY'\n"
+        "import hashlib, subprocess, sys\n"
+        "from pathlib import Path\n"
+        f"REPO = Path('{REPO}')\n"
+        "PINS = {\n"
+        f"{pins_block}\n"
+        "}\n"
+        "for rel, expected in PINS.items():\n"
+        "    actual = hashlib.sha256((REPO / rel).read_bytes()).hexdigest()\n"
+        "    if actual != expected:\n"
+        "        print(f'PIN_MISMATCH {rel}: got {actual} expected {expected}', file=sys.stderr)\n"
+        "        raise SystemExit(11)\n"
+        "print('preflight_pins_ok')\n"
+        "PY\n"
+        f"RUN_ROOT={RUN_ROOT}; mkdir -p \"$RUN_ROOT/prelaunch\"; "
+        f"PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --chain-id {RUN_ID.lower()} "
+        f"--head-expected {HEAD} --skip-fetch --include-phase3-obmalloc-surfaces "
+        f'--output "$RUN_ROOT/prelaunch/box_code_currency_preflight.json"; '
+        'python3 -c "import json;d=json.load(open(\'$RUN_ROOT/prelaunch/box_code_currency_preflight.json\')); '
+        "assert d['code_currency_pass']; assert d.get('n_files',0)>=10\"; "
+        f"cd {REPO}; PYTHONPATH=. python3 - <<'PY'\n"
+        "import json\n"
+        "from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n"
+        "    dry_check_callsite_b_prime_b_arm_launch_composition,\n"
+        ")\n"
+        "receipt = dry_check_callsite_b_prime_b_arm_launch_composition()\n"
+        "print(json.dumps({'launch_composition_dry_check_ok': receipt.get('ok')}, sort_keys=True))\n"
+        "if not receipt.get('ok'):\n"
+        "    raise SystemExit(43)\n"
+        "PY"
+    )
+
+
+def verify_code_pins_against_commit(draft: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    head = str(draft.get("git_head_required", HEAD))
+    code_pins = draft.get("code_pins", {})
+    if code_pins.get("git_head") != head:
+        failures.append("code_pins:git_head_mismatch")
+    for field, rel in CODE_PIN_FIELD_TO_REL.items():
+        if field not in code_pins:
+            failures.append(f"code_pins:missing:{field}")
+            continue
+        pinned = str(code_pins[field])
+        actual = sha256_git_blob(head, rel)
+        if pinned != actual:
+            failures.append(f"code_pins:mismatch:{field}")
+    for key in code_pins:
+        if key in {"git_head", "code_pins_note"}:
+            continue
+        if key not in CODE_PIN_FIELD_TO_REL:
+            failures.append(f"code_pins:unmapped:{key}")
+    if "test_slice5_v6i_oom_profile_attribution_sha256" in code_pins:
+        failures.append("code_pins:stale_test_pin_present")
+    return failures
+
+
+def dry_check_launch_composition_command() -> str:
+    return (
+        f"set -euo pipefail; cd {REPO}; PYTHONPATH=. python3 - <<'PY'\n"
+        "import json\n"
+        "from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n"
+        "    dry_check_callsite_b_prime_b_arm_launch_composition,\n"
+        ")\n"
+        "receipt = dry_check_callsite_b_prime_b_arm_launch_composition()\n"
+        "print(json.dumps(receipt, indent=2, sort_keys=True))\n"
+        "if not receipt.get('ok'):\n"
+        "    raise SystemExit(43)\n"
+        "PY"
+    )
+
+
+def build_band_counter_b_arm_env_toggles() -> dict[str, str]:
+    return {
+        "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+        "HRM_TEXT_158_PROFILE_HOST_RSS": "1",
+        "HRM_TEXT_158_PROFILE_TRACEMALLOC": "0",
+        "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY": "1",
+        "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS": "0",
+        "HRM_TEXT_158_PROFILE_OBMALLOC_SITE_BRACKETS": "0",
+        "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED": "0",
+        "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+        "HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP": "1",
+        "HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY": "1",
+    }
+
+
+def build_code_pins() -> dict[str, str]:
+    pins = {"git_head": HEAD}
+    for field, rel in CODE_PIN_FIELD_TO_REL.items():
+        pins[field] = PINS[rel]
+    return pins
+
+
+def _update_pin_blocks(draft: dict[str, Any]) -> None:
+    for rel, pin in PINS.items():
+        key = rel.split("/")[-1].replace(".py", "")
+        if key == "hrm_text_158_slice5_v6i_oom_profile_attribution":
+            key = "attribution_script"
+        elif key == "hrm_text_158_bounded_delta_acquisition_probe":
+            key = "bounded_delta_acquisition_probe"
+        elif key == "hrm_text_158_bounded_delta_acquisition_probe_bootstrap":
+            key = "probe_bootstrap"
+        elif key == "hrm_text_158_code_currency_guard":
+            key = "code_currency_guard"
+        elif key == "hrm_text_158_r7_resource_lane_acquire":
+            key = "r7_resource_lane_acquire"
+        elif key == "event_coded_acc_live_carrier":
+            key = "event_coded_acc_live_carrier"
+        elif key == "event_coded_vote_update_adapter":
+            key = "event_coded_vote_update_adapter"
+        elif key == "sparse_cap_gpu_seam_adapter":
+            key = "sparse_cap_gpu_seam_adapter"
+        elif key == "host_tracemalloc_probe":
+            key = "host_tracemalloc_probe"
+        elif key == "s1d7_band_counter":
+            key = "s1d7_band_counter"
+        elif key == "s1d7_tracemalloc_feasibility":
+            key = "s1d7_tracemalloc_feasibility"
+        elif key == "bounded_delta_learner":
+            key = "bounded_delta_learner"
+        elif key == "box_lane_code_currency_preflight":
+            key = "box_lane_code_currency_preflight"
+        if "box_preflight_role_pins" in draft and key in draft["box_preflight_role_pins"]:
+            draft["box_preflight_role_pins"][key]["sha256"] = pin
+            draft["box_preflight_role_pins"][key]["rel_path"] = rel
+    draft["code_pins"] = build_code_pins()
+    draft["code_pins_note"] = (
+        "test_slice5_v6i_oom_profile_attribution_sha256 intentionally omitted — "
+        "not imported/executed by the launch run"
+    )
+
+
+def build_execution_order() -> list[str]:
+    return [
+        "dispatch_run_claim",
+        "preflight",
+        "parent_checkpoint_rehash_before",
+        "resource_lane_acquire",
+        "install_lane_release_trap",
+        "ca_confirmation_primary_or_fallback",
+        "parent_checkpoint_rehash_after",
+        "resource_lane_release",
+    ]
+
+
+def build_phase_budgets_and_watcher() -> dict[str, Any]:
+    return {
+        "convention": (
+            "fold-2b confirmation budgets: max_silent(900) < phase(1800) < total(3600); "
+            "milestone budgets report-only"
+        ),
+        "heartbeat_interval_seconds": 30,
+        "heartbeat_supplementary_only": True,
+        "interrupt_authority": {
+            "first_milestone_budgets_report_only": True,
+            "interrupt_authority": "faulthandler_silent_phase_guard",
+            "interrupt_timeout_seconds": 900.0,
+            "milestone_budget_breach_triggers_interrupt": False,
+            "schema": "hrm_text_158_phase_budget_interrupt_authority/v1",
+        },
+        "liveness_contract": {
+            "coherence": "max_silent(900) < phase(1800) < total(3600)",
+            "max_silent_phase_seconds": 900,
+            "per_arm_subprocess_timeout_seconds": 1800,
+            "phase_heartbeat_seconds": 30,
+            "phase_timeout_seconds": 1800,
+            "total_timeout_seconds": 3600,
+            "watcher_stall_seconds": 900,
+        },
+        "max_silent_phase_seconds": 900,
+        "phase_timeout_seconds": 1800,
+        "stop_conditions": [
+            "executed guard receipt missing or guard_ran_before_pinned_imports false",
+            "ca_confirmation subprocess exit 37 (infra_null / currency fail-closed)",
+            "ca_confirmation subprocess exit 42 (mark_count != n_states)",
+            "no phase_heartbeat within watcher_stall_seconds(900)",
+            "parent checkpoint sha256 mismatch pre/post",
+            "peak_rss_gib > 6.5 on primary n=32 triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
+            "primary runs.B.subprocess_timeout_expired triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
+            "primary exit_code 37/-6 MUST NOT trigger fallback (fail-closed INFRA_NULL)",
+        ],
+        "total_timeout_seconds": 3600,
+        "watcher_liveness_fail_regex": (
+            "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|"
+            "LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL"
+        ),
+    }
+
+
+def build_code_pin_coverage() -> dict[str, Any]:
+    executed_surfaces = sorted(PINS.keys())
+    return {
+        "box_preflight": {
+            "note": "box attests file bytes on disk; executed guard attests imported bytecode",
+            "surfaces": [
+                "DEFAULT_FLOOR_PINNED_FILES + PHASE3_OBMALLOC_SURFACE_PINNED_FILES (10 roles)"
+            ],
+            "via": "box_lane_code_currency_preflight.py --include-phase3-obmalloc-surfaces",
+        },
+        "executed_code_guard": {
+            "surfaces": executed_surfaces,
+            "via": (
+                "PHASE3B_PINNED_SOURCE_FILES + bootstrap executed guard "
+                "(test_slice5 intentionally omitted — not launch-executed)"
+            ),
+        },
+    }
+
+
+def build_ca_branch_outcomes() -> dict[str, str]:
+    return {
+        "CA_DILUTES": (
+            "crossing-bearing W/P partition: neither crossing-weighted nor per-state "
+            "(C+A) share meets ca_share_min — informative null"
+        ),
+        "CA_MIXED": (
+            "crossing-weighted (C+A) share ok XOR per-state ok — mixed persistence signal"
+        ),
+        "CA_PERSISTS": (
+            "both crossing-weighted and per-state (C+A) shares meet ca_share_min — "
+            "fold-1 precondition ONLY; NOT reduction eligibility"
+        ),
+        "FEASIBILITY_SUBSAMPLE": (
+            f"primary n=32 RSS>{RSS_FALLBACK_GIB} GiB or runs.B.subprocess_timeout_expired "
+            f"→ rerun n={FALLBACK_N_STATES}; exit 37/-6 NEVER fallback; "
+            "terminal_branch via classify_ca_band_counter_confirmation(feasibility_subsample=True)"
+        ),
+        "INFRA_NULL": (
+            "infra_ok false or guard/observer fail-closed — no science branch"
+        ),
+        "INSUFFICIENT_CB_STATES": (
+            "fewer than 2 crossing-bearing states — informative null"
+        ),
+    }
+
+
+def build_proof_artifacts() -> dict[str, str]:
+    confirmation_root = (
+        f"{RUN_ROOT}/prelaunch/callsite_band_counter_ca_confirmation"
+    )
+    return {
+        "ca_confirmation_receipt": (
+            f"{confirmation_root}/callsite_band_counter_ca_confirmation_receipt.json"
+        ),
+        "b_host_rss_profile": f"{confirmation_root}/callsite_band_counter_b/host_rss_profile.jsonl",
+        "b_probe_stream_log": f"{confirmation_root}/callsite_band_counter_b/probe_stream.log",
+        "exit_code": f"{RUN_ROOT}/exit_code.txt",
+        "lane_release_trap_log": f"{RUN_ROOT}/postrun/lane_release_trap.log",
+        "prelaunch_code_currency": f"{RUN_ROOT}/prelaunch/box_code_currency_preflight.json",
+        "feasibility_subsample_receipt": (
+            f"{RUN_ROOT}/feasibility_subsample_n16/prelaunch/"
+            "callsite_band_counter_ca_confirmation/"
+            "callsite_band_counter_ca_confirmation_receipt.json"
+        ),
+    }
+
+
+def build_consumption_matrix() -> dict[str, Any]:
+    return {
+        "A_freshness_guard": {
+            "bootstrap_launch": (
+                "python3 -B probe_bootstrap.py entry; band_counter_only env; "
+                "guard runs before pinned imports"
+            ),
+            "box_preflight": (
+                "box_lane_code_currency_preflight.py --include-phase3-obmalloc-surfaces"
+            ),
+            "guard_entry": (
+                "bootstrap.main → run_phase3b_probe_executed_code_currency_guard BEFORE "
+                "bounded_delta_acquisition_probe import (band_counter_only)"
+            ),
+            "pycache_invalidation": (
+                "prepare_phase3b_band_counter_only_launch_env + guard-internal invalidation"
+            ),
+        },
+        "B_confirmation_receipt": {
+            "builder": "run_callsite_band_counter_ca_confirmation + classify_ca_band_counter_confirmation",
+            "science_gate": "terminal_branch (NOT receipt.ok / infra_ok)",
+            "fallback": (
+                f"RSS>{RSS_FALLBACK_GIB} GiB or runs.B.subprocess_timeout_expired on n=32 "
+                f"→ n={FALLBACK_N_STATES} with feasibility_subsample=True; "
+                "exit 37/-6 fail-closed (no fallback)"
+            ),
+        },
+    }
+
+
+def build_monitor_section() -> dict[str, Any]:
+    confirmation_root = (
+        f"{RUN_ROOT}/prelaunch/callsite_band_counter_ca_confirmation"
+    )
+    return {
+        "primary_tail_log": f"{confirmation_root}/callsite_band_counter_b/probe_stream.log",
+        "probe_stream_log_paths": [
+            f"{confirmation_root}/callsite_band_counter_a/probe_stream.log",
+            f"{confirmation_root}/callsite_band_counter_b/probe_stream.log",
+        ],
+        "run_root": RUN_ROOT,
+        "scratch_root": f"{confirmation_root}/callsite_band_counter_b",
+    }
+
+
+STALE_RENDER_PATTERNS: tuple[tuple[str, str], ...] = (
+    (OLD_CALLSITE_RUN_ID, "stale_old_run_root"),
+    ("callsite_band_counter_scale_smoke", "stale_scale_smoke_flow"),
+    ("fixture_callsite_b_prime_gpu_run", "stale_b_prime_fixture_flow"),
+    ("classifier_extract_command", "stale_classifier_extract"),
+    ("executed_guard_receipt_audit_command", "stale_guard_audit_command"),
+    ("terminal_currency_check_command", "stale_terminal_currency_check"),
+    ("postrun_receipt_aggregate_command", "stale_postrun_aggregate"),
+    ("S1D7_CALL_SITE_CANDIDATE", "stale_candidate_c_branch"),
+    ("S1D3_INT32_LANES_CONFIRMED", "stale_s1d3_branch"),
+    ("S1F1_CONFIRMED", "stale_s1f1_branch"),
+    ("RL-S1d", "stale_reduction_route_s1d"),
+    ("RL-S1f", "stale_reduction_route_s1f"),
+    ("test_slice5_v6i_oom_profile_attribution_v1.py", "stale_test_in_coverage"),
+    ("9977166", "stale_rev14_head"),
+    ('"phase_timeout_seconds": 2280', "stale_rev14_phase_budget"),
+    ('"total_timeout_seconds": 5400', "stale_rev14_total_budget"),
+    ('"max_silent_phase_seconds": 600', "stale_rev14_max_silent"),
+    ('"interrupt_timeout_seconds": 600.0', "stale_rev14_interrupt"),
+)
+
+
+def build_process_exit_precedence() -> dict[str, Any]:
+    return {
+        "ca_confirmation_exits": {
+            "37": "infra_null / currency fail-closed / guard not proven",
+            "42": "s1d7_band_counter_mark_count != n_states",
+        },
+        "description": (
+            "fold-2b CA confirmation fail-closed exits; science read from terminal_branch "
+            "after infra_ok"
+        ),
+        "subprocess_pre_measurement": {
+            "enforced_by": (
+                "probe_bootstrap.py entry → maybe_enforce before probe import (band_counter_only)"
+            ),
+            "exit_code": 37,
+            "order": 1,
+            "rule": (
+                "executed-code currency guard MUST fail-close exit 37 BEFORE phase telemetry "
+                "if freshness cannot be proven"
+            ),
+            "terminals": [
+                "CODE_CURRENCY_GUARD_NOT_RUN_INCONCLUSIVE",
+                "CODE_CURRENCY_EXECUTED_MISMATCH_INCONCLUSIVE",
+                "CODE_CURRENCY_MISMATCH_INCONCLUSIVE",
+            ],
+        },
+    }
+
+
+def build_forbidden() -> list[str]:
+    return [
+        "mutate banked .pt checkpoint",
+        "pass --mirror-durable-attribution at launch",
+        "v6i-unpark",
+        "claim reduction implementation eligibility from this confirmation run",
+        "stage/commit/push from test-operator",
+        f"edit code beyond {HEAD[:7]} pins",
+        "launch conflated profiler envs (TRACEMALLOC=1 on band-counter-only subprocess)",
+        "set DEBUGMALLOCSTATS and TRACEMALLOC on same subprocess",
+        "treat FEASIBILITY_SUBSAMPLE as reduction eligibility",
+        "legacy callsite classifier or candidate-band routing from this packet",
+    ]
+
+
+def scrub_stale_rev14_fields(draft: dict[str, Any]) -> None:
+    for key in (
+        "postrun_receipt_aggregate_command",
+        "launch_robustness_at_18505c4",
+        "perturbation_rules",
+        "consumption_assertions",
+        "probe_argv_b_arm",
+        "dispatch_msg_id",
+        "dispatch_msg_id_authority",
+        "dispatch_msg_id_launch_substitution",
+    ):
+        draft.pop(key, None)
+
+
+def verify_whole_render_sweep(draft: dict[str, Any], replay: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    blob = json.dumps({"draft": draft, "replay": replay}, sort_keys=True)
+    for pattern, label in STALE_RENDER_PATTERNS:
+        if pattern in blob:
+            failures.append(f"whole_render:{label}")
+    coverage = draft.get("code_pin_coverage", {}).get("executed_code_guard", {}).get(
+        "surfaces", []
+    )
+    if "calm/llm_computer/tests/test_slice5_v6i_oom_profile_attribution_v1.py" in coverage:
+        failures.append("whole_render:test_in_executed_code_guard_surfaces")
+    if draft.get("execution_order") != build_execution_order():
+        failures.append("whole_render:execution_order_mismatch")
+    pbw = draft.get("phase_budgets_and_watcher", {})
+    if pbw.get("total_timeout_seconds") != 3600:
+        failures.append("whole_render:phase_budget_total_not_3600")
+    if pbw.get("phase_timeout_seconds") != 1800:
+        failures.append("whole_render:phase_budget_phase_not_1800")
+    liveness = pbw.get("liveness_contract", {})
+    if liveness.get("max_silent_phase_seconds") != 900:
+        failures.append("whole_render:liveness_max_silent_not_900")
+    outcomes = draft.get("proof", {}).get("branch_outcomes", {})
+    for stale_key in (
+        "S1D7_CALL_SITE_CANDIDATE_A_CROSSING_INDICES",
+        "S1D3_INT32_LANES_CONFIRMED",
+        "S1F1_CONFIRMED",
+    ):
+        if stale_key in outcomes:
+            failures.append(f"whole_render:stale_branch_outcome:{stale_key}")
+    for required in SCIENCE_BRANCHES:
+        if required not in outcomes:
+            failures.append(f"whole_render:missing_branch_outcome:{required}")
+    if "classifier_extract_command" in draft.get("proof", {}):
+        failures.append("whole_render:proof_still_has_classifier_extract")
+    return failures
+
+
+def build_draft() -> dict[str, Any]:
+    draft = copy.deepcopy(json.loads(REV14_DRAFT.read_text(encoding="utf-8")))
+    draft["packet_revision"] = PACKET_REVISION
+    draft["git_head_required"] = HEAD
+    draft["schema_version"] = "hrm_text_158_c4s1_n32_ca_confirmation_launch_packet/v1"
+    draft["run_id"] = RUN_ID
+    draft["task_id"] = ACTIVE_TASK_ID
+    draft["replay_commands_artifact"] = str(REPLAY.relative_to(REPO)).replace("\\", "/")
+    draft["run_root_template"] = "/home/gabe/hrm158_c4s1_phase3_gpu_gate/{run_id}"
+    draft["design_binding"] = {
+        "fold1_spec_sha256": hashlib.sha256((REPO / FOLD1_SPEC).read_bytes()).hexdigest(),
+        "fold2_design_msg_id": "1783186409528",
+        "fold2a_source_commit": HEAD,
+        "chosen_option": "n32_ca_band_counter_confirmation_precondition",
+    }
+    draft["acceptance_gate_order"] = [
+        "CURRENCY_OK (executed guard + box preflight)",
+        "INFRA_OK (mark_count==32, observer clear, tracemalloc_mark_count==0)",
+        "SCIENCE_BRANCH (terminal_branch classifier — NOT receipt.ok)",
+        "CA_PERSISTS satisfies precondition ONLY — NOT reduction eligibility",
+    ]
+    draft["decision_contract"] = {
+        "chosen_path": (
+            f"run_callsite_band_counter_ca_confirmation @ {HEAD[:7]} "
+            "n_states=32 via import heredoc; band_counter_only bootstrap/-B guard-ordering"
+        ),
+        "forbidden": [
+            "direct probe.py launch without bootstrap for band_counter_only B-arm",
+            "TRACEMALLOC=1 on band_counter_only confirmation subprocess",
+            "reading receipt.ok or infra_ok as CA_PERSISTS science verdict",
+            "treating CA_PERSISTS as reduction implementation eligibility",
+            "candidate-C single-band resolution claim from this run",
+        ],
+        "forbidden_at_launch": [
+            "launch without box code-currency preflight",
+            "launch with claude pre-holding gpu:hrm-text-158 lane (run self-acquires)",
+            "direct probe.py launch without bootstrap for band_counter_only B-arm",
+            "TRACEMALLOC=1 band_counter_only subprocess",
+        ],
+    }
+    draft["bounded_steps_budget"] = {
+        "fixture_a_arm_subprocess_timeout_seconds": 900,
+        "fixture_b_arm_subprocess_timeout_seconds": 1800,
+        "liveness_coherence": "max_silent(900) < phase(1800) < total(3600)",
+        "max_silent_phase_seconds": 900,
+        "max_steps_hard": 1,
+        "phase_heartbeat_seconds": 30,
+        "phase_timeout_seconds": 1800,
+        "total_timeout_seconds": 3600,
+    }
+    draft["child_emission_contract"] = {
+        "env_toggles_b_arm": build_band_counter_b_arm_env_toggles(),
+        "env_source": (
+            "B-prime band-counter-only: tracemalloc=False, band_counter_only=True; "
+            "bootstrap -B guard-ordering decoupled from tracemalloc"
+        ),
+        "band_counter_enable": {
+            "schema": "hrm_text_158_s1d7_band_counter_site/v1",
+            "events": f"s1d7_band_counter_site_C4.S1d.7_post ({N_STATES} sampled states)",
+            "env": "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY=1 + HOST_RSS=1 + TRACEMALLOC=0",
+            "new_mark_events": N_STATES,
+            "tracemalloc_site_events": 0,
+            "measurement_contract": "static_pre_append_v1",
+            "n_states": N_STATES,
+        },
+        "line_split_surfaces": {
+            "tracemalloc_classifier_physical_bracket": "[909,955]",
+            "tracemalloc_classifier_candidate_bands": "A910 / C941-952 / E914-917",
+            "band_counter_logical_marker": "event_coded_acc_live_carrier.py:895",
+            "band_counter_logical_candidate": "event_coded_acc_live_carrier.py:896",
+        },
+    }
+    draft["ca_confirmation_objective"] = {
+        "science_question": (
+            "Does state-0 (C+A) multi-band split persist across crossing-bearing states at n=32?"
+        ),
+        "cb_share_min": 0.80,
+        "crossing_bearing_predicate": "crossing_indices_len > 0",
+        "terminal_branches": list(SCIENCE_BRANCHES),
+        "science_gate_field": "terminal_branch",
+        "not_science_gate_fields": ["ok", "infra_ok"],
+        "feasibility_subsample_trigger": {
+            "peak_rss_gib_gt": RSS_FALLBACK_GIB,
+            "or_subprocess_timeout_expired": True,
+            "exclude_exit_codes": [37, -6],
+            "fallback_n_states": FALLBACK_N_STATES,
+            "executable_via": (
+                "packet wrapper: runs.B.subprocess_timeout_expired OR peak_rss_gib>6.5 "
+                "→ run_callsite_band_counter_ca_confirmation(n_states=16) "
+                "→ classify_ca_band_counter_confirmation(feasibility_subsample=True); "
+                "exit 37/-6 stay INFRA_NULL"
+            ),
+        },
+        "anti_overclaim": (
+            "n=32 CONFIRMATION/precondition only; even CA_PERSISTS grants NO reduction "
+            "implementation/eligibility; NOT candidate-C; NOT sub-2 proof; NOT 430MB bank pin"
+        ),
+    }
+    draft["perturbation_risk_classification"] = {
+        "ca_confirmation_mandatory": {
+            "command": "proof.ca_confirmation_command",
+            "exit_code_fail_infra": 37,
+            "exit_code_fail_mark_count": 42,
+            "gates": CONFIRMATION_GATES,
+            "science_branches": list(SCIENCE_BRANCHES),
+            "science_gate": "terminal_branch",
+            "ordering": "PRIMARY confirmation run; science read from terminal_branch NOT ok",
+        },
+    }
+    draft.pop("banked_reconcile_provenance", None)
+    for stale_key in (
+        "callsite_acceptance_objective",
+        "event_total_envelope_shift",
+        "multi_pair_event_watch",
+        "phase3b_instrumentation_at_77c5a5a",
+        "packet_impl_delta_at_plus1",
+        "upstream_chain",
+    ):
+        draft.pop(stale_key, None)
+    scrub_stale_rev14_fields(draft)
+    draft["packet_id"] = RUN_ID.lower()
+    draft["forbidden"] = build_forbidden()
+    draft["execution_order"] = build_execution_order()
+    draft["phase_budgets_and_watcher"] = build_phase_budgets_and_watcher()
+    draft["code_pin_coverage"] = build_code_pin_coverage()
+    draft["consumption_matrix"] = build_consumption_matrix()
+    monitor = build_monitor_section()
+    draft["monitor"] = monitor
+    draft["probe_stream_log_paths"] = list(monitor["probe_stream_log_paths"])
+    draft["process_exit_precedence"] = build_process_exit_precedence()
+    proof = {}
+    proof["ca_confirmation_command"] = ca_confirmation_command()
+    proof["primary_command"] = ca_confirmation_command()
+    proof["callsite_currency_dry_check_command"] = dry_check_launch_composition_command()
+    proof["artifacts"] = build_proof_artifacts()
+    proof["branch_outcomes"] = build_ca_branch_outcomes()
+    proof["description"] = (
+        f"fold-2b n={N_STATES} (C+A) band-counter confirmation via "
+        "run_callsite_band_counter_ca_confirmation import heredoc; "
+        f"RSS>{RSS_FALLBACK_GIB} GiB or runs.B.subprocess_timeout_expired triggers "
+        f"n={FALLBACK_N_STATES} FEASIBILITY_SUBSAMPLE fallback; exit 37/-6 fail-closed"
+    )
+    proof["interpretation_rule"] = (
+        "Science read from receipt.terminal_branch ONLY (NOT receipt.ok/infra_ok). "
+        "CA_PERSISTS satisfies fold-1 precondition; grants NO reduction implementation "
+        "eligibility. FEASIBILITY_SUBSAMPLE only under RSS/timeout resource gate; "
+        "exit 37/-6 currency/mutual-exclusion failures stay INFRA_NULL. "
+        "No legacy callsite classifier or reduction-route claims from this packet."
+    )
+    proof["pass_criteria"] = {
+        "mark_count_eq_n_states": f"s1d7_band_counter_mark_count=={N_STATES} (or {FALLBACK_N_STATES} on fallback)",
+        "tracemalloc_mark_count_zero": "s1d7_tracemalloc_mark_count==0",
+        "infra_ok_required": "infra_ok==true for launch validity",
+        "science_terminal_branch": (
+            "terminal_branch in "
+            "CA_PERSISTS|CA_MIXED|CA_DILUTES|INSUFFICIENT_CB_STATES|FEASIBILITY_SUBSAMPLE "
+            "(informative null branches valid; NOT read from receipt.ok)"
+        ),
+        "ca_persists_precondition_only": (
+            "CA_PERSISTS satisfies fold-1 precondition; NOT reduction eligibility"
+        ),
+        "feasibility_subsample_executable": (
+            f"packet wrapper: primary n={N_STATES} → RSS/timeout gate (NOT exit 37/-6) → "
+            f"n={FALLBACK_N_STATES} + classify(feasibility_subsample=True)"
+        ),
+    }
+    proof["feasibility_subsample_classification"] = {
+        "path": "(a) EXECUTABLE-VIA-PACKET",
+        "grounding": (
+            "run_callsite_band_counter_ca_confirmation accepts n_states; "
+            "classify_ca_band_counter_confirmation accepts feasibility_subsample=True; "
+            "runner hardcodes feasibility_subsample=False — packet wrapper orchestrates "
+            "pilot RSS/budget gate then applies classifier override on n=16 fallback"
+        ),
+        "runner_commit": HEAD,
+    }
+    draft["proof"] = proof
+    draft["provenance"] = {
+        "upstream_task_id": UPSTREAM_TASK_ID,
+        "upstream_task_id_note": "Arc #2b historical upstream; active task_id is top-level",
+        "fold1_commit": "d981582",
+        "fold2_design_dual_accept": ["1783186596758", "1783186683459"],
+        "fold2a_source_commit": HEAD,
+        "gabe_standing_directive_verbatim": (
+            "auto-research directive - full provenance to you and co_lead - no need to wait "
+            "on me at any gates including pushes and gpu runs"
+        ),
+    }
+    draft["resource_lane_release_trap"] = {
+        "description": "Run self-acquires/releases gpu:hrm-text-158; shell trap on EXIT/ERR/INT/TERM",
+        "log_artifact": f"{RUN_ROOT}/postrun/lane_release_trap.log",
+    }
+    _update_pin_blocks(draft)
+    preflight = draft.setdefault("preflight", {})
+    preflight["command"] = build_preflight_command()
+    preflight["pass_criterion"] = (
+        f"exit 0; HEAD=={HEAD[:7]}; parent sha match; all pinned surfaces hash-match "
+        "and clean; box code-currency pass; band_counter_only currency dry-check ok"
+    )
+    for stale_text_key in ("forbidden_at_launch", "forbidden"):
+        items = draft.get("decision_contract", {}).get(stale_text_key, [])
+        draft["decision_contract"][stale_text_key] = [
+            item.replace("9977166", HEAD[:7]) for item in items
+        ]
+    if isinstance(draft.get("launch_constraints"), list):
+        draft["launch_constraints"] = [
+            item.replace("9977166", HEAD[:7]) for item in draft["launch_constraints"]
+        ]
+    return draft
+
+
+def build_replay(draft: dict[str, Any]) -> dict[str, Any]:
+    cmd = ca_confirmation_command()
+    preflight_cmd = build_preflight_command()
+    dry = draft.get("proof", {}).get("callsite_currency_dry_check_command", dry_check_launch_composition_command())
+    return {
+        "packet_revision": PACKET_REVISION,
+        "git_head_required": HEAD,
+        "run_id": RUN_ID,
+        "task_id": ACTIVE_TASK_ID,
+        "upstream_task_id": UPSTREAM_TASK_ID,
+        "b_arm_env_toggles": build_band_counter_b_arm_env_toggles(),
+        "ca_confirmation": cmd,
+        "primary_command": cmd,
+        "replay_sequence": ["box_preflight", "ca_confirmation"],
+        "commands": {
+            "box_preflight": preflight_cmd,
+            "ca_confirmation": cmd,
+            "callsite_currency_dry_check": dry,
+        },
+        "consumption_matrix": {
+            "A_freshness_guard": {
+                "bootstrap_launch": (
+                    "python3 -B probe_bootstrap.py entry; band_counter_only env; "
+                    "guard runs before pinned imports"
+                ),
+                "guard_entry": (
+                    "bootstrap.main → run_phase3b_probe_executed_code_currency_guard BEFORE "
+                    "bounded_delta_acquisition_probe import (band_counter_only)"
+                ),
+                "pycache_invalidation": (
+                    "prepare_phase3b_band_counter_only_launch_env + guard-internal invalidation"
+                ),
+            }
+        },
+        "consumption_assertions": [
+            {
+                "id": "A2_bootstrap_argv",
+                "assert": "child argv includes -B and probe_bootstrap.py for band_counter_only",
+            },
+            {
+                "id": "science_terminal_branch_not_ok",
+                "assert": (
+                    "science verdict read from receipt.terminal_branch; "
+                    "receipt.ok/infra_ok are infra-only"
+                ),
+            },
+        ],
+    }
+
+
+def verify_import_invocation(draft: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    for key in ("primary_command", "ca_confirmation_command"):
+        cmd = draft.get("proof", {}).get(key, "")
+        if "run_callsite_band_counter_ca_confirmation" not in cmd:
+            failures.append(f"draft:proof.{key}_missing_import_runner")
+        if "classify_ca_band_counter_confirmation" not in cmd:
+            failures.append(f"draft:proof.{key}_missing_fallback_classifier")
+        if "PRIMARY_N = 32" not in cmd:
+            failures.append(f"draft:proof.{key}_missing_primary_n32")
+        if "FALLBACK_N = 16" not in cmd:
+            failures.append(f"draft:proof.{key}_missing_fallback_n16")
+        if 'receipt.get("ok")' in cmd and "NOT receipt" not in cmd:
+            failures.append(f"draft:proof.{key}_uses_ok_as_science")
+    primary = draft.get("proof", {}).get("primary_command", "")
+    if "run_callsite_band_counter_scale_smoke" in primary:
+        failures.append("draft:primary_command_still_scale_smoke")
+    return failures
+
+
+def verify_science_gate_prose(draft: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    obj = draft.get("ca_confirmation_objective", {})
+    if obj.get("science_gate_field") != "terminal_branch":
+        failures.append("draft:science_gate_field_not_terminal_branch")
+    if "ok" not in (obj.get("not_science_gate_fields") or []):
+        failures.append("draft:not_science_gate_fields_missing_ok")
+    mandatory = draft.get("perturbation_risk_classification", {}).get(
+        "ca_confirmation_mandatory", {}
+    )
+    if mandatory.get("science_gate") != "terminal_branch":
+        failures.append("draft:ca_confirmation_mandatory_science_gate_wrong")
+    if "band_counter_dominance_ok" in str(mandatory.get("gates", [])):
+        failures.append("draft:still_has_c_only_dominance_gate")
+    return failures
+
+
+def verify_infra_render(draft: dict[str, Any], replay: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    expected = build_band_counter_b_arm_env_toggles()
+    if draft.get("child_emission_contract", {}).get("env_toggles_b_arm") != expected:
+        failures.append("draft:env_toggles_b_arm_mismatch")
+    if replay.get("b_arm_env_toggles") != expected:
+        failures.append("replay:b_arm_env_toggles_mismatch")
+    if replay.get("b_arm_env_toggles", {}).get("HRM_TEXT_158_PROFILE_TRACEMALLOC") != "0":
+        failures.append("replay:tracemalloc_not_zero")
+    primary = draft.get("proof", {}).get("primary_command", "")
+    if "run_callsite_band_counter_ca_confirmation" not in primary:
+        failures.append("draft:primary_missing_ca_runner")
+    budget = draft.get("bounded_steps_budget", {})
+    if budget.get("max_silent_phase_seconds") != 900:
+        failures.append("draft:max_silent_not_900")
+    if budget.get("phase_timeout_seconds") != 1800:
+        failures.append("draft:phase_timeout_not_1800")
+    if budget.get("total_timeout_seconds") != 3600:
+        failures.append("draft:total_timeout_not_3600")
+    return failures
+
+
+def verify_feasibility_subsample_trigger_safety() -> list[str]:
+    """Synthetic CPU assertions: fallback trigger must not mask exit 37/-6 fail-closed."""
+    failures: list[str] = []
+
+    def _case(name: str, receipt: dict[str, Any], expect_fallback: bool) -> None:
+        result = evaluate_feasibility_subsample_fallback_trigger(receipt)
+        if result["fallback"] != expect_fallback:
+            failures.append(
+                f"trigger_safety:{name}:expected_fallback={expect_fallback}:got={result}"
+            )
+
+    _case(
+        "exit_37_no_fallback",
+        {
+            "peak_rss_gib": 3.0,
+            "terminal_branch": "INFRA_NULL",
+            "infra_ok": False,
+            "runs": {"B": {"exit_code": 37, "subprocess_timeout_expired": False}},
+        },
+        False,
+    )
+    _case(
+        "exit_m6_no_fallback",
+        {
+            "peak_rss_gib": 3.0,
+            "terminal_branch": "INFRA_NULL",
+            "infra_ok": False,
+            "runs": {"B": {"exit_code": -6, "subprocess_timeout_expired": False}},
+        },
+        False,
+    )
+    _case(
+        "exit_37_timeout_cooccur_no_fallback",
+        {
+            "peak_rss_gib": 3.0,
+            "terminal_branch": "INFRA_NULL",
+            "infra_ok": False,
+            "runs": {"B": {"exit_code": 37, "subprocess_timeout_expired": True}},
+        },
+        False,
+    )
+    _case(
+        "timeout_triggers_fallback",
+        {
+            "peak_rss_gib": 3.0,
+            "terminal_branch": "INFRA_NULL",
+            "infra_ok": False,
+            "runs": {"B": {"exit_code": 1, "subprocess_timeout_expired": True}},
+        },
+        True,
+    )
+    _case(
+        "rss_triggers_fallback",
+        {
+            "peak_rss_gib": 7.0,
+            "terminal_branch": "CA_PERSISTS",
+            "infra_ok": True,
+            "runs": {"B": {"exit_code": 0, "subprocess_timeout_expired": False}},
+        },
+        True,
+    )
+    _case(
+        "clean_n32_no_fallback",
+        {
+            "peak_rss_gib": 3.0,
+            "terminal_branch": "CA_PERSISTS",
+            "infra_ok": True,
+            "runs": {"B": {"exit_code": 0, "subprocess_timeout_expired": False}},
+        },
+        False,
+    )
+
+    if "budget_breach = (not primary_receipt" in CA_CONFIRMATION_HEREDOC:
+        failures.append("heredoc:stale_generic_budget_breach_trigger")
+    if "fail_closed_exit = exit_code in (37, -6)" not in CA_CONFIRMATION_HEREDOC:
+        failures.append("heredoc:missing_fail_closed_exit_guard")
+    if "subprocess_timeout_expired" not in CA_CONFIRMATION_HEREDOC:
+        failures.append("heredoc:missing_timeout_breach_trigger")
+    return failures
+
+
+def verify_real_launch_dry_check() -> list[str]:
+    failures: list[str] = []
+    try:
+        import sys
+
+        if str(REPO) not in sys.path:
+            sys.path.insert(0, str(REPO))
+        from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+            dry_check_callsite_b_prime_b_arm_launch_composition,
+        )
+
+        receipt = dry_check_callsite_b_prime_b_arm_launch_composition()
+        if not receipt.get("ok"):
+            failures.append("dry_check:launch_composition_not_ok")
+        checks = receipt.get("guard_receipt_checks") or {}
+        if not checks.get("guard_ran_before_pinned_imports"):
+            failures.append("dry_check:guard_ran_before_pinned_imports_false")
+    except Exception as exc:
+        failures.append(f"dry_check:exception:{type(exc).__name__}")
+    return failures
+
+
+def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
+    pins_ok = all(sha256_git_blob(HEAD, rel) == pin for rel, pin in PINS.items())
+    code_pin_failures = verify_code_pins_against_commit(draft)
+    pin_ok = pins_ok and not code_pin_failures
+    stale: list[str] = []
+    if draft.get("git_head_required") != HEAD:
+        stale.append("draft:git_head_mismatch")
+    if not pins_ok:
+        stale.append("pins_mismatch_commit")
+    stale.extend(code_pin_failures)
+    preflight_cmd = draft.get("preflight", {}).get("command", "")
+    if HEAD not in preflight_cmd:
+        stale.append("preflight:stale_head_ref")
+    if replay.get("commands", {}).get("box_preflight") != preflight_cmd:
+        stale.append("replay:box_preflight_mismatch")
+    stale.extend(verify_import_invocation(draft))
+    stale.extend(verify_science_gate_prose(draft))
+    stale.extend(verify_infra_render(draft, replay))
+    stale.extend(verify_real_launch_dry_check())
+    stale.extend(verify_feasibility_subsample_trigger_safety())
+    stale.extend(verify_whole_render_sweep(draft, replay))
+    mandatory = draft.get("perturbation_risk_classification", {}).get(
+        "ca_confirmation_mandatory", {}
+    )
+    if len(mandatory.get("gates", [])) != len(CONFIRMATION_GATES):
+        stale.append("draft:confirmation_gate_count_wrong")
+    render_blob = json.dumps({"draft": draft, "replay": replay}, sort_keys=True)
+    for pat in (
+        "s1d7_band_counter_mark_count_eq_4",
+        "band_counter_dominance_ok",
+        "call_site_status_resolved",
+        "s1d7_call_site_candidate_eq_c",
+        "run_callsite_band_counter_scale_smoke",
+        '"HRM_TEXT_158_PROFILE_TRACEMALLOC": "1"',
+        OLD_CALLSITE_RUN_ID,
+    ):
+        if pat in render_blob:
+            stale.append(f"stale_render_pattern:{pat}")
+    print(
+        f"self_verify git_head_required=={HEAD[:7]} "
+        f"pins_match_commit={pin_ok} stale_refs={stale or 'none'}"
+    )
+    if stale:
+        raise SystemExit(1)
+
+
+def main() -> None:
+    draft = build_draft()
+    replay = build_replay(draft)
+    DRAFT.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    REPLAY.write_text(json.dumps(replay, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    self_verify(draft, replay)
+    print(f"wrote {DRAFT}")
+    print(f"wrote {REPLAY}")
+
+
+if __name__ == "__main__":
+    main()
