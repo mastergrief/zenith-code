@@ -393,9 +393,16 @@ def verify_head_triple(
     fetch_head: str,
     head_expected: str,
     require_fetch_head: bool = True,
+    allow_head_descendant: bool = False,
+    head_now_is_descendant: bool = False,
 ) -> list[str]:
     issues: list[str] = []
-    if head_now != head_expected:
+    if head_now == head_expected:
+        pass
+    elif allow_head_descendant:
+        if not head_now_is_descendant:
+            issues.append("HEAD_NOT_DESCENDANT_OF_EXPECTED")
+    else:
         issues.append("HEAD_NOW_MISMATCH")
     if require_fetch_head and fetch_head != head_expected:
         issues.append("FETCH_HEAD_MISMATCH")

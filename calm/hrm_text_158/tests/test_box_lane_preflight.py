@@ -64,6 +64,168 @@ def test_head_now_mismatch_fails() -> None:
     assert "HEAD_NOW_MISMATCH" in issues
 
 
+def test_head_equal_passes_backward_compat() -> None:
+    issues = verify_head_triple(
+        head_now="abc",
+        fetch_head="abc",
+        head_expected="abc",
+        require_fetch_head=False,
+    )
+    assert issues == []
+
+
+def test_head_descendant_opt_in_passes() -> None:
+    issues = verify_head_triple(
+        head_now="child",
+        fetch_head="child",
+        head_expected="parent",
+        require_fetch_head=False,
+        allow_head_descendant=True,
+        head_now_is_descendant=True,
+    )
+    assert issues == []
+
+
+def test_head_non_ancestor_opt_in_fails_distinct_code() -> None:
+    issues = verify_head_triple(
+        head_now="orphan",
+        fetch_head="orphan",
+        head_expected="parent",
+        require_fetch_head=False,
+        allow_head_descendant=True,
+        head_now_is_descendant=False,
+    )
+    assert issues == ["HEAD_NOT_DESCENDANT_OF_EXPECTED"]
+    assert "HEAD_NOW_MISMATCH" not in issues
+
+
+def test_head_descendant_default_strict_still_fails() -> None:
+    issues = verify_head_triple(
+        head_now="child",
+        fetch_head="child",
+        head_expected="parent",
+        require_fetch_head=False,
+        allow_head_descendant=False,
+        head_now_is_descendant=True,
+    )
+    assert issues == ["HEAD_NOW_MISMATCH"]
+    assert "HEAD_NOT_DESCENDANT_OF_EXPECTED" not in issues
+
+
+def test_allow_descendant_head_passes_when_ancestor_e2e(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rel = Path("scripts/probe.py")
+    manifest_path, _ = _write_pinned_manifest_with_sha(tmp_path, rel)
+    repo = tmp_path / "repo"
+    out_path = tmp_path / "out.json"
+    parent = "c0371f18331059df0f91d793d119a0cf8010ec54"
+    child = "7b2ed639cb7eeb22ed611e049cc0a5aa14e70c29"
+
+    def git_revparse(_root: Path, *args: str) -> str:
+        if args[0] == "rev-parse" and args[1] == "HEAD":
+            return child
+        if args[0] == "rev-parse" and args[1] == "FETCH_HEAD":
+            return child
+        return ""
+
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        if cmd[:3] == ["git", "merge-base", "--is-ancestor"]:
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return subprocess.CompletedProcess(cmd, 1, "", "")
+
+    monkeypatch.setattr("scripts.box_lane_code_currency_preflight.run_git", git_revparse)
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            parent,
+            "--skip-fetch",
+            "--allow-descendant-head",
+            "--dry-run",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(manifest_path),
+        ]
+    )
+    assert rc == EXIT_OK
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is True
+    assert "HEAD_NOW_MISMATCH" not in payload["mismatches"]
+    assert "HEAD_NOT_DESCENDANT_OF_EXPECTED" not in payload["mismatches"]
+
+
+def test_allow_descendant_head_pin_mismatch_still_fails_e2e(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rel = Path("scripts/probe.py")
+    manifest_path, expected_sha = _write_pinned_manifest_with_sha(tmp_path, rel)
+    repo = tmp_path / "repo"
+    (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    (repo / rel).write_text("mutated bytes\n", encoding="utf-8")
+    out_path = tmp_path / "out.json"
+    parent = "c0371f18331059df0f91d793d119a0cf8010ec54"
+    child = "7b2ed639cb7eeb22ed611e049cc0a5aa14e70c29"
+
+    def git_revparse(_root: Path, *args: str) -> str:
+        if args[0] == "rev-parse" and args[1] == "HEAD":
+            return child
+        if args[0] == "rev-parse" and args[1] == "FETCH_HEAD":
+            return child
+        return ""
+
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        if cmd[:3] == ["git", "merge-base", "--is-ancestor"]:
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return subprocess.CompletedProcess(cmd, 1, "", "")
+
+    monkeypatch.setattr("scripts.box_lane_code_currency_preflight.run_git", git_revparse)
+    monkeypatch.setattr(subprocess, "run", fake_subprocess_run)
+    rc = preflight_main(
+        [
+            "--repo-root",
+            str(repo),
+            "--chain-id",
+            "chain_fixture",
+            "--creditdir",
+            str(tmp_path / "creditdir"),
+            "--head-expected",
+            parent,
+            "--skip-fetch",
+            "--allow-descendant-head",
+            "--dry-run",
+            "--output",
+            str(out_path),
+            "--pinned-manifest",
+            str(manifest_path),
+        ]
+    )
+    assert rc == EXIT_CODE_CURRENCY_MISMATCH
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["code_currency_pass"] is False
+    assert any("producer_pin_mismatch" in item for item in payload["mismatches"])
+
+
+def test_launch_pins_on_disk_detects_box_lane_mismatch() -> None:
+    from scripts.apply_c4s1_n32_ca_confirmation_packet import (
+        BOX_LANE_REL,
+        sha256_disk_file,
+        verify_launch_pins_on_disk,
+    )
+
+    good = {BOX_LANE_REL: sha256_disk_file(BOX_LANE_REL)}
+    assert verify_launch_pins_on_disk(good) == []
+    bad = {BOX_LANE_REL: "0" * 64}
+    assert verify_launch_pins_on_disk(bad) == [f"launch_pin_mismatch:{BOX_LANE_REL}"]
+
+
 def test_skip_fetch_passes_with_stale_fetch_head_e2e(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     rel = Path("scripts/probe.py")
     manifest_path, _ = _write_pinned_manifest_with_sha(tmp_path, rel)

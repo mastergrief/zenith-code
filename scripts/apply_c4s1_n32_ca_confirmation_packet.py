@@ -48,6 +48,9 @@ PINS: dict[str, str] = {
     "scripts/box_lane_code_currency_preflight.py": (
         "c0358fca7deb913071d7c6b3925233ed643caa51c94ddd93894c76450113be2e"
     ),
+    "calm/hrm_text_158/native_full_stack/box_lane.py": (
+        "987a9a48e9a841c64ee35b3266541b98c593ab3523db1af70e42163c93ed7744"
+    ),
     "scripts/hrm_text_158_r7_resource_lane_acquire.py": (
         "c69fd07f9416f15bb2fdc0c6d11b4c10d85c145c57d015e929653ac7f25df027"
     ),
@@ -117,7 +120,24 @@ CODE_PIN_FIELD_TO_REL: dict[str, str] = {
     "box_lane_code_currency_preflight_sha256": (
         "scripts/box_lane_code_currency_preflight.py"
     ),
+    "box_lane_sha256": "calm/hrm_text_158/native_full_stack/box_lane.py",
 }
+
+# fold-2c: science pins are verified @ git_head_required (fold-2a baseline c0371f1).
+# Launch-executed infra tooling may advance in packet-only commits; verify on-disk.
+INFRA_PIN_RELS_ON_DISK: frozenset[str] = frozenset(
+    {
+        "scripts/box_lane_code_currency_preflight.py",
+        "calm/hrm_text_158/native_full_stack/box_lane.py",
+    }
+)
+INFRA_CODE_PIN_FIELDS_ON_DISK: frozenset[str] = frozenset(
+    {
+        "box_lane_code_currency_preflight_sha256",
+        "box_lane_sha256",
+    }
+)
+BOX_LANE_REL = "calm/hrm_text_158/native_full_stack/box_lane.py"
 
 RSS_FALLBACK_GIB = 6.5
 FALLBACK_N_STATES = 16
@@ -232,6 +252,22 @@ def sha256_git_blob(commit: str, rel: str) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def sha256_disk_file(rel: str) -> str:
+    return hashlib.sha256((REPO / rel).read_bytes()).hexdigest()
+
+
+def pin_expected_sha256(rel: str, *, science_head: str = HEAD) -> str:
+    if rel in INFRA_PIN_RELS_ON_DISK:
+        return sha256_disk_file(rel)
+    return sha256_git_blob(science_head, rel)
+
+
+def refresh_launch_pins() -> None:
+    """Refresh infra tooling pins from on-disk bytes before packet regen."""
+    for rel in INFRA_PIN_RELS_ON_DISK:
+        PINS[rel] = sha256_disk_file(rel)
+
+
 def ca_confirmation_command() -> str:
     return (
         f"set -euo pipefail; cd {REPO}; RUN_ROOT={RUN_ROOT}; "
@@ -260,7 +296,7 @@ def build_preflight_command() -> str:
     return (
         "set -euo pipefail; "
         f"cd {REPO}; "
-        f"HEAD=$(git rev-parse HEAD); test \"$HEAD\" = '{HEAD}'; "
+        f"HEAD=$(git rev-parse HEAD); git merge-base --is-ancestor '{HEAD}' \"$HEAD\"; "
         f"PARENT={REPO}/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt; "
         "PARENT_SHA=$(sha256sum \"$PARENT\" | awk '{print $1}'); "
         "test -f \"$PARENT\"; "
@@ -281,7 +317,8 @@ def build_preflight_command() -> str:
         "PY\n"
         f"RUN_ROOT={RUN_ROOT}; mkdir -p \"$RUN_ROOT/prelaunch\"; "
         f"PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --chain-id {RUN_ID.lower()} "
-        f"--head-expected {HEAD} --skip-fetch --include-phase3-obmalloc-surfaces "
+        f"--head-expected {HEAD} --skip-fetch --allow-descendant-head "
+        f"--include-phase3-obmalloc-surfaces "
         f'--output "$RUN_ROOT/prelaunch/box_code_currency_preflight.json"; '
         'python3 -c "import json;d=json.load(open(\'$RUN_ROOT/prelaunch/box_code_currency_preflight.json\')); '
         "assert d['code_currency_pass']; assert d.get('n_files',0)>=10\"; "
@@ -309,7 +346,10 @@ def verify_code_pins_against_commit(draft: dict[str, Any]) -> list[str]:
             failures.append(f"code_pins:missing:{field}")
             continue
         pinned = str(code_pins[field])
-        actual = sha256_git_blob(head, rel)
+        if field in INFRA_CODE_PIN_FIELDS_ON_DISK:
+            actual = sha256_disk_file(rel)
+        else:
+            actual = sha256_git_blob(head, rel)
         if pinned != actual:
             failures.append(f"code_pins:mismatch:{field}")
     for key in code_pins:
@@ -388,13 +428,18 @@ def _update_pin_blocks(draft: dict[str, Any]) -> None:
             key = "bounded_delta_learner"
         elif key == "box_lane_code_currency_preflight":
             key = "box_lane_code_currency_preflight"
+        elif key == "box_lane":
+            key = "box_lane"
         if "box_preflight_role_pins" in draft and key in draft["box_preflight_role_pins"]:
             draft["box_preflight_role_pins"][key]["sha256"] = pin
             draft["box_preflight_role_pins"][key]["rel_path"] = rel
     draft["code_pins"] = build_code_pins()
     draft["code_pins_note"] = (
-        "test_slice5_v6i_oom_profile_attribution_sha256 intentionally omitted — "
-        "not imported/executed by the launch run"
+        "test_slice5 omitted (not launch-executed). git_head_required=c0371f1 is the "
+        "fold-2a science baseline; descendant HEAD allowed via merge-base ancestor check. "
+        "Science code_pins verified @ git_head_required. Launch-executed infra pins "
+        "(on-disk): box_lane.py implements descendant-head accept decision; "
+        "box_lane_code_currency_preflight.py imports box_lane at module load."
     )
 
 
@@ -881,8 +926,9 @@ def build_draft() -> dict[str, Any]:
     preflight = draft.setdefault("preflight", {})
     preflight["command"] = build_preflight_command()
     preflight["pass_criterion"] = (
-        f"exit 0; HEAD=={HEAD[:7]}; parent sha match; all pinned surfaces hash-match "
-        "and clean; box code-currency pass; band_counter_only currency dry-check ok"
+        f"exit 0; git merge-base --is-ancestor {HEAD[:7]} HEAD; parent sha match; "
+        "all pinned surfaces hash-match and clean; box code-currency pass with "
+        "--allow-descendant-head; band_counter_only currency dry-check ok"
     )
     for stale_text_key in ("forbidden_at_launch", "forbidden"):
         items = draft.get("decision_contract", {}).get(stale_text_key, [])
@@ -1086,6 +1132,43 @@ def verify_feasibility_subsample_trigger_safety() -> list[str]:
     return failures
 
 
+def verify_box_lane_infra_pin_contract(draft: dict[str, Any]) -> list[str]:
+    """box_lane.py must be pinned before preflight subprocess imports it."""
+    failures: list[str] = []
+    if BOX_LANE_REL not in PINS:
+        failures.append("pins:missing_box_lane")
+    code_pins = draft.get("code_pins", {})
+    if "box_lane_sha256" not in code_pins:
+        failures.append("code_pins:missing_box_lane_sha256")
+    elif str(code_pins["box_lane_sha256"]) != PINS.get(BOX_LANE_REL):
+        failures.append("code_pins:box_lane_sha256_mismatch_pins")
+    preflight_cmd = draft.get("preflight", {}).get("command", "")
+    if BOX_LANE_REL not in preflight_cmd:
+        failures.append("preflight:inline_pins_missing_box_lane")
+    note = str(draft.get("code_pins_note", ""))
+    if "not packet-pinned" in note or "NOT packet-pinned" in note:
+        failures.append("code_pins_note:stale_box_lane_unpinned_wording")
+    render_blob = json.dumps(draft, sort_keys=True)
+    if "not packet-pinned" in render_blob:
+        failures.append("render:stale_box_lane_unpinned_wording")
+    pinned_rels = sorted(PINS.keys())
+    if BOX_LANE_REL in pinned_rels:
+        preflight_rel = "scripts/box_lane_code_currency_preflight.py"
+        if preflight_rel in pinned_rels:
+            if pinned_rels.index(BOX_LANE_REL) > pinned_rels.index(preflight_rel):
+                failures.append("preflight:inline_pins_box_lane_after_preflight_script")
+    return failures
+
+
+def verify_launch_pins_on_disk(pins: dict[str, str]) -> list[str]:
+    failures: list[str] = []
+    for rel, expected in pins.items():
+        actual = sha256_disk_file(rel)
+        if actual != expected:
+            failures.append(f"launch_pin_mismatch:{rel}")
+    return failures
+
+
 def verify_real_launch_dry_check() -> list[str]:
     failures: list[str] = []
     try:
@@ -1109,7 +1192,7 @@ def verify_real_launch_dry_check() -> list[str]:
 
 
 def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
-    pins_ok = all(sha256_git_blob(HEAD, rel) == pin for rel, pin in PINS.items())
+    pins_ok = all(pin_expected_sha256(rel) == pin for rel, pin in PINS.items())
     code_pin_failures = verify_code_pins_against_commit(draft)
     pin_ok = pins_ok and not code_pin_failures
     stale: list[str] = []
@@ -1121,6 +1204,10 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     preflight_cmd = draft.get("preflight", {}).get("command", "")
     if HEAD not in preflight_cmd:
         stale.append("preflight:stale_head_ref")
+    if "merge-base --is-ancestor" not in preflight_cmd:
+        stale.append("preflight:missing_ancestor_head_check")
+    if "--allow-descendant-head" not in preflight_cmd:
+        stale.append("preflight:missing_allow_descendant_head")
     if replay.get("commands", {}).get("box_preflight") != preflight_cmd:
         stale.append("replay:box_preflight_mismatch")
     stale.extend(verify_import_invocation(draft))
@@ -1128,6 +1215,7 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     stale.extend(verify_infra_render(draft, replay))
     stale.extend(verify_real_launch_dry_check())
     stale.extend(verify_feasibility_subsample_trigger_safety())
+    stale.extend(verify_box_lane_infra_pin_contract(draft))
     stale.extend(verify_whole_render_sweep(draft, replay))
     mandatory = draft.get("perturbation_risk_classification", {}).get(
         "ca_confirmation_mandatory", {}
@@ -1155,6 +1243,7 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    refresh_launch_pins()
     draft = build_draft()
     replay = build_replay(draft)
     DRAFT.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")

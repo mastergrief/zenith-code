@@ -54,6 +54,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Manifest output path (default: <local_chain_root>/box_code_currency_preflight.json)",
     )
     ap.add_argument("--skip-fetch", action="store_true", help="Local-only mode: skip git fetch and remote FETCH_HEAD currency check.")
+    ap.add_argument(
+        "--allow-descendant-head",
+        action="store_true",
+        help=(
+            "Allow HEAD to be a descendant of --head-expected (git merge-base --is-ancestor). "
+            "Default is strict equality."
+        ),
+    )
     return ap
 
 
@@ -86,12 +94,22 @@ def main(argv: list[str] | None = None) -> int:
         )
     head_now = run_git(repo_root, "rev-parse", "HEAD")
     fetch_head = run_git(repo_root, "rev-parse", "FETCH_HEAD")
+    head_now_is_descendant = False
+    if args.allow_descendant_head:
+        proc = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", args.head_expected, head_now],
+            cwd=repo_root,
+            check=False,
+        )
+        head_now_is_descendant = proc.returncode == 0
 
     mismatches = verify_head_triple(
         head_now=head_now,
         fetch_head=fetch_head,
         head_expected=args.head_expected,
         require_fetch_head=not args.skip_fetch,
+        allow_head_descendant=args.allow_descendant_head,
+        head_now_is_descendant=head_now_is_descendant,
     )
     remote_currency_check = "skipped_local_only" if args.skip_fetch else "enforced"
 
