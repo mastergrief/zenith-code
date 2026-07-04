@@ -2,7 +2,7 @@
 
 Per-round receipts, shipped-capability table with commits + dates,
 R51/R52 distillation null detail, capability map, tier-1 preservation
-eval. Current strategic positions: `.claude/rules/augmentation_thesis.md`.
+eval. Current strategic positions: `rules/augmentation_thesis.md`.
 This file exists for archaeology — "which receipt grounded which claim",
 "what's been measured to support each tier-1/2/3 example".
 
@@ -211,9 +211,210 @@ targets instead of flying blind.
   via `HubInjectionCard` (R44) benefits all five (**5-for-1
   compilation ROI**).
 
+## Gemma-substrate instantiation (carved from rules 2026-07-04)
+
+Current strategic positions live in `rules/augmentation_thesis.md`.
+This section preserves Gemma-specific mechanics displaced by the
+current-arc rewrite.
+
+### Routing flow
+
+```
+Prompt → Gemma (NL understanding, routing)
+           ↓
+           ├─ Native circuit (Tier 1, preserved)  → correct
+           ├─ Augmented circuit (Tier 2, compiled replacement) → exact
+           └─ Plugged circuit  (Tier 3, new compiled capability) → exact
+                     ↓
+              VerificationHook / step-through bias → Gemma's tokens
+              Gemma wraps the exact result in fluent output
+```
+
+Net effect: **one model, enhanced surgically, no retraining.** Cards
+are strictly additive: `facade.install()` adds, `facade.detach()`
+reverses cleanly. Adding a card is a strict improvement with zero
+regression on other tasks.
+
+### Three-tier framework (Gemma substrate)
+
+| Tier | Intervention | Cost | Moat |
+|---|---|---|---|
+| **1 — Preserve** | Leave Gemma alone where it works | 0 | none |
+| **2 — Augment weak** | Compile replacement for specific failing circuit | Days | high |
+| **3 — Plug missing** | Compile new capability from scratch at unused slot | Days | highest |
+
+Tier 1 is table stakes — every Gemma user gets it free. **Tiers 2
+and 3 are the product.** The mapping protocol tells you which
+capabilities are Tier-2-addressable (concentrated circuits to
+surgically replace) vs Tier-3 (design from scratch).
+
+### Tier-2 stacking achieves tier-3-equivalent outcomes
+
+**Refined position**: every shipped working augmentation in this
+codebase is tier-2 ADDITIVE — `VerificationHook` + step-through
+digit bias on output, hub-injection facades at concentrated circuits,
+NL parser + `safe_eval` + step-through bias for multi-step composition,
+recall cards via `CardSlot` + `VerificationHook`, decode-path facades.
+
+Default hypothesis for any new capability: tier-2 stacking. True
+tier-3 *from-scratch* is correct ONLY when Gemma has ZERO relevant
+circuit (e.g. ICD-10 lookups where the prior doesn't help). If Gemma
+has ANY partial capability on the task, tier-2 stacking leverages
+Gemma's NL understanding + context handling + output routing for free.
+
+**Tier-3 with short known-length text answer from a static DB is
+decode-path-addressable** (parser + JSON lookup + multi-token bias),
+not CardSlot-mandatory. CardSlot-with-trained-PT is only required when
+the key is non-literal (NIAH-style retrieval under distractor prose).
+For well-typed code→text mappings (medical/legal/financial/chemical),
+decode-path is the cheapest tier-3.
+
+**Reframing for new capabilities**: for each:
+1. Does Gemma fail at it?
+2. Failing circuit concentrated → tier-2 compile at that site.
+3. Circuit diffuse but Gemma's capability is "close" → step-through
+   bias / `VerificationHook` at output.
+4. Capability truly alien to Gemma → add KB / domain card, integrate
+   via tier-2 output hook.
+
+The distilled-student tier-3 pattern (reproducing a Gemma layer's
+full function on deep-diffuse circuits) is a bad bet — three
+distillation losses (SAE-feature ablation, MSE residuals, KL logits)
+all failed identically.
+
+### Circuit typology — three shapes (+ deep-diffuse)
+
+Run per-head ablation AFTER the layer sweep to classify. Compile
+decision flows from the classification.
+
+| Shape | Marker | Compile path |
+|---|---|---|
+| **Concentrated** | 1-2 heads carry ≥50% of layer signal | 1-2 `LookUpExact` gates per head. Cheap. |
+| **Cooperative** | 3-4 heads each -0.5 to -1.5, additive sum ≈ full-layer Δ | 3-4 `LookUpExact` gates. Moderate cost. |
+| **Diffuse** | No head > -0.2 despite full-layer Δ > -1.0 | NOT compilable at attention level. Use ROME/MEMIT-style FFN weight probing, or side-channel via `KnowledgeStore`. |
+| **Deep-diffuse** | Full-layer Δ large but diffuse at attention AND FFN AND per-neuron AND SAE-feature levels | Not tier-3-distillable at known loss spaces. Pivot to tier-2 stacking (additive correction at output). |
+
+**Rule**: never attempt attention-level compilation without
+classifying via per-head ablation first. Diffuse circuits waste
+engineering effort if you target attention. Deep-diffuse circuits
+waste further effort if you target FFN weights, SAE features, OR any
+distillation-trained student without first checking that
+reconstruction fidelity at the chosen metric translates to causal
+effect on the user-facing task.
+
+### Atlas sparseness estimate
+
+Atlas sparseness estimate: ~30-50 specialist heads cover most core
+capabilities (of 336 total head slots = 42 layers × 8 heads). Full
+atlas ~20-40 hours of focused probing on RTX 4070 Laptop. Tractable.
+
+### Factorial scaling per domain
+
+DB size × PT quality × circuit-injection specificity compound
+**multiplicatively**, not additively. Double each, get 8× output.
+
+Per-domain cost structure (once pipeline exists):
+
+| Resource | Per new domain |
+|---|---|
+| Knowledge DB curation | hours |
+| PT training | ~30 min on RTX 4070 |
+| Circuit mapping (layer-sweep + per-head protocol) | ~1-2 hours |
+| Compile card (gate-graph IR) | few hours |
+| Integration + test | ~1 day |
+
+Marginal cost of the 100th domain ≈ cost of the 1st (no cross-domain
+interference — each card lives in its own channel/head slot).
+
+#### Economics inversion vs standard LLMs
+
+| Standard LLM | Substrate |
+|---|---|
+| Bigger model = better at everything, expensive | Gemma stays same size, same cost |
+| Fine-tune for domain = expensive, forgets other things | Add a card = strict improvement, zero regression |
+| Domains compete for capacity in one opaque network | Domains are disjoint card slots |
+| Removing a capability = retrain from scratch | Remove a card = clean `detach()`, no damage |
+| 100 domain specialists = 100× training cost | 100 cards stacked = 1× base cost + per-card hours |
+
+### Customer verticals = card decks
+
+Each customer's substrate = Gemma + their own deck of Tier-2/3 cards.
+
+- **Legal**: citation-format enforcer + statute DB + clause templates + compliance checkers + Gemma drafts
+- **Medical**: ICD-10 validator + drug-interaction DB + diagnosis templates + dosage calculator + Gemma explains
+- **Fintech**: exact-decimal arithmetic + regulation lookups + compliance verifiers + currency conversion + Gemma answers
+- **Engineering**: unit converters + formula cards + material property DB + Gemma narrates
+
+No cross-vertical interference: legal cards don't affect a hospital
+substrate. Each customer ships the stack their domain needs.
+
+### Frontier models also interpolate
+
+Every "creative" output from frontier models is a remix of training-
+data patterns. The substrate's advantage is making that remix
+*explicit and controlled* (DB + retrieval + verified composition)
+rather than *opaque and sometimes wrong* (internal weights with no
+auditing). What frontier models do better is interpolate over a
+larger example set; the substrate recovers that by making relevant
+examples explicit rather than weight-stored.
+
+### Automatic Tier-1 preservation as substrate property
+
+Substrate RAG via `KnowledgeStore` recall card at L30 has a structural
+advantage over prompt-RAG that vanilla retrieval pipelines cannot
+match — **automatic Tier-1 preservation via hash-gated injection**.
+
+Hash-match lookup at L30: problem hash → stored key match → inject
+verified solution into residual channels. Miss → zero output written
+→ Gemma's L31..L41 proceeds with native residual (no intervention).
+
+Automatic gating with zero policy logic. No probabilistic confusion
+about when to trust retrieval. No prompt-length inflation. No
+imitation-of-wrong-style risk.
+
+| Aspect | Prompt RAG | Substrate RAG (L30 card) |
+|---|---|---|
+| Gate condition | always injects | hash-match only |
+| Strong-prior preservation | disrupted | preserved by construction |
+| Context budget | ~600 tokens eaten | zero tokens |
+| Tier-1 adherence | violated | automatic |
+| Content delivery | text through all 42 layers | direct residual write at L30 |
+| Determinism | stochastic | compiled step-function exact |
+
+**Install mechanism caveat**: hash-match Tier-1 holds at the OUTPUT
+boundary (`VerificationHook` with small vocab_mapping + `min_margin`).
+Does NOT hold for residual-write `CardSlot` at arbitrary layers.
+First-token bias is the wrong intervention for code (Gemma's first
+token on code is uniformly confident — confidence-gate doesn't fire).
+Correct tier-2 for code: post-generation AST walker that mechanically
+rewrites, no Gemma in the repair loop.
+
+For prompt-RAG systems (not substrate): add explicit confidence
+gating to retrieval — CALM-precompute-found → suppress retrieved
+examples; intent classifier detects strong pattern → skip retrieval;
+top-k below threshold → skip. Manually replicates what substrate
+RAG gets for free.
+
+#### Commercial positioning sharpens
+
+"RAG that knows when not to retrieve" is a different product from
+"RAG with a bigger DB." Regulated industries specifically need
+intervention-when-warranted, not intervention-always — spurious
+injections drift output from user intent. **Selective-intervention
+property is substrate-native** and hard to reproduce with vanilla
+RAG pipelines.
+
+### Gemma-specific anti-skepticism counters
+
+| Objection | Settled counter |
+|---|---|
+| "Factual recall needs frontier models" | Diffuse-FFN circuit — compilable via FFN weight probing OR side-channel `KnowledgeStore` with verified retrieval. |
+| "Retraining needed for each domain" | Tier-2 stacking takes hours/days per domain. PT is ~185K params, ~30 min. No base-model retraining. |
+| "Verification is the bottleneck" | CALM verifies 100% on benchmark. Compiled verifiers are exact by construction. |
+
 ## Cross-refs
 
-- Current strategic positions: `.claude/rules/augmentation_thesis.md`
+- Current strategic positions: `rules/augmentation_thesis.md`
 - Tracing arc receipts: `MEMORY/atlas/tracing_roadmap_part_1.md`
 - Capability-gain measurement receipts: `MEMORY/atlas/capability_gain_arc.md`
 - DT install receipts: `MEMORY/atlas/delta_rule_arc.md`
