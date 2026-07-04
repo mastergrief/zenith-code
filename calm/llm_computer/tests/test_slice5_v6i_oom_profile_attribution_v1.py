@@ -5245,3 +5245,202 @@ def test_phase3_obmalloc_surface_pinned_files_role_coverage() -> None:
         "s1d7_tracemalloc_feasibility",
     } <= phase3_roles
     assert len(DEFAULT_FLOOR_PINNED_FILES) + len(PHASE3_OBMALLOC_SURFACE_PINNED_FILES) >= 10
+
+
+def _synthetic_band_counter_mark(
+    *,
+    state_index: int,
+    band_a: int,
+    band_c: int,
+    band_e: int,
+    crossing_indices_len: int,
+) -> dict[str, Any]:
+    return {
+        "event": "s1d7_band_counter_site_C4.S1d.7_post",
+        "state_index": int(state_index),
+        "s1d7_band_counters": {
+            "byte_proxies": {
+                "band_a_bytes": int(band_a),
+                "band_c_bytes": int(band_c),
+                "band_e_bytes": int(band_e),
+            },
+            "counts": {
+                "crossing_indices_len": int(crossing_indices_len),
+                "append_event_count": int(crossing_indices_len),
+            },
+        },
+        "resource_snapshot": {"rss_kib": 1024 * 1024 * (state_index + 1)},
+    }
+
+
+def test_n4_smoke_runner_constants_and_eq4_gate_unchanged() -> None:
+    import inspect
+
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        BAND_COUNTER_MECHANISM_SMOKE_N_C4_STATES,
+        PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED,
+        run_callsite_band_counter_scale_smoke,
+    )
+
+    assert BAND_COUNTER_MECHANISM_SMOKE_N_C4_STATES == 4
+    assert PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED == 4
+    sig = inspect.signature(run_callsite_band_counter_scale_smoke)
+    assert list(sig.parameters) == ["out_root"]
+    source = inspect.getsource(run_callsite_band_counter_scale_smoke)
+    assert "s1d7_band_counter_mark_count_eq_4" in source
+    assert "PHASE3_CALLSITE_S1D7_MARK_PAIR_COUNT_EXPECTED" in source
+
+
+def test_ca_confirmation_runner_signature_and_threads_module_limit() -> None:
+    import inspect
+
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        run_callsite_band_counter_ca_confirmation,
+    )
+
+    sig = inspect.signature(run_callsite_band_counter_ca_confirmation)
+    assert sig.parameters["out_root"].kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+    assert sig.parameters["n_states"].default == 32
+    source = inspect.getsource(run_callsite_band_counter_ca_confirmation)
+    assert "eligible_module_limit=module_limit" in source
+    assert "tracemalloc=False" in source
+    assert "band_counter_only=True" in source
+
+
+def test_build_ca_confirmation_receipt_emits_classifier_fields(tmp_path: Path) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        CA_CONFIRMATION_RECEIPT_SCHEMA,
+        build_ca_band_counter_confirmation_receipt,
+    )
+
+    marks = [
+        _synthetic_band_counter_mark(
+            state_index=0, band_a=22640, band_c=48640, band_e=5408, crossing_indices_len=512
+        ),
+        _synthetic_band_counter_mark(
+            state_index=1, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+        _synthetic_band_counter_mark(
+            state_index=2, band_a=20000, band_c=50000, band_e=5000, crossing_indices_len=256
+        ),
+        _synthetic_band_counter_mark(
+            state_index=3, band_a=112, band_c=0, band_e=0, crossing_indices_len=0
+        ),
+    ]
+    receipt = build_ca_band_counter_confirmation_receipt(
+        confirmation_root=tmp_path,
+        n_states=4,
+        run_a={"wall_seconds": 1.0},
+        run_b={"wall_seconds": 3.0, "exit_code": 0, "profile_mark_count": 4},
+        marks_b=marks,
+        sampled_states=(0, 1, 2, 3),
+    )
+    assert receipt["schema"] == CA_CONFIRMATION_RECEIPT_SCHEMA
+    assert receipt["mark_count"] == 4
+    assert receipt["checks"]["s1d7_band_counter_mark_count_eq_n_states"] is True
+    assert receipt["cb_state_count"] == 2
+    assert receipt["per_cb_ca_share_by_state"]["0"] == pytest.approx(0.93, rel=1e-3)
+    assert receipt["terminal_branch"] == "CA_PERSISTS"
+    assert receipt["peak_rss_gib"] is not None
+    assert all("crossing_indices_len" in row for row in receipt["per_state"])
+
+
+@pytest.mark.parametrize(
+    ("rows", "expected_branch"),
+    [
+        (
+            [
+                {"state_index": 0, "band_a_bytes": 100, "band_c_bytes": 900, "band_e_bytes": 0, "crossing_indices_len": 1},
+                {"state_index": 1, "band_a_bytes": 100, "band_c_bytes": 900, "band_e_bytes": 0, "crossing_indices_len": 2},
+            ],
+            "CA_PERSISTS",
+        ),
+        (
+            [
+                {"state_index": 0, "band_a_bytes": 600, "band_c_bytes": 300, "band_e_bytes": 100, "crossing_indices_len": 1},
+                {"state_index": 1, "band_a_bytes": 500, "band_c_bytes": 200, "band_e_bytes": 300, "crossing_indices_len": 2},
+            ],
+            "CA_MIXED",
+        ),
+        (
+            [
+                {"state_index": 0, "band_a_bytes": 500, "band_c_bytes": 200, "band_e_bytes": 300, "crossing_indices_len": 1},
+                {"state_index": 1, "band_a_bytes": 500, "band_c_bytes": 200, "band_e_bytes": 300, "crossing_indices_len": 2},
+            ],
+            "CA_DILUTES",
+        ),
+    ],
+)
+def test_ca_classifier_wp_truth_table(rows: list[dict[str, Any]], expected_branch: str) -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        classify_ca_band_counter_confirmation,
+    )
+
+    result = classify_ca_band_counter_confirmation(rows)
+    assert result["terminal_branch"] == expected_branch
+
+
+def test_ca_classifier_precedence_and_zero_crossing_exclusion() -> None:
+    from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
+        CA_BRANCH_FEASIBILITY_SUBSAMPLE,
+        CA_BRANCH_INFRA_NULL,
+        CA_BRANCH_INSUFFICIENT_CB_STATES,
+        classify_ca_band_counter_confirmation,
+    )
+
+    assert (
+        classify_ca_band_counter_confirmation([], infra_null=True)["terminal_branch"]
+        == CA_BRANCH_INFRA_NULL
+    )
+    assert (
+        classify_ca_band_counter_confirmation([], feasibility_subsample=True)[
+            "terminal_branch"
+        ]
+        == CA_BRANCH_FEASIBILITY_SUBSAMPLE
+    )
+    rows = [
+        {
+            "state_index": 0,
+            "band_a_bytes": 22640,
+            "band_c_bytes": 48640,
+            "band_e_bytes": 5408,
+            "crossing_indices_len": 512,
+        },
+        {
+            "state_index": 1,
+            "band_a_bytes": 112,
+            "band_c_bytes": 0,
+            "band_e_bytes": 0,
+            "crossing_indices_len": 0,
+        },
+    ]
+    result = classify_ca_band_counter_confirmation(rows)
+    assert result["terminal_branch"] == CA_BRANCH_INSUFFICIENT_CB_STATES
+    assert result["cb_state_count"] == 1
+
+    three_cb = [
+        {
+            "state_index": 0,
+            "band_a_bytes": 100,
+            "band_c_bytes": 900,
+            "band_e_bytes": 0,
+            "crossing_indices_len": 1,
+        },
+        {
+            "state_index": 1,
+            "band_a_bytes": 112,
+            "band_c_bytes": 0,
+            "band_e_bytes": 0,
+            "crossing_indices_len": 0,
+        },
+        {
+            "state_index": 2,
+            "band_a_bytes": 100,
+            "band_c_bytes": 900,
+            "band_e_bytes": 0,
+            "crossing_indices_len": 2,
+        },
+    ]
+    weighted = classify_ca_band_counter_confirmation(three_cb)
+    assert weighted["cb_state_count"] == 2
+    assert weighted["crossing_weighted_ca_share"] == pytest.approx(1.0)

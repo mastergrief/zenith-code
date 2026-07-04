@@ -55,6 +55,17 @@ BAND_COUNTER_MECHANISM_SMOKE_BANK_WORDING = (
     "reduced-scale (n=4) mechanism smoke — candidate-C dominance at reduced scale; "
     "NOT full 32-state 430MB bank"
 )
+CA_CONFIRMATION_CA_SHARE_MIN = 0.80
+CA_CONFIRMATION_RECEIPT_SCHEMA = (
+    "hrm_text_158_callsite_band_counter_ca_confirmation_receipt/v1"
+)
+CA_BRANCH_INFRA_NULL = "INFRA_NULL"
+CA_BRANCH_FEASIBILITY_SUBSAMPLE = "FEASIBILITY_SUBSAMPLE"
+CA_BRANCH_INSUFFICIENT_CB_STATES = "INSUFFICIENT_CB_STATES"
+CA_BRANCH_CA_PERSISTS = "CA_PERSISTS"
+CA_BRANCH_CA_MIXED = "CA_MIXED"
+CA_BRANCH_CA_DILUTES = "CA_DILUTES"
+S1D7_BAND_COUNTER_MARK_EVENT = "s1d7_band_counter_site_C4.S1d.7_post"
 DEFAULT_DURABLE_MIRROR_PATH = Path(
     "/home/gabe/hrm158_v6i_slice8m_census/v6i_obmalloc_expanded_attribution_8m.json"
 )
@@ -6390,6 +6401,292 @@ def run_callsite_band_counter_scale_smoke(out_root: Path) -> dict[str, Any]:
         },
     }
     out_path = smoke_root / "callsite_band_counter_scale_smoke_receipt.json"
+    out_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    receipt["receipt_path"] = str(out_path)
+    return receipt
+
+
+def _peak_rss_gib_from_marks(marks: Sequence[Mapping[str, Any]]) -> float | None:
+    peak: float | None = None
+    for row in marks:
+        rss = _rss_gib(dict(row.get("resource_snapshot") or {}))
+        if rss is None:
+            continue
+        peak = float(rss) if peak is None else max(peak, float(rss))
+    return peak
+
+
+def extract_band_counter_per_state_rows_from_marks(
+    marks_b: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for mark in marks_b:
+        if str(mark.get("event") or "") != S1D7_BAND_COUNTER_MARK_EVENT:
+            continue
+        if mark.get("state_index") is None:
+            continue
+        proxies = dict(dict(mark.get("s1d7_band_counters") or {}).get("byte_proxies") or {})
+        counts = dict(dict(mark.get("s1d7_band_counters") or {}).get("counts") or {})
+        band_a = int(proxies.get("band_a_bytes") or 0)
+        band_c = int(proxies.get("band_c_bytes") or 0)
+        band_e = int(proxies.get("band_e_bytes") or 0)
+        crossing_indices_len = int(counts.get("crossing_indices_len") or 0)
+        state_total = band_a + band_c + band_e
+        per_cb_ca_share = None
+        if crossing_indices_len > 0 and state_total > 0:
+            per_cb_ca_share = float(band_a + band_c) / float(state_total)
+        rows.append(
+            {
+                "state_index": int(mark["state_index"]),
+                "band_a_bytes": band_a,
+                "band_c_bytes": band_c,
+                "band_e_bytes": band_e,
+                "crossing_indices_len": crossing_indices_len,
+                "per_cb_ca_share": per_cb_ca_share,
+                "is_crossing_bearing": crossing_indices_len > 0,
+            }
+        )
+    rows.sort(key=lambda row: int(row["state_index"]))
+    return rows
+
+
+def classify_ca_band_counter_confirmation(
+    per_state_rows: Sequence[Mapping[str, Any]],
+    *,
+    infra_null: bool = False,
+    feasibility_subsample: bool = False,
+    ca_share_min: float = CA_CONFIRMATION_CA_SHARE_MIN,
+) -> dict[str, Any]:
+    base = {
+        "ca_share_min": float(ca_share_min),
+        "cb_state_count": 0,
+        "crossing_weighted_ca_share": None,
+        "crossing_weighted_ca_share_ok": None,
+        "per_cb_ca_share_ok": None,
+        "per_cb_ca_share_by_state": {},
+    }
+    if infra_null:
+        return {**base, "terminal_branch": CA_BRANCH_INFRA_NULL}
+    if feasibility_subsample:
+        return {**base, "terminal_branch": CA_BRANCH_FEASIBILITY_SUBSAMPLE}
+
+    cb_rows = [
+        dict(row)
+        for row in per_state_rows
+        if int(row.get("crossing_indices_len") or 0) > 0
+    ]
+    cb_state_count = len(cb_rows)
+    base["cb_state_count"] = cb_state_count
+    if cb_state_count < 2:
+        return {**base, "terminal_branch": CA_BRANCH_INSUFFICIENT_CB_STATES}
+
+    sum_ac = sum(
+        int(row["band_a_bytes"]) + int(row["band_c_bytes"]) for row in cb_rows
+    )
+    sum_ace = sum(
+        int(row["band_a_bytes"]) + int(row["band_c_bytes"]) + int(row["band_e_bytes"])
+        for row in cb_rows
+    )
+    crossing_weighted_ca_share = (
+        float(sum_ac) / float(sum_ace) if sum_ace > 0 else 0.0
+    )
+    crossing_weighted_ok = crossing_weighted_ca_share >= ca_share_min
+    per_cb_ca_share_by_state: dict[str, float] = {}
+    per_cb_ok = True
+    for row in cb_rows:
+        band_a = int(row["band_a_bytes"])
+        band_c = int(row["band_c_bytes"])
+        band_e = int(row["band_e_bytes"])
+        state_total = band_a + band_c + band_e
+        share = float(band_a + band_c) / float(state_total) if state_total > 0 else 0.0
+        per_cb_ca_share_by_state[str(int(row["state_index"]))] = share
+        if share < ca_share_min:
+            per_cb_ok = False
+
+    if crossing_weighted_ok and per_cb_ok:
+        terminal_branch = CA_BRANCH_CA_PERSISTS
+    elif crossing_weighted_ok != per_cb_ok:
+        terminal_branch = CA_BRANCH_CA_MIXED
+    else:
+        terminal_branch = CA_BRANCH_CA_DILUTES
+
+    return {
+        **base,
+        "terminal_branch": terminal_branch,
+        "crossing_weighted_ca_share": crossing_weighted_ca_share,
+        "crossing_weighted_ca_share_ok": crossing_weighted_ok,
+        "per_cb_ca_share_ok": per_cb_ok,
+        "per_cb_ca_share_by_state": per_cb_ca_share_by_state,
+    }
+
+
+def build_ca_band_counter_confirmation_receipt(
+    *,
+    confirmation_root: Path,
+    n_states: int,
+    run_a: Mapping[str, Any],
+    run_b: Mapping[str, Any],
+    marks_b: Sequence[Mapping[str, Any]],
+    sampled_states: Sequence[int],
+    infra_null: bool = False,
+    feasibility_subsample: bool = False,
+) -> dict[str, Any]:
+    per_state_rows = extract_band_counter_per_state_rows_from_marks(marks_b)
+    mark_count = len(per_state_rows)
+    classifier = classify_ca_band_counter_confirmation(
+        per_state_rows,
+        infra_null=infra_null,
+        feasibility_subsample=feasibility_subsample,
+    )
+    s1d7_tracemalloc_mark_count = sum(
+        1
+        for row in marks_b
+        if str(row.get("event") or "").startswith("s1d7_tracemalloc_site_C4.S1d.7_")
+    )
+    b_profile_mark_count = int(run_b.get("profile_mark_count") or mark_count)
+    checks = {
+        "observer_guard_clear": True,
+        "tracemalloc_perturbed_false": True,
+        "s1d7_band_counter_mark_count_eq_n_states": mark_count == int(n_states),
+        "tracemalloc_mark_count_eq_0": s1d7_tracemalloc_mark_count == 0,
+        "b_profile_mark_count_gt_0": b_profile_mark_count > 0,
+        "no_profile_env_mutual_exclusion_abort": int(run_b.get("exit_code", 0)) != -6,
+        "no_tracemalloc_perturbed_inconclusive": True,
+        "infra_not_null": not infra_null,
+    }
+    total_wall_seconds = float(run_a.get("wall_seconds") or 0.0) + float(
+        run_b.get("wall_seconds") or 0.0
+    )
+    per_state_wall_seconds: dict[str, float] = {}
+    per_state_timing_method = "approx=run_b_wall_seconds/n_states"
+    if n_states > 0:
+        approx = float(run_b.get("wall_seconds") or 0.0) / float(n_states)
+        for state_idx in sampled_states:
+            per_state_wall_seconds[str(int(state_idx))] = approx
+    receipt: dict[str, Any] = {
+        "schema": CA_CONFIRMATION_RECEIPT_SCHEMA,
+        "confirmation_root": str(confirmation_root),
+        "confirmation_scale": f"n{n_states}",
+        "n_states": int(n_states),
+        "sampled_states": [int(x) for x in sampled_states],
+        "eligible_scope": run_b.get("eligible_scope") or "all-bitlinear",
+        "eligible_module_limit": run_b.get("eligible_module_limit", n_states),
+        "eligible_module_keys": list(run_b.get("eligible_module_keys") or []),
+        "total_wall_seconds": total_wall_seconds,
+        "per_state_wall_seconds": per_state_wall_seconds,
+        "per_state_timing_method": per_state_timing_method,
+        "c4_rss_delta_gib": run_b.get("c4_rss_delta_gib"),
+        "peak_rss_gib": _peak_rss_gib_from_marks(marks_b),
+        "per_state": per_state_rows,
+        "mark_count": mark_count,
+        "classifier": classifier,
+        "terminal_branch": classifier.get("terminal_branch"),
+        "cb_state_count": classifier.get("cb_state_count"),
+        "crossing_weighted_ca_share": classifier.get("crossing_weighted_ca_share"),
+        "crossing_weighted_ca_share_ok": classifier.get("crossing_weighted_ca_share_ok"),
+        "per_cb_ca_share_ok": classifier.get("per_cb_ca_share_ok"),
+        "per_cb_ca_share_by_state": dict(classifier.get("per_cb_ca_share_by_state") or {}),
+        "checks": checks,
+        "infra_ok": all(checks.values()),
+        "ok": all(checks.values()),
+        "b_arm_profile_mark_count": b_profile_mark_count,
+        "s1d7_band_counter_mark_count": mark_count,
+        "s1d7_tracemalloc_mark_count": s1d7_tracemalloc_mark_count,
+        "runs": {
+            "A": {k: v for k, v in run_a.items() if k != "marks"},
+            "B": {k: v for k, v in run_b.items() if k != "marks"},
+        },
+    }
+    return receipt
+
+
+def run_callsite_band_counter_ca_confirmation(
+    out_root: Path,
+    *,
+    n_states: int = 32,
+) -> dict[str, Any]:
+    """Full-scale (C+A) band-counter confirmation run at eligible_module_limit=n_states."""
+
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    if int(n_states) <= 0:
+        raise ValueError(f"n_states must be positive; got {n_states!r}")
+
+    module_limit = int(n_states)
+    confirmation_root = out_root / "prelaunch" / "callsite_band_counter_ca_confirmation"
+    confirmation_root.mkdir(parents=True, exist_ok=True)
+    run_a = _run_fixture_obmalloc_probe(
+        confirmation_root,
+        scratch_name="callsite_band_counter_a",
+        debugmallocstats=False,
+        eligible_module_limit=module_limit,
+    )
+    run_b = _run_fixture_obmalloc_probe(
+        confirmation_root,
+        scratch_name="callsite_band_counter_b",
+        debugmallocstats=False,
+        tracemalloc=False,
+        band_counter_only=True,
+        expanded=False,
+        eligible_module_limit=module_limit,
+    )
+    marks_a = list(run_a.pop("marks", []))
+    marks_b = list(run_b.pop("marks", []))
+    n_c4_states = int(run_b.get("n_c4_states") or module_limit)
+    sampled_states = tuple(
+        int(x)
+        for x in (
+            run_b.get("sampled_states")
+            or sorted(compute_obmalloc_expanded_sampled_states(n_c4_states))
+        )
+    )
+    infra_null = False
+    feasibility_subsample = False
+    observer_marks = [row for row in marks_a if str(row.get("event") or "").startswith("s1d7_")]
+    if int(run_b.get("exit_code", 0)) == 37:
+        infra_null = True
+    elif bool(run_b.get("subprocess_timeout_expired")):
+        infra_null = True
+    elif int(run_b.get("exit_code", 0)) == -6:
+        infra_null = True
+
+    receipt = build_ca_band_counter_confirmation_receipt(
+        confirmation_root=confirmation_root,
+        n_states=module_limit,
+        run_a=run_a,
+        run_b=run_b,
+        marks_b=marks_b,
+        sampled_states=sampled_states,
+        infra_null=infra_null,
+        feasibility_subsample=feasibility_subsample,
+    )
+    if not infra_null and observer_marks:
+        expanded = attribute_callsite_tracemalloc_b_prime(
+            marks_a=marks_a,
+            marks_b=marks_b,
+            sampled_states=sampled_states,
+        )
+        observer_fail_closed = expanded.get("fail_closed_terminal")
+        tracemalloc_perturbed = expanded.get("tracemalloc_perturbed")
+        if tracemalloc_perturbed is None:
+            tracemalloc_perturbed = dict(expanded.get("guards") or {}).get(
+                "tracemalloc_perturbed"
+            )
+        receipt["checks"]["observer_guard_clear"] = (
+            observer_fail_closed != "OBSERVER_PERTURBED_INCONCLUSIVE"
+        )
+        receipt["checks"]["tracemalloc_perturbed_false"] = tracemalloc_perturbed is False
+        receipt["checks"]["no_tracemalloc_perturbed_inconclusive"] = (
+            observer_fail_closed != "TRACEMALLOC_PERTURBED_INCONCLUSIVE"
+        )
+        receipt["infra_ok"] = all(receipt["checks"].values())
+        receipt["ok"] = receipt["infra_ok"]
+        receipt["fail_closed_terminal"] = observer_fail_closed
+        receipt["tracemalloc_perturbed"] = tracemalloc_perturbed
+        receipt["localization"] = dict(expanded.get("localization") or {})
+    out_path = confirmation_root / "callsite_band_counter_ca_confirmation_receipt.json"
     out_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     receipt["receipt_path"] = str(out_path)
     return receipt
