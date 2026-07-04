@@ -20,13 +20,13 @@ REV14_REPLAY = (
 )
 DRAFT = REPO / "artifacts/consensus_prep/c4s1_n32_ca_confirmation_launch_packet_v1_draft.json"
 REPLAY = REPO / "artifacts/consensus_prep/c4s1_n32_ca_confirmation_launch_packet_v1_replay_commands.json"
-HEAD = "c0371f18331059df0f91d793d119a0cf8010ec54"
+HEAD = "4c355f720d666dab80028d8911f457b52637c77c"
 ACTIVE_TASK_ID = "1783074444338-d3ef40af"
 UPSTREAM_TASK_ID = "1782633464140-b85ec12a"
 RUN_ROOT = "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_CA_CONFIRMATION_V1"
 RUN_ID = "C4S1_PHASE3_N32_CA_CONFIRMATION_V1"
 N_STATES = 32
-PACKET_REVISION = "v1_n32_ca_confirmation_c0371f1"
+PACKET_REVISION = "v1_n32_ca_confirmation_4c355f7"
 FOLD1_SPEC = (
     "artifacts/measurement_closeout/c4s1d7_rev14_reduced_n4_null_and_ca_design_spec.md"
 )
@@ -34,7 +34,7 @@ RSS_FALLBACK_GIB = 6.5
 
 PINS: dict[str, str] = {
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "75e9e33f916c7f1880a3aa0cd844f46f95353ac11256f5a95f4d88b2dc94fa4c"
+        "4d9ed8a372f37904f43174798c4bb257bbbcd47e7fbd349eb5167e7646a79058"
     ),
     "scripts/hrm_text_158_code_currency_guard.py": (
         "487d26a3607844bdedcc68576f99c1c70a188cd01af60a7d21f72987944a2a70"
@@ -46,7 +46,7 @@ PINS: dict[str, str] = {
         "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f"
     ),
     "scripts/box_lane_code_currency_preflight.py": (
-        "c0358fca7deb913071d7c6b3925233ed643caa51c94ddd93894c76450113be2e"
+        "08bc8d13fbac548aea49d90db1af252d1cbde4abe867287f127f228f59ab1ecc"
     ),
     "calm/hrm_text_158/native_full_stack/box_lane.py": (
         "987a9a48e9a841c64ee35b3266541b98c593ab3523db1af70e42163c93ed7744"
@@ -123,7 +123,7 @@ CODE_PIN_FIELD_TO_REL: dict[str, str] = {
     "box_lane_sha256": "calm/hrm_text_158/native_full_stack/box_lane.py",
 }
 
-# fold-2c: science pins are verified @ git_head_required (fold-2a baseline c0371f1).
+# fold-2d-b: science pins verified @ git_head_required (fold-2a source baseline FDC).
 # Launch-executed infra tooling may advance in packet-only commits; verify on-disk.
 INFRA_PIN_RELS_ON_DISK: frozenset[str] = frozenset(
     {
@@ -143,6 +143,19 @@ RSS_FALLBACK_GIB = 6.5
 FALLBACK_N_STATES = 16
 OLD_CALLSITE_RUN_ID = "C4S1_PHASE3_GPU_CALLSITE_V1"
 FAIL_CLOSED_B_ARM_EXIT_CODES = frozenset({37, -6})
+SAMPLED_STATES_RULE = "{0, n//3, 2n//3, n-1}"
+
+
+def compute_expected_sampled_states(n_states: int) -> frozenset[int]:
+    """Mirror sparse_cap_gpu_seam_adapter.compute_obmalloc_expanded_sampled_states."""
+    n = int(n_states)
+    if n <= 0:
+        return frozenset()
+    return frozenset(sorted({0, n // 3, (2 * n) // 3, n - 1}))
+
+
+def expected_mark_event_count(n_states: int) -> int:
+    return len(compute_expected_sampled_states(n_states))
 
 
 def evaluate_feasibility_subsample_fallback_trigger(
@@ -168,62 +181,15 @@ def evaluate_feasibility_subsample_fallback_trigger(
 CA_CONFIRMATION_HEREDOC = r"""import json, sys
 from pathlib import Path
 from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
-    classify_ca_band_counter_confirmation,
-    run_callsite_band_counter_ca_confirmation,
+    ca_confirmation_wrapper_exit_code,
+    orchestrate_ca_confirmation_with_fallback,
 )
 
-PRIMARY_N = 32
-FALLBACK_N = 16
-RSS_FALLBACK_GIB = 6.5
-
 run_root = Path(sys.argv[1])
-
-
-def _apply_feasibility_subsample_terminal(receipt: dict) -> dict:
-    rows = list(receipt.get("per_state") or [])
-    classifier = classify_ca_band_counter_confirmation(
-        rows,
-        feasibility_subsample=True,
-        infra_null=not bool(receipt.get("infra_ok")),
-    )
-    receipt["classifier"] = classifier
-    receipt["terminal_branch"] = classifier.get("terminal_branch")
-    receipt["feasibility_subsample_fallback"] = True
-    return receipt
-
-
-primary_receipt = run_callsite_band_counter_ca_confirmation(run_root, n_states=PRIMARY_N)
-peak_rss = primary_receipt.get("peak_rss_gib")
-b = primary_receipt.get("runs", {}).get("B", {})
-exit_code = int(b.get("exit_code", 0) or 0)
-timeout_breach = bool(b.get("subprocess_timeout_expired"))
-rss_breach = peak_rss is not None and float(peak_rss) > RSS_FALLBACK_GIB
-fail_closed_exit = exit_code in (37, -6)
-fallback = (rss_breach or timeout_breach) and not fail_closed_exit
-
-if fallback:
-    fallback_root = run_root / "feasibility_subsample_n16"
-    receipt = run_callsite_band_counter_ca_confirmation(
-        fallback_root, n_states=FALLBACK_N
-    )
-    receipt["fallback_trigger"] = {
-        "exit_code": exit_code,
-        "fail_closed_exit": fail_closed_exit,
-        "primary_n_states": PRIMARY_N,
-        "primary_peak_rss_gib": peak_rss,
-        "rss_breach": rss_breach,
-        "timeout_breach": timeout_breach,
-    }
-    receipt = _apply_feasibility_subsample_terminal(receipt)
-else:
-    receipt = primary_receipt
-
-print(json.dumps(receipt, indent=2, sort_keys=True))
-branch = receipt.get("terminal_branch")
-if not receipt.get("checks", {}).get("s1d7_band_counter_mark_count_eq_n_states"):
-    raise SystemExit(42)
-if branch == "INFRA_NULL" or not receipt.get("infra_ok"):
-    raise SystemExit(37)
+wrapper = orchestrate_ca_confirmation_with_fallback(run_root)
+science_receipt = wrapper["runs"]["fallback"] if wrapper.get("science_verdict_source") == "fallback" else wrapper["runs"]["primary"]
+print(json.dumps(wrapper, indent=2, sort_keys=True))
+raise SystemExit(ca_confirmation_wrapper_exit_code(science_receipt))
 """
 
 SCIENCE_BRANCHES = (
@@ -238,7 +204,8 @@ SCIENCE_BRANCHES = (
 CONFIRMATION_GATES = [
     "observer_guard_clear",
     "tracemalloc_perturbed_false",
-    "s1d7_band_counter_mark_count_eq_n_states",
+    "eligible_module_limit_eq_n_states",
+    "s1d7_band_counter_mark_count_eq_sampled_state_count",
     "tracemalloc_mark_count_eq_0",
     "b_profile_mark_count_gt_0",
     "no_profile_env_mutual_exclusion_abort",
@@ -435,11 +402,12 @@ def _update_pin_blocks(draft: dict[str, Any]) -> None:
             draft["box_preflight_role_pins"][key]["rel_path"] = rel
     draft["code_pins"] = build_code_pins()
     draft["code_pins_note"] = (
-        "test_slice5 omitted (not launch-executed). git_head_required=c0371f1 is the "
-        "fold-2a science baseline; descendant HEAD allowed via merge-base ancestor check. "
-        "Science code_pins verified @ git_head_required. Launch-executed infra pins "
-        "(on-disk): box_lane.py implements descendant-head accept decision; "
-        "box_lane_code_currency_preflight.py imports box_lane at module load."
+        "test_slice5 omitted (not launch-executed). git_head_required=4c355f7 is the "
+        "fold-2a science baseline (FDC); descendant HEAD allowed via merge-base ancestor "
+        "check. Science code_pins verified @ git_head_required via git show. "
+        "Launch-executed infra pins (on-disk): box_lane.py implements descendant-head "
+        "accept decision; box_lane_code_currency_preflight.py imports box_lane at module "
+        "load."
     )
 
 
@@ -485,7 +453,7 @@ def build_phase_budgets_and_watcher() -> dict[str, Any]:
         "stop_conditions": [
             "executed guard receipt missing or guard_ran_before_pinned_imports false",
             "ca_confirmation subprocess exit 37 (infra_null / currency fail-closed)",
-            "ca_confirmation subprocess exit 42 (mark_count != n_states)",
+            "ca_confirmation subprocess exit 42 (unknown terminal_branch)",
             "no phase_heartbeat within watcher_stall_seconds(900)",
             "parent checkpoint sha256 mismatch pre/post",
             "peak_rss_gib > 6.5 on primary n=32 triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
@@ -628,10 +596,14 @@ STALE_RENDER_PATTERNS: tuple[tuple[str, str], ...] = (
     ("RL-S1f", "stale_reduction_route_s1f"),
     ("test_slice5_v6i_oom_profile_attribution_v1.py", "stale_test_in_coverage"),
     ("9977166", "stale_rev14_head"),
+    ("c0371f18331059df0f91d793d119a0cf8010ec54", "stale_pre_fold2d_head"),
+    ("s1d7_band_counter_mark_count_eq_n_states", "stale_mark_count_eq_n_states_gate"),
     ('"phase_timeout_seconds": 2280', "stale_rev14_phase_budget"),
     ('"total_timeout_seconds": 5400', "stale_rev14_total_budget"),
     ('"max_silent_phase_seconds": 600', "stale_rev14_max_silent"),
     ('"interrupt_timeout_seconds": 600.0', "stale_rev14_interrupt"),
+    (f"({N_STATES} sampled states)", "stale_n_states_as_sampled_count_wording"),
+    (f'"new_mark_events": {N_STATES}', "stale_new_mark_events_eq_n_states"),
 )
 
 
@@ -639,7 +611,7 @@ def build_process_exit_precedence() -> dict[str, Any]:
     return {
         "ca_confirmation_exits": {
             "37": "infra_null / currency fail-closed / guard not proven",
-            "42": "s1d7_band_counter_mark_count != n_states",
+            "42": "unknown terminal_branch (not a valid CA confirmation science branch)",
         },
         "description": (
             "fold-2b CA confirmation fail-closed exits; science read from terminal_branch "
@@ -693,6 +665,28 @@ def scrub_stale_rev14_fields(draft: dict[str, Any]) -> None:
         draft.pop(key, None)
 
 
+def _build_band_counter_enable_contract(n_states: int) -> dict[str, Any]:
+    sampled = compute_expected_sampled_states(n_states)
+    expected_marks = len(sampled)
+    return {
+        "schema": "hrm_text_158_s1d7_band_counter_site/v1",
+        "eligible_module_limit": n_states,
+        "sampled_states_rule": SAMPLED_STATES_RULE,
+        "sampled_states": sorted(sampled),
+        "expected_sampled_state_count": expected_marks,
+        "expected_mark_events": expected_marks,
+        "events": (
+            f"s1d7_band_counter_site_C4.S1d.7_post "
+            f"({expected_marks} sampled states @ eligible_module_limit={n_states})"
+        ),
+        "env": "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY=1 + HOST_RSS=1 + TRACEMALLOC=0",
+        "new_mark_events": expected_marks,
+        "tracemalloc_site_events": 0,
+        "measurement_contract": "static_pre_append_v1",
+        "n_states": n_states,
+    }
+
+
 def verify_whole_render_sweep(draft: dict[str, Any], replay: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     blob = json.dumps({"draft": draft, "replay": replay}, sort_keys=True)
@@ -727,6 +721,15 @@ def verify_whole_render_sweep(draft: dict[str, Any], replay: dict[str, Any]) -> 
             failures.append(f"whole_render:missing_branch_outcome:{required}")
     if "classifier_extract_command" in draft.get("proof", {}):
         failures.append("whole_render:proof_still_has_classifier_extract")
+    bce = draft.get("child_emission_contract", {}).get("band_counter_enable", {})
+    eligible = int(bce.get("eligible_module_limit", bce.get("n_states", N_STATES)) or N_STATES)
+    expected_marks = expected_mark_event_count(eligible)
+    if int(bce.get("new_mark_events", -1)) != expected_marks:
+        failures.append("whole_render:new_mark_events_not_sampled_count")
+    if int(bce.get("expected_mark_events", -1)) != expected_marks:
+        failures.append("whole_render:expected_mark_events_not_sampled_count")
+    if bce.get("new_mark_events") == eligible and eligible != expected_marks:
+        failures.append("whole_render:new_mark_events_conflates_n_states")
     return failures
 
 
@@ -747,7 +750,10 @@ def build_draft() -> dict[str, Any]:
     }
     draft["acceptance_gate_order"] = [
         "CURRENCY_OK (executed guard + box preflight)",
-        "INFRA_OK (mark_count==32, observer clear, tracemalloc_mark_count==0)",
+        (
+            "INFRA_OK (eligible_module_limit==n_states, mark_count==len(sampled_states), "
+            "observer clear, tracemalloc_mark_count==0)"
+        ),
         "SCIENCE_BRANCH (terminal_branch classifier — NOT receipt.ok)",
         "CA_PERSISTS satisfies precondition ONLY — NOT reduction eligibility",
     ]
@@ -786,15 +792,7 @@ def build_draft() -> dict[str, Any]:
             "B-prime band-counter-only: tracemalloc=False, band_counter_only=True; "
             "bootstrap -B guard-ordering decoupled from tracemalloc"
         ),
-        "band_counter_enable": {
-            "schema": "hrm_text_158_s1d7_band_counter_site/v1",
-            "events": f"s1d7_band_counter_site_C4.S1d.7_post ({N_STATES} sampled states)",
-            "env": "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY=1 + HOST_RSS=1 + TRACEMALLOC=0",
-            "new_mark_events": N_STATES,
-            "tracemalloc_site_events": 0,
-            "measurement_contract": "static_pre_append_v1",
-            "n_states": N_STATES,
-        },
+        "band_counter_enable": _build_band_counter_enable_contract(N_STATES),
         "line_split_surfaces": {
             "tracemalloc_classifier_physical_bracket": "[909,955]",
             "tracemalloc_classifier_candidate_bands": "A910 / C941-952 / E914-917",
@@ -832,7 +830,7 @@ def build_draft() -> dict[str, Any]:
         "ca_confirmation_mandatory": {
             "command": "proof.ca_confirmation_command",
             "exit_code_fail_infra": 37,
-            "exit_code_fail_mark_count": 42,
+            "exit_code_fail_unknown_branch": 42,
             "gates": CONFIRMATION_GATES,
             "science_branches": list(SCIENCE_BRANCHES),
             "science_gate": "terminal_branch",
@@ -880,7 +878,10 @@ def build_draft() -> dict[str, Any]:
         "No legacy callsite classifier or reduction-route claims from this packet."
     )
     proof["pass_criteria"] = {
-        "mark_count_eq_n_states": f"s1d7_band_counter_mark_count=={N_STATES} (or {FALLBACK_N_STATES} on fallback)",
+        "mark_count_eq_sampled_states": (
+            "s1d7_band_counter_mark_count==len(sampled_states) "
+            f"(4-point sample at n={N_STATES}; n={FALLBACK_N_STATES} on fallback)"
+        ),
         "tracemalloc_mark_count_zero": "s1d7_tracemalloc_mark_count==0",
         "infra_ok_required": "infra_ok==true for launch validity",
         "science_terminal_branch": (
@@ -996,14 +997,12 @@ def verify_import_invocation(draft: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     for key in ("primary_command", "ca_confirmation_command"):
         cmd = draft.get("proof", {}).get(key, "")
-        if "run_callsite_band_counter_ca_confirmation" not in cmd:
-            failures.append(f"draft:proof.{key}_missing_import_runner")
-        if "classify_ca_band_counter_confirmation" not in cmd:
-            failures.append(f"draft:proof.{key}_missing_fallback_classifier")
-        if "PRIMARY_N = 32" not in cmd:
-            failures.append(f"draft:proof.{key}_missing_primary_n32")
-        if "FALLBACK_N = 16" not in cmd:
-            failures.append(f"draft:proof.{key}_missing_fallback_n16")
+        if "orchestrate_ca_confirmation_with_fallback" not in cmd:
+            failures.append(f"draft:proof.{key}_missing_orchestrator")
+        if "ca_confirmation_wrapper_exit_code" not in cmd:
+            failures.append(f"draft:proof.{key}_missing_wrapper_exit_helper")
+        if "s1d7_band_counter_mark_count_eq_n_states" in cmd:
+            failures.append(f"draft:proof.{key}_stale_mark_count_gate")
         if 'receipt.get("ok")' in cmd and "NOT receipt" not in cmd:
             failures.append(f"draft:proof.{key}_uses_ok_as_science")
     primary = draft.get("proof", {}).get("primary_command", "")
@@ -1039,8 +1038,8 @@ def verify_infra_render(draft: dict[str, Any], replay: dict[str, Any]) -> list[s
     if replay.get("b_arm_env_toggles", {}).get("HRM_TEXT_158_PROFILE_TRACEMALLOC") != "0":
         failures.append("replay:tracemalloc_not_zero")
     primary = draft.get("proof", {}).get("primary_command", "")
-    if "run_callsite_band_counter_ca_confirmation" not in primary:
-        failures.append("draft:primary_missing_ca_runner")
+    if "orchestrate_ca_confirmation_with_fallback" not in primary:
+        failures.append("draft:primary_missing_ca_orchestrator")
     budget = draft.get("bounded_steps_budget", {})
     if budget.get("max_silent_phase_seconds") != 900:
         failures.append("draft:max_silent_not_900")
@@ -1048,6 +1047,23 @@ def verify_infra_render(draft: dict[str, Any], replay: dict[str, Any]) -> list[s
         failures.append("draft:phase_timeout_not_1800")
     if budget.get("total_timeout_seconds") != 3600:
         failures.append("draft:total_timeout_not_3600")
+    return failures
+
+
+def verify_wrapper_heredoc_contract(draft: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    cmd = draft.get("proof", {}).get("ca_confirmation_command", "")
+    for required in (
+        "orchestrate_ca_confirmation_with_fallback",
+        "ca_confirmation_wrapper_exit_code",
+        "science_verdict_source",
+    ):
+        if required not in cmd:
+            failures.append(f"draft:wrapper_heredoc_missing:{required}")
+    if "s1d7_band_counter_mark_count_eq_n_states" in cmd:
+        failures.append("draft:wrapper_heredoc_stale_mark_count_gate")
+    if "SystemExit(42)" in cmd and "ca_confirmation_wrapper_exit_code" not in cmd:
+        failures.append("draft:wrapper_heredoc_hardcoded_exit_42")
     return failures
 
 
@@ -1122,13 +1138,6 @@ def verify_feasibility_subsample_trigger_safety() -> list[str]:
         },
         False,
     )
-
-    if "budget_breach = (not primary_receipt" in CA_CONFIRMATION_HEREDOC:
-        failures.append("heredoc:stale_generic_budget_breach_trigger")
-    if "fail_closed_exit = exit_code in (37, -6)" not in CA_CONFIRMATION_HEREDOC:
-        failures.append("heredoc:missing_fail_closed_exit_guard")
-    if "subprocess_timeout_expired" not in CA_CONFIRMATION_HEREDOC:
-        failures.append("heredoc:missing_timeout_breach_trigger")
     return failures
 
 
@@ -1169,6 +1178,22 @@ def verify_launch_pins_on_disk(pins: dict[str, str]) -> list[str]:
     return failures
 
 
+def verify_science_surfaces_dirty_vs_baseline(draft: dict[str, Any]) -> list[str]:
+    """Fail if any science pin's on-disk bytes differ from git blob @ git_head_required."""
+    failures: list[str] = []
+    science_head = str(draft.get("git_head_required", HEAD))
+    for rel in PINS:
+        if rel in INFRA_PIN_RELS_ON_DISK:
+            continue
+        disk_sha = sha256_disk_file(rel)
+        baseline_sha = sha256_git_blob(science_head, rel)
+        if disk_sha != baseline_sha:
+            failures.append(f"science_surface_dirty:{rel}")
+        if PINS[rel] != baseline_sha:
+            failures.append(f"science_pin_stale_vs_baseline:{rel}")
+    return failures
+
+
 def verify_real_launch_dry_check() -> list[str]:
     failures: list[str] = []
     try:
@@ -1194,13 +1219,15 @@ def verify_real_launch_dry_check() -> list[str]:
 def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     pins_ok = all(pin_expected_sha256(rel) == pin for rel, pin in PINS.items())
     code_pin_failures = verify_code_pins_against_commit(draft)
-    pin_ok = pins_ok and not code_pin_failures
+    science_dirty = verify_science_surfaces_dirty_vs_baseline(draft)
+    pin_ok = pins_ok and not code_pin_failures and not science_dirty
     stale: list[str] = []
     if draft.get("git_head_required") != HEAD:
         stale.append("draft:git_head_mismatch")
     if not pins_ok:
         stale.append("pins_mismatch_commit")
     stale.extend(code_pin_failures)
+    stale.extend(science_dirty)
     preflight_cmd = draft.get("preflight", {}).get("command", "")
     if HEAD not in preflight_cmd:
         stale.append("preflight:stale_head_ref")
@@ -1214,6 +1241,7 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     stale.extend(verify_science_gate_prose(draft))
     stale.extend(verify_infra_render(draft, replay))
     stale.extend(verify_real_launch_dry_check())
+    stale.extend(verify_wrapper_heredoc_contract(draft))
     stale.extend(verify_feasibility_subsample_trigger_safety())
     stale.extend(verify_box_lane_infra_pin_contract(draft))
     stale.extend(verify_whole_render_sweep(draft, replay))
@@ -1225,6 +1253,7 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     render_blob = json.dumps({"draft": draft, "replay": replay}, sort_keys=True)
     for pat in (
         "s1d7_band_counter_mark_count_eq_4",
+        "s1d7_band_counter_mark_count_eq_n_states",
         "band_counter_dominance_ok",
         "call_site_status_resolved",
         "s1d7_call_site_candidate_eq_c",
