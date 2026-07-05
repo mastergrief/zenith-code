@@ -26,8 +26,8 @@ REPLAY = (
     REPO
     / "artifacts/consensus_prep/c4s1_n32_dense_09_variable_a_rev_launch_packet_v1_replay_commands.json"
 )
-HEAD = "bd23cc9f3dd8e2dfc1245e80f970c2a5baaf1888"
-SCIENCE_HEAD = "bd23cc9f3dd8e2dfc1245e80f970c2a5baaf1888"
+HEAD = "feb708f0a0533ee73370dfc73c100c213eb05849"
+SCIENCE_HEAD = "feb708f0a0533ee73370dfc73c100c213eb05849"
 ACTIVE_TASK_ID = "1782633464140-b85ec12a"
 UPSTREAM_TASK_ID = "1782633464140-b85ec12a"
 RUN_ROOT = (
@@ -35,7 +35,7 @@ RUN_ROOT = (
 )
 RUN_ID = "C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1"
 N_STATES = 32
-PACKET_REVISION = "v1_n32_dense_09_variable_a_rev_bd23cc9"
+PACKET_REVISION = "v1_n32_dense_09_variable_a_rev_feb708f"
 FOLD1_SPEC = (
     "artifacts/measurement_closeout/c4s1d7_dense_09_structural_fork_resolution_spec.md"
 )
@@ -236,6 +236,7 @@ from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
 from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
     build_branch_input_contract_from_ca_receipt,
     classify_f3b_why_state0_branch,
+    normalize_per_state_for_mechanism_receipt,
 )
 
 DENSE_SAMPLED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
@@ -247,7 +248,7 @@ IDENTITY_INERTNESS_WRAPPER_PATH = (
 )
 MECHANISM_RECEIPT_NAME = "fold3b_variable_a_mechanism_diagnosis_receipt.json"
 WRAPPER_RECEIPT_NAME = "ca_confirmation_wrapper_receipt.json"
-GIT_HEAD_REQUIRED = "bd23cc9f3dd8e2dfc1245e80f970c2a5baaf1888"
+GIT_HEAD_REQUIRED = "feb708f0a0533ee73370dfc73c100c213eb05849"
 
 
 def compute_primary_dense_fork_readable(wrapper: dict) -> bool:
@@ -365,7 +366,12 @@ def build_mechanism_diagnosis_receipt(wrapper: dict, run_root: Path) -> dict:
             branch_inputs["schema_ok"] = False
         classified = classify_f3b_why_state0_branch(branch_inputs)
 
-    per_state = list((primary or {}).get("per_state") or [])
+    if branch_inputs.get("schema_ok") is True and isinstance(primary, dict):
+        per_state = normalize_per_state_for_mechanism_receipt(
+            list(primary.get("per_state") or [])
+        )
+    else:
+        per_state = []
     semantic_state_id = [
         int(row.get("semantic_state_id", row.get("state_index")))
         for row in per_state
@@ -721,7 +727,7 @@ def _update_pin_blocks(draft: dict[str, Any]) -> None:
             draft["box_preflight_role_pins"][key]["rel_path"] = rel
     draft["code_pins"] = build_code_pins()
     draft["code_pins_note"] = (
-        "test_slice5 omitted (not launch-executed). git_head_required=bd23cc9 is the "
+        "test_slice5 omitted (not launch-executed). git_head_required=feb708f is the "
         "order-control patch science baseline (FDC); descendant HEAD allowed via merge-base "
         "ancestor check. Science code_pins verified @ git_head_required via git show. "
         "Launch-executed infra pins (on-disk): box_lane.py implements descendant-head "
@@ -1227,7 +1233,7 @@ def build_draft() -> dict[str, Any]:
     draft["decision_contract"] = {
         "chosen_path": (
             f"Fold-3B Variable A order-only perturbation via "
-            "run_callsite_band_counter_ca_confirmation @ bd23cc9 n_states=32; "
+            "run_callsite_band_counter_ca_confirmation @ feb708f n_states=32; "
             "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=0..9 + "
             f"HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER={DENSE_ORDER_VALUE}; "
             "classifier F3B_WHY_STATE0_BRANCH_V1 mechanism verdict"
@@ -1811,6 +1817,96 @@ def verify_no_stale_outer_lane_manifest(draft: dict[str, Any], replay: dict[str,
     return failures
 
 
+def verify_normalize_validated_rows_only() -> list[str]:
+    """Option 2a: normalize only after CA-source schema_ok; malformed rows never normalized."""
+    failures: list[str] = []
+    heredoc = CA_CONFIRMATION_HEREDOC
+    markers = (
+        "normalize_per_state_for_mechanism_receipt",
+        'branch_inputs.get("schema_ok")',
+    )
+    for marker in markers:
+        if marker not in heredoc:
+            failures.append(f"normalize_validated:heredoc_missing:{marker}")
+
+    try:
+        from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
+            build_branch_input_contract_from_ca_receipt,
+            normalize_per_state_for_mechanism_receipt,
+            validate_receipt_schema,
+        )
+        from calm.llm_computer.tests.test_f3b_ca_source_schema_v1 import (
+            _minimal_valid_ca_confirmation_receipt,
+        )
+
+        def _packet_per_state(branch_inputs: dict, primary: dict | None) -> list:
+            if branch_inputs.get("schema_ok") is True and isinstance(primary, dict):
+                return normalize_per_state_for_mechanism_receipt(
+                    list(primary.get("per_state") or [])
+                )
+            return []
+
+        valid = _minimal_valid_ca_confirmation_receipt(reversed_order=True)
+        valid_inputs = build_branch_input_contract_from_ca_receipt(
+            valid,
+            variable_id="A_order_only",
+            control_reason="order_only_perturbation",
+            identity_order_inertness_proven=True,
+        )
+        if valid_inputs.get("schema_ok") is not True:
+            failures.append("normalize_validated:valid_fixture_schema_not_ok")
+        valid_rows = _packet_per_state(valid_inputs, valid)
+        if not valid_rows or not all("crossing_count" in row for row in valid_rows):
+            failures.append("normalize_validated:valid_path_missing_crossing_count")
+
+        malformed = _minimal_valid_ca_confirmation_receipt(reversed_order=True)
+        malformed["per_state"][0]["crossing_indices_len"] = True
+        bad_inputs = build_branch_input_contract_from_ca_receipt(
+            malformed,
+            variable_id="A_order_only",
+            control_reason="order_only_perturbation",
+            identity_order_inertness_proven=True,
+        )
+        if bad_inputs.get("schema_ok") is not False:
+            failures.append("normalize_validated:malformed_fixture_not_schema_fail")
+        if _packet_per_state(bad_inputs, malformed):
+            failures.append("normalize_validated:malformed_rows_reached_normalize")
+
+        # Prove naive normalize on malformed would invent crossing_count (why 2a gates it).
+        naive = normalize_per_state_for_mechanism_receipt(malformed["per_state"])
+        if not naive or naive[0].get("crossing_count") != 1:
+            failures.append("normalize_validated:naive_bool_control_unexpected")
+
+        bad_mechanism = {
+            "schema": "hrm_text_158_fold3b_mechanism_diagnosis_receipt/v1",
+            "per_state": _packet_per_state(bad_inputs, malformed),
+            "f3b_branch": "F3B_NO_VERDICT_SCHEMA",
+            "f3b_branch_inputs": bad_inputs,
+            "sampled_state_set": list(range(10)),
+            "sampled_state_order": list(range(9, -1, -1)),
+            "order_rank_by_semantic_state": valid.get("order_rank_by_semantic_state"),
+            "semantic_state_id": [],
+            "dedup_reset_called": True,
+            "dedup_session_scope": "probe_subprocess",
+            "wrapper_path": "/tmp/wrapper.json",
+            "primary_receipt_path": "/tmp/primary.json",
+            "fallback_receipt_path": None,
+            "science_verdict_source": "primary",
+            "parent_sha": valid.get("parent_sha"),
+            "git_head_required": HEAD,
+            "variable_id": "A_order_only",
+            "control_reason": "order_only_perturbation",
+            "ready_for_main_science": False,
+            "counts_as_sub2": False,
+            "pre_full_stack_diagnostic": True,
+        }
+        if validate_receipt_schema(bad_mechanism) == []:
+            failures.append("normalize_validated:empty_per_state_passed_mechanism_schema")
+    except Exception as exc:
+        failures.append(f"normalize_validated:cpu_regression:{type(exc).__name__}:{exc}")
+    return failures
+
+
 def verify_classifier_launch_executed_pin() -> list[str]:
     """Fail-closed: wrapper heredoc executes F3B classifier → module must be pinned+matching."""
     failures: list[str] = []
@@ -2118,6 +2214,7 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     stale.extend(verify_no_stale_outer_lane_manifest(draft, replay))
     stale.extend(verify_wrapper_receipt_sink_executable())
     stale.extend(verify_classifier_launch_executed_pin())
+    stale.extend(verify_normalize_validated_rows_only())
     stale.extend(verify_wrapper_heredoc_contract(draft))
     stale.extend(verify_feasibility_subsample_trigger_safety())
     stale.extend(verify_box_lane_infra_pin_contract(draft))
