@@ -1,0 +1,691 @@
+{
+  "acceptance_gate_order": [
+    "CURRENCY_OK (executed guard + box preflight)",
+    "INFRA_OK (eligible_module_limit==n_states, mark_count==len(sampled_states), observer clear, tracemalloc_mark_count==0)",
+    "SCIENCE_BRANCH (terminal_branch classifier \u2014 NOT receipt.ok)",
+    "CA_PERSISTS satisfies precondition ONLY \u2014 NOT reduction eligibility"
+  ],
+  "bounded_steps_budget": {
+    "fixture_a_arm_subprocess_timeout_seconds": 900,
+    "fixture_b_arm_subprocess_timeout_seconds": 1800,
+    "liveness_coherence": "max_silent(900) < phase(1800) < total(3600)",
+    "max_silent_phase_seconds": 900,
+    "max_steps_hard": 1,
+    "phase_heartbeat_seconds": 30,
+    "phase_timeout_seconds": 1800,
+    "total_timeout_seconds": 3600
+  },
+  "box_preflight_role_pins": {
+    "attribution_script": {
+      "rel_path": "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py",
+      "sha256": "33340dffc28f45fee02a7204802f489e4810337a0ab9ed64e56df628817bdaeb"
+    },
+    "bounded_delta_acquisition_probe": {
+      "rel_path": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "sha256": "c3a7a4dbdc1e14d3ff631c0922b3f7b65c5a0c94594e54a7c398ac3afbc2a797"
+    },
+    "bounded_delta_learner": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "sha256": "a0dc750edd98a64dca629e2989ca9ec646b44f7074a0ecbb9408840bff3f5c11"
+    },
+    "code_currency_guard": {
+      "rel_path": "scripts/hrm_text_158_code_currency_guard.py",
+      "sha256": "c8aae32b7125c3e683ff026e82fe776d04f6ff4b28cc32ed17e9ca0ca356cb0c"
+    },
+    "event_coded_acc_live_carrier": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
+      "sha256": "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412"
+    },
+    "event_coded_vote_update_adapter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
+      "sha256": "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f"
+    },
+    "host_tracemalloc_probe": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py",
+      "sha256": "4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1"
+    },
+    "probe_bootstrap": {
+      "rel_path": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+      "sha256": "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f"
+    },
+    "s1d7_band_counter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py",
+      "sha256": "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688"
+    },
+    "s1d7_tracemalloc_feasibility": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py",
+      "sha256": "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794"
+    },
+    "sparse_cap_gpu_seam_adapter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+      "sha256": "ab79f8bcb1abc800e3f5217247b187f83455c60b5a46427d1d3ae7a04eb865d1"
+    }
+  },
+  "branch": "feature/hrm-text-1.58",
+  "ca_confirmation_objective": {
+    "anti_overclaim": "Within the Fold-3B packet scope, state0-only crossing support classifies as one of the pre-registered branches. FORBIDDEN: candidate-C, CA/reduction eligibility, W/P, ~430MB bank pin, universal all-state census, bank mutation, sub-2 readiness, full-stack readiness, implementation readiness",
+    "cb_share_min": 0.8,
+    "control_reason": "state0_omission_or_shifted_set",
+    "crossing_bearing_predicate": "crossing_indices_len > 0",
+    "dense_env_override": "1,2,3,4,5,6,7,8,9,10",
+    "dense_order_env_override": "1,2,3,4,5,6,7,8,9,10",
+    "dense_sampled_state_order": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "dense_sampled_states": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "diagnostic_flags": {
+      "counts_as_sub2": false,
+      "diagnostic_reason": "Fold-3B Variable B mechanism diagnosis \u2014 state0-omission confirmatory decider",
+      "inside_fold3b_budget": true,
+      "n20_screen_bundled": false,
+      "pre_full_stack_diagnostic": true,
+      "ready_for_main_science": false
+    },
+    "f3b_mechanism_acceptance": {
+      "classifier": "F3B_WHY_STATE0_BRANCH_V1",
+      "control_reason": "state0_omission_or_shifted_set",
+      "decision_rule": {
+        "F3B_SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT": "a different semantic state becomes sole CB with state0 omitted",
+        "F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION": "state0 absent from sampled set and zero CB states corroborates identity"
+      },
+      "decisive_branches": [
+        "F3B_SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT",
+        "F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION"
+      ],
+      "field": "f3b_terminal_branch",
+      "fold3b_budget": "counts 1 launch toward Fold-3B 4-launch/140-unit budget",
+      "n20_screen_policy": "N=20 screen deliberately NOT bundled \u2014 Variable A run 1783265204759 already exercised n=32 dense CA machinery end-to-end CLEAN; B run changes only sampled SET sequence. Explicit N=20 screen tier remains available via separate dispatch if liveness surprise occurs.",
+      "n50_equivalent_semantics": "DETERMINISTIC: this n=32 dense B primary IS the N=50-equivalent verdict arm (single deterministic receipt; no stochastic repeats)",
+      "negative_gate": "MUST NOT use compute_identity_inertness_proven or baseline element-wise crossing comparison as science gate \u2014 that would false-reject measurement-order artifacts",
+      "non_decisive_branches": [
+        "F3B_NO_VERDICT_OPERATIONAL",
+        "F3B_NO_VERDICT_SCHEMA",
+        "F3B_STATE0_IDENTITY_STRUCTURE",
+        "F3B_MEASUREMENT_ORDER_ARTIFACT",
+        "F3B_MARKING_OR_DEDUP_ARTIFACT",
+        "F3B_MIXED_OR_INCONCLUSIVE"
+      ],
+      "true_iff_all": [
+        "variable_a_prerequisite_ok == true (accepted Variable A F3B_STATE0_IDENTITY_STRUCTURE)",
+        "primary_dense_fork_readable == true (Q4 salvage on completed n=32 primary)",
+        "sampled_state_set == [1,2,3,4,5,6,7,8,9,10] (semantic state0 omitted)",
+        "sampled_state_order == [1,2,3,4,5,6,7,8,9,10] (ascending SET-membership test)",
+        "order_control_active == true on B primary receipt",
+        "order_perturbation_kind == sampled_block_order_perturbation",
+        "effective_visit_order == [1..10]+[11..31] (ascending sampled block + numeric tail)",
+        "order_rank_by_semantic_state[str(i)] == i-1 for i in 1..10",
+        "semantic_state_id == state_index per per_state row over [1..10]; 0 not in set",
+        "dedup_reset_called == true AND dedup_session_scope valid (probe_subprocess)",
+        "classify_f3b_why_state0_branch(f3b_branch_inputs).terminal_branch emitted"
+      ],
+      "variable_a_mechanism_citation_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/fold3b_variable_a_mechanism_diagnosis_receipt.json",
+      "variable_a_wrapper_citation_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/ca_confirmation_wrapper_receipt.json",
+      "variable_id": "B_state0_omission",
+      "when_false": "non-decisive; NO_VERDICT_* or MIXED"
+    },
+    "feasibility_subsample_trigger": {
+      "exclude_exit_codes": [
+        37,
+        -6
+      ],
+      "executable_via": "packet wrapper: evaluate_ca_confirmation_fallback_trigger on COMPLETED primary receipt (slice5:6634-6652); NOT in-run interrupt; primary_dense_fork_readable salvage when primary completes cleanly",
+      "fallback_dense_env": "1,2,3,4,5,6,7,8,9,10",
+      "fallback_dense_order_env": "1,2,3,4,5,6,7,8,9,10",
+      "fallback_n_states": 16,
+      "or_subprocess_timeout_expired": true,
+      "peak_rss_gib_gt": 6.5,
+      "post_primary_only": true
+    },
+    "fork_read_gate_field": "primary_dense_fork_readable",
+    "not_science_gate_fields": [
+      "ok",
+      "infra_ok",
+      "terminal_branch",
+      "identity_inertness_proven",
+      "variable_a_prerequisite_ok"
+    ],
+    "prereg_packet_path": "artifacts/consensus_prep/c4s1_fold3b_step1_prereg_packet_v1_draft.json",
+    "primary_dense_fork_readable": {
+      "field": "primary_dense_fork_readable",
+      "true_iff_all": [
+        "wrapper.runs.primary.sampled_states == [1,2,3,4,5,6,7,8,9,10]",
+        "wrapper.runs.primary.s1d7_band_counter_mark_count == 10",
+        "wrapper.runs.primary.checks.s1d7_band_counter_mark_count_eq_sampled_state_count == true",
+        "wrapper.runs.primary.per_state covers state_index 1..10 (all ten rows; 0 absent)",
+        "wrapper.runs.primary.runs.B.exit_code == 0",
+        "wrapper.runs.primary.runs.B.subprocess_timeout_expired == false",
+        "wrapper.runs.primary.infra_ok == true"
+      ],
+      "when_false": "Primary is partial telemetry only; dense n=16 fallback is the science source. If fallback also lacks full dense coverage or clean B-arm exit \u2192 feasibility/inconclusive.",
+      "when_true": "Read structural-vs-sampling fork from wrapper.runs.primary.per_state EVEN IF fallback_trigger.rss_breach==true and science_verdict_source==fallback. Completed primary with peak_rss>6.5 is fork-readable; NOT mere FEASIBILITY_SUBSAMPLE."
+    },
+    "science_gate_field": "f3b_terminal_branch",
+    "science_question": "Fold-3B Variable B: with SET=[1..10] omitting semantic state0, does crossing-bearing support corroborate state0 identity or indicate sample-set/eligibility artifact?",
+    "terminal_branches": [
+      "CA_PERSISTS",
+      "CA_MIXED",
+      "CA_DILUTES",
+      "INSUFFICIENT_CB_STATES",
+      "INFRA_NULL",
+      "FEASIBILITY_SUBSAMPLE"
+    ],
+    "variable_a_mechanism_citation_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/fold3b_variable_a_mechanism_diagnosis_receipt.json",
+    "variable_a_wrapper_citation_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/ca_confirmation_wrapper_receipt.json",
+    "variable_id": "B_state0_omission"
+  },
+  "callsite_band_counter_currency_coverage": {
+    "box_preflight": "10 phase3 roles on disk via box_lane --include-phase3-obmalloc-surfaces",
+    "executed_guard": "probe_bootstrap.py -B entry \u2192 maybe_enforce_phase3b_probe_import_byte_currency BEFORE bounded_delta_acquisition_probe import (band_counter_only env; guard-ordering decoupled from tracemalloc)",
+    "preflight_dry_check": "proof.callsite_currency_dry_check_command",
+    "prepare_env": "prepare_phase3b_band_counter_only_launch_env sets IMPORT_BYTE_PINS"
+  },
+  "canonical_lane": "test-operator_gpu_diagnostic",
+  "child_emission_contract": {
+    "band_counter_enable": {
+      "eligible_module_limit": 32,
+      "env": "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY=1 + HOST_RSS=1 + TRACEMALLOC=0 + HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=1,2,3,4,5,6,7,8,9,10 + HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=1,2,3,4,5,6,7,8,9,10",
+      "events": "s1d7_band_counter_site_C4.S1d.7_post (10 sampled states @ eligible_module_limit=32)",
+      "expected_mark_events": 10,
+      "expected_sampled_state_count": 10,
+      "measurement_contract": "static_pre_append_v1",
+      "n_states": 32,
+      "new_mark_events": 10,
+      "sampled_states": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "sampled_states_rule": "dense [1..10] via HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES env override (semantic state0 omitted); ascending order [1..10] via HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER",
+      "schema": "hrm_text_158_s1d7_band_counter_site/v1",
+      "tracemalloc_site_events": 0
+    },
+    "env_source": "B-prime band-counter-only: tracemalloc=False, band_counter_only=True; bootstrap -B guard-ordering; dense sampled_states via shell export + env_toggles",
+    "env_toggles_b_arm": {
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+      "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES": "1,2,3,4,5,6,7,8,9,10",
+      "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER": "1,2,3,4,5,6,7,8,9,10",
+      "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS": "0",
+      "HRM_TEXT_158_PROFILE_HOST_RSS": "1",
+      "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED": "0",
+      "HRM_TEXT_158_PROFILE_OBMALLOC_SITE_BRACKETS": "0",
+      "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY": "1",
+      "HRM_TEXT_158_PROFILE_TRACEMALLOC": "0",
+      "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+      "HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP": "1",
+      "HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY": "1"
+    },
+    "line_split_surfaces": {
+      "band_counter_logical_candidate": "event_coded_acc_live_carrier.py:896",
+      "band_counter_logical_marker": "event_coded_acc_live_carrier.py:895",
+      "tracemalloc_classifier_candidate_bands": "A910 / C941-952 / E914-917",
+      "tracemalloc_classifier_physical_bracket": "[909,955]"
+    }
+  },
+  "code_pin_coverage": {
+    "box_preflight": {
+      "note": "box attests file bytes on disk; executed guard attests imported bytecode",
+      "surfaces": [
+        "DEFAULT_FLOOR_PINNED_FILES + PHASE3_OBMALLOC_SURFACE_PINNED_FILES (10 roles)"
+      ],
+      "via": "box_lane_code_currency_preflight.py --include-phase3-obmalloc-surfaces"
+    },
+    "executed_code_guard": {
+      "surfaces": [
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "calm/hrm_text_158/native_full_stack/box_lane.py",
+        "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
+        "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
+        "calm/hrm_text_158/native_full_stack/f3b_why_state0_branch.py",
+        "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py",
+        "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py",
+        "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py",
+        "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+        "scripts/box_lane_code_currency_preflight.py",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+        "scripts/hrm_text_158_code_currency_guard.py",
+        "scripts/hrm_text_158_r7_resource_lane_acquire.py",
+        "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py"
+      ],
+      "via": "PHASE3B_PINNED_SOURCE_FILES + bootstrap executed guard (test_slice5 intentionally omitted \u2014 not launch-executed)"
+    }
+  },
+  "code_pins": {
+    "bounded_delta_acquisition_probe_sha256": "c3a7a4dbdc1e14d3ff631c0922b3f7b65c5a0c94594e54a7c398ac3afbc2a797",
+    "bounded_delta_learner_sha256": "a0dc750edd98a64dca629e2989ca9ec646b44f7074a0ecbb9408840bff3f5c11",
+    "box_lane_code_currency_preflight_sha256": "08bc8d13fbac548aea49d90db1af252d1cbde4abe867287f127f228f59ab1ecc",
+    "box_lane_sha256": "987a9a48e9a841c64ee35b3266541b98c593ab3523db1af70e42163c93ed7744",
+    "event_coded_acc_live_carrier_sha256": "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412",
+    "event_coded_vote_update_adapter_sha256": "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f",
+    "f3b_why_state0_branch_sha256": "94bf73cc920b51ec3f559a2867408e30a4f00a3b821726f06bb14f9c04940557",
+    "git_head": "89ebd6bd2b6be868f4517bc8f14714e269bb06cc",
+    "host_tracemalloc_probe_sha256": "4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1",
+    "hrm_text_158_bounded_delta_acquisition_probe_sha256": "c3a7a4dbdc1e14d3ff631c0922b3f7b65c5a0c94594e54a7c398ac3afbc2a797",
+    "hrm_text_158_code_currency_guard_sha256": "c8aae32b7125c3e683ff026e82fe776d04f6ff4b28cc32ed17e9ca0ca356cb0c",
+    "hrm_text_158_slice5_v6i_oom_profile_attribution_sha256": "33340dffc28f45fee02a7204802f489e4810337a0ab9ed64e56df628817bdaeb",
+    "probe_bootstrap_sha256": "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f",
+    "r7_resource_lane_acquire_sha256": "c69fd07f9416f15bb2fdc0c6d11b4c10d85c145c57d015e929653ac7f25df027",
+    "s1d7_band_counter_sha256": "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688",
+    "s1d7_tracemalloc_feasibility_sha256": "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794",
+    "sparse_cap_gpu_seam_adapter_sha256": "ab79f8bcb1abc800e3f5217247b187f83455c60b5a46427d1d3ae7a04eb865d1"
+  },
+  "code_pins_note": "test_slice5 omitted (not launch-executed). git_head_required=89ebd6b is the Fold-3B Variable B classifier+B3 science baseline (FDC); descendant HEAD allowed via merge-base ancestor check. Science code_pins verified @ git_head_required via git show. Launch-executed infra pins (on-disk): box_lane.py implements descendant-head accept decision; box_lane_code_currency_preflight.py imports box_lane at module load.",
+  "consumption_matrix": {
+    "A_freshness_guard": {
+      "bootstrap_launch": "python3 -B probe_bootstrap.py entry; band_counter_only env; guard runs before pinned imports",
+      "box_preflight": "box_lane_code_currency_preflight.py --include-phase3-obmalloc-surfaces",
+      "guard_entry": "bootstrap.main \u2192 run_phase3b_probe_executed_code_currency_guard BEFORE bounded_delta_acquisition_probe import (band_counter_only)",
+      "pycache_invalidation": "prepare_phase3b_band_counter_only_launch_env + guard-internal invalidation"
+    },
+    "B_confirmation_receipt": {
+      "builder": "run_callsite_band_counter_ca_confirmation + classify_ca_band_counter_confirmation",
+      "fallback": "POST-primary RSS>6.5 GiB or runs.B.subprocess_timeout_expired on n=32 dense \u2192 n=16 dense-[1..10]; exit 37/-6 fail-closed (no fallback)",
+      "fork_read_gate": "primary_dense_fork_readable (completed primary salvage)",
+      "launch_wrapper_reporting": "wrapper receipt MUST surface runs.primary.per_state, primary_receipt_path, fallback_trigger, primary_dense_fork_readable; per-fixture lane acquire/release inside slice5 is the sole lock boundary (no outer RUN_ROOT acquire)",
+      "science_gate": "f3b_terminal_branch via F3B_WHY_STATE0_BRANCH_V1 (NOT receipt.ok / infra_ok / identity_inertness_proven)"
+    }
+  },
+  "decision_contract": {
+    "chosen_path": "Fold-3B Variable B state0-omission via run_callsite_band_counter_ca_confirmation @ 89ebd6b n_states=32; HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=1,2,3,4,5,6,7,8,9,10 + HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=1,2,3,4,5,6,7,8,9,10; classifier F3B_WHY_STATE0_BRANCH_V1 mechanism verdict",
+    "forbidden": [
+      "direct probe.py launch without bootstrap for band_counter_only B-arm",
+      "TRACEMALLOC=1 on band_counter_only confirmation subprocess",
+      "reading receipt.ok or infra_ok or command exit as f3b_terminal_branch",
+      "using compute_identity_inertness_proven as science gate",
+      "candidate-C single-band resolution claim from this run",
+      "outer RUN_ROOT lane acquire (double-acquire deadlock)"
+    ],
+    "forbidden_at_launch": [
+      "launch without box code-currency preflight",
+      "launch without variable_a_prerequisite preflight check",
+      "launch with claude pre-holding gpu:hrm-text-158 lane (per-fixture self-acquire)",
+      "direct probe.py launch without bootstrap for band_counter_only B-arm",
+      "TRACEMALLOC=1 band_counter_only subprocess",
+      "outer r7_resource_lane_acquire at RUN_ROOT"
+    ]
+  },
+  "design_binding": {
+    "chosen_option": "n32_dense_110_variable_b_omit0_mechanism_diagnosis",
+    "fold1_spec_sha256": "14be946993ac8b8b64bd0978e71b642590decd54a94f245712488b48ef178c22",
+    "fold2_design_msg_id": "1783186409528",
+    "fold2a_source_commit": "89ebd6bd2b6be868f4517bc8f14714e269bb06cc",
+    "prereg_packet_path": "artifacts/consensus_prep/c4s1_fold3b_step1_prereg_packet_v1_draft.json",
+    "variable_a_co_lead_pass_msg_id": "1783265484335",
+    "variable_a_terminal_receipt_msg_id": "1783265204759"
+  },
+  "executed_code_currency_guard_contract": {
+    "bootstrap_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+    "fail_closed_exit_code": 37,
+    "pre_measurement": true,
+    "proof_method": "reachable_code_object_fingerprint_method_a",
+    "required_receipt_fields": [
+      "ok",
+      "guard_ran_before_pinned_imports",
+      "sys_modules_before_guard",
+      "sys_modules_after_guard",
+      "executed_code_fingerprints",
+      "import_byte_fingerprints",
+      "child_orig_argv",
+      "child_sys_argv",
+      "child_post_script_cli_argv",
+      "env.PYTHONDONTWRITEBYTECODE",
+      "sys_flags.dont_write_bytecode",
+      "pycache_invalidated_paths"
+    ],
+    "schema": "hrm_text_158_code_currency_executed_guard/v1"
+  },
+  "execution_order": [
+    "dispatch_run_claim",
+    "preflight",
+    "parent_checkpoint_rehash_before",
+    "install_lane_release_trap_cleanup_only",
+    "ca_confirmation_primary_or_fallback",
+    "parent_checkpoint_rehash_after",
+    "resource_lane_release_cleanup_only"
+  ],
+  "forbidden": [
+    "mutate banked .pt checkpoint",
+    "pass --mirror-durable-attribution at launch",
+    "v6i-unpark",
+    "claim reduction implementation eligibility from this confirmation run",
+    "stage/commit/push from test-operator",
+    "edit code beyond 89ebd6b pins",
+    "launch conflated profiler envs (TRACEMALLOC=1 on band-counter-only subprocess)",
+    "set DEBUGMALLOCSTATS and TRACEMALLOC on same subprocess",
+    "treat FEASIBILITY_SUBSAMPLE as reduction eligibility",
+    "legacy callsite classifier or candidate-band routing from this packet"
+  ],
+  "git_head_required": "89ebd6bd2b6be868f4517bc8f14714e269bb06cc",
+  "gpu_lane": {
+    "canonical_name": "gpu:TheRig:uuid:GPU-4c376502-9cde-e181-ec2b-9773b307342e",
+    "hardware": "RTX 4070 Laptop (8 GB VRAM)",
+    "request_alias": "gpu:hrm-text-158"
+  },
+  "monitor": {
+    "primary_tail_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log",
+    "probe_stream_log_paths": [
+      "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_a/probe_stream.log",
+      "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log"
+    ],
+    "run_root": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1",
+    "scratch_root": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b"
+  },
+  "packet_id": "c4s1_phase3_n32_dense_110_variable_b_omit0_v1",
+  "packet_revision": "v1_n32_dense_110_variable_b_omit0_89ebd6b",
+  "parent_checkpoint": {
+    "absolute_path": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "pass_criterion": "sha256 equals 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec before AND after run",
+    "read_only": true,
+    "rehash_after_command": "sha256sum /mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}'",
+    "rehash_before_command": "sha256sum /mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}'",
+    "relative_path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+  },
+  "perturbation_risk_classification": {
+    "ca_confirmation_mandatory": {
+      "command": "proof.ca_confirmation_command",
+      "exit_code_fail_infra": 37,
+      "exit_code_fail_unknown_branch": 42,
+      "gates": [
+        "observer_guard_clear",
+        "tracemalloc_perturbed_false",
+        "eligible_module_limit_eq_n_states",
+        "s1d7_band_counter_mark_count_eq_sampled_state_count",
+        "tracemalloc_mark_count_eq_0",
+        "b_profile_mark_count_gt_0",
+        "no_profile_env_mutual_exclusion_abort",
+        "no_tracemalloc_perturbed_inconclusive",
+        "infra_not_null"
+      ],
+      "ordering": "PRIMARY Variable B state0-omission ascending-order run; acceptance read from f3b_terminal_branch via mechanism diagnosis receipt NOT ok/exit",
+      "science_branches": [
+        "CA_PERSISTS",
+        "CA_MIXED",
+        "CA_DILUTES",
+        "INSUFFICIENT_CB_STATES",
+        "INFRA_NULL",
+        "FEASIBILITY_SUBSAMPLE"
+      ],
+      "science_gate": "f3b_terminal_branch"
+    }
+  },
+  "phase_budgets_and_watcher": {
+    "convention": "fold-2b confirmation budgets: max_silent(900) < phase(1800) < total(3600); milestone budgets report-only",
+    "heartbeat_interval_seconds": 30,
+    "heartbeat_supplementary_only": true,
+    "interrupt_authority": {
+      "first_milestone_budgets_report_only": true,
+      "interrupt_authority": "faulthandler_silent_phase_guard",
+      "interrupt_timeout_seconds": 900.0,
+      "milestone_budget_breach_triggers_interrupt": false,
+      "schema": "hrm_text_158_phase_budget_interrupt_authority/v1"
+    },
+    "liveness_contract": {
+      "coherence": "max_silent(900) < phase(1800) < total(3600)",
+      "max_silent_phase_seconds": 900,
+      "per_arm_subprocess_timeout_seconds": 1800,
+      "phase_heartbeat_seconds": 30,
+      "phase_timeout_seconds": 1800,
+      "total_timeout_seconds": 3600,
+      "watcher_stall_seconds": 900
+    },
+    "max_silent_phase_seconds": 900,
+    "phase_timeout_seconds": 1800,
+    "stop_conditions": [
+      "executed guard receipt missing or guard_ran_before_pinned_imports false",
+      "ca_confirmation subprocess exit 37 (infra_null / currency fail-closed)",
+      "ca_confirmation subprocess exit 42 (unknown terminal_branch)",
+      "no phase_heartbeat within watcher_stall_seconds(900)",
+      "parent checkpoint sha256 mismatch pre/post",
+      "peak_rss_gib > 6.5 on primary n=32 triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
+      "primary runs.B.subprocess_timeout_expired triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
+      "primary exit_code 37/-6 MUST NOT trigger fallback (fail-closed INFRA_NULL)"
+    ],
+    "total_timeout_seconds": 3600,
+    "watcher_liveness_fail_regex": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL"
+  },
+  "preflight": {
+    "a_freshness_guard": {
+      "bootstrap_required": true,
+      "bootstrap_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+      "box_preflight_n_files_lower_bound": 10,
+      "box_preflight_roles": [
+        "event_coded_acc_live_carrier",
+        "sparse_cap_gpu_seam_adapter",
+        "event_coded_vote_update_adapter",
+        "bounded_delta_learner",
+        "attribution_script",
+        "code_currency_guard",
+        "probe_bootstrap",
+        "bounded_delta_acquisition_probe",
+        "host_tracemalloc_probe",
+        "s1d7_tracemalloc_feasibility"
+      ],
+      "direct_probe_required": false,
+      "executed_proof_method": "reachable_code_object_fingerprint_method_a",
+      "fail_closed_exit_code": 37,
+      "fail_closed_terminals": [
+        "CODE_CURRENCY_GUARD_NOT_RUN_INCONCLUSIVE",
+        "CODE_CURRENCY_EXECUTED_MISMATCH_INCONCLUSIVE",
+        "CODE_CURRENCY_MISMATCH_INCONCLUSIVE"
+      ],
+      "probe_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "probe_subprocess": "python3 -B probe_bootstrap.py via _fixture_probe_argv(band_counter_only=True) @ attribution.py:5404; bootstrap=guard-ordering only; env decoupled (TRACEMALLOC=0, BAND_COUNTER_ONLY=1)",
+      "pycache_invalidation": "prepare_phase3b_band_counter_only_launch_env + guard-internal invalidation"
+    },
+    "command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; HEAD=$(git rev-parse HEAD); git merge-base --is-ancestor '89ebd6bd2b6be868f4517bc8f14714e269bb06cc' \"$HEAD\"; PARENT=/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt; PARENT_SHA=$(sha256sum \"$PARENT\" | awk '{print $1}'); test -f \"$PARENT\"; test \"$PARENT_SHA\" = '9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'; PYTHONPATH=. python3 - <<'PY'\nimport hashlib, subprocess, sys\nfrom pathlib import Path\nREPO = Path('/mnt/c/Users/gabes/projects/claw-code-hrm-text-158')\nPINS = {\n    'calm/hrm_text_158/native_full_stack/bounded_delta_learner.py': 'a0dc750edd98a64dca629e2989ca9ec646b44f7074a0ecbb9408840bff3f5c11',\n    'calm/hrm_text_158/native_full_stack/box_lane.py': '987a9a48e9a841c64ee35b3266541b98c593ab3523db1af70e42163c93ed7744',\n    'calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py': '624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412',\n    'calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py': 'af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f',\n    'calm/hrm_text_158/native_full_stack/f3b_why_state0_branch.py': '94bf73cc920b51ec3f559a2867408e30a4f00a3b821726f06bb14f9c04940557',\n    'calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py': '4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1',\n    'calm/hrm_text_158/native_full_stack/s1d7_band_counter.py': '1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688',\n    'calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py': 'f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794',\n    'calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py': 'ab79f8bcb1abc800e3f5217247b187f83455c60b5a46427d1d3ae7a04eb865d1',\n    'scripts/box_lane_code_currency_preflight.py': '08bc8d13fbac548aea49d90db1af252d1cbde4abe867287f127f228f59ab1ecc',\n    'scripts/hrm_text_158_bounded_delta_acquisition_probe.py': 'c3a7a4dbdc1e14d3ff631c0922b3f7b65c5a0c94594e54a7c398ac3afbc2a797',\n    'scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py': 'c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f',\n    'scripts/hrm_text_158_code_currency_guard.py': 'c8aae32b7125c3e683ff026e82fe776d04f6ff4b28cc32ed17e9ca0ca356cb0c',\n    'scripts/hrm_text_158_r7_resource_lane_acquire.py': 'c69fd07f9416f15bb2fdc0c6d11b4c10d85c145c57d015e929653ac7f25df027',\n    'scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py': '33340dffc28f45fee02a7204802f489e4810337a0ab9ed64e56df628817bdaeb',\n}\nfor rel, expected in PINS.items():\n    actual = hashlib.sha256((REPO / rel).read_bytes()).hexdigest()\n    if actual != expected:\n        print(f'PIN_MISMATCH {rel}: got {actual} expected {expected}', file=sys.stderr)\n        raise SystemExit(11)\nprint('preflight_pins_ok')\nPY\nBASELINE='/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/ca_confirmation_wrapper_receipt.json'; test -f \"$BASELINE\"; PYTHONPATH=. python3 - <<'PY'\nimport json, sys\nfrom pathlib import Path\nwrapper_path = Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/ca_confirmation_wrapper_receipt.json')\nif not wrapper_path.is_file():\n    print('VARIABLE_A_WRAPPER_MISSING', file=sys.stderr)\n    raise SystemExit(12)\nwrapper = json.loads(wrapper_path.read_text(encoding='utf-8'))\nif wrapper.get('f3b_terminal_branch') != 'F3B_STATE0_IDENTITY_STRUCTURE':\n    print('VARIABLE_A_PRECONDITION_NOT_PROVEN', file=sys.stderr)\n    raise SystemExit(12)\nmech_path = Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/fold3b_variable_a_mechanism_diagnosis_receipt.json')\nif not mech_path.is_file():\n    print('VARIABLE_A_MECHANISM_MISSING', file=sys.stderr)\n    raise SystemExit(12)\nmech = json.loads(mech_path.read_text(encoding='utf-8'))\nif mech.get('f3b_terminal_branch') != 'F3B_STATE0_IDENTITY_STRUCTURE':\n    print('VARIABLE_A_MECHANISM_NOT_IDENTITY', file=sys.stderr)\n    raise SystemExit(12)\nprint('preflight_variable_a_prerequisite_ok')\nPY\nRUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1; mkdir -p \"$RUN_ROOT/prelaunch\"; PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --chain-id c4s1_phase3_n32_dense_110_variable_b_omit0_v1 --head-expected 89ebd6bd2b6be868f4517bc8f14714e269bb06cc --skip-fetch --allow-descendant-head --include-phase3-obmalloc-surfaces --output \"$RUN_ROOT/prelaunch/box_code_currency_preflight.json\"; python3 -c \"import json;d=json.load(open('$RUN_ROOT/prelaunch/box_code_currency_preflight.json')); assert d['code_currency_pass']; assert d.get('n_files',0)>=10\"; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; PYTHONPATH=. python3 - <<'PY'\nimport json\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    dry_check_callsite_b_prime_b_arm_launch_composition,\n)\nreceipt = dry_check_callsite_b_prime_b_arm_launch_composition()\nprint(json.dumps({'launch_composition_dry_check_ok': receipt.get('ok')}, sort_keys=True))\nif not receipt.get('ok'):\n    raise SystemExit(43)\nPY",
+    "pass_criterion": "exit 0; git merge-base --is-ancestor 89ebd6b HEAD; parent sha match; all pinned surfaces hash-match and clean; identity_inertness_wrapper exists+proven; box code-currency pass with --allow-descendant-head; band_counter_only currency dry-check ok"
+  },
+  "probe_stream_log_paths": [
+    "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_a/probe_stream.log",
+    "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log"
+  ],
+  "process_exit_precedence": {
+    "ca_confirmation_exits": {
+      "37": "infra_null / currency fail-closed / guard not proven",
+      "42": "unknown terminal_branch (not a valid CA confirmation science branch)"
+    },
+    "description": "fold-2b CA confirmation fail-closed exits; science read from terminal_branch after infra_ok",
+    "subprocess_pre_measurement": {
+      "enforced_by": "probe_bootstrap.py entry \u2192 maybe_enforce before probe import (band_counter_only)",
+      "exit_code": 37,
+      "order": 1,
+      "rule": "executed-code currency guard MUST fail-close exit 37 BEFORE phase telemetry if freshness cannot be proven",
+      "terminals": [
+        "CODE_CURRENCY_GUARD_NOT_RUN_INCONCLUSIVE",
+        "CODE_CURRENCY_EXECUTED_MISMATCH_INCONCLUSIVE",
+        "CODE_CURRENCY_MISMATCH_INCONCLUSIVE"
+      ]
+    }
+  },
+  "proof": {
+    "artifacts": {
+      "b_host_rss_profile": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/host_rss_profile.jsonl",
+      "b_probe_stream_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log",
+      "ca_confirmation_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "ca_confirmation_wrapper_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/ca_confirmation_wrapper_receipt.json",
+      "exit_code_monitor_optional": "NOT written by ca_confirmation (command rm -f only); monitor/watcher may optionally record shell exit \u2014 terminal acceptance is f3b_terminal_branch based",
+      "f3b_mechanism_diagnosis_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/fold3b_variable_b_mechanism_diagnosis_receipt.json",
+      "f3b_terminal_branch": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/fold3b_variable_b_mechanism_diagnosis_receipt.json#f3b_terminal_branch",
+      "fallback_runs_b_resource_lane_holding": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/feasibility_subsample_n16/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.B.resource_lane_holding",
+      "fallback_runs_b_resource_lane_release": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/feasibility_subsample_n16/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.B.resource_lane_release",
+      "fallback_trigger": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/ca_confirmation_wrapper_receipt.json#fallback_trigger",
+      "feasibility_subsample_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/feasibility_subsample_n16/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "lane_release_trap_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/postrun/lane_release_trap.log",
+      "lane_release_trap_note": "CLEANUP-ONLY; no_holding_file at RUN_ROOT is expected/normal \u2014 NOT protection proof",
+      "prelaunch_code_currency": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/box_code_currency_preflight.json",
+      "primary_dense_fork_readable": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/ca_confirmation_wrapper_receipt.json#primary_dense_fork_readable",
+      "primary_per_state": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#per_state",
+      "primary_receipt_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "primary_runs_a_resource_lane_holding": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.A.resource_lane_holding",
+      "primary_runs_a_resource_lane_release": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.A.resource_lane_release",
+      "primary_runs_b_resource_lane_holding": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.B.resource_lane_holding",
+      "primary_runs_b_resource_lane_release": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.B.resource_lane_release",
+      "terminal_lane_free_witness": "ai_room_resource_lane_status(lane=gpu:hrm-text-158) held=false \u2014 test-operator supplies at terminal receipt; NOT written by ca_confirmation"
+    },
+    "branch_outcomes": {
+      "CA_DILUTES": "crossing-bearing W/P partition: neither crossing-weighted nor per-state (C+A) share meets ca_share_min \u2014 informative null; fork read from per_state when primary_dense_fork_readable",
+      "CA_MIXED": "crossing-weighted (C+A) share ok XOR per-state ok \u2014 mixed persistence signal; fork read from per_state when primary_dense_fork_readable",
+      "CA_PERSISTS": "both crossing-weighted and per-state (C+A) shares meet ca_share_min \u2014 fold-1 precondition ONLY; NOT reduction eligibility",
+      "FEASIBILITY_SUBSAMPLE": "primary n=32 dense RSS>6.5 GiB or runs.B.subprocess_timeout_expired \u2192 rerun n=16 dense-[1..10]; exit 37/-6 NEVER fallback; terminal_branch via classify(feasibility_subsample=True) ONLY when primary_dense_fork_readable==false",
+      "INFRA_NULL": "infra_ok false or guard/observer fail-closed \u2014 no science branch; abnormal B-arm exit fail-closed",
+      "INSUFFICIENT_CB_STATES": "fewer than 2 crossing-bearing states \u2014 informative null; if only state 0 CB \u2192 structural (state0-only); fork read from per_state when primary_dense_fork_readable",
+      "PRIMARY_DENSE_FORK_READABLE": "completed primary dense-[1..10] with full mark coverage and clean B-arm exit \u2014 fork evidence authoritative even when RSS fallback fires post-primary"
+    },
+    "ca_confirmation_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; RUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1; mkdir -p \"$RUN_ROOT/prelaunch\" \"$RUN_ROOT/callsite_band_counter_a\" \"$RUN_ROOT/callsite_band_counter_b\" \"$RUN_ROOT/postrun\"; rm -f \"$RUN_ROOT/run_nonce.txt\" \"$RUN_ROOT/exit_code.txt\"; RUN_NONCE=\"$(git -C /mnt/c/Users/gabes/projects/claw-code-hrm-text-158 rev-parse HEAD)-$(date -u +%Y%m%dT%H%M%SZ)-$$\"; printf '%s\\n' \"$RUN_NONCE\" > \"$RUN_ROOT/run_nonce.txt\"; export PYTHONPATH=.; export HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=1,2,3,4,5,6,7,8,9,10; export HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=1,2,3,4,5,6,7,8,9,10; cleanup_lane_release() { PYTHONPATH=. python3 -c \"from pathlib import Path; from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane; import json; print(json.dumps(release_resource_lane(Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1'))))\" >>\"$RUN_ROOT/postrun/lane_release_trap.log\" 2>&1 || true; }; trap cleanup_lane_release EXIT ERR INT TERM; timeout 3600 python3 - \"$RUN_ROOT\" <<'PY'\nimport json, sys\nfrom pathlib import Path\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    ca_confirmation_wrapper_exit_code,\n    orchestrate_ca_confirmation_with_fallback,\n)\nfrom calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (\n    build_branch_input_contract_from_ca_receipt,\n    classify_f3b_why_state0_branch,\n    normalize_per_state_for_mechanism_receipt,\n)\n\nDENSE_SAMPLED = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\nDENSE_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\nEXPECTED_EFFECTIVE = DENSE_ORDER + list(range(11, 32))\nVARIABLE_A_WRAPPER_PATH = (\n    \"/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/\"\n    \"prelaunch/ca_confirmation_wrapper_receipt.json\"\n)\nVARIABLE_A_MECHANISM_RECEIPT_PATH = (\n    \"/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/\"\n    \"prelaunch/fold3b_variable_a_mechanism_diagnosis_receipt.json\"\n)\nMECHANISM_RECEIPT_NAME = \"fold3b_variable_b_mechanism_diagnosis_receipt.json\"\nWRAPPER_RECEIPT_NAME = \"ca_confirmation_wrapper_receipt.json\"\nGIT_HEAD_REQUIRED = \"89ebd6bd2b6be868f4517bc8f14714e269bb06cc\"\n\n\ndef compute_primary_dense_fork_readable(wrapper: dict) -> bool:\n    try:\n        primary = (wrapper or {}).get(\"runs\", {}).get(\"primary\")\n        if not isinstance(primary, dict):\n            return False\n        sampled = primary.get(\"sampled_states\")\n        if list(sampled) != DENSE_SAMPLED:\n            return False\n        if int(primary.get(\"s1d7_band_counter_mark_count\", -1)) != 10:\n            return False\n        checks = primary.get(\"checks\") or {}\n        if checks.get(\"s1d7_band_counter_mark_count_eq_sampled_state_count\") is not True:\n            return False\n        per_state = primary.get(\"per_state\") or []\n        if not isinstance(per_state, list):\n            return False\n        covered = {\n            int(row.get(\"state_index\"))\n            for row in per_state\n            if isinstance(row, dict) and row.get(\"state_index\") is not None\n        }\n        if covered != set(DENSE_SAMPLED) or 0 in covered:\n            return False\n        b_run = (primary.get(\"runs\") or {}).get(\"B\") or {}\n        if int(b_run.get(\"exit_code\", -1)) != 0:\n            return False\n        if bool(b_run.get(\"subprocess_timeout_expired\")):\n            return False\n        if primary.get(\"infra_ok\") is not True:\n            return False\n        return True\n    except Exception:\n        return False\n\n\ndef _b_set_provenance_ok(primary: dict) -> bool:\n    try:\n        sampled_set = list(primary.get(\"sampled_state_set\") or [])\n        if sampled_set != list(DENSE_SAMPLED) or 0 in set(sampled_set):\n            return False\n        sampled_order = list(primary.get(\"sampled_state_order\") or [])\n        if sampled_order != list(DENSE_ORDER):\n            return False\n        if primary.get(\"order_control_active\") is not True:\n            return False\n        if primary.get(\"order_perturbation_kind\") != \"sampled_block_order_perturbation\":\n            return False\n        effective = list(primary.get(\"effective_visit_order\") or [])\n        if effective != list(EXPECTED_EFFECTIVE):\n            return False\n        rank_map = primary.get(\"order_rank_by_semantic_state\") or {}\n        for idx, state in enumerate(DENSE_ORDER):\n            if int(rank_map.get(str(state), -1)) != idx:\n                return False\n        per_state = primary.get(\"per_state\") or []\n        for row in per_state:\n            if not isinstance(row, dict):\n                continue\n            state_index = row.get(\"state_index\")\n            if state_index is None:\n                continue\n            if int(state_index) not in set(DENSE_SAMPLED):\n                continue\n            if row.get(\"semantic_state_id\") != state_index:\n                return False\n        return True\n    except Exception:\n        return False\n\n\ndef _variable_a_prerequisite_ok() -> bool:\n    try:\n        wrapper_path = Path(VARIABLE_A_WRAPPER_PATH)\n        if not wrapper_path.is_file():\n            return False\n        wrapper = json.loads(wrapper_path.read_text(encoding=\"utf-8\"))\n        if wrapper.get(\"f3b_terminal_branch\") != \"F3B_STATE0_IDENTITY_STRUCTURE\":\n            return False\n        mech_path = Path(VARIABLE_A_MECHANISM_RECEIPT_PATH)\n        if not mech_path.is_file():\n            return False\n        mech = json.loads(mech_path.read_text(encoding=\"utf-8\"))\n        return mech.get(\"f3b_terminal_branch\") == \"F3B_STATE0_IDENTITY_STRUCTURE\"\n    except Exception:\n        return False\n\n\ndef _inject_b_provenance(primary: dict) -> dict:\n    enriched = dict(primary)\n    enriched[\"sampled_set_changed\"] = True\n    return enriched\n\n\ndef build_mechanism_diagnosis_receipt(wrapper: dict, run_root: Path) -> dict:\n    primary = (wrapper or {}).get(\"runs\", {}).get(\"primary\")\n    fallback = (wrapper or {}).get(\"runs\", {}).get(\"fallback\")\n    wrapper_path = str(run_root / \"prelaunch\" / WRAPPER_RECEIPT_NAME)\n    primary_path = None\n    fallback_path = None\n    if isinstance(primary, dict):\n        primary_path = primary.get(\"receipt_path\")\n    if isinstance(fallback, dict):\n        fallback_path = fallback.get(\"receipt_path\")\n\n    var_a_ok = _variable_a_prerequisite_ok()\n    operational_ok = not bool(wrapper.get(\"abnormal_exit\"))\n    if not isinstance(primary, dict):\n        branch_inputs = {\n            \"operational_ok\": False,\n            \"schema_ok\": False,\n            \"variable_id\": \"B_state0_omission\",\n            \"control_reason\": \"state0_omission_or_shifted_set\",\n            \"sampled_set_changed\": True,\n            \"identity_order_inertness_proven\": var_a_ok,\n        }\n        classified = classify_f3b_why_state0_branch(branch_inputs)\n    else:\n        primary_for_builder = _inject_b_provenance(primary)\n        branch_inputs = build_branch_input_contract_from_ca_receipt(\n            primary_for_builder,\n            variable_id=\"B_state0_omission\",\n            control_reason=\"state0_omission_or_shifted_set\",\n            identity_order_inertness_proven=var_a_ok,\n            operational_ok=operational_ok and compute_primary_dense_fork_readable(wrapper),\n        )\n        branch_inputs[\"sampled_set_changed\"] = True\n        if not _b_set_provenance_ok(primary):\n            branch_inputs[\"schema_ok\"] = False\n        classified = classify_f3b_why_state0_branch(branch_inputs)\n\n    if branch_inputs.get(\"schema_ok\") is True and isinstance(primary, dict):\n        per_state = normalize_per_state_for_mechanism_receipt(\n            list(primary.get(\"per_state\") or [])\n        )\n    else:\n        per_state = []\n    semantic_state_id = [\n        int(row.get(\"semantic_state_id\", row.get(\"state_index\")))\n        for row in per_state\n        if isinstance(row, dict) and row.get(\"state_index\") is not None\n    ]\n    return {\n        \"schema\": \"hrm_text_158_fold3b_mechanism_diagnosis_receipt/v1\",\n        \"classifier\": classified.get(\"classifier\"),\n        \"f3b_branch\": classified.get(\"terminal_branch\"),\n        \"f3b_terminal_branch\": classified.get(\"terminal_branch\"),\n        \"f3b_fired_branches\": classified.get(\"fired_branches\"),\n        \"f3b_branch_inputs\": classified.get(\"f3b_branch_inputs\"),\n        \"variable_id\": \"B_state0_omission\",\n        \"control_reason\": \"state0_omission_or_shifted_set\",\n        \"sampled_state_set\": list(DENSE_SAMPLED),\n        \"sampled_state_order\": list(DENSE_ORDER),\n        \"sampled_set_changed\": True,\n        \"order_rank_by_semantic_state\": (primary or {}).get(\"order_rank_by_semantic_state\") or {},\n        \"semantic_state_id\": semantic_state_id,\n        \"per_state\": per_state,\n        \"dedup_reset_called\": (primary or {}).get(\"dedup_reset_called\"),\n        \"dedup_session_scope\": (primary or {}).get(\"dedup_session_scope\"),\n        \"wrapper_path\": wrapper_path,\n        \"primary_receipt_path\": primary_path,\n        \"fallback_receipt_path\": fallback_path,\n        \"science_verdict_source\": wrapper.get(\"science_verdict_source\"),\n        \"parent_sha\": (primary or {}).get(\"parent_sha\"),\n        \"git_head_required\": GIT_HEAD_REQUIRED,\n        \"variable_a_prerequisite_ok\": var_a_ok,\n        \"variable_a_wrapper_citation_path\": VARIABLE_A_WRAPPER_PATH,\n        \"variable_a_mechanism_citation_path\": VARIABLE_A_MECHANISM_RECEIPT_PATH,\n        \"primary_dense_fork_readable\": compute_primary_dense_fork_readable(wrapper),\n        \"b_set_provenance_ok\": _b_set_provenance_ok(primary) if isinstance(primary, dict) else False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\n\nrun_root = Path(sys.argv[1])\nwrapper_receipt_path = run_root / \"prelaunch\" / WRAPPER_RECEIPT_NAME\nmechanism_receipt_path = run_root / \"prelaunch\" / MECHANISM_RECEIPT_NAME\nwrapper_receipt_path.parent.mkdir(parents=True, exist_ok=True)\n\ntry:\n    wrapper = orchestrate_ca_confirmation_with_fallback(run_root)\nexcept Exception as exc:\n    wrapper = {\n        \"schema\": \"hrm_text_158_ca_confirmation_wrapper_receipt/v1\",\n        \"abnormal_exit\": True,\n        \"abnormal_exit_error\": f\"{type(exc).__name__}: {exc}\",\n        \"runs\": {\"primary\": None},\n        \"science_verdict_source\": \"primary\",\n        \"fallback_trigger\": None,\n        \"primary_receipt_path\": None,\n        \"primary_dense_fork_readable\": False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\nif not isinstance(wrapper, dict):\n    wrapper = {\n        \"schema\": \"hrm_text_158_ca_confirmation_wrapper_receipt/v1\",\n        \"abnormal_exit\": True,\n        \"runs\": {\"primary\": None},\n        \"science_verdict_source\": \"primary\",\n        \"fallback_trigger\": None,\n        \"primary_receipt_path\": None,\n        \"primary_dense_fork_readable\": False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\nprimary = (wrapper.get(\"runs\") or {}).get(\"primary\")\nif isinstance(primary, dict):\n    wrapper[\"primary_receipt_path\"] = primary.get(\"receipt_path\")\nelse:\n    wrapper[\"primary_receipt_path\"] = None\n\nmechanism_receipt = build_mechanism_diagnosis_receipt(wrapper, run_root)\nmechanism_receipt_path.write_text(\n    json.dumps(mechanism_receipt, indent=2, sort_keys=True) + \"\n\",\n    encoding=\"utf-8\",\n)\n\nwrapper[\"variable_a_wrapper_citation_path\"] = VARIABLE_A_WRAPPER_PATH\nwrapper[\"variable_a_mechanism_citation_path\"] = VARIABLE_A_MECHANISM_RECEIPT_PATH\nwrapper[\"variable_a_prerequisite_ok\"] = bool(\n    mechanism_receipt.get(\"variable_a_prerequisite_ok\")\n)\nwrapper[\"primary_dense_fork_readable\"] = bool(\n    mechanism_receipt.get(\"primary_dense_fork_readable\")\n)\nwrapper[\"f3b_terminal_branch\"] = mechanism_receipt.get(\"f3b_terminal_branch\")\nwrapper[\"f3b_branch_inputs\"] = mechanism_receipt.get(\"f3b_branch_inputs\")\nwrapper[\"mechanism_diagnosis_receipt_path\"] = str(mechanism_receipt_path)\nwrapper[\"ready_for_main_science\"] = False\nwrapper[\"counts_as_sub2\"] = False\nwrapper[\"pre_full_stack_diagnostic\"] = True\n\nwrapper_receipt_path.write_text(\n    json.dumps(wrapper, indent=2, sort_keys=True) + \"\n\",\n    encoding=\"utf-8\",\n)\n\nscience_receipt = (\n    wrapper.get(\"runs\", {}).get(\"fallback\")\n    if wrapper.get(\"science_verdict_source\") == \"fallback\"\n    else wrapper.get(\"runs\", {}).get(\"primary\")\n)\nif not isinstance(science_receipt, dict):\n    science_receipt = {\"infra_ok\": False, \"terminal_branch\": \"INFRA_NULL\"}\n\nprint(json.dumps(wrapper, indent=2, sort_keys=True))\nraise SystemExit(ca_confirmation_wrapper_exit_code(science_receipt))\n\nPY",
+    "callsite_currency_dry_check_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; PYTHONPATH=. python3 - <<'PY'\nimport json\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    dry_check_callsite_b_prime_b_arm_launch_composition,\n)\nreceipt = dry_check_callsite_b_prime_b_arm_launch_composition()\nprint(json.dumps(receipt, indent=2, sort_keys=True))\nif not receipt.get('ok'):\n    raise SystemExit(43)\nPY",
+    "description": "Fold-3B Variable B state0-omission mechanism diagnosis via orchestrate_ca_confirmation_with_fallback import heredoc; SET=1,2,3,4,5,6,7,8,9,10 + ORDER=1,2,3,4,5,6,7,8,9,10; POST-primary RSS>6.5 GiB or timeout triggers n=16 B-set fallback; f3b_terminal_branch via F3B_WHY_STATE0_BRANCH_V1 classifier",
+    "f3b_mechanism_acceptance": {
+      "classifier": "F3B_WHY_STATE0_BRANCH_V1",
+      "control_reason": "state0_omission_or_shifted_set",
+      "decision_rule": {
+        "F3B_SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT": "a different semantic state becomes sole CB with state0 omitted",
+        "F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION": "state0 absent from sampled set and zero CB states corroborates identity"
+      },
+      "decisive_branches": [
+        "F3B_SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT",
+        "F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION"
+      ],
+      "field": "f3b_terminal_branch",
+      "fold3b_budget": "counts 1 launch toward Fold-3B 4-launch/140-unit budget",
+      "n20_screen_policy": "N=20 screen deliberately NOT bundled \u2014 Variable A run 1783265204759 already exercised n=32 dense CA machinery end-to-end CLEAN; B run changes only sampled SET sequence. Explicit N=20 screen tier remains available via separate dispatch if liveness surprise occurs.",
+      "n50_equivalent_semantics": "DETERMINISTIC: this n=32 dense B primary IS the N=50-equivalent verdict arm (single deterministic receipt; no stochastic repeats)",
+      "negative_gate": "MUST NOT use compute_identity_inertness_proven or baseline element-wise crossing comparison as science gate \u2014 that would false-reject measurement-order artifacts",
+      "non_decisive_branches": [
+        "F3B_NO_VERDICT_OPERATIONAL",
+        "F3B_NO_VERDICT_SCHEMA",
+        "F3B_STATE0_IDENTITY_STRUCTURE",
+        "F3B_MEASUREMENT_ORDER_ARTIFACT",
+        "F3B_MARKING_OR_DEDUP_ARTIFACT",
+        "F3B_MIXED_OR_INCONCLUSIVE"
+      ],
+      "true_iff_all": [
+        "variable_a_prerequisite_ok == true (accepted Variable A F3B_STATE0_IDENTITY_STRUCTURE)",
+        "primary_dense_fork_readable == true (Q4 salvage on completed n=32 primary)",
+        "sampled_state_set == [1,2,3,4,5,6,7,8,9,10] (semantic state0 omitted)",
+        "sampled_state_order == [1,2,3,4,5,6,7,8,9,10] (ascending SET-membership test)",
+        "order_control_active == true on B primary receipt",
+        "order_perturbation_kind == sampled_block_order_perturbation",
+        "effective_visit_order == [1..10]+[11..31] (ascending sampled block + numeric tail)",
+        "order_rank_by_semantic_state[str(i)] == i-1 for i in 1..10",
+        "semantic_state_id == state_index per per_state row over [1..10]; 0 not in set",
+        "dedup_reset_called == true AND dedup_session_scope valid (probe_subprocess)",
+        "classify_f3b_why_state0_branch(f3b_branch_inputs).terminal_branch emitted"
+      ],
+      "variable_a_mechanism_citation_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/fold3b_variable_a_mechanism_diagnosis_receipt.json",
+      "variable_a_wrapper_citation_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/ca_confirmation_wrapper_receipt.json",
+      "variable_id": "B_state0_omission",
+      "when_false": "non-decisive; NO_VERDICT_* or MIXED"
+    },
+    "feasibility_subsample_classification": {
+      "grounding": "run_callsite_band_counter_ca_confirmation accepts n_states; classify_ca_band_counter_confirmation accepts feasibility_subsample=True; runner hardcodes feasibility_subsample=False \u2014 packet wrapper orchestrates pilot RSS/budget gate then applies classifier override on n=16 fallback",
+      "path": "(a) EXECUTABLE-VIA-PACKET",
+      "runner_commit": "89ebd6bd2b6be868f4517bc8f14714e269bb06cc"
+    },
+    "interpretation_rule": "Acceptance: parse f3b_terminal_branch from fold3b_variable_b_mechanism_diagnosis_receipt via classify_f3b_why_state0_branch \u2014 NOT ok/infra_ok/command exit/identity_inertness_proven. Decisive branches: F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION or F3B_SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT. B set/order provenance checked for CORRECTNESS on Variable B run. sampled_set_changed=true injected as genuine bool before classifier. primary_dense_fork_readable salvage applies under Q4 RSS breach. variable_a_prerequisite_ok cites accepted Variable A F3B_STATE0_IDENTITY_STRUCTURE. Partial/abnormal exit fail-closed. Launch wrapper MUST surface f3b_terminal_branch, mechanism_diagnosis_receipt_path, runs.primary.per_state, primary_receipt_path, fallback_trigger, primary_dense_fork_readable, variable_a_wrapper_citation_path, variable_a_mechanism_citation_path, ready_for_main_science=false, counts_as_sub2=false, pre_full_stack_diagnostic=true.",
+    "launch_wrapper_receipt_required_fields": [
+      "runs.primary.per_state",
+      "primary_receipt_path",
+      "mechanism_diagnosis_receipt_path",
+      "f3b_terminal_branch",
+      "f3b_branch_inputs",
+      "variable_a_wrapper_citation_path",
+      "variable_a_mechanism_citation_path",
+      "variable_a_prerequisite_ok",
+      "fallback_trigger",
+      "primary_dense_fork_readable",
+      "science_verdict_source",
+      "ready_for_main_science",
+      "counts_as_sub2",
+      "pre_full_stack_diagnostic"
+    ],
+    "pass_criteria": {
+      "abort_fail_closed": "partial JSONL, nonzero B-arm exit, timeout, or mark-coverage failure CANNOT decide mechanism branch; launch acceptance fail-closed on abnormal exit",
+      "dedup_evidence_required": "dedup_reset_called==true AND dedup_session_scope==probe_subprocess on mechanism receipt; fail-closed to F3B_NO_VERDICT_SCHEMA or F3B_MARKING_OR_DEDUP_ARTIFACT if absent",
+      "dense_env_export": "ca_confirmation_command exports HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=1,2,3,4,5,6,7,8,9,10 AND HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=1,2,3,4,5,6,7,8,9,10 AND env_toggles_b_arm matches both (B SET/ORDER on both surfaces)",
+      "diagnostic_flags": "ready_for_main_science=false, counts_as_sub2=false, pre_full_stack_diagnostic=true",
+      "f3b_terminal_branch": "classifier terminal_branch from fold3b_variable_b_mechanism_diagnosis_receipt; decisive when F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION or F3B_SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT",
+      "feasibility_subsample_executable": "POST-primary: n=32 B-set dense \u2192 RSS/timeout gate (NOT exit 37/-6) \u2192 n=16 B-set dense + classify(feasibility_subsample=True) only when primary_dense_fork_readable==false",
+      "fold3b_budget": "counts 1 launch toward Fold-3B 4-launch/140-unit budget",
+      "infra_ok_required": "infra_ok==true for launch validity",
+      "mark_count_eq_sampled_states": "s1d7_band_counter_mark_count==len(sampled_states)==10 (dense [1..10] at n=32; same B env+order on n=16 fallback)",
+      "n20_screen_policy": "N=20 screen deliberately NOT bundled; identity-inertness run already validated n=32 dense machinery; this run IS the N=50-equivalent verdict arm",
+      "negative_science_gate": "MUST NOT use compute_identity_inertness_proven or baseline crossing-vector comparison as science acceptance",
+      "order_provenance_correctness": "sampled_state_set==[1,2,3,4,5,6,7,8,9,10] AND sampled_state_order==[1,2,3,4,5,6,7,8,9,10] AND 0 not in sampled_state_set AND sampled_set_changed==true AND order_control_active=true AND effective_visit_order=[1..10]+[11..31] AND order_perturbation_kind=sampled_block_order_perturbation AND order_rank_by_semantic_state[str(i)]==i-1 for i in 1..10 AND semantic_state_id==state_index",
+      "primary_dense_fork_readable": "TRUE iff completed primary has sampled_states=[1..10], mark_count==10, per_state covers 1..10 (0 absent), runs.B exit_code==0, no timeout, infra_ok==true",
+      "resource_lane_per_fixture_only": "slice5 run_fixture_* paths self-acquire/release gpu:hrm-text-158 per fixture; ca_confirmation_command MUST NOT outer-acquire at RUN_ROOT (double-acquire deadlock)",
+      "resource_lane_release_trap_cleanup_only": "EXIT trap is CLEANUP-ONLY at RUN_ROOT; no-ops when RUN_ROOT holds no lane; NOT protection proof",
+      "terminal_acceptance": "terminal launch acceptance parses f3b_terminal_branch from fold3b_variable_b_mechanism_diagnosis_receipt.json (or wrapper f3b_terminal_branch) \u2014 NOT ok / infra_ok / terminal_branch / command exit 0 / identity_inertness_proven alone",
+      "tracemalloc_mark_count_zero": "s1d7_tracemalloc_mark_count==0",
+      "variable_a_prerequisite_preflight_exists": "preflight asserts variable_a_wrapper + mechanism receipts exist and f3b_terminal_branch==F3B_STATE0_IDENTITY_STRUCTURE",
+      "wrapper_reporting": "terminal launch wrapper receipt surfaces f3b_terminal_branch, mechanism_diagnosis_receipt_path, runs.primary.per_state, primary_receipt_path, fallback_trigger, primary_dense_fork_readable, variable_a_wrapper_citation_path, variable_a_mechanism_citation_path, diagnostic flags"
+    },
+    "prereg_packet_path": "artifacts/consensus_prep/c4s1_fold3b_step1_prereg_packet_v1_draft.json",
+    "primary_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; RUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1; mkdir -p \"$RUN_ROOT/prelaunch\" \"$RUN_ROOT/callsite_band_counter_a\" \"$RUN_ROOT/callsite_band_counter_b\" \"$RUN_ROOT/postrun\"; rm -f \"$RUN_ROOT/run_nonce.txt\" \"$RUN_ROOT/exit_code.txt\"; RUN_NONCE=\"$(git -C /mnt/c/Users/gabes/projects/claw-code-hrm-text-158 rev-parse HEAD)-$(date -u +%Y%m%dT%H%M%SZ)-$$\"; printf '%s\\n' \"$RUN_NONCE\" > \"$RUN_ROOT/run_nonce.txt\"; export PYTHONPATH=.; export HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=1,2,3,4,5,6,7,8,9,10; export HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=1,2,3,4,5,6,7,8,9,10; cleanup_lane_release() { PYTHONPATH=. python3 -c \"from pathlib import Path; from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane; import json; print(json.dumps(release_resource_lane(Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1'))))\" >>\"$RUN_ROOT/postrun/lane_release_trap.log\" 2>&1 || true; }; trap cleanup_lane_release EXIT ERR INT TERM; timeout 3600 python3 - \"$RUN_ROOT\" <<'PY'\nimport json, sys\nfrom pathlib import Path\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    ca_confirmation_wrapper_exit_code,\n    orchestrate_ca_confirmation_with_fallback,\n)\nfrom calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (\n    build_branch_input_contract_from_ca_receipt,\n    classify_f3b_why_state0_branch,\n    normalize_per_state_for_mechanism_receipt,\n)\n\nDENSE_SAMPLED = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\nDENSE_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\nEXPECTED_EFFECTIVE = DENSE_ORDER + list(range(11, 32))\nVARIABLE_A_WRAPPER_PATH = (\n    \"/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/\"\n    \"prelaunch/ca_confirmation_wrapper_receipt.json\"\n)\nVARIABLE_A_MECHANISM_RECEIPT_PATH = (\n    \"/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/\"\n    \"prelaunch/fold3b_variable_a_mechanism_diagnosis_receipt.json\"\n)\nMECHANISM_RECEIPT_NAME = \"fold3b_variable_b_mechanism_diagnosis_receipt.json\"\nWRAPPER_RECEIPT_NAME = \"ca_confirmation_wrapper_receipt.json\"\nGIT_HEAD_REQUIRED = \"89ebd6bd2b6be868f4517bc8f14714e269bb06cc\"\n\n\ndef compute_primary_dense_fork_readable(wrapper: dict) -> bool:\n    try:\n        primary = (wrapper or {}).get(\"runs\", {}).get(\"primary\")\n        if not isinstance(primary, dict):\n            return False\n        sampled = primary.get(\"sampled_states\")\n        if list(sampled) != DENSE_SAMPLED:\n            return False\n        if int(primary.get(\"s1d7_band_counter_mark_count\", -1)) != 10:\n            return False\n        checks = primary.get(\"checks\") or {}\n        if checks.get(\"s1d7_band_counter_mark_count_eq_sampled_state_count\") is not True:\n            return False\n        per_state = primary.get(\"per_state\") or []\n        if not isinstance(per_state, list):\n            return False\n        covered = {\n            int(row.get(\"state_index\"))\n            for row in per_state\n            if isinstance(row, dict) and row.get(\"state_index\") is not None\n        }\n        if covered != set(DENSE_SAMPLED) or 0 in covered:\n            return False\n        b_run = (primary.get(\"runs\") or {}).get(\"B\") or {}\n        if int(b_run.get(\"exit_code\", -1)) != 0:\n            return False\n        if bool(b_run.get(\"subprocess_timeout_expired\")):\n            return False\n        if primary.get(\"infra_ok\") is not True:\n            return False\n        return True\n    except Exception:\n        return False\n\n\ndef _b_set_provenance_ok(primary: dict) -> bool:\n    try:\n        sampled_set = list(primary.get(\"sampled_state_set\") or [])\n        if sampled_set != list(DENSE_SAMPLED) or 0 in set(sampled_set):\n            return False\n        sampled_order = list(primary.get(\"sampled_state_order\") or [])\n        if sampled_order != list(DENSE_ORDER):\n            return False\n        if primary.get(\"order_control_active\") is not True:\n            return False\n        if primary.get(\"order_perturbation_kind\") != \"sampled_block_order_perturbation\":\n            return False\n        effective = list(primary.get(\"effective_visit_order\") or [])\n        if effective != list(EXPECTED_EFFECTIVE):\n            return False\n        rank_map = primary.get(\"order_rank_by_semantic_state\") or {}\n        for idx, state in enumerate(DENSE_ORDER):\n            if int(rank_map.get(str(state), -1)) != idx:\n                return False\n        per_state = primary.get(\"per_state\") or []\n        for row in per_state:\n            if not isinstance(row, dict):\n                continue\n            state_index = row.get(\"state_index\")\n            if state_index is None:\n                continue\n            if int(state_index) not in set(DENSE_SAMPLED):\n                continue\n            if row.get(\"semantic_state_id\") != state_index:\n                return False\n        return True\n    except Exception:\n        return False\n\n\ndef _variable_a_prerequisite_ok() -> bool:\n    try:\n        wrapper_path = Path(VARIABLE_A_WRAPPER_PATH)\n        if not wrapper_path.is_file():\n            return False\n        wrapper = json.loads(wrapper_path.read_text(encoding=\"utf-8\"))\n        if wrapper.get(\"f3b_terminal_branch\") != \"F3B_STATE0_IDENTITY_STRUCTURE\":\n            return False\n        mech_path = Path(VARIABLE_A_MECHANISM_RECEIPT_PATH)\n        if not mech_path.is_file():\n            return False\n        mech = json.loads(mech_path.read_text(encoding=\"utf-8\"))\n        return mech.get(\"f3b_terminal_branch\") == \"F3B_STATE0_IDENTITY_STRUCTURE\"\n    except Exception:\n        return False\n\n\ndef _inject_b_provenance(primary: dict) -> dict:\n    enriched = dict(primary)\n    enriched[\"sampled_set_changed\"] = True\n    return enriched\n\n\ndef build_mechanism_diagnosis_receipt(wrapper: dict, run_root: Path) -> dict:\n    primary = (wrapper or {}).get(\"runs\", {}).get(\"primary\")\n    fallback = (wrapper or {}).get(\"runs\", {}).get(\"fallback\")\n    wrapper_path = str(run_root / \"prelaunch\" / WRAPPER_RECEIPT_NAME)\n    primary_path = None\n    fallback_path = None\n    if isinstance(primary, dict):\n        primary_path = primary.get(\"receipt_path\")\n    if isinstance(fallback, dict):\n        fallback_path = fallback.get(\"receipt_path\")\n\n    var_a_ok = _variable_a_prerequisite_ok()\n    operational_ok = not bool(wrapper.get(\"abnormal_exit\"))\n    if not isinstance(primary, dict):\n        branch_inputs = {\n            \"operational_ok\": False,\n            \"schema_ok\": False,\n            \"variable_id\": \"B_state0_omission\",\n            \"control_reason\": \"state0_omission_or_shifted_set\",\n            \"sampled_set_changed\": True,\n            \"identity_order_inertness_proven\": var_a_ok,\n        }\n        classified = classify_f3b_why_state0_branch(branch_inputs)\n    else:\n        primary_for_builder = _inject_b_provenance(primary)\n        branch_inputs = build_branch_input_contract_from_ca_receipt(\n            primary_for_builder,\n            variable_id=\"B_state0_omission\",\n            control_reason=\"state0_omission_or_shifted_set\",\n            identity_order_inertness_proven=var_a_ok,\n            operational_ok=operational_ok and compute_primary_dense_fork_readable(wrapper),\n        )\n        branch_inputs[\"sampled_set_changed\"] = True\n        if not _b_set_provenance_ok(primary):\n            branch_inputs[\"schema_ok\"] = False\n        classified = classify_f3b_why_state0_branch(branch_inputs)\n\n    if branch_inputs.get(\"schema_ok\") is True and isinstance(primary, dict):\n        per_state = normalize_per_state_for_mechanism_receipt(\n            list(primary.get(\"per_state\") or [])\n        )\n    else:\n        per_state = []\n    semantic_state_id = [\n        int(row.get(\"semantic_state_id\", row.get(\"state_index\")))\n        for row in per_state\n        if isinstance(row, dict) and row.get(\"state_index\") is not None\n    ]\n    return {\n        \"schema\": \"hrm_text_158_fold3b_mechanism_diagnosis_receipt/v1\",\n        \"classifier\": classified.get(\"classifier\"),\n        \"f3b_branch\": classified.get(\"terminal_branch\"),\n        \"f3b_terminal_branch\": classified.get(\"terminal_branch\"),\n        \"f3b_fired_branches\": classified.get(\"fired_branches\"),\n        \"f3b_branch_inputs\": classified.get(\"f3b_branch_inputs\"),\n        \"variable_id\": \"B_state0_omission\",\n        \"control_reason\": \"state0_omission_or_shifted_set\",\n        \"sampled_state_set\": list(DENSE_SAMPLED),\n        \"sampled_state_order\": list(DENSE_ORDER),\n        \"sampled_set_changed\": True,\n        \"order_rank_by_semantic_state\": (primary or {}).get(\"order_rank_by_semantic_state\") or {},\n        \"semantic_state_id\": semantic_state_id,\n        \"per_state\": per_state,\n        \"dedup_reset_called\": (primary or {}).get(\"dedup_reset_called\"),\n        \"dedup_session_scope\": (primary or {}).get(\"dedup_session_scope\"),\n        \"wrapper_path\": wrapper_path,\n        \"primary_receipt_path\": primary_path,\n        \"fallback_receipt_path\": fallback_path,\n        \"science_verdict_source\": wrapper.get(\"science_verdict_source\"),\n        \"parent_sha\": (primary or {}).get(\"parent_sha\"),\n        \"git_head_required\": GIT_HEAD_REQUIRED,\n        \"variable_a_prerequisite_ok\": var_a_ok,\n        \"variable_a_wrapper_citation_path\": VARIABLE_A_WRAPPER_PATH,\n        \"variable_a_mechanism_citation_path\": VARIABLE_A_MECHANISM_RECEIPT_PATH,\n        \"primary_dense_fork_readable\": compute_primary_dense_fork_readable(wrapper),\n        \"b_set_provenance_ok\": _b_set_provenance_ok(primary) if isinstance(primary, dict) else False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\n\nrun_root = Path(sys.argv[1])\nwrapper_receipt_path = run_root / \"prelaunch\" / WRAPPER_RECEIPT_NAME\nmechanism_receipt_path = run_root / \"prelaunch\" / MECHANISM_RECEIPT_NAME\nwrapper_receipt_path.parent.mkdir(parents=True, exist_ok=True)\n\ntry:\n    wrapper = orchestrate_ca_confirmation_with_fallback(run_root)\nexcept Exception as exc:\n    wrapper = {\n        \"schema\": \"hrm_text_158_ca_confirmation_wrapper_receipt/v1\",\n        \"abnormal_exit\": True,\n        \"abnormal_exit_error\": f\"{type(exc).__name__}: {exc}\",\n        \"runs\": {\"primary\": None},\n        \"science_verdict_source\": \"primary\",\n        \"fallback_trigger\": None,\n        \"primary_receipt_path\": None,\n        \"primary_dense_fork_readable\": False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\nif not isinstance(wrapper, dict):\n    wrapper = {\n        \"schema\": \"hrm_text_158_ca_confirmation_wrapper_receipt/v1\",\n        \"abnormal_exit\": True,\n        \"runs\": {\"primary\": None},\n        \"science_verdict_source\": \"primary\",\n        \"fallback_trigger\": None,\n        \"primary_receipt_path\": None,\n        \"primary_dense_fork_readable\": False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\nprimary = (wrapper.get(\"runs\") or {}).get(\"primary\")\nif isinstance(primary, dict):\n    wrapper[\"primary_receipt_path\"] = primary.get(\"receipt_path\")\nelse:\n    wrapper[\"primary_receipt_path\"] = None\n\nmechanism_receipt = build_mechanism_diagnosis_receipt(wrapper, run_root)\nmechanism_receipt_path.write_text(\n    json.dumps(mechanism_receipt, indent=2, sort_keys=True) + \"\n\",\n    encoding=\"utf-8\",\n)\n\nwrapper[\"variable_a_wrapper_citation_path\"] = VARIABLE_A_WRAPPER_PATH\nwrapper[\"variable_a_mechanism_citation_path\"] = VARIABLE_A_MECHANISM_RECEIPT_PATH\nwrapper[\"variable_a_prerequisite_ok\"] = bool(\n    mechanism_receipt.get(\"variable_a_prerequisite_ok\")\n)\nwrapper[\"primary_dense_fork_readable\"] = bool(\n    mechanism_receipt.get(\"primary_dense_fork_readable\")\n)\nwrapper[\"f3b_terminal_branch\"] = mechanism_receipt.get(\"f3b_terminal_branch\")\nwrapper[\"f3b_branch_inputs\"] = mechanism_receipt.get(\"f3b_branch_inputs\")\nwrapper[\"mechanism_diagnosis_receipt_path\"] = str(mechanism_receipt_path)\nwrapper[\"ready_for_main_science\"] = False\nwrapper[\"counts_as_sub2\"] = False\nwrapper[\"pre_full_stack_diagnostic\"] = True\n\nwrapper_receipt_path.write_text(\n    json.dumps(wrapper, indent=2, sort_keys=True) + \"\n\",\n    encoding=\"utf-8\",\n)\n\nscience_receipt = (\n    wrapper.get(\"runs\", {}).get(\"fallback\")\n    if wrapper.get(\"science_verdict_source\") == \"fallback\"\n    else wrapper.get(\"runs\", {}).get(\"primary\")\n)\nif not isinstance(science_receipt, dict):\n    science_receipt = {\"infra_ok\": False, \"terminal_branch\": \"INFRA_NULL\"}\n\nprint(json.dumps(wrapper, indent=2, sort_keys=True))\nraise SystemExit(ca_confirmation_wrapper_exit_code(science_receipt))\n\nPY",
+    "primary_dense_fork_readable": {
+      "field": "primary_dense_fork_readable",
+      "true_iff_all": [
+        "wrapper.runs.primary.sampled_states == [1,2,3,4,5,6,7,8,9,10]",
+        "wrapper.runs.primary.s1d7_band_counter_mark_count == 10",
+        "wrapper.runs.primary.checks.s1d7_band_counter_mark_count_eq_sampled_state_count == true",
+        "wrapper.runs.primary.per_state covers state_index 1..10 (all ten rows; 0 absent)",
+        "wrapper.runs.primary.runs.B.exit_code == 0",
+        "wrapper.runs.primary.runs.B.subprocess_timeout_expired == false",
+        "wrapper.runs.primary.infra_ok == true"
+      ],
+      "when_false": "Primary is partial telemetry only; dense n=16 fallback is the science source. If fallback also lacks full dense coverage or clean B-arm exit \u2192 feasibility/inconclusive.",
+      "when_true": "Read structural-vs-sampling fork from wrapper.runs.primary.per_state EVEN IF fallback_trigger.rss_breach==true and science_verdict_source==fallback. Completed primary with peak_rss>6.5 is fork-readable; NOT mere FEASIBILITY_SUBSAMPLE."
+    },
+    "variable_a_mechanism_citation_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/fold3b_variable_a_mechanism_diagnosis_receipt.json",
+    "variable_a_wrapper_citation_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/prelaunch/ca_confirmation_wrapper_receipt.json"
+  },
+  "provenance": {
+    "fold1_commit": "d981582",
+    "fold2_design_dual_accept": [
+      "1783186596758",
+      "1783186683459"
+    ],
+    "fold2a_source_commit": "89ebd6bd2b6be868f4517bc8f14714e269bb06cc",
+    "gabe_standing_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs",
+    "upstream_task_id": "1782633464140-b85ec12a",
+    "upstream_task_id_note": "Arc #2b historical upstream; active task_id is top-level"
+  },
+  "replay_commands_artifact": "artifacts/consensus_prep/c4s1_n32_dense_110_variable_b_omit0_launch_packet_v1_replay_commands.json",
+  "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "resource_lane_release_trap": {
+    "description": "CLEANUP-ONLY shell trap on EXIT/ERR/INT/TERM; no-ops at RUN_ROOT when no outer lane held; per-fixture acquire/release inside slice5 is the sole lock boundary",
+    "log_artifact": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1/postrun/lane_release_trap.log"
+  },
+  "run_id": "C4S1_PHASE3_N32_DENSE_110_VARIABLE_B_OMIT0_V1",
+  "run_root_template": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/{run_id}",
+  "schema_version": "hrm_text_158_c4s1_n32_dense_110_variable_b_omit0_launch_packet/v1",
+  "supersedes_packet_sha256": "bc249a77c02a4d67bb4dc928aac1d33bead2021af393f6726b1ce595221cb467",
+  "task_id": "1782633464140-b85ec12a"
+}
