@@ -2406,6 +2406,118 @@ def test_obmalloc_site_state_enabled_respects_sampled_states() -> None:
     assert _obmalloc_site_state_enabled(5, sampled_states=sampled) is False
 
 
+def test_resolve_obmalloc_expanded_sampled_states_default(monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        resolve_obmalloc_expanded_sampled_states,
+    )
+
+    monkeypatch.delenv(OBMALLOC_EXPANDED_SAMPLED_STATES_ENV, raising=False)
+    assert resolve_obmalloc_expanded_sampled_states(32) == frozenset({0, 10, 21, 31})
+
+
+def test_resolve_obmalloc_expanded_sampled_states_dense_override(monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        resolve_obmalloc_expanded_sampled_states,
+    )
+
+    monkeypatch.setenv(
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        "0,1,2,3,4,5,6,7,8,9",
+    )
+    assert resolve_obmalloc_expanded_sampled_states(32) == frozenset(range(10))
+
+
+@pytest.mark.parametrize(
+    "override",
+    [",", "0,,1", "a", "-1"],
+)
+def test_resolve_obmalloc_expanded_sampled_states_malformed_fail_closed(
+    monkeypatch,
+    override: str,
+) -> None:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        resolve_obmalloc_expanded_sampled_states,
+    )
+
+    monkeypatch.setenv(OBMALLOC_EXPANDED_SAMPLED_STATES_ENV, override)
+    with pytest.raises(ValueError):
+        resolve_obmalloc_expanded_sampled_states(32)
+
+
+def test_resolve_obmalloc_expanded_sampled_states_eligible_cap_boundary(
+    monkeypatch,
+) -> None:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        resolve_obmalloc_expanded_sampled_states,
+    )
+
+    eligible_bound = 16
+    monkeypatch.setenv(OBMALLOC_EXPANDED_SAMPLED_STATES_ENV, "20")
+    with pytest.raises(ValueError, match="outside"):
+        resolve_obmalloc_expanded_sampled_states(eligible_bound)
+
+
+def test_build_eligible_scale_receipt_sampled_states_matches_resolver(
+    monkeypatch,
+) -> None:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        resolve_obmalloc_expanded_sampled_states,
+    )
+    from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+        build_eligible_scale_receipt_fields,
+    )
+
+    eligible = {f"state_{index}": object() for index in range(32)}
+
+    monkeypatch.delenv(OBMALLOC_EXPANDED_SAMPLED_STATES_ENV, raising=False)
+    default_fields = build_eligible_scale_receipt_fields(
+        eligible,
+        eligible_scope="all_bitlinear",
+        eligible_module_limit=32,
+        eligible_full_count=32,
+    )
+    default_resolved = sorted(resolve_obmalloc_expanded_sampled_states(32))
+    assert default_fields["sampled_states"] == default_resolved
+
+    monkeypatch.setenv(
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        "0,1,2,3,4,5,6,7,8,9",
+    )
+    dense_fields = build_eligible_scale_receipt_fields(
+        eligible,
+        eligible_scope="all_bitlinear",
+        eligible_module_limit=32,
+        eligible_full_count=32,
+    )
+    dense_resolved = sorted(resolve_obmalloc_expanded_sampled_states(32))
+    assert dense_fields["sampled_states"] == dense_resolved
+    assert dense_fields["sampled_states"] == list(range(10))
+
+
+def test_obmalloc_site_state_enabled_dense_resolved_set(monkeypatch) -> None:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        resolve_obmalloc_expanded_sampled_states,
+    )
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        _obmalloc_site_state_enabled,
+    )
+
+    monkeypatch.setenv(
+        OBMALLOC_EXPANDED_SAMPLED_STATES_ENV,
+        "0,1,2,3,4,5,6,7,8,9",
+    )
+    sampled = resolve_obmalloc_expanded_sampled_states(32)
+    for state_index in range(10):
+        assert _obmalloc_site_state_enabled(state_index, sampled_states=sampled) is True
+    assert _obmalloc_site_state_enabled(10, sampled_states=sampled) is False
+
+
 def _obmalloc_expanded_site_marks_for_state(
     *,
     state_index: int,

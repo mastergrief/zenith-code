@@ -338,6 +338,7 @@ PROFILE_TRACEMALLOC_ENV = "HRM_TEXT_158_PROFILE_TRACEMALLOC"
 PROFILE_DEBUGMALLOCSTATS_ENV = "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS"
 PROFILE_OBMALLOC_SITE_BRACKETS_ENV = "HRM_TEXT_158_PROFILE_OBMALLOC_SITE_BRACKETS"
 PROFILE_OBMALLOC_EXPANDED_ENV = "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED"
+OBMALLOC_EXPANDED_SAMPLED_STATES_ENV = "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES"
 PROFILE_HOST_RSS_LIVE_RESIDENT_DROP_GIB = 1.0
 PROFILE_HOST_RSS_SCHEMA = "hrm_text_158_profile_host_rss_mark/v1"
 PROFILE_HOST_RSS_SUBPHASE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v2"
@@ -4684,12 +4685,12 @@ def build_eligible_scale_receipt_fields(
     eligible_module_limit: int | None,
     eligible_full_count: int,
 ) -> dict[str, Any]:
-    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
-        compute_obmalloc_expanded_sampled_states,
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        resolve_obmalloc_expanded_sampled_states,
     )
 
     n_c4_states = len(eligible)
-    sampled = sorted(compute_obmalloc_expanded_sampled_states(n_c4_states))
+    sampled = sorted(resolve_obmalloc_expanded_sampled_states(n_c4_states))
     return {
         "eligible_scope": str(eligible_scope),
         "eligible_module_limit": (

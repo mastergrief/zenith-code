@@ -60,6 +60,7 @@ def profile_s1d7_tracemalloc_site_enabled() -> bool:
 
 PROFILE_S1D7_TRACEMALLOC_FULL_TRACE_ENV = "HRM_TEXT_158_PROFILE_S1D7_TRACEMALLOC_FULL_TRACE"
 PROFILE_S1D7_BAND_COUNTER_ONLY_ENV = "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY"
+OBMALLOC_EXPANDED_SAMPLED_STATES_ENV = "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES"
 
 
 def _profile_host_rss_enabled() -> bool:
@@ -105,6 +106,54 @@ def profile_s1d7_band_counter_enabled() -> bool:
     if profile_s1d7_band_counter_only_enabled():
         return True
     return profile_s1d7_tracemalloc_site_enabled() and not profile_s1d7_tracemalloc_full_trace_enabled()
+
+
+def resolve_obmalloc_expanded_sampled_states(n_bound: int) -> frozenset[int]:
+    """Resolve sampled state indices from env override or default 4-point sampler."""
+    import os
+
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        compute_obmalloc_expanded_sampled_states,
+    )
+
+    n = int(n_bound)
+    if n <= 0:
+        return frozenset()
+
+    override = os.environ.get(OBMALLOC_EXPANDED_SAMPLED_STATES_ENV, "").strip()
+    if not override:
+        return compute_obmalloc_expanded_sampled_states(n)
+
+    indices: set[int] = set()
+    for token in override.split(","):
+        stripped = token.strip()
+        if stripped == "":
+            raise ValueError(
+                f"empty token in {OBMALLOC_EXPANDED_SAMPLED_STATES_ENV}: {override!r}"
+            )
+        try:
+            idx = int(stripped)
+        except ValueError as exc:
+            raise ValueError(
+                f"non-integer token in {OBMALLOC_EXPANDED_SAMPLED_STATES_ENV}: {token!r}"
+            ) from exc
+        if idx < 0:
+            raise ValueError(
+                f"negative index in {OBMALLOC_EXPANDED_SAMPLED_STATES_ENV}: {idx}"
+            )
+        if idx >= n:
+            raise ValueError(
+                f"index {idx} outside [0, {n - 1}] for "
+                f"{OBMALLOC_EXPANDED_SAMPLED_STATES_ENV}"
+            )
+        indices.add(idx)
+
+    if not indices:
+        raise ValueError(
+            f"no valid indices parsed from {OBMALLOC_EXPANDED_SAMPLED_STATES_ENV}: "
+            f"{override!r}"
+        )
+    return frozenset(indices)
 
 
 def begin_s1d7_tracemalloc_bracket(*, depth: int = 50) -> bool:

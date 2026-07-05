@@ -2586,6 +2586,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
             from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
                 profile_s1d7_band_counter_enabled,
                 profile_s1d7_tracemalloc_site_enabled,
+                resolve_obmalloc_expanded_sampled_states,
             )
 
             tracemalloc_site_on = profile_s1d7_tracemalloc_site_enabled()
@@ -2595,11 +2596,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 (obmalloc_expanded_on or tracemalloc_site_on or band_counter_on)
                 and eligible_c4_state_count > 0
             ):
-                from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
-                    compute_obmalloc_expanded_sampled_states,
-                )
-
-                sampled_states = compute_obmalloc_expanded_sampled_states(
+                sampled_states = resolve_obmalloc_expanded_sampled_states(
                     eligible_c4_state_count
                 )
                 if rss_emit is not None:
