@@ -89,12 +89,16 @@ class F3BWhyState0Branch(StrEnum):
     SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT = "F3B_SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT"
     MARKING_OR_DEDUP_ARTIFACT = "F3B_MARKING_OR_DEDUP_ARTIFACT"
     STATE0_IDENTITY_STRUCTURE = "F3B_STATE0_IDENTITY_STRUCTURE"
+    STATE0_IDENTITY_CORROBORATED_BY_OMISSION = (
+        "F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION"
+    )
     MIXED_OR_INCONCLUSIVE = "F3B_MIXED_OR_INCONCLUSIVE"
 
 
 DECISIVE_F3B_BRANCHES: frozenset[str] = frozenset(
     {
         F3BWhyState0Branch.STATE0_IDENTITY_STRUCTURE.value,
+        F3BWhyState0Branch.STATE0_IDENTITY_CORROBORATED_BY_OMISSION.value,
         F3BWhyState0Branch.MEASUREMENT_ORDER_ARTIFACT.value,
     }
 )
@@ -107,6 +111,7 @@ BRANCH_PRECEDENCE: tuple[F3BWhyState0Branch, ...] = (
     F3BWhyState0Branch.SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT,
     F3BWhyState0Branch.MARKING_OR_DEDUP_ARTIFACT,
     F3BWhyState0Branch.STATE0_IDENTITY_STRUCTURE,
+    F3BWhyState0Branch.STATE0_IDENTITY_CORROBORATED_BY_OMISSION,
     F3BWhyState0Branch.MIXED_OR_INCONCLUSIVE,
 )
 
@@ -532,6 +537,10 @@ def validate_ca_branch_input_source(receipt: Mapping[str, Any]) -> list[str]:
         elif parsed_mark_count != len(sampled_states):
             failures.append("ca_mark_count_mismatch")
 
+    if "sampled_set_changed" in receipt:
+        if not isinstance(receipt.get("sampled_set_changed"), bool):
+            failures.append("ca_sampled_set_changed_not_bool")
+
     return failures
 
 
@@ -643,6 +652,32 @@ def _order_rank_consistent(inputs: Mapping[str, Any]) -> bool:
     return _validate_branch_input_order_rank_consistency(inputs) == []
 
 
+def _sampled_state_set_excludes_semantic_state0(inputs: Mapping[str, Any]) -> bool:
+    """True when branch-input sampled_state_set is well-formed and excludes semantic 0."""
+
+    raw = inputs.get("sampled_state_set")
+    if not isinstance(raw, list):
+        return False
+    coerced, failures = _coerce_int_set(
+        raw,
+        malformed_code="sampled_state_set_malformed",
+    )
+    if coerced is None or failures:
+        return False
+    return 0 not in coerced
+
+
+def _branch_input_cb_state_count(inputs: Mapping[str, Any]) -> int | None:
+    """Exact int cb_state_count from branch inputs; None if missing/malformed."""
+
+    if "cb_state_count" not in inputs:
+        return None
+    raw = inputs.get("cb_state_count")
+    if raw is None:
+        return None
+    return _coerce_ca_int(raw)
+
+
 def classify_f3b_why_state0_branch(
     inputs: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -683,12 +718,13 @@ def classify_f3b_why_state0_branch(
 
     variable_id = str(inputs.get("variable_id") or "")
     identity_inert = bool(inputs.get("identity_order_inertness_proven", False))
-    semantic_state0_cb = bool(inputs.get("semantic_state0_is_crossing_bearing", False))
+    semantic_state0_cb_raw = inputs.get("semantic_state0_is_crossing_bearing")
+    semantic_state0_cb = semantic_state0_cb_raw is True
+    semantic_state0_not_cb = semantic_state0_cb_raw is False
     first_measured_cb = bool(inputs.get("first_measured_is_crossing_bearing", False))
     first_measured = inputs.get("first_measured_semantic_state")
-    cb_count_raw = _coerce_ca_int(inputs.get("cb_state_count"))
-    cb_count = cb_count_raw if cb_count_raw is not None else 0
-    sampled_set_changed = bool(inputs.get("sampled_set_changed", False))
+    cb_count = _branch_input_cb_state_count(inputs)
+    sampled_set_changed = inputs.get("sampled_set_changed") is True
     mark_consistent = bool(inputs.get("mark_count_consistent", True))
 
     if schema_gates_clear:
@@ -702,8 +738,16 @@ def classify_f3b_why_state0_branch(
                 fired.append(F3BWhyState0Branch.STATE0_IDENTITY_STRUCTURE)
 
         if variable_id == "B_state0_omission" and sampled_set_changed:
-            if cb_count >= 1 and not semantic_state0_cb:
+            if cb_count == 1 and semantic_state0_not_cb:
                 fired.append(F3BWhyState0Branch.SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT)
+            elif (
+                cb_count == 0
+                and semantic_state0_not_cb
+                and _sampled_state_set_excludes_semantic_state0(inputs)
+            ):
+                fired.append(
+                    F3BWhyState0Branch.STATE0_IDENTITY_CORROBORATED_BY_OMISSION
+                )
 
         if not mark_consistent:
             fired.append(F3BWhyState0Branch.MARKING_OR_DEDUP_ARTIFACT)
@@ -782,11 +826,11 @@ def _schema_failed_branch_input_contract(
         "dedup_session_scope": receipt.get("dedup_session_scope"),
         "identity_order_inertness_proven": identity_order_inertness_proven,
         "semantic_state0_crossing_indices_len": 0,
-        "cb_state_count": 0,
+        "cb_state_count": None,
         "first_measured_semantic_state": first_measured,
         "first_measured_is_crossing_bearing": False,
         "semantic_state0_is_crossing_bearing": False,
-        "sampled_set_changed": bool(receipt.get("sampled_set_changed", False)),
+        "sampled_set_changed": receipt.get("sampled_set_changed") is True,
         "mark_count_consistent": False,
         "variable_id": variable_id,
         "control_reason": control_reason,
@@ -886,7 +930,7 @@ def build_branch_input_contract_from_ca_receipt(
             )
         ),
         "semantic_state0_is_crossing_bearing": 0 in cb_indices,
-        "sampled_set_changed": bool(receipt.get("sampled_set_changed", False)),
+        "sampled_set_changed": receipt.get("sampled_set_changed") is True,
         "mark_count_consistent": (
             (parsed_mark := _coerce_ca_int(receipt.get("mark_count"))) is not None
             and parsed_mark == len(sampled_states)

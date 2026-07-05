@@ -213,7 +213,8 @@ def build_branch_enum() -> list[dict[str, str]]:
         {"rank": 4, "branch": "F3B_SAMPLE_SET_OR_ELIGIBILITY_ARTIFACT"},
         {"rank": 5, "branch": "F3B_MARKING_OR_DEDUP_ARTIFACT"},
         {"rank": 6, "branch": "F3B_STATE0_IDENTITY_STRUCTURE"},
-        {"rank": 7, "branch": "F3B_MIXED_OR_INCONCLUSIVE"},
+        {"rank": 7, "branch": "F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION"},
+        {"rank": 8, "branch": "F3B_MIXED_OR_INCONCLUSIVE"},
     ]
 
 

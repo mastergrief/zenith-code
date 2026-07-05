@@ -25,8 +25,12 @@
       "rank": 6
     },
     {
-      "branch": "F3B_MIXED_OR_INCONCLUSIVE",
+      "branch": "F3B_STATE0_IDENTITY_CORROBORATED_BY_OMISSION",
       "rank": 7
+    },
+    {
+      "branch": "F3B_MIXED_OR_INCONCLUSIVE",
+      "rank": 8
     }
   ],
   "claim_boundary": {
