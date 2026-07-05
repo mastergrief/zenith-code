@@ -16,11 +16,55 @@ from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
     normalize_per_state_for_mechanism_receipt,
     validate_receipt_schema,
 )
+from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+    build_c4_apply_visit_sequence,
+)
 
 PARENT_SHA = "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+N_STATES = 32
 B_SAMPLED = list(range(1, 11))
 B_ORDER = list(range(1, 11))
-EXPECTED_EFFECTIVE = B_ORDER + list(range(11, 32))
+EXPECTED_EFFECTIVE = list(
+    build_c4_apply_visit_sequence(
+        N_STATES,
+        frozenset(B_SAMPLED),
+        tuple(B_ORDER),
+    )
+)
+EXPECTED_EFFECTIVE_VISIT_ORDER_FIXTURE = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    0,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+]
 
 
 def _ca_per_state_row(
@@ -136,6 +180,21 @@ def _mechanism_receipt_from_ca(
         "counts_as_sub2": False,
         "pre_full_stack_diagnostic": True,
     }
+
+
+def test_variable_b_effective_visit_order_matches_runtime_rule() -> None:
+    runtime = list(
+        build_c4_apply_visit_sequence(
+            N_STATES,
+            frozenset(B_SAMPLED),
+            tuple(B_ORDER),
+        )
+    )
+    assert EXPECTED_EFFECTIVE == runtime
+    assert EXPECTED_EFFECTIVE == EXPECTED_EFFECTIVE_VISIT_ORDER_FIXTURE
+    assert B_ORDER + list(range(11, N_STATES)) != EXPECTED_EFFECTIVE
+    receipt = _minimal_valid_b_ca_receipt(cb_state_index=None)
+    assert receipt["effective_visit_order"] == runtime
 
 
 def test_variable_b_zero_cb_corroborated_by_omission() -> None:

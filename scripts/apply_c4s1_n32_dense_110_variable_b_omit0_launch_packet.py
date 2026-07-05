@@ -67,7 +67,43 @@ DENSE_ORDER_ENV = "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER"
 DENSE_ORDER_VALUE = "1,2,3,4,5,6,7,8,9,10"
 DENSE_ORDER_LIST = list(range(1, 11))
 EXPECTED_MARK_COUNT = len(DENSE_SAMPLED_STATES_LIST)
-EXPECTED_EFFECTIVE_VISIT_ORDER = list(range(1, 11)) + list(range(11, 32))
+EXPECTED_EFFECTIVE_VISIT_ORDER_FIXTURE = [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    0,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+]
+EXPECTED_EFFECTIVE_DERIVED = list(DENSE_ORDER_LIST) + sorted(
+    set(range(N_STATES)) - set(DENSE_SAMPLED_STATES_LIST)
+)
 
 PINS: dict[str, str] = {
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
@@ -246,7 +282,7 @@ from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
 
 DENSE_SAMPLED = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 DENSE_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-EXPECTED_EFFECTIVE = DENSE_ORDER + list(range(11, 32))
+EXPECTED_EFFECTIVE = DENSE_ORDER + sorted(set(range(32)) - set(DENSE_SAMPLED))
 VARIABLE_A_WRAPPER_PATH = (
     "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1/"
     "prelaunch/ca_confirmation_wrapper_receipt.json"
@@ -862,7 +898,7 @@ def build_f3b_mechanism_acceptance_contract() -> dict[str, Any]:
             "sampled_state_order == [1,2,3,4,5,6,7,8,9,10] (ascending SET-membership test)",
             "order_control_active == true on B primary receipt",
             "order_perturbation_kind == sampled_block_order_perturbation",
-            "effective_visit_order == [1..10]+[11..31] (ascending sampled block + numeric tail)",
+            "effective_visit_order == [1..10]+[0,11..31] (ascending sampled block + ascending unsampled tail incl state0 background)",
             "order_rank_by_semantic_state[str(i)] == i-1 for i in 1..10",
             "semantic_state_id == state_index per per_state row over [1..10]; 0 not in set",
             "dedup_reset_called == true AND dedup_session_scope valid (probe_subprocess)",
@@ -1545,7 +1581,7 @@ def build_draft() -> dict[str, Any]:
             "sampled_state_set==[1,2,3,4,5,6,7,8,9,10] AND "
             "sampled_state_order==[1,2,3,4,5,6,7,8,9,10] AND "
             "0 not in sampled_state_set AND sampled_set_changed==true AND "
-            "order_control_active=true AND effective_visit_order=[1..10]+[11..31] AND "
+            "order_control_active=true AND effective_visit_order=[1..10]+[0,11..31] AND "
             "order_perturbation_kind=sampled_block_order_perturbation AND "
             "order_rank_by_semantic_state[str(i)]==i-1 for i in 1..10 AND semantic_state_id==state_index"
         ),
@@ -2061,6 +2097,38 @@ def extract_rendered_ca_confirmation_heredoc(command: str) -> str:
     return command[start:end]
 
 
+def verify_expected_effective_matches_runtime_rule() -> list[str]:
+    """Packet EXPECTED_EFFECTIVE must match build_c4_apply_visit_sequence runtime rule."""
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        build_c4_apply_visit_sequence,
+    )
+
+    failures: list[str] = []
+    runtime = list(
+        build_c4_apply_visit_sequence(
+            N_STATES,
+            frozenset(DENSE_SAMPLED_STATES_LIST),
+            tuple(DENSE_ORDER_LIST),
+        )
+    )
+    if list(EXPECTED_EFFECTIVE_DERIVED) != runtime:
+        failures.append("expected_effective:derived_ne_runtime_helper")
+    if EXPECTED_EFFECTIVE_DERIVED != EXPECTED_EFFECTIVE_VISIT_ORDER_FIXTURE:
+        failures.append("expected_effective:derived_ne_fixture")
+    if len(EXPECTED_EFFECTIVE_DERIVED) != N_STATES:
+        failures.append("expected_effective:len_ne_n_states")
+    old_wrong = list(DENSE_ORDER_LIST) + list(range(11, N_STATES))
+    if old_wrong == EXPECTED_EFFECTIVE_DERIVED:
+        failures.append("expected_effective:negative_old_formula_not_rejected")
+    if "sorted(set(range(32)) - set(DENSE_SAMPLED))" not in CA_CONFIRMATION_HEREDOC:
+        failures.append("expected_effective:heredoc_missing_derived_formula")
+    if "list(range(11, 32))" in CA_CONFIRMATION_HEREDOC:
+        failures.append("expected_effective:heredoc_still_has_old_tail")
+    if "EXPECTED_EFFECTIVE_VISIT_ORDER" in CA_CONFIRMATION_HEREDOC:
+        failures.append("expected_effective:heredoc_stale_duplicate_constant")
+    return failures
+
+
 def verify_ca_confirmation_heredoc_py_compile(draft: dict[str, Any]) -> list[str]:
     """Fail-closed: rendered ca_confirmation heredoc must be valid Python."""
     failures: list[str] = []
@@ -2379,6 +2447,7 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     stale.extend(verify_no_variable_b_a_era_contract_residue(draft, replay))
     stale.extend(verify_no_outer_lane_acquire(draft))
     stale.extend(verify_no_stale_outer_lane_manifest(draft, replay))
+    stale.extend(verify_expected_effective_matches_runtime_rule())
     stale.extend(verify_ca_confirmation_heredoc_py_compile(draft))
     stale.extend(verify_wrapper_receipt_sink_executable())
     stale.extend(verify_classifier_launch_executed_pin())
