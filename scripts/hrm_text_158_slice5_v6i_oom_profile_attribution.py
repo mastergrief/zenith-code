@@ -6450,6 +6450,7 @@ def extract_band_counter_per_state_rows_from_marks(
         rows.append(
             {
                 "state_index": int(mark["state_index"]),
+                "semantic_state_id": int(mark["state_index"]),
                 "band_a_bytes": band_a,
                 "band_c_bytes": band_c,
                 "band_e_bytes": band_e,
@@ -6543,6 +6544,12 @@ def build_ca_band_counter_confirmation_receipt(
     infra_null: bool = False,
     feasibility_subsample: bool = False,
 ) -> dict[str, Any]:
+    from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+        build_order_provenance_fields,
+        resolve_obmalloc_expanded_sampled_state_order,
+        resolve_obmalloc_expanded_sampled_states,
+    )
+
     per_state_rows = extract_band_counter_per_state_rows_from_marks(marks_b)
     mark_count = len(per_state_rows)
     classifier = classify_ca_band_counter_confirmation(
@@ -6614,6 +6621,14 @@ def build_ca_band_counter_confirmation_receipt(
             "B": {k: v for k, v in run_b.items() if k != "marks"},
         },
     }
+    sampled_set = resolve_obmalloc_expanded_sampled_states(int(n_states))
+    sampled_order = resolve_obmalloc_expanded_sampled_state_order(
+        int(n_states),
+        sampled_set,
+    )
+    receipt.update(
+        build_order_provenance_fields(int(n_states), sampled_set, sampled_order)
+    )
     return receipt
 
 

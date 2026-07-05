@@ -2584,14 +2584,21 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED", ""
             ).strip().lower() in {"1", "true", "yes", "on"}
             from calm.hrm_text_158.native_full_stack.host_tracemalloc_probe import (
+                build_c4_apply_visit_sequence,
+                build_order_provenance_fields,
                 profile_s1d7_band_counter_enabled,
                 profile_s1d7_tracemalloc_site_enabled,
+                resolve_obmalloc_expanded_sampled_state_order,
                 resolve_obmalloc_expanded_sampled_states,
             )
 
             tracemalloc_site_on = profile_s1d7_tracemalloc_site_enabled()
             band_counter_on = profile_s1d7_band_counter_enabled()
             sampled_states: frozenset[int] | None = None
+            sampled_state_order: tuple[int, ...] | None = None
+            tensor_visit_sequence: tuple[int, ...] = tuple(
+                range(len(gpu_cap_result.tensor_results))
+            )
             if (
                 (obmalloc_expanded_on or tracemalloc_site_on or band_counter_on)
                 and eligible_c4_state_count > 0
@@ -2599,12 +2606,32 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 sampled_states = resolve_obmalloc_expanded_sampled_states(
                     eligible_c4_state_count
                 )
+                sampled_state_order = resolve_obmalloc_expanded_sampled_state_order(
+                    eligible_c4_state_count,
+                    sampled_states,
+                )
+                tensor_visit_sequence = build_c4_apply_visit_sequence(
+                    eligible_c4_state_count,
+                    sampled_states,
+                    sampled_state_order,
+                )
                 if rss_emit is not None:
                     setattr(
                         rss_emit,
                         "_obmalloc_expanded_sampled_states",
                         tuple(sorted(sampled_states)),
                     )
+                    setattr(
+                        rss_emit,
+                        "_obmalloc_expanded_sampled_state_order",
+                        sampled_state_order,
+                    )
+                    for key, value in build_order_provenance_fields(
+                        eligible_c4_state_count,
+                        sampled_states,
+                        sampled_state_order,
+                    ).items():
+                        setattr(rss_emit, f"_obmalloc_{key}", value)
 
             def _apply_cap_tensor_result_gpu_bound(
                 item: Any,
@@ -2650,19 +2677,20 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     ),
                 },
             ):
-                for state_index, item in enumerate(gpu_cap_result.tensor_results):
+                for visit_rank, semantic_state_index in enumerate(tensor_visit_sequence):
+                    item = gpu_cap_result.tensor_results[int(semantic_state_index)]
                     state_key, carrier, q_out, stats = _apply_cap_tensor_result_gpu_bound(
                         item,
-                        state_index=int(state_index),
+                        state_index=int(semantic_state_index),
                     )
                     carriers_by_key[state_key] = carrier
                     q_by_key[state_key] = q_out
                     stats_by_key[state_key] = stats
                     if c4_retention_census is not None:
                         c4_retention_census.register_new(carrier=carrier, q_out=q_out)
-                    if (int(state_index) + 1) % 4 == 0 or (
-                        int(state_index) + 1
-                    ) == len(gpu_cap_result.tensor_results):
+                    if (int(visit_rank) + 1) % 4 == 0 or (
+                        int(visit_rank) + 1
+                    ) == len(tensor_visit_sequence):
                         census_dims = (
                             c4_retention_census.build_allocation_dims(
                                 tensor_states=tensor_states,
@@ -2670,7 +2698,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                                 carriers_by_key=carriers_by_key,
                                 q_by_key=q_by_key,
                                 next_states=None,
-                                state_index=int(state_index),
+                                state_index=int(semantic_state_index),
                             )
                             if c4_retention_census is not None
                             else None
@@ -2681,8 +2709,8 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                             sub_phase_id="C4_gpu_cap_apply_sync",
                             allocation_site_id="C4_after_state",
                             optimizer_step_index=step_index,
-                            state_index=int(state_index),
-                            state_bucket=int(state_index) // 4,
+                            state_index=int(semantic_state_index),
+                            state_bucket=int(semantic_state_index) // 4,
                         )
                         _emit_allocator_native_boundary(
                             rss_emit,
@@ -2690,8 +2718,8 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                             sub_phase_id="C4_gpu_cap_apply_sync",
                             allocation_site_id="C4_after_state",
                             optimizer_step_index=step_index,
-                            state_index=int(state_index),
-                            state_bucket=int(state_index) // 4,
+                            state_index=int(semantic_state_index),
+                            state_bucket=int(semantic_state_index) // 4,
                         )
                         _emit_triangulation_boundary(
                             rss_emit,
@@ -2699,12 +2727,12 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                             sub_phase_id="C4_gpu_cap_apply_sync",
                             allocation_site_id="C4_after_state",
                             optimizer_step_index=step_index,
-                            state_index=int(state_index),
-                            state_bucket=int(state_index) // 4,
+                            state_index=int(semantic_state_index),
+                            state_bucket=int(semantic_state_index) // 4,
                         )
                         with pending_obmalloc_c4_after_state_allocation_dims(
                             census_dims,
-                            state_index=int(state_index),
+                            state_index=int(semantic_state_index),
                         ):
                             if census_dims is not None and rss_emit is not None:
                                 rss_emit(
@@ -2712,8 +2740,8 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                                     sub_phase_id="C4_gpu_cap_apply_sync",
                                     allocation_site_id="C4_after_state",
                                     optimizer_step_index=step_index,
-                                    state_index=int(state_index),
-                                    state_bucket=int(state_index) // 4,
+                                    state_index=int(semantic_state_index),
+                                    state_bucket=int(semantic_state_index) // 4,
                                     allocation_dims=census_dims,
                                 )
                             _emit_obmalloc_boundary(
@@ -2722,8 +2750,8 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                                 sub_phase_id="C4_gpu_cap_apply_sync",
                                 allocation_site_id="C4_after_state",
                                 optimizer_step_index=step_index,
-                                state_index=int(state_index),
-                                state_bucket=int(state_index) // 4,
+                                state_index=int(semantic_state_index),
+                                state_bucket=int(semantic_state_index) // 4,
                             )
                 _emit_torch_cpu_census_boundary(
                     rss_emit,

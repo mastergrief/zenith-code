@@ -61,6 +61,9 @@ def profile_s1d7_tracemalloc_site_enabled() -> bool:
 PROFILE_S1D7_TRACEMALLOC_FULL_TRACE_ENV = "HRM_TEXT_158_PROFILE_S1D7_TRACEMALLOC_FULL_TRACE"
 PROFILE_S1D7_BAND_COUNTER_ONLY_ENV = "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY"
 OBMALLOC_EXPANDED_SAMPLED_STATES_ENV = "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES"
+OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER_ENV = (
+    "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER"
+)
 
 
 def _profile_host_rss_enabled() -> bool:
@@ -154,6 +157,114 @@ def resolve_obmalloc_expanded_sampled_states(n_bound: int) -> frozenset[int]:
             f"{override!r}"
         )
     return frozenset(indices)
+
+
+def _parse_obmalloc_state_index_csv(
+    *,
+    env_name: str,
+    override: str,
+    n_bound: int,
+) -> list[int]:
+    n = int(n_bound)
+    indices: list[int] = []
+    seen: set[int] = set()
+    for token in override.split(","):
+        stripped = token.strip()
+        if stripped == "":
+            raise ValueError(f"empty token in {env_name}: {override!r}")
+        try:
+            idx = int(stripped)
+        except ValueError as exc:
+            raise ValueError(f"non-integer token in {env_name}: {token!r}") from exc
+        if idx < 0:
+            raise ValueError(f"negative index in {env_name}: {idx}")
+        if idx >= n:
+            raise ValueError(f"index {idx} outside [0, {n - 1}] for {env_name}")
+        if idx in seen:
+            raise ValueError(f"duplicate index {idx} in {env_name}: {override!r}")
+        seen.add(idx)
+        indices.append(idx)
+    if not indices:
+        raise ValueError(f"no valid indices parsed from {env_name}: {override!r}")
+    return indices
+
+
+def resolve_obmalloc_expanded_sampled_state_order(
+    n_bound: int,
+    sampled_states: frozenset[int],
+) -> tuple[int, ...] | None:
+    """Resolve declared sampled-block order; unset env -> None (default enumerate)."""
+    import os
+
+    override = os.environ.get(OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER_ENV, "").strip()
+    if not override:
+        return None
+    order = tuple(
+        _parse_obmalloc_state_index_csv(
+            env_name=OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER_ENV,
+            override=override,
+            n_bound=n_bound,
+        )
+    )
+    if frozenset(order) != sampled_states:
+        raise ValueError(
+            f"{OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER_ENV} must be an exact permutation "
+            f"of the resolved sampled set {sorted(sampled_states)}; got {list(order)}"
+        )
+    return order
+
+
+def build_c4_apply_visit_sequence(
+    n_bound: int,
+    sampled_states: frozenset[int],
+    sampled_state_order: tuple[int, ...] | None,
+) -> tuple[int, ...]:
+    """Full effective visit order: [sampled_block_order] + ascending numeric unsampled tail."""
+    n = int(n_bound)
+    if n <= 0:
+        return ()
+    if sampled_state_order is None:
+        return tuple(range(n))
+    if frozenset(sampled_state_order) != sampled_states:
+        raise ValueError(
+            "sampled_state_order must be a permutation of sampled_states; "
+            f"order={list(sampled_state_order)} set={sorted(sampled_states)}"
+        )
+    tail = tuple(idx for idx in range(n) if idx not in sampled_states)
+    return tuple(sampled_state_order) + tail
+
+
+def build_order_provenance_fields(
+    n_bound: int,
+    sampled_states: frozenset[int],
+    sampled_state_order: tuple[int, ...] | None,
+) -> dict[str, object]:
+    """Receipt/order provenance for sampled-block order perturbation (not full-n order)."""
+    visit = build_c4_apply_visit_sequence(
+        n_bound,
+        sampled_states,
+        sampled_state_order,
+    )
+    sampled_block_order = (
+        list(sampled_state_order)
+        if sampled_state_order is not None
+        else sorted(sampled_states)
+    )
+    active = sampled_state_order is not None
+    return {
+        "sampled_state_set": sorted(sampled_states),
+        "sampled_state_order": sampled_block_order,
+        "effective_visit_order": list(visit),
+        "order_perturbation_kind": (
+            "sampled_block_order_perturbation"
+            if active
+            else "default_enumerate"
+        ),
+        "order_rank_by_semantic_state": {
+            str(state_index): rank for rank, state_index in enumerate(visit)
+        },
+        "order_control_active": active,
+    }
 
 
 def begin_s1d7_tracemalloc_bracket(*, depth: int = 50) -> bool:
