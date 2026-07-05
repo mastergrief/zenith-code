@@ -1,0 +1,636 @@
+{
+  "acceptance_gate_order": [
+    "CURRENCY_OK (executed guard + box preflight)",
+    "INFRA_OK (eligible_module_limit==n_states, mark_count==len(sampled_states), observer clear, tracemalloc_mark_count==0)",
+    "SCIENCE_BRANCH (terminal_branch classifier \u2014 NOT receipt.ok)",
+    "CA_PERSISTS satisfies precondition ONLY \u2014 NOT reduction eligibility"
+  ],
+  "bounded_steps_budget": {
+    "fixture_a_arm_subprocess_timeout_seconds": 900,
+    "fixture_b_arm_subprocess_timeout_seconds": 1800,
+    "liveness_coherence": "max_silent(900) < phase(1800) < total(3600)",
+    "max_silent_phase_seconds": 900,
+    "max_steps_hard": 1,
+    "phase_heartbeat_seconds": 30,
+    "phase_timeout_seconds": 1800,
+    "total_timeout_seconds": 3600
+  },
+  "box_preflight_role_pins": {
+    "attribution_script": {
+      "rel_path": "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py",
+      "sha256": "56300178621652e66baac432f011863ebfd55c589b71cc5cb1af30bfe45b2384"
+    },
+    "bounded_delta_acquisition_probe": {
+      "rel_path": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "sha256": "51700056d1d71920d10fb858a1ef963464b8239ff55f4560a70e7ff61dfb1ad5"
+    },
+    "bounded_delta_learner": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "sha256": "0b30fc4d60e46003c7f2ebba291a6d8a24497d874d2b6c425cc8cc7aa7c99e3f"
+    },
+    "code_currency_guard": {
+      "rel_path": "scripts/hrm_text_158_code_currency_guard.py",
+      "sha256": "86ef7dd11cec33a049208eec7d61e66b4ed16689288223029cc60f26df8489da"
+    },
+    "event_coded_acc_live_carrier": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
+      "sha256": "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412"
+    },
+    "event_coded_vote_update_adapter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
+      "sha256": "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f"
+    },
+    "host_tracemalloc_probe": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py",
+      "sha256": "4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1"
+    },
+    "probe_bootstrap": {
+      "rel_path": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+      "sha256": "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f"
+    },
+    "s1d7_band_counter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py",
+      "sha256": "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688"
+    },
+    "s1d7_tracemalloc_feasibility": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py",
+      "sha256": "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794"
+    },
+    "sparse_cap_gpu_seam_adapter": {
+      "rel_path": "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+      "sha256": "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
+    }
+  },
+  "branch": "feature/hrm-text-1.58",
+  "ca_confirmation_objective": {
+    "anti_overclaim": "inertness proof only; NO Fold-3B mechanism verdict; NO CA verdict; NO candidate-C; NO reduction eligibility; NOT sub-2 proof; NOT 430MB bank pin; NOT implementation readiness",
+    "baseline_primary_receipt_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+    "cb_share_min": 0.8,
+    "crossing_bearing_predicate": "crossing_indices_len > 0",
+    "dense_env_override": "0,1,2,3,4,5,6,7,8,9",
+    "dense_order_env_override": "0,1,2,3,4,5,6,7,8,9",
+    "dense_sampled_state_order": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "dense_sampled_states": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "diagnostic_flags": {
+      "counts_as_sub2": false,
+      "diagnostic_reason": "Prove order-control patch inert before Fold-3B Variable A; order provenance doubles as env-reachability proof",
+      "outside_fold3b_budget": true,
+      "pre_full_stack_diagnostic": true,
+      "ready_for_main_science": false
+    },
+    "feasibility_subsample_trigger": {
+      "exclude_exit_codes": [
+        37,
+        -6
+      ],
+      "executable_via": "packet wrapper: evaluate_ca_confirmation_fallback_trigger on COMPLETED primary receipt (slice5:6634-6652); NOT in-run interrupt; primary_dense_fork_readable salvage when primary completes cleanly",
+      "fallback_dense_env": "0,1,2,3,4,5,6,7,8,9",
+      "fallback_dense_order_env": "0,1,2,3,4,5,6,7,8,9",
+      "fallback_n_states": 16,
+      "or_subprocess_timeout_expired": true,
+      "peak_rss_gib_gt": 6.5,
+      "post_primary_only": true
+    },
+    "fork_read_gate_field": "primary_dense_fork_readable",
+    "identity_inertness_acceptance": {
+      "baseline_primary_receipt_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "dynamic_comparison": "Load-bearing acceptance compares identity run per_state crossing vector to baseline_primary_receipt_path ACTUAL per_state vector element-wise; NOT a hardcoded 512 constant",
+      "env_reachability_note": "order_control_active=false would fail identity_inertness_proven closed \u2014 order provenance acceptance doubles as ORDER env subprocess reachability proof",
+      "field": "identity_inertness_proven",
+      "order_provenance_not_compared_to_baseline": "Pre-patch baseline has NO order provenance fields; order fields are checked for CORRECTNESS on identity run only, NOT compared to baseline",
+      "sanity_cross_check": {
+        "note": "documented expected baseline shape; sanity assert only",
+        "state0_crossing_indices_len": 512,
+        "states_1_through_9_crossing_indices_len": 0
+      },
+      "true_iff_all": [
+        "primary_dense_fork_readable == true",
+        "sampled_state_set == [0,1,2,3,4,5,6,7,8,9]",
+        "sampled_state_order == [0,1,2,3,4,5,6,7,8,9]",
+        "order_control_active == true on identity primary receipt",
+        "order_perturbation_kind == sampled_block_order_perturbation",
+        "effective_visit_order == [0..31] (identity: sampled block [0..9] + numeric tail [10..31])",
+        "order_rank_by_semantic_state[str(i)] == i for i in 0..9",
+        "semantic_state_id == state_index per per_state row over [0..9]",
+        "identity per_state crossing_indices_len == baseline per_state crossing_indices_len element-wise over [0..9]",
+        "identity cb_state_count == baseline cb_state_count",
+        "identity mark_count == baseline mark_count"
+      ],
+      "when_false": "Variable A (reversed order) remains blocked"
+    },
+    "not_science_gate_fields": [
+      "ok",
+      "infra_ok",
+      "terminal_branch"
+    ],
+    "primary_dense_fork_readable": {
+      "field": "primary_dense_fork_readable",
+      "true_iff_all": [
+        "wrapper.runs.primary.sampled_states == [0,1,2,3,4,5,6,7,8,9]",
+        "wrapper.runs.primary.s1d7_band_counter_mark_count == 10",
+        "wrapper.runs.primary.checks.s1d7_band_counter_mark_count_eq_sampled_state_count == true",
+        "wrapper.runs.primary.per_state covers state_index 0..9 (all ten rows)",
+        "wrapper.runs.primary.runs.B.exit_code == 0",
+        "wrapper.runs.primary.runs.B.subprocess_timeout_expired == false",
+        "wrapper.runs.primary.infra_ok == true"
+      ],
+      "when_false": "Primary is partial telemetry only; dense n=16 fallback is the science source. If fallback also lacks full dense coverage or clean B-arm exit \u2192 feasibility/inconclusive.",
+      "when_true": "Read structural-vs-sampling fork from wrapper.runs.primary.per_state EVEN IF fallback_trigger.rss_breach==true and science_verdict_source==fallback. Completed primary with peak_rss>6.5 is fork-readable; NOT mere FEASIBILITY_SUBSAMPLE."
+    },
+    "science_gate_field": "identity_inertness_proven",
+    "science_question": "Identity-order inertness: does explicit ORDER=[0..9] reproduce the baseline dense primary per-state crossing vector exactly (patch inertness proof)?",
+    "terminal_branches": [
+      "CA_PERSISTS",
+      "CA_MIXED",
+      "CA_DILUTES",
+      "INSUFFICIENT_CB_STATES",
+      "INFRA_NULL",
+      "FEASIBILITY_SUBSAMPLE"
+    ]
+  },
+  "callsite_band_counter_currency_coverage": {
+    "box_preflight": "10 phase3 roles on disk via box_lane --include-phase3-obmalloc-surfaces",
+    "executed_guard": "probe_bootstrap.py -B entry \u2192 maybe_enforce_phase3b_probe_import_byte_currency BEFORE bounded_delta_acquisition_probe import (band_counter_only env; guard-ordering decoupled from tracemalloc)",
+    "preflight_dry_check": "proof.callsite_currency_dry_check_command",
+    "prepare_env": "prepare_phase3b_band_counter_only_launch_env sets IMPORT_BYTE_PINS"
+  },
+  "canonical_lane": "test-operator_gpu_diagnostic",
+  "child_emission_contract": {
+    "band_counter_enable": {
+      "eligible_module_limit": 32,
+      "env": "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY=1 + HOST_RSS=1 + TRACEMALLOC=0 + HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=0,1,2,3,4,5,6,7,8,9 + HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=0,1,2,3,4,5,6,7,8,9",
+      "events": "s1d7_band_counter_site_C4.S1d.7_post (10 sampled states @ eligible_module_limit=32)",
+      "expected_mark_events": 10,
+      "expected_sampled_state_count": 10,
+      "measurement_contract": "static_pre_append_v1",
+      "n_states": 32,
+      "new_mark_events": 10,
+      "sampled_states": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "sampled_states_rule": "dense [0..9] via HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES env override; identity order [0..9] via HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER",
+      "schema": "hrm_text_158_s1d7_band_counter_site/v1",
+      "tracemalloc_site_events": 0
+    },
+    "env_source": "B-prime band-counter-only: tracemalloc=False, band_counter_only=True; bootstrap -B guard-ordering; dense sampled_states via shell export + env_toggles",
+    "env_toggles_b_arm": {
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+      "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES": "0,1,2,3,4,5,6,7,8,9",
+      "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER": "0,1,2,3,4,5,6,7,8,9",
+      "HRM_TEXT_158_PROFILE_DEBUGMALLOCSTATS": "0",
+      "HRM_TEXT_158_PROFILE_HOST_RSS": "1",
+      "HRM_TEXT_158_PROFILE_OBMALLOC_EXPANDED": "0",
+      "HRM_TEXT_158_PROFILE_OBMALLOC_SITE_BRACKETS": "0",
+      "HRM_TEXT_158_PROFILE_S1D7_BAND_COUNTER_ONLY": "1",
+      "HRM_TEXT_158_PROFILE_TRACEMALLOC": "0",
+      "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+      "HRM_TEXT_158_RUN_GPU_GLOBAL_RATE_CAP": "1",
+      "HRM_TEXT_158_RUN_GPU_Q_ACC_APPLY": "1"
+    },
+    "line_split_surfaces": {
+      "band_counter_logical_candidate": "event_coded_acc_live_carrier.py:896",
+      "band_counter_logical_marker": "event_coded_acc_live_carrier.py:895",
+      "tracemalloc_classifier_candidate_bands": "A910 / C941-952 / E914-917",
+      "tracemalloc_classifier_physical_bracket": "[909,955]"
+    }
+  },
+  "code_pin_coverage": {
+    "box_preflight": {
+      "note": "box attests file bytes on disk; executed guard attests imported bytecode",
+      "surfaces": [
+        "DEFAULT_FLOOR_PINNED_FILES + PHASE3_OBMALLOC_SURFACE_PINNED_FILES (10 roles)"
+      ],
+      "via": "box_lane_code_currency_preflight.py --include-phase3-obmalloc-surfaces"
+    },
+    "executed_code_guard": {
+      "surfaces": [
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "calm/hrm_text_158/native_full_stack/box_lane.py",
+        "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
+        "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
+        "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py",
+        "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py",
+        "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py",
+        "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+        "scripts/box_lane_code_currency_preflight.py",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+        "scripts/hrm_text_158_code_currency_guard.py",
+        "scripts/hrm_text_158_r7_resource_lane_acquire.py",
+        "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py"
+      ],
+      "via": "PHASE3B_PINNED_SOURCE_FILES + bootstrap executed guard (test_slice5 intentionally omitted \u2014 not launch-executed)"
+    }
+  },
+  "code_pins": {
+    "bounded_delta_acquisition_probe_sha256": "51700056d1d71920d10fb858a1ef963464b8239ff55f4560a70e7ff61dfb1ad5",
+    "bounded_delta_learner_sha256": "0b30fc4d60e46003c7f2ebba291a6d8a24497d874d2b6c425cc8cc7aa7c99e3f",
+    "box_lane_code_currency_preflight_sha256": "08bc8d13fbac548aea49d90db1af252d1cbde4abe867287f127f228f59ab1ecc",
+    "box_lane_sha256": "987a9a48e9a841c64ee35b3266541b98c593ab3523db1af70e42163c93ed7744",
+    "event_coded_acc_live_carrier_sha256": "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412",
+    "event_coded_vote_update_adapter_sha256": "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f",
+    "git_head": "597ff08bdb5a1374eeec7ff1a5648fc8006e7b85",
+    "host_tracemalloc_probe_sha256": "4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1",
+    "hrm_text_158_bounded_delta_acquisition_probe_sha256": "51700056d1d71920d10fb858a1ef963464b8239ff55f4560a70e7ff61dfb1ad5",
+    "hrm_text_158_code_currency_guard_sha256": "86ef7dd11cec33a049208eec7d61e66b4ed16689288223029cc60f26df8489da",
+    "hrm_text_158_slice5_v6i_oom_profile_attribution_sha256": "56300178621652e66baac432f011863ebfd55c589b71cc5cb1af30bfe45b2384",
+    "probe_bootstrap_sha256": "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f",
+    "r7_resource_lane_acquire_sha256": "c69fd07f9416f15bb2fdc0c6d11b4c10d85c145c57d015e929653ac7f25df027",
+    "s1d7_band_counter_sha256": "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688",
+    "s1d7_tracemalloc_feasibility_sha256": "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794",
+    "sparse_cap_gpu_seam_adapter_sha256": "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
+  },
+  "code_pins_note": "test_slice5 omitted (not launch-executed). git_head_required=597ff08 is the order-control patch science baseline (FDC); descendant HEAD allowed via merge-base ancestor check. Science code_pins verified @ git_head_required via git show. Launch-executed infra pins (on-disk): box_lane.py implements descendant-head accept decision; box_lane_code_currency_preflight.py imports box_lane at module load.",
+  "consumption_matrix": {
+    "A_freshness_guard": {
+      "bootstrap_launch": "python3 -B probe_bootstrap.py entry; band_counter_only env; guard runs before pinned imports",
+      "box_preflight": "box_lane_code_currency_preflight.py --include-phase3-obmalloc-surfaces",
+      "guard_entry": "bootstrap.main \u2192 run_phase3b_probe_executed_code_currency_guard BEFORE bounded_delta_acquisition_probe import (band_counter_only)",
+      "pycache_invalidation": "prepare_phase3b_band_counter_only_launch_env + guard-internal invalidation"
+    },
+    "B_confirmation_receipt": {
+      "builder": "run_callsite_band_counter_ca_confirmation + classify_ca_band_counter_confirmation",
+      "fallback": "POST-primary RSS>6.5 GiB or runs.B.subprocess_timeout_expired on n=32 dense \u2192 n=16 dense-[0..9]; exit 37/-6 fail-closed (no fallback)",
+      "fork_read_gate": "primary_dense_fork_readable (completed primary salvage)",
+      "launch_wrapper_reporting": "wrapper receipt MUST surface runs.primary.per_state, primary_receipt_path, fallback_trigger, primary_dense_fork_readable; per-fixture lane acquire/release inside slice5 is the sole lock boundary (no outer RUN_ROOT acquire)",
+      "science_gate": "identity_inertness_proven (NOT receipt.ok / infra_ok / terminal_branch)"
+    }
+  },
+  "decision_contract": {
+    "chosen_path": "dense-[0..9] identity-order inertness proof via run_callsite_band_counter_ca_confirmation @ 597ff08 n_states=32; HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=0..9 + HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=0..9 shell export; band_counter_only bootstrap/-B guard-ordering",
+    "forbidden": [
+      "direct probe.py launch without bootstrap for band_counter_only B-arm",
+      "TRACEMALLOC=1 on band_counter_only confirmation subprocess",
+      "reading receipt.ok or infra_ok as identity_inertness_proven",
+      "treating identity inertness as Fold-3B mechanism verdict",
+      "candidate-C single-band resolution claim from this run",
+      "outer RUN_ROOT lane acquire (double-acquire deadlock)"
+    ],
+    "forbidden_at_launch": [
+      "launch without box code-currency preflight",
+      "launch without baseline_primary_receipt_path preflight check",
+      "launch with claude pre-holding gpu:hrm-text-158 lane (per-fixture self-acquire)",
+      "direct probe.py launch without bootstrap for band_counter_only B-arm",
+      "TRACEMALLOC=1 band_counter_only subprocess",
+      "outer r7_resource_lane_acquire at RUN_ROOT"
+    ]
+  },
+  "design_binding": {
+    "chosen_option": "n32_dense_09_identity_order_inertness_proof",
+    "fold1_spec_sha256": "14be946993ac8b8b64bd0978e71b642590decd54a94f245712488b48ef178c22",
+    "fold2_design_msg_id": "1783186409528",
+    "fold2a_source_commit": "597ff08bdb5a1374eeec7ff1a5648fc8006e7b85"
+  },
+  "executed_code_currency_guard_contract": {
+    "bootstrap_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+    "fail_closed_exit_code": 37,
+    "pre_measurement": true,
+    "proof_method": "reachable_code_object_fingerprint_method_a",
+    "required_receipt_fields": [
+      "ok",
+      "guard_ran_before_pinned_imports",
+      "sys_modules_before_guard",
+      "sys_modules_after_guard",
+      "executed_code_fingerprints",
+      "import_byte_fingerprints",
+      "child_orig_argv",
+      "child_sys_argv",
+      "child_post_script_cli_argv",
+      "env.PYTHONDONTWRITEBYTECODE",
+      "sys_flags.dont_write_bytecode",
+      "pycache_invalidated_paths"
+    ],
+    "schema": "hrm_text_158_code_currency_executed_guard/v1"
+  },
+  "execution_order": [
+    "dispatch_run_claim",
+    "preflight",
+    "parent_checkpoint_rehash_before",
+    "install_lane_release_trap_cleanup_only",
+    "ca_confirmation_primary_or_fallback",
+    "parent_checkpoint_rehash_after",
+    "resource_lane_release_cleanup_only"
+  ],
+  "forbidden": [
+    "mutate banked .pt checkpoint",
+    "pass --mirror-durable-attribution at launch",
+    "v6i-unpark",
+    "claim reduction implementation eligibility from this confirmation run",
+    "stage/commit/push from test-operator",
+    "edit code beyond 597ff08 pins",
+    "launch conflated profiler envs (TRACEMALLOC=1 on band-counter-only subprocess)",
+    "set DEBUGMALLOCSTATS and TRACEMALLOC on same subprocess",
+    "treat FEASIBILITY_SUBSAMPLE as reduction eligibility",
+    "legacy callsite classifier or candidate-band routing from this packet"
+  ],
+  "git_head_required": "597ff08bdb5a1374eeec7ff1a5648fc8006e7b85",
+  "gpu_lane": {
+    "canonical_name": "gpu:TheRig:uuid:GPU-4c376502-9cde-e181-ec2b-9773b307342e",
+    "hardware": "RTX 4070 Laptop (8 GB VRAM)",
+    "request_alias": "gpu:hrm-text-158"
+  },
+  "monitor": {
+    "primary_tail_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log",
+    "probe_stream_log_paths": [
+      "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_a/probe_stream.log",
+      "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log"
+    ],
+    "run_root": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1",
+    "scratch_root": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b"
+  },
+  "packet_id": "c4s1_phase3_n32_dense_09_identity_inertness_v1",
+  "packet_revision": "v1_n32_dense_09_identity_inertness_597ff08",
+  "parent_checkpoint": {
+    "absolute_path": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "pass_criterion": "sha256 equals 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec before AND after run",
+    "read_only": true,
+    "rehash_after_command": "sha256sum /mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}'",
+    "rehash_before_command": "sha256sum /mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}'",
+    "relative_path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+  },
+  "perturbation_risk_classification": {
+    "ca_confirmation_mandatory": {
+      "command": "proof.ca_confirmation_command",
+      "exit_code_fail_infra": 37,
+      "exit_code_fail_unknown_branch": 42,
+      "gates": [
+        "observer_guard_clear",
+        "tracemalloc_perturbed_false",
+        "eligible_module_limit_eq_n_states",
+        "s1d7_band_counter_mark_count_eq_sampled_state_count",
+        "tracemalloc_mark_count_eq_0",
+        "b_profile_mark_count_gt_0",
+        "no_profile_env_mutual_exclusion_abort",
+        "no_tracemalloc_perturbed_inconclusive",
+        "infra_not_null"
+      ],
+      "ordering": "PRIMARY identity inertness run; acceptance read from identity_inertness_proven NOT ok",
+      "science_branches": [
+        "CA_PERSISTS",
+        "CA_MIXED",
+        "CA_DILUTES",
+        "INSUFFICIENT_CB_STATES",
+        "INFRA_NULL",
+        "FEASIBILITY_SUBSAMPLE"
+      ],
+      "science_gate": "identity_inertness_proven"
+    }
+  },
+  "phase_budgets_and_watcher": {
+    "convention": "fold-2b confirmation budgets: max_silent(900) < phase(1800) < total(3600); milestone budgets report-only",
+    "heartbeat_interval_seconds": 30,
+    "heartbeat_supplementary_only": true,
+    "interrupt_authority": {
+      "first_milestone_budgets_report_only": true,
+      "interrupt_authority": "faulthandler_silent_phase_guard",
+      "interrupt_timeout_seconds": 900.0,
+      "milestone_budget_breach_triggers_interrupt": false,
+      "schema": "hrm_text_158_phase_budget_interrupt_authority/v1"
+    },
+    "liveness_contract": {
+      "coherence": "max_silent(900) < phase(1800) < total(3600)",
+      "max_silent_phase_seconds": 900,
+      "per_arm_subprocess_timeout_seconds": 1800,
+      "phase_heartbeat_seconds": 30,
+      "phase_timeout_seconds": 1800,
+      "total_timeout_seconds": 3600,
+      "watcher_stall_seconds": 900
+    },
+    "max_silent_phase_seconds": 900,
+    "phase_timeout_seconds": 1800,
+    "stop_conditions": [
+      "executed guard receipt missing or guard_ran_before_pinned_imports false",
+      "ca_confirmation subprocess exit 37 (infra_null / currency fail-closed)",
+      "ca_confirmation subprocess exit 42 (unknown terminal_branch)",
+      "no phase_heartbeat within watcher_stall_seconds(900)",
+      "parent checkpoint sha256 mismatch pre/post",
+      "peak_rss_gib > 6.5 on primary n=32 triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
+      "primary runs.B.subprocess_timeout_expired triggers n=16 FEASIBILITY_SUBSAMPLE fallback",
+      "primary exit_code 37/-6 MUST NOT trigger fallback (fail-closed INFRA_NULL)"
+    ],
+    "total_timeout_seconds": 3600,
+    "watcher_liveness_fail_regex": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL"
+  },
+  "preflight": {
+    "a_freshness_guard": {
+      "bootstrap_required": true,
+      "bootstrap_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py",
+      "box_preflight_n_files_lower_bound": 10,
+      "box_preflight_roles": [
+        "event_coded_acc_live_carrier",
+        "sparse_cap_gpu_seam_adapter",
+        "event_coded_vote_update_adapter",
+        "bounded_delta_learner",
+        "attribution_script",
+        "code_currency_guard",
+        "probe_bootstrap",
+        "bounded_delta_acquisition_probe",
+        "host_tracemalloc_probe",
+        "s1d7_tracemalloc_feasibility"
+      ],
+      "direct_probe_required": false,
+      "executed_proof_method": "reachable_code_object_fingerprint_method_a",
+      "fail_closed_exit_code": 37,
+      "fail_closed_terminals": [
+        "CODE_CURRENCY_GUARD_NOT_RUN_INCONCLUSIVE",
+        "CODE_CURRENCY_EXECUTED_MISMATCH_INCONCLUSIVE",
+        "CODE_CURRENCY_MISMATCH_INCONCLUSIVE"
+      ],
+      "probe_script": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "probe_subprocess": "python3 -B probe_bootstrap.py via _fixture_probe_argv(band_counter_only=True) @ attribution.py:5404; bootstrap=guard-ordering only; env decoupled (TRACEMALLOC=0, BAND_COUNTER_ONLY=1)",
+      "pycache_invalidation": "prepare_phase3b_band_counter_only_launch_env + guard-internal invalidation"
+    },
+    "command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; HEAD=$(git rev-parse HEAD); git merge-base --is-ancestor '597ff08bdb5a1374eeec7ff1a5648fc8006e7b85' \"$HEAD\"; PARENT=/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt; PARENT_SHA=$(sha256sum \"$PARENT\" | awk '{print $1}'); test -f \"$PARENT\"; test \"$PARENT_SHA\" = '9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'; PYTHONPATH=. python3 - <<'PY'\nimport hashlib, subprocess, sys\nfrom pathlib import Path\nREPO = Path('/mnt/c/Users/gabes/projects/claw-code-hrm-text-158')\nPINS = {\n    'calm/hrm_text_158/native_full_stack/bounded_delta_learner.py': '0b30fc4d60e46003c7f2ebba291a6d8a24497d874d2b6c425cc8cc7aa7c99e3f',\n    'calm/hrm_text_158/native_full_stack/box_lane.py': '987a9a48e9a841c64ee35b3266541b98c593ab3523db1af70e42163c93ed7744',\n    'calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py': '624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412',\n    'calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py': 'af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f',\n    'calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py': '4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1',\n    'calm/hrm_text_158/native_full_stack/s1d7_band_counter.py': '1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688',\n    'calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py': 'f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794',\n    'calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py': '0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d',\n    'scripts/box_lane_code_currency_preflight.py': '08bc8d13fbac548aea49d90db1af252d1cbde4abe867287f127f228f59ab1ecc',\n    'scripts/hrm_text_158_bounded_delta_acquisition_probe.py': '51700056d1d71920d10fb858a1ef963464b8239ff55f4560a70e7ff61dfb1ad5',\n    'scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py': 'c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f',\n    'scripts/hrm_text_158_code_currency_guard.py': '86ef7dd11cec33a049208eec7d61e66b4ed16689288223029cc60f26df8489da',\n    'scripts/hrm_text_158_r7_resource_lane_acquire.py': 'c69fd07f9416f15bb2fdc0c6d11b4c10d85c145c57d015e929653ac7f25df027',\n    'scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py': '56300178621652e66baac432f011863ebfd55c589b71cc5cb1af30bfe45b2384',\n}\nfor rel, expected in PINS.items():\n    actual = hashlib.sha256((REPO / rel).read_bytes()).hexdigest()\n    if actual != expected:\n        print(f'PIN_MISMATCH {rel}: got {actual} expected {expected}', file=sys.stderr)\n        raise SystemExit(11)\nprint('preflight_pins_ok')\nPY\nBASELINE='/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json'; test -f \"$BASELINE\"; PYTHONPATH=. python3 - <<'PY'\nimport json, sys\nfrom pathlib import Path\nbaseline_path = Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json')\nif not baseline_path.is_file():\n    print('BASELINE_MISSING', file=sys.stderr)\n    raise SystemExit(12)\nbaseline = json.loads(baseline_path.read_text(encoding='utf-8'))\nif int(baseline.get('cb_state_count', -1)) != 1:\n    print('BASELINE_SHAPE_CB', file=sys.stderr)\n    raise SystemExit(12)\nif int(baseline.get('mark_count', -1)) != 10:\n    print('BASELINE_SHAPE_MARK', file=sys.stderr)\n    raise SystemExit(12)\nper_state = baseline.get('per_state') or []\nstate0 = next((r for r in per_state if isinstance(r, dict) and int(r.get('state_index', -1)) == 0), None)\nif not state0 or int(state0.get('crossing_indices_len', 0) or 0) <= 0:\n    print('BASELINE_SHAPE_STATE0', file=sys.stderr)\n    raise SystemExit(12)\nprint('preflight_baseline_ok')\nPY\nRUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1; mkdir -p \"$RUN_ROOT/prelaunch\"; PYTHONPATH=. python3 scripts/box_lane_code_currency_preflight.py --chain-id c4s1_phase3_n32_dense_09_identity_inertness_v1 --head-expected 597ff08bdb5a1374eeec7ff1a5648fc8006e7b85 --skip-fetch --allow-descendant-head --include-phase3-obmalloc-surfaces --output \"$RUN_ROOT/prelaunch/box_code_currency_preflight.json\"; python3 -c \"import json;d=json.load(open('$RUN_ROOT/prelaunch/box_code_currency_preflight.json')); assert d['code_currency_pass']; assert d.get('n_files',0)>=10\"; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; PYTHONPATH=. python3 - <<'PY'\nimport json\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    dry_check_callsite_b_prime_b_arm_launch_composition,\n)\nreceipt = dry_check_callsite_b_prime_b_arm_launch_composition()\nprint(json.dumps({'launch_composition_dry_check_ok': receipt.get('ok')}, sort_keys=True))\nif not receipt.get('ok'):\n    raise SystemExit(43)\nPY",
+    "pass_criterion": "exit 0; git merge-base --is-ancestor 597ff08 HEAD; parent sha match; all pinned surfaces hash-match and clean; baseline_primary_receipt_path exists+shape; box code-currency pass with --allow-descendant-head; band_counter_only currency dry-check ok"
+  },
+  "probe_stream_log_paths": [
+    "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_a/probe_stream.log",
+    "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log"
+  ],
+  "process_exit_precedence": {
+    "ca_confirmation_exits": {
+      "37": "infra_null / currency fail-closed / guard not proven",
+      "42": "unknown terminal_branch (not a valid CA confirmation science branch)"
+    },
+    "description": "fold-2b CA confirmation fail-closed exits; science read from terminal_branch after infra_ok",
+    "subprocess_pre_measurement": {
+      "enforced_by": "probe_bootstrap.py entry \u2192 maybe_enforce before probe import (band_counter_only)",
+      "exit_code": 37,
+      "order": 1,
+      "rule": "executed-code currency guard MUST fail-close exit 37 BEFORE phase telemetry if freshness cannot be proven",
+      "terminals": [
+        "CODE_CURRENCY_GUARD_NOT_RUN_INCONCLUSIVE",
+        "CODE_CURRENCY_EXECUTED_MISMATCH_INCONCLUSIVE",
+        "CODE_CURRENCY_MISMATCH_INCONCLUSIVE"
+      ]
+    }
+  },
+  "proof": {
+    "artifacts": {
+      "b_host_rss_profile": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/host_rss_profile.jsonl",
+      "b_probe_stream_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_b/probe_stream.log",
+      "ca_confirmation_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "ca_confirmation_wrapper_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/ca_confirmation_wrapper_receipt.json",
+      "exit_code": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/exit_code.txt",
+      "fallback_runs_b_resource_lane_holding": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/feasibility_subsample_n16/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.B.resource_lane_holding",
+      "fallback_runs_b_resource_lane_release": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/feasibility_subsample_n16/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.B.resource_lane_release",
+      "fallback_trigger": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/ca_confirmation_wrapper_receipt.json#fallback_trigger",
+      "feasibility_subsample_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/feasibility_subsample_n16/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "identity_inertness_proven": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/ca_confirmation_wrapper_receipt.json#identity_inertness_proven",
+      "lane_release_trap_log": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/postrun/lane_release_trap.log",
+      "lane_release_trap_note": "CLEANUP-ONLY; no_holding_file at RUN_ROOT is expected/normal \u2014 NOT protection proof",
+      "prelaunch_code_currency": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/box_code_currency_preflight.json",
+      "primary_dense_fork_readable": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/ca_confirmation_wrapper_receipt.json#primary_dense_fork_readable",
+      "primary_per_state": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#per_state",
+      "primary_receipt_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "primary_runs_a_resource_lane_holding": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.A.resource_lane_holding",
+      "primary_runs_a_resource_lane_release": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.A.resource_lane_release",
+      "primary_runs_b_resource_lane_holding": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.B.resource_lane_holding",
+      "primary_runs_b_resource_lane_release": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json#runs.B.resource_lane_release",
+      "terminal_lane_free_witness": "ai_room_resource_lane_status(lane=gpu:hrm-text-158) held=false \u2014 test-operator supplies at terminal receipt; NOT written by ca_confirmation"
+    },
+    "baseline_primary_receipt_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+    "branch_outcomes": {
+      "CA_DILUTES": "crossing-bearing W/P partition: neither crossing-weighted nor per-state (C+A) share meets ca_share_min \u2014 informative null; fork read from per_state when primary_dense_fork_readable",
+      "CA_MIXED": "crossing-weighted (C+A) share ok XOR per-state ok \u2014 mixed persistence signal; fork read from per_state when primary_dense_fork_readable",
+      "CA_PERSISTS": "both crossing-weighted and per-state (C+A) shares meet ca_share_min \u2014 fold-1 precondition ONLY; NOT reduction eligibility",
+      "FEASIBILITY_SUBSAMPLE": "primary n=32 dense RSS>6.5 GiB or runs.B.subprocess_timeout_expired \u2192 rerun n=16 dense-[0..9]; exit 37/-6 NEVER fallback; terminal_branch via classify(feasibility_subsample=True) ONLY when primary_dense_fork_readable==false",
+      "INFRA_NULL": "infra_ok false or guard/observer fail-closed \u2014 no science branch; abnormal B-arm exit fail-closed",
+      "INSUFFICIENT_CB_STATES": "fewer than 2 crossing-bearing states \u2014 informative null; if only state 0 CB \u2192 structural (state0-only); fork read from per_state when primary_dense_fork_readable",
+      "PRIMARY_DENSE_FORK_READABLE": "completed primary dense-[0..9] with full mark coverage and clean B-arm exit \u2014 fork evidence authoritative even when RSS fallback fires post-primary"
+    },
+    "ca_confirmation_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; RUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1; mkdir -p \"$RUN_ROOT/prelaunch\" \"$RUN_ROOT/callsite_band_counter_a\" \"$RUN_ROOT/callsite_band_counter_b\" \"$RUN_ROOT/postrun\"; rm -f \"$RUN_ROOT/run_nonce.txt\" \"$RUN_ROOT/exit_code.txt\"; RUN_NONCE=\"$(git -C /mnt/c/Users/gabes/projects/claw-code-hrm-text-158 rev-parse HEAD)-$(date -u +%Y%m%dT%H%M%SZ)-$$\"; printf '%s\\n' \"$RUN_NONCE\" > \"$RUN_ROOT/run_nonce.txt\"; export PYTHONPATH=.; export HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=0,1,2,3,4,5,6,7,8,9; export HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=0,1,2,3,4,5,6,7,8,9; cleanup_lane_release() { PYTHONPATH=. python3 -c \"from pathlib import Path; from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane; import json; print(json.dumps(release_resource_lane(Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1'))))\" >>\"$RUN_ROOT/postrun/lane_release_trap.log\" 2>&1 || true; }; trap cleanup_lane_release EXIT ERR INT TERM; timeout 3600 python3 - \"$RUN_ROOT\" <<'PY'\nimport json, sys\nfrom pathlib import Path\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    ca_confirmation_wrapper_exit_code,\n    orchestrate_ca_confirmation_with_fallback,\n)\n\nDENSE_SAMPLED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]\nBASELINE_PRIMARY_RECEIPT_PATH = (\n    \"/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/\"\n    \"prelaunch/callsite_band_counter_ca_confirmation/\"\n    \"callsite_band_counter_ca_confirmation_receipt.json\"\n)\nWRAPPER_RECEIPT_NAME = \"ca_confirmation_wrapper_receipt.json\"\n\n\ndef _crossing_vector_over_dense(per_state: list) -> dict[int, int]:\n    out: dict[int, int] = {}\n    for row in per_state or []:\n        if not isinstance(row, dict):\n            continue\n        state_index = row.get(\"state_index\")\n        if state_index is None:\n            continue\n        out[int(state_index)] = int(row.get(\"crossing_indices_len\", 0) or 0)\n    return out\n\n\ndef compute_primary_dense_fork_readable(wrapper: dict) -> bool:\n    try:\n        primary = (wrapper or {}).get(\"runs\", {}).get(\"primary\")\n        if not isinstance(primary, dict):\n            return False\n        sampled = primary.get(\"sampled_states\")\n        if list(sampled) != DENSE_SAMPLED:\n            return False\n        if int(primary.get(\"s1d7_band_counter_mark_count\", -1)) != 10:\n            return False\n        checks = primary.get(\"checks\") or {}\n        if checks.get(\"s1d7_band_counter_mark_count_eq_sampled_state_count\") is not True:\n            return False\n        per_state = primary.get(\"per_state\") or []\n        if not isinstance(per_state, list):\n            return False\n        covered = {\n            int(row.get(\"state_index\"))\n            for row in per_state\n            if isinstance(row, dict) and row.get(\"state_index\") is not None\n        }\n        if covered != set(DENSE_SAMPLED):\n            return False\n        b_run = (primary.get(\"runs\") or {}).get(\"B\") or {}\n        if int(b_run.get(\"exit_code\", -1)) != 0:\n            return False\n        if bool(b_run.get(\"subprocess_timeout_expired\")):\n            return False\n        if primary.get(\"infra_ok\") is not True:\n            return False\n        return True\n    except Exception:\n        return False\n\n\ndef _order_provenance_ok(primary: dict) -> bool:\n    try:\n        sampled_set = list(primary.get(\"sampled_state_set\") or [])\n        if sampled_set != list(DENSE_SAMPLED):\n            return False\n        sampled_order = list(primary.get(\"sampled_state_order\") or [])\n        if sampled_order != list(DENSE_SAMPLED):\n            return False\n        if primary.get(\"order_control_active\") is not True:\n            return False\n        if primary.get(\"order_perturbation_kind\") != \"sampled_block_order_perturbation\":\n            return False\n        effective = list(primary.get(\"effective_visit_order\") or [])\n        if effective != list(range(32)):\n            return False\n        rank_map = primary.get(\"order_rank_by_semantic_state\") or {}\n        for idx, state in enumerate(DENSE_SAMPLED):\n            if int(rank_map.get(str(state), -1)) != idx:\n                return False\n        per_state = primary.get(\"per_state\") or []\n        for row in per_state:\n            if not isinstance(row, dict):\n                continue\n            state_index = row.get(\"state_index\")\n            if state_index is None:\n                continue\n            if int(state_index) not in set(DENSE_SAMPLED):\n                continue\n            if row.get(\"semantic_state_id\") != state_index:\n                return False\n        return True\n    except Exception:\n        return False\n\n\ndef compute_identity_inertness_proven(wrapper: dict) -> bool:\n    try:\n        if not compute_primary_dense_fork_readable(wrapper):\n            return False\n        primary = (wrapper or {}).get(\"runs\", {}).get(\"primary\")\n        if not isinstance(primary, dict):\n            return False\n        if not _order_provenance_ok(primary):\n            return False\n        baseline_path = Path(BASELINE_PRIMARY_RECEIPT_PATH)\n        if not baseline_path.is_file():\n            return False\n        baseline = json.loads(baseline_path.read_text(encoding=\"utf-8\"))\n        baseline_per_state = baseline.get(\"per_state\") or []\n        identity_per_state = primary.get(\"per_state\") or []\n        baseline_vec = _crossing_vector_over_dense(baseline_per_state)\n        identity_vec = _crossing_vector_over_dense(identity_per_state)\n        for state in DENSE_SAMPLED:\n            if baseline_vec.get(state) != identity_vec.get(state):\n                return False\n        if int(primary.get(\"cb_state_count\", -1)) != int(baseline.get(\"cb_state_count\", -2)):\n            return False\n        if int(primary.get(\"mark_count\", -1)) != int(baseline.get(\"mark_count\", -2)):\n            return False\n        return True\n    except Exception:\n        return False\n\n\nrun_root = Path(sys.argv[1])\nwrapper_receipt_path = run_root / \"prelaunch\" / WRAPPER_RECEIPT_NAME\nwrapper_receipt_path.parent.mkdir(parents=True, exist_ok=True)\n\ntry:\n    wrapper = orchestrate_ca_confirmation_with_fallback(run_root)\nexcept Exception as exc:\n    wrapper = {\n        \"schema\": \"hrm_text_158_ca_confirmation_wrapper_receipt/v1\",\n        \"abnormal_exit\": True,\n        \"abnormal_exit_error\": f\"{type(exc).__name__}: {exc}\",\n        \"runs\": {\"primary\": None},\n        \"science_verdict_source\": \"primary\",\n        \"fallback_trigger\": None,\n        \"primary_receipt_path\": None,\n        \"baseline_primary_receipt_path\": BASELINE_PRIMARY_RECEIPT_PATH,\n        \"primary_dense_fork_readable\": False,\n        \"identity_inertness_proven\": False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\nif not isinstance(wrapper, dict):\n    wrapper = {\n        \"schema\": \"hrm_text_158_ca_confirmation_wrapper_receipt/v1\",\n        \"abnormal_exit\": True,\n        \"runs\": {\"primary\": None},\n        \"science_verdict_source\": \"primary\",\n        \"fallback_trigger\": None,\n        \"primary_receipt_path\": None,\n        \"baseline_primary_receipt_path\": BASELINE_PRIMARY_RECEIPT_PATH,\n        \"primary_dense_fork_readable\": False,\n        \"identity_inertness_proven\": False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\nprimary = (wrapper.get(\"runs\") or {}).get(\"primary\")\nif isinstance(primary, dict):\n    wrapper[\"primary_receipt_path\"] = primary.get(\"receipt_path\")\nelse:\n    wrapper[\"primary_receipt_path\"] = None\n\nwrapper[\"baseline_primary_receipt_path\"] = BASELINE_PRIMARY_RECEIPT_PATH\nwrapper[\"primary_dense_fork_readable\"] = compute_primary_dense_fork_readable(wrapper)\nwrapper[\"identity_inertness_proven\"] = compute_identity_inertness_proven(wrapper)\nwrapper[\"ready_for_main_science\"] = False\nwrapper[\"counts_as_sub2\"] = False\nwrapper[\"pre_full_stack_diagnostic\"] = True\n\nwrapper_receipt_path.write_text(\n    json.dumps(wrapper, indent=2, sort_keys=True) + \"\\n\",\n    encoding=\"utf-8\",\n)\n\nscience_receipt = (\n    wrapper.get(\"runs\", {}).get(\"fallback\")\n    if wrapper.get(\"science_verdict_source\") == \"fallback\"\n    else wrapper.get(\"runs\", {}).get(\"primary\")\n)\nif not isinstance(science_receipt, dict):\n    science_receipt = {\"infra_ok\": False, \"terminal_branch\": \"INFRA_NULL\"}\n\nprint(json.dumps(wrapper, indent=2, sort_keys=True))\nraise SystemExit(ca_confirmation_wrapper_exit_code(science_receipt))\n\nPY",
+    "callsite_currency_dry_check_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; PYTHONPATH=. python3 - <<'PY'\nimport json\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    dry_check_callsite_b_prime_b_arm_launch_composition,\n)\nreceipt = dry_check_callsite_b_prime_b_arm_launch_composition()\nprint(json.dumps(receipt, indent=2, sort_keys=True))\nif not receipt.get('ok'):\n    raise SystemExit(43)\nPY",
+    "description": "dense-[0..9] identity-order inertness proof via orchestrate_ca_confirmation_with_fallback import heredoc; ORDER=0,1,2,3,4,5,6,7,8,9 + SET=0,1,2,3,4,5,6,7,8,9; POST-primary RSS>6.5 GiB or timeout triggers n=16 identity fallback; identity_inertness_proven via dynamic baseline comparison",
+    "feasibility_subsample_classification": {
+      "grounding": "run_callsite_band_counter_ca_confirmation accepts n_states; classify_ca_band_counter_confirmation accepts feasibility_subsample=True; runner hardcodes feasibility_subsample=False \u2014 packet wrapper orchestrates pilot RSS/budget gate then applies classifier override on n=16 fallback",
+      "path": "(a) EXECUTABLE-VIA-PACKET",
+      "runner_commit": "597ff08bdb5a1374eeec7ff1a5648fc8006e7b85"
+    },
+    "identity_inertness_acceptance": {
+      "baseline_primary_receipt_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "dynamic_comparison": "Load-bearing acceptance compares identity run per_state crossing vector to baseline_primary_receipt_path ACTUAL per_state vector element-wise; NOT a hardcoded 512 constant",
+      "env_reachability_note": "order_control_active=false would fail identity_inertness_proven closed \u2014 order provenance acceptance doubles as ORDER env subprocess reachability proof",
+      "field": "identity_inertness_proven",
+      "order_provenance_not_compared_to_baseline": "Pre-patch baseline has NO order provenance fields; order fields are checked for CORRECTNESS on identity run only, NOT compared to baseline",
+      "sanity_cross_check": {
+        "note": "documented expected baseline shape; sanity assert only",
+        "state0_crossing_indices_len": 512,
+        "states_1_through_9_crossing_indices_len": 0
+      },
+      "true_iff_all": [
+        "primary_dense_fork_readable == true",
+        "sampled_state_set == [0,1,2,3,4,5,6,7,8,9]",
+        "sampled_state_order == [0,1,2,3,4,5,6,7,8,9]",
+        "order_control_active == true on identity primary receipt",
+        "order_perturbation_kind == sampled_block_order_perturbation",
+        "effective_visit_order == [0..31] (identity: sampled block [0..9] + numeric tail [10..31])",
+        "order_rank_by_semantic_state[str(i)] == i for i in 0..9",
+        "semantic_state_id == state_index per per_state row over [0..9]",
+        "identity per_state crossing_indices_len == baseline per_state crossing_indices_len element-wise over [0..9]",
+        "identity cb_state_count == baseline cb_state_count",
+        "identity mark_count == baseline mark_count"
+      ],
+      "when_false": "Variable A (reversed order) remains blocked"
+    },
+    "interpretation_rule": "Acceptance: identity_inertness_proven compares identity primary per_state crossing vector to baseline_primary_receipt_path element-wise over [0..9] PLUS cb_state_count/mark_count equality. Order provenance fields checked for CORRECTNESS on identity run only (baseline has no order fields). primary_dense_fork_readable salvage applies under Q4 RSS breach. Partial/abnormal exit fail-closed. NO Fold-3B mechanism verdict. Launch wrapper receipt MUST surface identity_inertness_proven, baseline_primary_receipt_path, runs.primary.per_state, primary_receipt_path, fallback_trigger, primary_dense_fork_readable, ready_for_main_science=false, counts_as_sub2=false, pre_full_stack_diagnostic=true.",
+    "launch_wrapper_receipt_required_fields": [
+      "runs.primary.per_state",
+      "primary_receipt_path",
+      "baseline_primary_receipt_path",
+      "fallback_trigger",
+      "primary_dense_fork_readable",
+      "identity_inertness_proven",
+      "science_verdict_source",
+      "ready_for_main_science",
+      "counts_as_sub2",
+      "pre_full_stack_diagnostic"
+    ],
+    "pass_criteria": {
+      "abort_fail_closed": "partial JSONL, nonzero B-arm exit, timeout, or mark-coverage failure CANNOT decide inertness; launch acceptance fail-closed on abnormal exit",
+      "baseline_preflight_exists": "preflight asserts baseline_primary_receipt_path exists+parses with cb_state_count=1, mark_count=10, state0 crossing-bearing",
+      "dense_env_export": "ca_confirmation_command exports HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=0,1,2,3,4,5,6,7,8,9 AND HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=0,1,2,3,4,5,6,7,8,9 AND env_toggles_b_arm matches both",
+      "diagnostic_flags": "ready_for_main_science=false, counts_as_sub2=false, pre_full_stack_diagnostic=true",
+      "feasibility_subsample_executable": "POST-primary: n=32 identity dense \u2192 RSS/timeout gate (NOT exit 37/-6) \u2192 n=16 identity dense + classify(feasibility_subsample=True) only when primary_dense_fork_readable==false",
+      "identity_inertness_proven": "TRUE iff primary_dense_fork_readable AND order provenance correct AND identity per_state crossing vector == baseline per_state crossing vector element-wise over [0..9] AND cb_state_count/mark_count match baseline",
+      "infra_ok_required": "infra_ok==true for launch validity",
+      "mark_count_eq_sampled_states": "s1d7_band_counter_mark_count==len(sampled_states)==10 (dense [0..9] at n=32; same dense env+order on n=16 fallback)",
+      "order_provenance_correctness": "sampled_state_set==[0,1,2,3,4,5,6,7,8,9] AND sampled_state_order==[0,1,2,3,4,5,6,7,8,9] AND order_control_active=true AND effective_visit_order=[0..31] AND order_perturbation_kind=sampled_block_order_perturbation AND order_rank_by_semantic_state[str(i)]==i AND semantic_state_id==state_index; NOT compared to baseline (baseline lacks order fields)",
+      "primary_dense_fork_readable": "TRUE iff completed primary has sampled_states=[0..9], mark_count==10, per_state covers 0..9, runs.B exit_code==0, no timeout, infra_ok==true",
+      "resource_lane_per_fixture_only": "slice5 run_fixture_* paths self-acquire/release gpu:hrm-text-158 per fixture; ca_confirmation_command MUST NOT outer-acquire at RUN_ROOT (double-acquire deadlock)",
+      "resource_lane_release_trap_cleanup_only": "EXIT trap is CLEANUP-ONLY at RUN_ROOT; no-ops when RUN_ROOT holds no lane; NOT protection proof",
+      "terminal_acceptance": "terminal launch acceptance parses identity_inertness_proven==true from ca_confirmation_wrapper_receipt.json \u2014 NOT ok / infra_ok / terminal_branch / command exit 0 alone (command exit is liveness, not science acceptance)",
+      "tracemalloc_mark_count_zero": "s1d7_tracemalloc_mark_count==0",
+      "wrapper_reporting": "terminal launch wrapper receipt surfaces identity_inertness_proven, baseline_primary_receipt_path, runs.primary.per_state, primary_receipt_path, fallback_trigger, primary_dense_fork_readable, diagnostic flags"
+    },
+    "primary_command": "set -euo pipefail; cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158; RUN_ROOT=/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1; mkdir -p \"$RUN_ROOT/prelaunch\" \"$RUN_ROOT/callsite_band_counter_a\" \"$RUN_ROOT/callsite_band_counter_b\" \"$RUN_ROOT/postrun\"; rm -f \"$RUN_ROOT/run_nonce.txt\" \"$RUN_ROOT/exit_code.txt\"; RUN_NONCE=\"$(git -C /mnt/c/Users/gabes/projects/claw-code-hrm-text-158 rev-parse HEAD)-$(date -u +%Y%m%dT%H%M%SZ)-$$\"; printf '%s\\n' \"$RUN_NONCE\" > \"$RUN_ROOT/run_nonce.txt\"; export PYTHONPATH=.; export HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=0,1,2,3,4,5,6,7,8,9; export HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER=0,1,2,3,4,5,6,7,8,9; cleanup_lane_release() { PYTHONPATH=. python3 -c \"from pathlib import Path; from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane; import json; print(json.dumps(release_resource_lane(Path('/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1'))))\" >>\"$RUN_ROOT/postrun/lane_release_trap.log\" 2>&1 || true; }; trap cleanup_lane_release EXIT ERR INT TERM; timeout 3600 python3 - \"$RUN_ROOT\" <<'PY'\nimport json, sys\nfrom pathlib import Path\nfrom scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (\n    ca_confirmation_wrapper_exit_code,\n    orchestrate_ca_confirmation_with_fallback,\n)\n\nDENSE_SAMPLED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]\nBASELINE_PRIMARY_RECEIPT_PATH = (\n    \"/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/\"\n    \"prelaunch/callsite_band_counter_ca_confirmation/\"\n    \"callsite_band_counter_ca_confirmation_receipt.json\"\n)\nWRAPPER_RECEIPT_NAME = \"ca_confirmation_wrapper_receipt.json\"\n\n\ndef _crossing_vector_over_dense(per_state: list) -> dict[int, int]:\n    out: dict[int, int] = {}\n    for row in per_state or []:\n        if not isinstance(row, dict):\n            continue\n        state_index = row.get(\"state_index\")\n        if state_index is None:\n            continue\n        out[int(state_index)] = int(row.get(\"crossing_indices_len\", 0) or 0)\n    return out\n\n\ndef compute_primary_dense_fork_readable(wrapper: dict) -> bool:\n    try:\n        primary = (wrapper or {}).get(\"runs\", {}).get(\"primary\")\n        if not isinstance(primary, dict):\n            return False\n        sampled = primary.get(\"sampled_states\")\n        if list(sampled) != DENSE_SAMPLED:\n            return False\n        if int(primary.get(\"s1d7_band_counter_mark_count\", -1)) != 10:\n            return False\n        checks = primary.get(\"checks\") or {}\n        if checks.get(\"s1d7_band_counter_mark_count_eq_sampled_state_count\") is not True:\n            return False\n        per_state = primary.get(\"per_state\") or []\n        if not isinstance(per_state, list):\n            return False\n        covered = {\n            int(row.get(\"state_index\"))\n            for row in per_state\n            if isinstance(row, dict) and row.get(\"state_index\") is not None\n        }\n        if covered != set(DENSE_SAMPLED):\n            return False\n        b_run = (primary.get(\"runs\") or {}).get(\"B\") or {}\n        if int(b_run.get(\"exit_code\", -1)) != 0:\n            return False\n        if bool(b_run.get(\"subprocess_timeout_expired\")):\n            return False\n        if primary.get(\"infra_ok\") is not True:\n            return False\n        return True\n    except Exception:\n        return False\n\n\ndef _order_provenance_ok(primary: dict) -> bool:\n    try:\n        sampled_set = list(primary.get(\"sampled_state_set\") or [])\n        if sampled_set != list(DENSE_SAMPLED):\n            return False\n        sampled_order = list(primary.get(\"sampled_state_order\") or [])\n        if sampled_order != list(DENSE_SAMPLED):\n            return False\n        if primary.get(\"order_control_active\") is not True:\n            return False\n        if primary.get(\"order_perturbation_kind\") != \"sampled_block_order_perturbation\":\n            return False\n        effective = list(primary.get(\"effective_visit_order\") or [])\n        if effective != list(range(32)):\n            return False\n        rank_map = primary.get(\"order_rank_by_semantic_state\") or {}\n        for idx, state in enumerate(DENSE_SAMPLED):\n            if int(rank_map.get(str(state), -1)) != idx:\n                return False\n        per_state = primary.get(\"per_state\") or []\n        for row in per_state:\n            if not isinstance(row, dict):\n                continue\n            state_index = row.get(\"state_index\")\n            if state_index is None:\n                continue\n            if int(state_index) not in set(DENSE_SAMPLED):\n                continue\n            if row.get(\"semantic_state_id\") != state_index:\n                return False\n        return True\n    except Exception:\n        return False\n\n\ndef compute_identity_inertness_proven(wrapper: dict) -> bool:\n    try:\n        if not compute_primary_dense_fork_readable(wrapper):\n            return False\n        primary = (wrapper or {}).get(\"runs\", {}).get(\"primary\")\n        if not isinstance(primary, dict):\n            return False\n        if not _order_provenance_ok(primary):\n            return False\n        baseline_path = Path(BASELINE_PRIMARY_RECEIPT_PATH)\n        if not baseline_path.is_file():\n            return False\n        baseline = json.loads(baseline_path.read_text(encoding=\"utf-8\"))\n        baseline_per_state = baseline.get(\"per_state\") or []\n        identity_per_state = primary.get(\"per_state\") or []\n        baseline_vec = _crossing_vector_over_dense(baseline_per_state)\n        identity_vec = _crossing_vector_over_dense(identity_per_state)\n        for state in DENSE_SAMPLED:\n            if baseline_vec.get(state) != identity_vec.get(state):\n                return False\n        if int(primary.get(\"cb_state_count\", -1)) != int(baseline.get(\"cb_state_count\", -2)):\n            return False\n        if int(primary.get(\"mark_count\", -1)) != int(baseline.get(\"mark_count\", -2)):\n            return False\n        return True\n    except Exception:\n        return False\n\n\nrun_root = Path(sys.argv[1])\nwrapper_receipt_path = run_root / \"prelaunch\" / WRAPPER_RECEIPT_NAME\nwrapper_receipt_path.parent.mkdir(parents=True, exist_ok=True)\n\ntry:\n    wrapper = orchestrate_ca_confirmation_with_fallback(run_root)\nexcept Exception as exc:\n    wrapper = {\n        \"schema\": \"hrm_text_158_ca_confirmation_wrapper_receipt/v1\",\n        \"abnormal_exit\": True,\n        \"abnormal_exit_error\": f\"{type(exc).__name__}: {exc}\",\n        \"runs\": {\"primary\": None},\n        \"science_verdict_source\": \"primary\",\n        \"fallback_trigger\": None,\n        \"primary_receipt_path\": None,\n        \"baseline_primary_receipt_path\": BASELINE_PRIMARY_RECEIPT_PATH,\n        \"primary_dense_fork_readable\": False,\n        \"identity_inertness_proven\": False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\nif not isinstance(wrapper, dict):\n    wrapper = {\n        \"schema\": \"hrm_text_158_ca_confirmation_wrapper_receipt/v1\",\n        \"abnormal_exit\": True,\n        \"runs\": {\"primary\": None},\n        \"science_verdict_source\": \"primary\",\n        \"fallback_trigger\": None,\n        \"primary_receipt_path\": None,\n        \"baseline_primary_receipt_path\": BASELINE_PRIMARY_RECEIPT_PATH,\n        \"primary_dense_fork_readable\": False,\n        \"identity_inertness_proven\": False,\n        \"ready_for_main_science\": False,\n        \"counts_as_sub2\": False,\n        \"pre_full_stack_diagnostic\": True,\n    }\n\nprimary = (wrapper.get(\"runs\") or {}).get(\"primary\")\nif isinstance(primary, dict):\n    wrapper[\"primary_receipt_path\"] = primary.get(\"receipt_path\")\nelse:\n    wrapper[\"primary_receipt_path\"] = None\n\nwrapper[\"baseline_primary_receipt_path\"] = BASELINE_PRIMARY_RECEIPT_PATH\nwrapper[\"primary_dense_fork_readable\"] = compute_primary_dense_fork_readable(wrapper)\nwrapper[\"identity_inertness_proven\"] = compute_identity_inertness_proven(wrapper)\nwrapper[\"ready_for_main_science\"] = False\nwrapper[\"counts_as_sub2\"] = False\nwrapper[\"pre_full_stack_diagnostic\"] = True\n\nwrapper_receipt_path.write_text(\n    json.dumps(wrapper, indent=2, sort_keys=True) + \"\\n\",\n    encoding=\"utf-8\",\n)\n\nscience_receipt = (\n    wrapper.get(\"runs\", {}).get(\"fallback\")\n    if wrapper.get(\"science_verdict_source\") == \"fallback\"\n    else wrapper.get(\"runs\", {}).get(\"primary\")\n)\nif not isinstance(science_receipt, dict):\n    science_receipt = {\"infra_ok\": False, \"terminal_branch\": \"INFRA_NULL\"}\n\nprint(json.dumps(wrapper, indent=2, sort_keys=True))\nraise SystemExit(ca_confirmation_wrapper_exit_code(science_receipt))\n\nPY",
+    "primary_dense_fork_readable": {
+      "field": "primary_dense_fork_readable",
+      "true_iff_all": [
+        "wrapper.runs.primary.sampled_states == [0,1,2,3,4,5,6,7,8,9]",
+        "wrapper.runs.primary.s1d7_band_counter_mark_count == 10",
+        "wrapper.runs.primary.checks.s1d7_band_counter_mark_count_eq_sampled_state_count == true",
+        "wrapper.runs.primary.per_state covers state_index 0..9 (all ten rows)",
+        "wrapper.runs.primary.runs.B.exit_code == 0",
+        "wrapper.runs.primary.runs.B.subprocess_timeout_expired == false",
+        "wrapper.runs.primary.infra_ok == true"
+      ],
+      "when_false": "Primary is partial telemetry only; dense n=16 fallback is the science source. If fallback also lacks full dense coverage or clean B-arm exit \u2192 feasibility/inconclusive.",
+      "when_true": "Read structural-vs-sampling fork from wrapper.runs.primary.per_state EVEN IF fallback_trigger.rss_breach==true and science_verdict_source==fallback. Completed primary with peak_rss>6.5 is fork-readable; NOT mere FEASIBILITY_SUBSAMPLE."
+    }
+  },
+  "provenance": {
+    "fold1_commit": "d981582",
+    "fold2_design_dual_accept": [
+      "1783186596758",
+      "1783186683459"
+    ],
+    "fold2a_source_commit": "597ff08bdb5a1374eeec7ff1a5648fc8006e7b85",
+    "gabe_standing_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs",
+    "upstream_task_id": "1782633464140-b85ec12a",
+    "upstream_task_id_note": "Arc #2b historical upstream; active task_id is top-level"
+  },
+  "replay_commands_artifact": "artifacts/consensus_prep/c4s1_n32_dense_09_identity_inertness_launch_packet_v1_replay_commands.json",
+  "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "resource_lane_release_trap": {
+    "description": "CLEANUP-ONLY shell trap on EXIT/ERR/INT/TERM; no-ops at RUN_ROOT when no outer lane held; per-fixture acquire/release inside slice5 is the sole lock boundary",
+    "log_artifact": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1/postrun/lane_release_trap.log"
+  },
+  "run_id": "C4S1_PHASE3_N32_DENSE_09_IDENTITY_INERTNESS_V1",
+  "run_root_template": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/{run_id}",
+  "schema_version": "hrm_text_158_c4s1_n32_dense_09_identity_inertness_launch_packet/v1",
+  "supersedes_packet_sha256": "bc249a77c02a4d67bb4dc928aac1d33bead2021af393f6726b1ce595221cb467",
+  "task_id": "1782633464140-b85ec12a"
+}
