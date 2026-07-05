@@ -1,0 +1,140 @@
+{
+  "anti_overclaim_verbatim": "Within the Fold-3B packet scope, state0-only crossing support classifies as one of the pre-registered branches. FORBIDDEN: candidate-C, CA/reduction eligibility, W/P, ~430MB bank pin, universal all-state census, bank mutation, sub-2 readiness, full-stack readiness, implementation readiness.",
+  "design_spec_path": "artifacts/consensus_prep/c4s1_fold3b_step1_prereg_packet_v1_draft.json",
+  "determinism_evidence": {
+    "classification": "DETERMINISTIC",
+    "empirical_upgrade_path": "identity-order inertness GPU run in patch slice must match dense primary",
+    "n50_equivalent": "exact baseline-vs-perturbed control-pair contrast per arm",
+    "static": [
+      "fixed parent checkpoint in dense decider packet",
+      "sorted tensor_states/inputs in bounded_delta_learner",
+      "no random/torch.rand in slice5 CA path"
+    ]
+  },
+  "feasibility_verdict": "NEEDS_PATCH",
+  "fold": "fold_3b_step1_feasibility_preflight",
+  "git_head_at_preflight": "891a5e6ea24506bb3bcdb039efd8ec6a4732c963",
+  "identity_order_inertness_precondition": {
+    "baseline_comparison_fields": {
+      "cb_state_count": 1,
+      "mark_count": 10,
+      "state0_crossing_indices_len": 512,
+      "terminal_branch": "INSUFFICIENT_CB_STATES"
+    },
+    "baseline_comparison_receipt_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+    "blocks_variable_a_interpretation": true,
+    "consequence_if_unproven": "Reversed-order difference is confounded by the patch mechanism itself.",
+    "counts_against_fold3b_gpu_budget": false,
+    "dual_purpose": "Independent GPU identity-order run must agree with prior dense primary \u2014 empirically confirms run-determinism (static-grep + cross-run agreement).",
+    "expected_baseline_match": {
+      "cb_state_count": 1,
+      "exact_per_state_coverage": true,
+      "mark_count": 10,
+      "sampled_state_set": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "semantic_state0_crossing_indices_len": 512
+    },
+    "identity_order": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "name": "IDENTITY_ORDER_INERTNESS_PRECONDITION",
+    "summary": "Variable A (reversed order) is NOT interpretable until the order-control patch slice proves that explicit identity order reproduces the baseline dense primary exactly.",
+    "validation_owner": "order_control_patch_slice_gpu_validation"
+  },
+  "order_control_patch_scope": {
+    "behavior": "Iterate tensor_results in declared order; pass true semantic state_index; emit sampled_state_order + order_rank_by_semantic_state.",
+    "cpu_regression_in_patch_slice": "unset-order default-preserving test",
+    "default_preserving": "Unset order env \u2192 current enumerate(tensor_results) path byte/behavior unchanged.",
+    "gpu_regression_in_patch_slice": "identity-order inertness proof (this precondition)",
+    "implementation_status": "NOT_BUILT_IN_STEP1",
+    "primary_seam": "bounded_delta_learner.py C4 apply loop (~2653)",
+    "proposed_env": "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER",
+    "separate_slice_required": true,
+    "verdict": "NEEDS_PATCH"
+  },
+  "provenance": {
+    "claude_converge_msg_id": "1783248525523",
+    "co_lead_design_msg_id": "1783248414572",
+    "dispatch_msg_id": "1783248579236-6297ec97",
+    "gabe_auq_relay_msg_id": "1783248063651",
+    "implement_gate_msg_id": "1783248830033-357917e8",
+    "plan_msg_id": "1783248683587-a3d3c2e9"
+  },
+  "run_determinism_classification": "DETERMINISTIC",
+  "schema": "hrm_text_158_fold3b_step1_feasibility_preflight_receipt/v1",
+  "source_trace_anchors": [
+    {
+      "file": "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+      "finding": "dedup session keyed by (optimizer_step_index, state_index, site_id, suffix)",
+      "lines": "57-62"
+    },
+    {
+      "file": "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py",
+      "finding": "env list parsed then converted to frozenset (order discarded at :149)",
+      "lines": "111-156"
+    },
+    {
+      "file": "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+      "finding": "membership-only sampled_states gate",
+      "lines": "482-492"
+    },
+    {
+      "file": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "finding": "enumerate(tensor_results) fixes measurement order = iteration order",
+      "lines": "2653-2657"
+    }
+  ],
+  "task_id": "1782633464140-b85ec12a",
+  "upstream_receipt_grounding": {
+    "dense_fork_closeout": {
+      "fork_resolution_status": "RESOLVED_STRUCTURAL_STATE0_ONLY_DENSE_09_BANKSCALE",
+      "receipt_path": "artifacts/measurement_closeout/c4s1d7_dense_09_structural_fork_resolution_receipt.json"
+    },
+    "dense_primary": {
+      "cb_state_count": 1,
+      "eligible_module_limit": 32,
+      "mark_count": 10,
+      "peak_rss_gib": 10.253555297851562,
+      "receipt_path": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+      "sampled_states": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "state0_crossing_indices_len": 512,
+      "terminal_branch": "INSUFFICIENT_CB_STATES"
+    },
+    "fold3a_closeout": {
+      "git_head_at_closeout": "4421b349640389354c44b315cf5f75a915dfe679",
+      "receipt_path": "artifacts/measurement_closeout/c4s1d7_fold3a_cb_only_dominance_dense_09_receipt.json",
+      "single_cb_support": true,
+      "terminal_branch": "CB_ONLY_AC_COMPOSITE_DOMINANT"
+    }
+  }
+}
