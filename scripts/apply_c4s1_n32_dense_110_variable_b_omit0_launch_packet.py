@@ -479,8 +479,7 @@ else:
 
 mechanism_receipt = build_mechanism_diagnosis_receipt(wrapper, run_root)
 mechanism_receipt_path.write_text(
-    json.dumps(mechanism_receipt, indent=2, sort_keys=True) + "
-",
+    json.dumps(mechanism_receipt, indent=2, sort_keys=True) + "\n",
     encoding="utf-8",
 )
 
@@ -500,8 +499,7 @@ wrapper["counts_as_sub2"] = False
 wrapper["pre_full_stack_diagnostic"] = True
 
 wrapper_receipt_path.write_text(
-    json.dumps(wrapper, indent=2, sort_keys=True) + "
-",
+    json.dumps(wrapper, indent=2, sort_keys=True) + "\n",
     encoding="utf-8",
 )
 
@@ -2049,6 +2047,46 @@ def verify_classifier_launch_executed_pin() -> list[str]:
     return failures
 
 
+def extract_rendered_ca_confirmation_heredoc(command: str) -> str:
+    """Extract the embedded Python body from the rendered ca_confirmation shell command."""
+    marker_start = "<<'PY'\n"
+    marker_end = "\nPY"
+    start = command.find(marker_start)
+    if start < 0:
+        raise ValueError("missing_heredoc_start")
+    start += len(marker_start)
+    end = command.rfind(marker_end)
+    if end < start:
+        raise ValueError("missing_heredoc_end")
+    return command[start:end]
+
+
+def verify_ca_confirmation_heredoc_py_compile(draft: dict[str, Any]) -> list[str]:
+    """Fail-closed: rendered ca_confirmation heredoc must be valid Python."""
+    failures: list[str] = []
+    cmd = draft.get("proof", {}).get("ca_confirmation_command", "")
+    try:
+        body = extract_rendered_ca_confirmation_heredoc(cmd)
+    except ValueError as exc:
+        failures.append(f"heredoc_extract:{exc}")
+        return failures
+    try:
+        compile(body, "<ca_confirmation_heredoc>", "exec")
+    except SyntaxError as exc:
+        failures.append(f"heredoc_py_compile:{exc.msg}:line{exc.lineno}")
+    # Negative guard: the known failure mode (literal newline inside "+ \"...\"") must not compile.
+    broken = body.replace('+ "\\n",', '+ "\n",', 1)
+    if broken != body:
+        try:
+            compile(broken, "<broken_ca_confirmation_heredoc>", "exec")
+            failures.append("heredoc_negative_guard:literal_newline_still_compiles")
+        except SyntaxError:
+            pass
+    if '+ "\\n",' not in body and '+ "\n",' not in body:
+        failures.append("heredoc_escape:missing_write_text_newline_suffix")
+    return failures
+
+
 def verify_wrapper_receipt_sink_executable() -> list[str]:
     """Assert heredoc writes mechanism + wrapper receipts and routes F3B classifier."""
     failures: list[str] = []
@@ -2341,6 +2379,7 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     stale.extend(verify_no_variable_b_a_era_contract_residue(draft, replay))
     stale.extend(verify_no_outer_lane_acquire(draft))
     stale.extend(verify_no_stale_outer_lane_manifest(draft, replay))
+    stale.extend(verify_ca_confirmation_heredoc_py_compile(draft))
     stale.extend(verify_wrapper_receipt_sink_executable())
     stale.extend(verify_classifier_launch_executed_pin())
     stale.extend(verify_sampled_set_changed_bool_injection())
