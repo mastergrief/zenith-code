@@ -203,6 +203,36 @@ from scripts.hrm_text_158_slice5_v6i_oom_profile_attribution import (
 
 DENSE_SAMPLED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 WRAPPER_RECEIPT_NAME = "ca_confirmation_wrapper_receipt.json"
+HOLDING_RECEIPT_NAME = "resource_lane_holding.json"
+
+
+def read_resource_lane_launch_reporting(run_root: Path) -> dict:
+    try:
+        holding_path = run_root / "prelaunch" / HOLDING_RECEIPT_NAME
+        if not holding_path.is_file():
+            return {
+                "resource_lane_holding_acquired": False,
+                "resource_lane_canonical_name": None,
+                "resource_lane_token_present": False,
+            }
+        holding = json.loads(holding_path.read_text(encoding="utf-8"))
+        acquire = holding.get("acquire_result") or {}
+        token = acquire.get("token")
+        return {
+            "resource_lane_holding_acquired": bool(acquire.get("acquired")),
+            "resource_lane_canonical_name": (
+                acquire.get("canonical_name")
+                or acquire.get("physical_key")
+                or holding.get("request_alias")
+            ),
+            "resource_lane_token_present": bool(token),
+        }
+    except Exception:
+        return {
+            "resource_lane_holding_acquired": False,
+            "resource_lane_canonical_name": None,
+            "resource_lane_token_present": False,
+        }
 
 
 def compute_primary_dense_fork_readable(wrapper: dict) -> bool:
@@ -243,6 +273,7 @@ def compute_primary_dense_fork_readable(wrapper: dict) -> bool:
 run_root = Path(sys.argv[1])
 wrapper_receipt_path = run_root / "prelaunch" / WRAPPER_RECEIPT_NAME
 wrapper_receipt_path.parent.mkdir(parents=True, exist_ok=True)
+lane_reporting = read_resource_lane_launch_reporting(run_root)
 
 try:
     wrapper = orchestrate_ca_confirmation_with_fallback(run_root)
@@ -276,6 +307,8 @@ else:
     wrapper["primary_receipt_path"] = None
 
 wrapper["primary_dense_fork_readable"] = compute_primary_dense_fork_readable(wrapper)
+wrapper.update(lane_reporting)
+wrapper["resource_lane_released"] = None
 
 wrapper_receipt_path.write_text(
     json.dumps(wrapper, indent=2, sort_keys=True) + "\n",
@@ -355,6 +388,8 @@ def ca_confirmation_command() -> str:
         f'printf \'%s\\n\' "$RUN_NONCE" > "$RUN_ROOT/run_nonce.txt"; '
         f"export PYTHONPATH=.; "
         f"export {DENSE_SAMPLED_STATES_ENV}={DENSE_SAMPLED_STATES_VALUE}; "
+        f'PYTHONPATH=. python3 scripts/hrm_text_158_r7_resource_lane_acquire.py "$RUN_ROOT"; '
+        f'test -f "$RUN_ROOT/prelaunch/resource_lane_holding.json"; '
         f'cleanup_lane_release() {{ PYTHONPATH=. python3 -c "from pathlib import Path; '
         f"from scripts.hrm_text_158_r7_resource_lane_release import release_resource_lane; "
         f'import json; print(json.dumps(release_resource_lane(Path(\'{RUN_ROOT}\'))))" '
@@ -675,6 +710,10 @@ def build_proof_artifacts() -> dict[str, str]:
         "b_probe_stream_log": f"{confirmation_root}/callsite_band_counter_b/probe_stream.log",
         "exit_code": f"{RUN_ROOT}/exit_code.txt",
         "lane_release_trap_log": f"{RUN_ROOT}/postrun/lane_release_trap.log",
+        "resource_lane_holding": f"{RUN_ROOT}/prelaunch/resource_lane_holding.json",
+        "resource_lane_release_witness": (
+            f"{RUN_ROOT}/post_gpu/resource_lane_release_witness.json"
+        ),
         "prelaunch_code_currency": f"{RUN_ROOT}/prelaunch/box_code_currency_preflight.json",
         "feasibility_subsample_receipt": (
             f"{RUN_ROOT}/feasibility_subsample_n16/prelaunch/"
@@ -722,7 +761,10 @@ def build_consumption_matrix() -> dict[str, Any]:
             ),
             "launch_wrapper_reporting": (
                 "wrapper receipt MUST surface runs.primary.per_state, primary_receipt_path, "
-                "fallback_trigger, primary_dense_fork_readable"
+                "fallback_trigger, primary_dense_fork_readable, resource_lane_holding_acquired, "
+                "resource_lane_canonical_name, resource_lane_token_present; "
+                "resource_lane_released validated from post_gpu/resource_lane_release_witness.json "
+                "or postrun/lane_release_trap.log after EXIT trap"
             ),
         },
     }
@@ -1064,6 +1106,10 @@ def build_draft() -> dict[str, Any]:
         "fallback_trigger",
         "primary_dense_fork_readable",
         "science_verdict_source",
+        "resource_lane_holding_acquired",
+        "resource_lane_canonical_name",
+        "resource_lane_token_present",
+        "resource_lane_released",
     ]
     proof["pass_criteria"] = {
         "dense_env_export": (
@@ -1096,7 +1142,18 @@ def build_draft() -> dict[str, Any]:
         ),
         "wrapper_reporting": (
             "terminal launch wrapper receipt surfaces runs.primary.per_state, "
-            "primary_receipt_path, fallback_trigger, primary_dense_fork_readable"
+            "primary_receipt_path, fallback_trigger, primary_dense_fork_readable, "
+            "resource_lane_holding_acquired, resource_lane_canonical_name, "
+            "resource_lane_token_present; resource_lane_released from release witness"
+        ),
+        "resource_lane_self_acquire": (
+            "ca_confirmation_command acquires gpu:hrm-text-158 via "
+            "hrm_text_158_r7_resource_lane_acquire.py BEFORE trap install; "
+            "fail-closed on acquire failure; holding at prelaunch/resource_lane_holding.json"
+        ),
+        "resource_lane_release_witness": (
+            "EXIT trap releases lane; witness at post_gpu/resource_lane_release_witness.json "
+            "or postrun/lane_release_trap.log; launch acceptance requires released==true"
         ),
     }
     proof["feasibility_subsample_classification"] = {
@@ -1122,8 +1179,13 @@ def build_draft() -> dict[str, Any]:
         ),
     }
     draft["resource_lane_release_trap"] = {
-        "description": "Run self-acquires/releases gpu:hrm-text-158; shell trap on EXIT/ERR/INT/TERM",
+        "description": (
+            "Run self-acquires gpu:hrm-text-158 via r7_resource_lane_acquire BEFORE trap "
+            "install; shell trap on EXIT/ERR/INT/TERM releases lane and logs witness"
+        ),
         "log_artifact": f"{RUN_ROOT}/postrun/lane_release_trap.log",
+        "holding_artifact": f"{RUN_ROOT}/prelaunch/resource_lane_holding.json",
+        "release_witness_artifact": f"{RUN_ROOT}/post_gpu/resource_lane_release_witness.json",
     }
     _update_pin_blocks(draft)
     preflight = draft.setdefault("preflight", {})
@@ -1272,6 +1334,14 @@ def verify_dense_packet_contract(draft: dict[str, Any], replay: dict[str, Any]) 
         failures.append("dense:proof_missing_primary_dense_fork_readable")
     if "launch_wrapper_receipt_required_fields" not in proof:
         failures.append("dense:proof_missing_wrapper_reporting_fields")
+    required_lane = {
+        "resource_lane_holding_acquired",
+        "resource_lane_canonical_name",
+        "resource_lane_token_present",
+        "resource_lane_released",
+    }
+    if not required_lane.issubset(set(proof.get("launch_wrapper_receipt_required_fields", []))):
+        failures.append("dense:proof_missing_lane_reporting_fields")
     pass_criteria = proof.get("pass_criteria", {})
     if "primary_dense_fork_readable" not in pass_criteria:
         failures.append("dense:pass_criteria_missing_fork_readable")
@@ -1287,6 +1357,25 @@ def verify_dense_packet_contract(draft: dict[str, Any], replay: dict[str, Any]) 
         failures.append("dense:draft_task_id_not_active_slice")
     if replay.get("task_id") != ACTIVE_TASK_ID:
         failures.append("dense:replay_task_id_not_active_slice")
+    return failures
+
+
+def verify_resource_lane_acquire_executable(draft: dict[str, Any]) -> list[str]:
+    """Assert ca_confirmation acquires lane before trap install."""
+    failures: list[str] = []
+    cmd = draft.get("proof", {}).get("ca_confirmation_command", "")
+    if "hrm_text_158_r7_resource_lane_acquire.py" not in cmd:
+        failures.append("lane_acquire:missing_acquire_script")
+    if "resource_lane_holding.json" not in cmd:
+        failures.append("lane_acquire:missing_holding_path")
+    acquire_pos = cmd.find("hrm_text_158_r7_resource_lane_acquire.py")
+    trap_pos = cmd.find("cleanup_lane_release")
+    if acquire_pos < 0 or trap_pos < 0:
+        failures.append("lane_acquire:missing_acquire_or_trap")
+    elif acquire_pos > trap_pos:
+        failures.append("lane_acquire:acquire_after_trap_install")
+    if "trap cleanup_lane_release" not in cmd:
+        failures.append("lane_acquire:missing_trap_install")
     return failures
 
 
@@ -1317,6 +1406,15 @@ def verify_wrapper_receipt_sink_executable() -> list[str]:
             failures.append(f"wrapper_sink:missing_predicate:{pred}")
     if "abnormal_exit" not in heredoc:
         failures.append("wrapper_sink:missing_abnormal_exit_marker")
+    for lane_field in (
+        "read_resource_lane_launch_reporting",
+        "resource_lane_holding_acquired",
+        "resource_lane_canonical_name",
+        "resource_lane_token_present",
+        "resource_lane_released",
+    ):
+        if lane_field not in heredoc:
+            failures.append(f"wrapper_sink:missing_lane_field:{lane_field}")
     return failures
 
 
@@ -1512,6 +1610,7 @@ def self_verify(draft: dict[str, Any], replay: dict[str, Any]) -> None:
     stale.extend(verify_infra_render(draft, replay))
     stale.extend(verify_real_launch_dry_check())
     stale.extend(verify_dense_packet_contract(draft, replay))
+    stale.extend(verify_resource_lane_acquire_executable(draft))
     stale.extend(verify_wrapper_receipt_sink_executable())
     stale.extend(verify_wrapper_heredoc_contract(draft))
     stale.extend(verify_feasibility_subsample_trigger_safety())
