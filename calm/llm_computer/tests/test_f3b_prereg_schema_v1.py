@@ -65,16 +65,58 @@ def _sync_receipt_branch_fields(
     identity_order_inertness_proven: bool = True,
 ) -> dict[str, Any]:
     from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
-        build_branch_input_contract_from_ca_receipt,
         classify_f3b_why_state0_branch,
     )
 
-    inputs = build_branch_input_contract_from_ca_receipt(
-        receipt,
-        variable_id=variable_id,
-        control_reason=control_reason,
-        identity_order_inertness_proven=identity_order_inertness_proven,
+    per_state = list(receipt.get("per_state") or [])
+    sampled_states = list(receipt.get("sampled_state_order") or receipt.get("sampled_states") or [])
+    sampled_set = list(receipt.get("sampled_state_set") or sampled_states)
+    order_rank = receipt.get("order_rank_by_semantic_state")
+    if not isinstance(order_rank, dict) and sampled_states:
+        order_rank = {str(state): rank for rank, state in enumerate(sampled_states)}
+
+    cb_indices = sorted(
+        int(row["state_index"])
+        for row in per_state
+        if isinstance(row, dict) and int(row.get("crossing_indices_len") or 0) > 0
     )
+    first_measured = sampled_states[0] if sampled_states else None
+    first_measured_row = next(
+        (row for row in per_state if int(row.get("state_index", -1)) == int(first_measured)),
+        None,
+    ) if first_measured is not None else None
+
+    inputs = {
+        "operational_ok": True,
+        "schema_ok": True,
+        "ca_source_schema_failures": [],
+        "sampled_state_set": sorted({int(x) for x in sampled_set}),
+        "sampled_state_order": sampled_states,
+        "order_rank_by_semantic_state": order_rank or {},
+        "exact_per_state_coverage": True,
+        "dedup_reset_called": receipt.get("dedup_reset_called"),
+        "dedup_session_scope": receipt.get("dedup_session_scope"),
+        "identity_order_inertness_proven": identity_order_inertness_proven,
+        "semantic_state0_crossing_indices_len": next(
+            (
+                int(row.get("crossing_indices_len") or 0)
+                for row in per_state
+                if int(row.get("state_index", -1)) == 0
+            ),
+            0,
+        ),
+        "cb_state_count": len(cb_indices),
+        "first_measured_semantic_state": first_measured,
+        "first_measured_is_crossing_bearing": bool(
+            first_measured_row is not None
+            and int(first_measured_row.get("crossing_indices_len") or 0) > 0
+        ),
+        "semantic_state0_is_crossing_bearing": 0 in cb_indices,
+        "sampled_set_changed": bool(receipt.get("sampled_set_changed", False)),
+        "mark_count_consistent": int(receipt.get("mark_count") or 0) == len(sampled_states),
+        "variable_id": variable_id,
+        "control_reason": control_reason,
+    }
     receipt["f3b_branch_inputs"] = inputs
     receipt["f3b_branch"] = classify_f3b_why_state0_branch(inputs)["terminal_branch"]
     return receipt
@@ -116,6 +158,7 @@ def _well_formed_variable_a_inputs() -> dict[str, Any]:
         "mark_count_consistent": True,
         "variable_id": "A_order_only",
         "control_reason": "order_only_perturbation",
+        "ca_source_schema_failures": [],
     }
 
 
@@ -365,21 +408,21 @@ def test_branch_classifier_well_formed_variable_a_identity_structure() -> None:
 
 
 def test_builder_to_classify_identity_structure_path() -> None:
-    from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
-        F3BWhyState0Branch,
-        build_branch_input_contract_from_ca_receipt,
-        classify_f3b_why_state0_branch,
+    pytest.importorskip("calm.hrm_text_158.native_full_stack.f3b_why_state0_branch")
+    from calm.llm_computer.tests.test_f3b_ca_source_schema_v1 import (
+        test_builder_to_classify_identity_structure_from_ca_shape,
     )
 
-    receipt = _minimal_valid_f3b_receipt()
-    inputs = build_branch_input_contract_from_ca_receipt(
-        receipt,
-        variable_id="A_order_only",
-        control_reason="order_only_perturbation",
-        identity_order_inertness_proven=True,
+    test_builder_to_classify_identity_structure_from_ca_shape()
+
+
+def test_builder_to_classify_measurement_order_artifact_path() -> None:
+    pytest.importorskip("calm.hrm_text_158.native_full_stack.f3b_why_state0_branch")
+    from calm.llm_computer.tests.test_f3b_ca_source_schema_v1 import (
+        test_builder_to_classify_measurement_order_artifact_from_ca_shape,
     )
-    result = classify_f3b_why_state0_branch(inputs)
-    assert result["terminal_branch"] == F3BWhyState0Branch.STATE0_IDENTITY_STRUCTURE.value
+
+    test_builder_to_classify_measurement_order_artifact_from_ca_shape()
 
 
 def _variable_a_order_artifact_receipt() -> dict[str, Any]:
@@ -403,40 +446,6 @@ def _variable_a_order_artifact_receipt() -> dict[str, Any]:
     return _sync_receipt_branch_fields(receipt)
 
 
-def test_builder_to_classify_measurement_order_artifact_path() -> None:
-    from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
-        F3BWhyState0Branch,
-        build_branch_input_contract_from_ca_receipt,
-        classify_f3b_why_state0_branch,
-    )
-
-    receipt = _minimal_valid_f3b_receipt_base()
-    reversed_order = list(range(9, -1, -1))
-    rank_map = {str(state): rank for rank, state in enumerate(reversed_order)}
-    per_state = [
-        {
-            "state_index": state,
-            "crossing_indices_len": 512 if state == 9 else 0,
-            "crossing_count": 512 if state == 9 else 0,
-            "mark_count": 1,
-        }
-        for state in range(10)
-    ]
-    receipt["sampled_state_order"] = reversed_order
-    receipt["sampled_state_set"] = list(range(10))
-    receipt["order_rank_by_semantic_state"] = rank_map
-    receipt["per_state"] = per_state
-    receipt["semantic_state_id"] = 9
-    inputs = build_branch_input_contract_from_ca_receipt(
-        receipt,
-        variable_id="A_order_only",
-        control_reason="order_only_perturbation",
-        identity_order_inertness_proven=True,
-    )
-    result = classify_f3b_why_state0_branch(inputs)
-    assert result["terminal_branch"] == F3BWhyState0Branch.MEASUREMENT_ORDER_ARTIFACT.value
-
-
 def test_receipt_schema_fails_on_bogus_f3b_branch() -> None:
     from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
         validate_receipt_schema,
@@ -450,18 +459,11 @@ def test_receipt_schema_fails_on_bogus_f3b_branch() -> None:
 
 def test_receipt_schema_fails_on_f3b_branch_mismatch() -> None:
     from calm.hrm_text_158.native_full_stack.f3b_why_state0_branch import (
-        build_branch_input_contract_from_ca_receipt,
         validate_receipt_schema,
     )
 
     receipt = _variable_a_order_artifact_receipt()
     receipt["f3b_branch"] = "F3B_STATE0_IDENTITY_STRUCTURE"
-    receipt["f3b_branch_inputs"] = build_branch_input_contract_from_ca_receipt(
-        receipt,
-        variable_id="A_order_only",
-        control_reason="order_only_perturbation",
-        identity_order_inertness_proven=True,
-    )
     failures = validate_receipt_schema(receipt)
     assert any("f3b_branch_mismatch" in failure for failure in failures)
 

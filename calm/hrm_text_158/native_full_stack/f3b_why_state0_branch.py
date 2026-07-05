@@ -20,6 +20,9 @@ ALLOWED_CLAIM = (
 )
 
 RECEIPT_SCHEMA = "hrm_text_158_fold3b_mechanism_diagnosis_receipt/v1"
+CA_BRANCH_INPUT_SOURCE_SCHEMA = (
+    "hrm_text_158_callsite_band_counter_ca_confirmation_receipt/v1"
+)
 PREFLIGHT_RECEIPT_SCHEMA = "hrm_text_158_fold3b_step1_feasibility_preflight_receipt/v1"
 PREREG_PACKET_SCHEMA = "hrm_text_158_fold3b_step1_prereg_packet/v1"
 
@@ -75,6 +78,7 @@ REQUIRED_BRANCH_INPUT_FIELDS: tuple[str, ...] = (
     "mark_count_consistent",
     "variable_id",
     "control_reason",
+    "ca_source_schema_failures",
 )
 
 
@@ -129,6 +133,105 @@ def _dedup_field_status(receipt_or_inputs: Mapping[str, Any]) -> str:
     return "ok"
 
 
+def _coerce_ca_int(value: Any) -> int | None:
+    """Strict CA integer coercion: accept only genuine ``int`` values.
+
+    Policy (Option B): ``type(value) is int`` — excludes ``bool`` (a subclass of
+    ``int`` in Python), ``float``, ``str``, and all other types. No silent
+    ``int()`` truncation or truthy coercion on external CA numerics.
+    """
+
+    if type(value) is int:
+        return value
+    return None
+
+
+def _coerce_int_sequence(
+    values: Sequence[Any],
+    *,
+    malformed_code: str,
+) -> tuple[list[int] | None, list[str]]:
+    ints: list[int] = []
+    for value in values:
+        coerced = _coerce_ca_int(value)
+        if coerced is None:
+            return None, [malformed_code]
+        ints.append(coerced)
+    return ints, []
+
+
+def _coerce_int_set(
+    values: Sequence[Any],
+    *,
+    malformed_code: str,
+) -> tuple[set[int] | None, list[str]]:
+    ints: set[int] = set()
+    for value in values:
+        coerced = _coerce_ca_int(value)
+        if coerced is None:
+            return None, [malformed_code]
+        ints.add(coerced)
+    return ints, []
+
+
+def _safe_sequence(
+    value: Any,
+    *,
+    not_sequence_code: str,
+) -> tuple[list[Any] | None, list[str]]:
+    """Convert an external CA sequence field to list without raising.
+
+    Only list/tuple are accepted; truthy non-iterables (int, bool, str, dict, …)
+    return ``not_sequence_code`` instead of raising TypeError.
+    """
+
+    if value is None:
+        return [], []
+    if isinstance(value, (list, tuple)):
+        return list(value), []
+    return None, [not_sequence_code]
+
+
+def _extract_sampled_states_from_ca_receipt(
+    receipt: Mapping[str, Any],
+) -> tuple[list[Any] | None, list[str]]:
+    """Mirror ``sampled_state_order or sampled_states or []`` without raising."""
+
+    order_val = receipt.get("sampled_state_order")
+    states_val = receipt.get("sampled_states")
+    if order_val:
+        return _safe_sequence(order_val, not_sequence_code="sampled_state_order_not_a_list")
+    if states_val:
+        return _safe_sequence(states_val, not_sequence_code="sampled_states_not_a_list")
+    return [], []
+
+
+def _extract_sampled_state_set_from_ca_receipt(
+    receipt: Mapping[str, Any],
+    sampled_states: Sequence[Any],
+) -> tuple[list[Any] | None, list[str]]:
+    """Mirror ``sampled_state_set or sampled_states`` without raising."""
+
+    set_val = receipt.get("sampled_state_set")
+    if set_val:
+        return _safe_sequence(set_val, not_sequence_code="sampled_state_set_not_a_list")
+    return list(sampled_states), []
+
+
+def _extract_per_state_from_ca_receipt(
+    receipt: Mapping[str, Any],
+) -> tuple[list[Any], list[str]]:
+    """Extract per_state rows without raising on non-iterable values."""
+
+    per_state = receipt.get("per_state")
+    if per_state is None:
+        return [], []
+    rows, failures = _safe_sequence(per_state, not_sequence_code="ca_per_state_not_a_list")
+    if failures:
+        return [], failures
+    return rows or [], []
+
+
 def _validate_branch_input_order_rank_consistency(
     mapping: Mapping[str, Any],
 ) -> list[str]:
@@ -149,8 +252,22 @@ def _validate_branch_input_order_rank_consistency(
         failures.append("order_rank_by_semantic_state_not_dict")
         return failures
 
-    order_ints = [int(state) for state in order]
-    set_ints = {int(state) for state in sampled_set}
+    order_ints, order_failures = _coerce_int_sequence(
+        order,
+        malformed_code="sampled_state_order_malformed",
+    )
+    failures.extend(order_failures)
+    if order_ints is None:
+        return failures
+
+    set_ints, set_failures = _coerce_int_set(
+        sampled_set,
+        malformed_code="sampled_state_set_malformed",
+    )
+    failures.extend(set_failures)
+    if set_ints is None:
+        return failures
+
     if len(order_ints) != len(set(order_ints)):
         failures.append("sampled_state_order_has_duplicates")
     if set(order_ints) != set_ints:
@@ -161,7 +278,11 @@ def _validate_branch_input_order_rank_consistency(
         if key not in rank_map:
             failures.append(f"order_rank_missing_state:{state}")
             continue
-        if int(rank_map[key]) != rank:
+        rank_value = _coerce_ca_int(rank_map[key])
+        if rank_value is None:
+            failures.append(f"order_rank_value_malformed:{key}")
+            continue
+        if rank_value != rank:
             failures.append(f"order_rank_mismatch_state:{state}")
 
     return failures
@@ -179,15 +300,44 @@ def _validate_order_rank_consistency(receipt: Mapping[str, Any]) -> list[str]:
     if not isinstance(order, list) or not isinstance(sampled_set, list):
         return failures
 
-    order_ints = [int(state) for state in order]
-    set_ints = {int(state) for state in sampled_set}
+    if any(
+        code in failures
+        for code in (
+            "sampled_state_order_malformed",
+            "sampled_state_set_malformed",
+            "order_rank_by_semantic_state_not_dict",
+            "sampled_state_order_not_list",
+            "sampled_state_set_not_list",
+        )
+    ):
+        return failures
+
+    order_ints, order_failures = _coerce_int_sequence(
+        order,
+        malformed_code="sampled_state_order_malformed",
+    )
+    failures.extend(order_failures)
+    if order_ints is None:
+        return failures
+
+    set_ints, set_failures = _coerce_int_set(
+        sampled_set,
+        malformed_code="sampled_state_set_malformed",
+    )
+    failures.extend(set_failures)
+    if set_ints is None:
+        return failures
 
     observed_states: set[int] = set()
     for idx, row in enumerate(per_state):
         if not isinstance(row, Mapping) or "state_index" not in row:
             failures.append(f"per_state_row_{idx}_missing_state_index")
             continue
-        observed_states.add(int(row["state_index"]))
+        state_index = _coerce_ca_int(row["state_index"])
+        if state_index is None:
+            failures.append(f"per_state_row_{idx}_state_index_malformed")
+            continue
+        observed_states.add(state_index)
 
     if set_ints != observed_states:
         failures.append("sampled_state_set_per_state_mismatch")
@@ -282,6 +432,135 @@ def validate_receipt_schema(receipt: Mapping[str, Any]) -> list[str]:
     return failures
 
 
+def validate_ca_branch_input_source(receipt: Mapping[str, Any]) -> list[str]:
+    """Validate a raw CA confirmation receipt for Fold-3B branch-input construction."""
+
+    failures: list[str] = []
+    if receipt.get("schema") != CA_BRANCH_INPUT_SOURCE_SCHEMA:
+        failures.append("ca_schema_mismatch")
+
+    if receipt.get("infra_ok") is not True:
+        failures.append("ca_infra_not_ok")
+    if receipt.get("ok") is not True:
+        failures.append("ca_ok_not_true")
+
+    if "order_control_active" in receipt and receipt.get("order_control_active") is not True:
+        failures.append("ca_order_control_inactive")
+
+    per_state = receipt.get("per_state")
+    if not isinstance(per_state, list):
+        failures.append("ca_per_state_not_list")
+    else:
+        sampled_states, states_failures = _extract_sampled_states_from_ca_receipt(receipt)
+        failures.extend(states_failures)
+        if sampled_states is None:
+            sampled_states = []
+        sampled_set_raw, set_list_failures = _extract_sampled_state_set_from_ca_receipt(
+            receipt,
+            sampled_states,
+        )
+        failures.extend(set_list_failures)
+        if sampled_set_raw is None:
+            sampled_set_raw = []
+        parsed_set, set_failures = _coerce_int_set(
+            sampled_set_raw,
+            malformed_code="ca_sampled_state_set_malformed",
+        )
+        failures.extend(set_failures)
+        sampled_set = parsed_set if parsed_set is not None else set()
+        for idx, row in enumerate(per_state):
+            if not isinstance(row, Mapping):
+                failures.append(f"ca_per_state_row_{idx}_not_mapping")
+                continue
+            if "state_index" not in row:
+                failures.append(f"ca_per_state_row_{idx}_missing_state_index")
+                continue
+            state_index = _coerce_ca_int(row["state_index"])
+            if state_index is None:
+                failures.append(f"ca_per_state_row_{idx}_state_index_malformed")
+                continue
+            if state_index in sampled_set:
+                if "semantic_state_id" not in row:
+                    failures.append(f"ca_per_state_row_{idx}_missing_semantic_state_id")
+                else:
+                    semantic_id = _coerce_ca_int(row["semantic_state_id"])
+                    if semantic_id is None:
+                        failures.append(f"ca_per_state_row_{idx}_semantic_state_id_malformed")
+                    elif semantic_id != state_index:
+                        failures.append(f"ca_per_state_row_{idx}_semantic_state_id_mismatch")
+            if "crossing_indices_len" not in row:
+                failures.append(f"ca_per_state_row_{idx}_missing_crossing_indices_len")
+            else:
+                crossing_len = _coerce_ca_int(row["crossing_indices_len"])
+                if crossing_len is None:
+                    failures.append(f"ca_per_state_row_{idx}_crossing_indices_len_malformed")
+                elif crossing_len < 0:
+                    failures.append(f"ca_per_state_row_{idx}_crossing_indices_len_negative")
+
+    failures.extend(_validate_order_rank_consistency(receipt))
+
+    dedup_status = _dedup_field_status(receipt)
+    if dedup_status == "schema_missing":
+        if "dedup_reset_called" not in receipt:
+            failures.append("ca_missing:dedup_reset_called")
+        elif receipt.get("dedup_reset_called") is not True:
+            failures.append("ca_dedup_reset_called_not_true")
+        if "dedup_session_scope" not in receipt:
+            failures.append("ca_missing:dedup_session_scope")
+        else:
+            scope = receipt.get("dedup_session_scope")
+            if not isinstance(scope, str) or not scope.strip():
+                failures.append("ca_dedup_session_scope_empty_or_invalid")
+    elif dedup_status == "artifact":
+        failures.append("ca_dedup_artifact")
+
+    parent_sha = receipt.get("parent_sha")
+    if not isinstance(parent_sha, str) or not parent_sha.strip():
+        failures.append("ca_missing_parent_sha")
+
+    sampled_states, states_failures = _extract_sampled_states_from_ca_receipt(receipt)
+    failures.extend(states_failures)
+    if sampled_states is None:
+        sampled_states = []
+    mark_count = receipt.get("mark_count")
+    if mark_count is None:
+        failures.append("ca_missing_mark_count")
+    else:
+        parsed_mark_count = _coerce_ca_int(mark_count)
+        if parsed_mark_count is None:
+            failures.append("ca_mark_count_malformed")
+        elif parsed_mark_count != len(sampled_states):
+            failures.append("ca_mark_count_mismatch")
+
+    return failures
+
+
+def normalize_per_state_for_mechanism_receipt(
+    ca_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Derive mechanism-receipt per_state rows from CA-native band-counter rows.
+
+    Pure field derivations only — no invented measurements:
+    - crossing_indices_len: canonical CA field (unchanged).
+    - crossing_count: alias identical to crossing_indices_len (the count IS the
+      index-list length emitted by the band counter).
+    - mark_count: 1 per sampled-state row (one s1d7_band_counter mark per semantic
+      state; consistent with s1d7_band_counter_mark_count == sampled_state_count).
+    """
+
+    normalized: list[dict[str, Any]] = []
+    for row in ca_rows:
+        if not isinstance(row, Mapping):
+            continue
+        out = dict(row)
+        crossing_len = int(row.get("crossing_indices_len") or 0)
+        out["crossing_indices_len"] = crossing_len
+        out["crossing_count"] = crossing_len
+        out["mark_count"] = 1
+        normalized.append(out)
+    return normalized
+
+
 def validate_prereg_packet_schema(packet: Mapping[str, Any]) -> list[str]:
     failures: list[str] = []
     if packet.get("schema") != PREREG_PACKET_SCHEMA:
@@ -350,9 +629,13 @@ def validate_preflight_receipt_schema(receipt: Mapping[str, Any]) -> list[str]:
 def _cb_state_indices(per_state: Sequence[Mapping[str, Any]]) -> list[int]:
     indices: list[int] = []
     for row in per_state:
-        crossing_len = int(row.get("crossing_indices_len") or 0)
-        if crossing_len > 0:
-            indices.append(int(row["state_index"]))
+        crossing_len = _coerce_ca_int(row.get("crossing_indices_len"))
+        if crossing_len is None or crossing_len <= 0:
+            continue
+        state_index = _coerce_ca_int(row.get("state_index"))
+        if state_index is None:
+            continue
+        indices.append(state_index)
     return sorted(indices)
 
 
@@ -403,7 +686,8 @@ def classify_f3b_why_state0_branch(
     semantic_state0_cb = bool(inputs.get("semantic_state0_is_crossing_bearing", False))
     first_measured_cb = bool(inputs.get("first_measured_is_crossing_bearing", False))
     first_measured = inputs.get("first_measured_semantic_state")
-    cb_count = int(inputs.get("cb_state_count") or 0)
+    cb_count_raw = _coerce_ca_int(inputs.get("cb_state_count"))
+    cb_count = cb_count_raw if cb_count_raw is not None else 0
     sampled_set_changed = bool(inputs.get("sampled_set_changed", False))
     mark_consistent = bool(inputs.get("mark_count_consistent", True))
 
@@ -411,9 +695,7 @@ def classify_f3b_why_state0_branch(
         if variable_id == "A_order_only" and not identity_inert:
             fired.append(F3BWhyState0Branch.MIXED_OR_INCONCLUSIVE)
         elif variable_id == "A_order_only" and identity_inert:
-            first_measured_int = (
-                int(first_measured) if first_measured is not None else None
-            )
+            first_measured_int = _coerce_ca_int(first_measured)
             if first_measured_cb and first_measured_int is not None and first_measured_int != 0:
                 fired.append(F3BWhyState0Branch.MEASUREMENT_ORDER_ARTIFACT)
             elif semantic_state0_cb and cb_count == 1:
@@ -453,6 +735,64 @@ def classify_f3b_why_state0_branch(
     }
 
 
+def _schema_failed_branch_input_contract(
+    receipt: Mapping[str, Any],
+    *,
+    receipt_schema_failures: list[str],
+    variable_id: str,
+    control_reason: str | None,
+    identity_order_inertness_proven: bool,
+    operational_ok: bool,
+) -> dict[str, Any]:
+    """Fail-closed branch inputs when CA-source validation fails (no int() on bad rows)."""
+
+    sampled_states, states_failures = _extract_sampled_states_from_ca_receipt(receipt)
+    if sampled_states is None:
+        sampled_states = []
+    sampled_set_raw, set_list_failures = _extract_sampled_state_set_from_ca_receipt(
+        receipt,
+        sampled_states,
+    )
+    if sampled_set_raw is None:
+        sampled_set_raw = []
+    order_rank = receipt.get("order_rank_by_semantic_state")
+    if not isinstance(order_rank, dict) and sampled_states:
+        order_rank = {str(state): rank for rank, state in enumerate(sampled_states)}
+    sampled_set_sorted: list[int] = []
+    for raw in sampled_set_raw:
+        coerced = _coerce_ca_int(raw)
+        if coerced is None:
+            sampled_set_sorted = []
+            break
+        sampled_set_sorted.append(coerced)
+    else:
+        sampled_set_sorted = sorted(set(sampled_set_sorted))
+    first_measured: Any = None
+    if sampled_states:
+        first_measured = _coerce_ca_int(sampled_states[0])
+    return {
+        "operational_ok": operational_ok,
+        "schema_ok": False,
+        "ca_source_schema_failures": list(receipt_schema_failures),
+        "sampled_state_set": sampled_set_sorted,
+        "sampled_state_order": sampled_states,
+        "order_rank_by_semantic_state": order_rank if isinstance(order_rank, dict) else {},
+        "exact_per_state_coverage": False,
+        "dedup_reset_called": receipt.get("dedup_reset_called"),
+        "dedup_session_scope": receipt.get("dedup_session_scope"),
+        "identity_order_inertness_proven": identity_order_inertness_proven,
+        "semantic_state0_crossing_indices_len": 0,
+        "cb_state_count": 0,
+        "first_measured_semantic_state": first_measured,
+        "first_measured_is_crossing_bearing": False,
+        "semantic_state0_is_crossing_bearing": False,
+        "sampled_set_changed": bool(receipt.get("sampled_set_changed", False)),
+        "mark_count_consistent": False,
+        "variable_id": variable_id,
+        "control_reason": control_reason,
+    }
+
+
 def build_branch_input_contract_from_ca_receipt(
     receipt: Mapping[str, Any],
     *,
@@ -461,17 +801,39 @@ def build_branch_input_contract_from_ca_receipt(
     identity_order_inertness_proven: bool = False,
     operational_ok: bool = True,
 ) -> dict[str, Any]:
-    per_state = list(receipt.get("per_state") or [])
-    sampled_states = list(receipt.get("sampled_state_order") or receipt.get("sampled_states") or [])
-    sampled_set = list(receipt.get("sampled_state_set") or sampled_states)
+    receipt_schema_failures = validate_ca_branch_input_source(receipt)
+    if receipt_schema_failures:
+        return _schema_failed_branch_input_contract(
+            receipt,
+            receipt_schema_failures=receipt_schema_failures,
+            variable_id=variable_id,
+            control_reason=control_reason,
+            identity_order_inertness_proven=identity_order_inertness_proven,
+            operational_ok=operational_ok,
+        )
+
+    per_state, _per_state_failures = _extract_per_state_from_ca_receipt(receipt)
+    sampled_states, _states_failures = _extract_sampled_states_from_ca_receipt(receipt)
+    if sampled_states is None:
+        sampled_states = []
+    sampled_set, _set_failures = _extract_sampled_state_set_from_ca_receipt(
+        receipt,
+        sampled_states,
+    )
+    if sampled_set is None:
+        sampled_set = []
     order_rank = receipt.get("order_rank_by_semantic_state")
     if not isinstance(order_rank, dict) and sampled_states:
         order_rank = {str(state): rank for rank, state in enumerate(sampled_states)}
 
     cb_indices = _cb_state_indices(per_state)
-    first_measured = sampled_states[0] if sampled_states else None
+    first_measured = _coerce_ca_int(sampled_states[0]) if sampled_states else None
     first_measured_row = next(
-        (row for row in per_state if int(row.get("state_index", -1)) == int(first_measured)),
+        (
+            row
+            for row in per_state
+            if _coerce_ca_int(row.get("state_index")) == first_measured
+        ),
         None,
     ) if first_measured is not None else None
 
@@ -484,19 +846,17 @@ def build_branch_input_contract_from_ca_receipt(
         "dedup_session_scope": receipt.get("dedup_session_scope"),
     }
 
-    receipt_schema_failures = validate_receipt_schema(receipt)
-    builder_schema_failures = [
-        failure
-        for failure in receipt_schema_failures
-        if failure not in {"f3b_branch_not_enum", "f3b_branch_mismatch"}
-        and not failure.startswith("missing:f3b_branch")
-        and not failure.startswith("f3b_branch_inputs")
-    ]
-
     return {
         "operational_ok": operational_ok,
-        "schema_ok": len(builder_schema_failures) == 0,
-        "sampled_state_set": sorted({int(x) for x in sampled_set}),
+        "schema_ok": True,
+        "ca_source_schema_failures": [],
+        "sampled_state_set": sorted(
+            {
+                coerced
+                for x in sampled_set
+                if (coerced := _coerce_ca_int(x)) is not None
+            }
+        ),
         "sampled_state_order": sampled_states,
         "order_rank_by_semantic_state": order_rank or {},
         "exact_per_state_coverage": _validate_order_rank_consistency(synthetic) == [],
@@ -505,9 +865,11 @@ def build_branch_input_contract_from_ca_receipt(
         "identity_order_inertness_proven": identity_order_inertness_proven,
         "semantic_state0_crossing_indices_len": next(
             (
-                int(row.get("crossing_indices_len") or 0)
+                crossing_len
                 for row in per_state
-                if int(row.get("state_index", -1)) == 0
+                if _coerce_ca_int(row.get("state_index")) == 0
+                and (crossing_len := _coerce_ca_int(row.get("crossing_indices_len")))
+                is not None
             ),
             0,
         ),
@@ -515,11 +877,20 @@ def build_branch_input_contract_from_ca_receipt(
         "first_measured_semantic_state": first_measured,
         "first_measured_is_crossing_bearing": bool(
             first_measured_row is not None
-            and int(first_measured_row.get("crossing_indices_len") or 0) > 0
+            and (
+                (crossing_len := _coerce_ca_int(
+                    first_measured_row.get("crossing_indices_len")
+                ))
+                is not None
+                and crossing_len > 0
+            )
         ),
         "semantic_state0_is_crossing_bearing": 0 in cb_indices,
         "sampled_set_changed": bool(receipt.get("sampled_set_changed", False)),
-        "mark_count_consistent": int(receipt.get("mark_count") or 0) == len(sampled_states),
+        "mark_count_consistent": (
+            (parsed_mark := _coerce_ca_int(receipt.get("mark_count"))) is not None
+            and parsed_mark == len(sampled_states)
+        ),
         "variable_id": variable_id,
         "control_reason": control_reason,
     }
