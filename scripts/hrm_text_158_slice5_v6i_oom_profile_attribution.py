@@ -6533,6 +6533,27 @@ def classify_ca_band_counter_confirmation(
     }
 
 
+def _probe_subprocess_evidence_from_run(run_b: Mapping[str, Any]) -> dict[str, Any]:
+    """Transcribe dedup witness + parent rehash from probe scratch receipt (never stamped)."""
+    probe_receipt = run_b.get("probe_receipt")
+    if not isinstance(probe_receipt, Mapping):
+        return {}
+    evidence: dict[str, Any] = {}
+    if probe_receipt.get("dedup_reset_called") is True:
+        evidence["dedup_reset_called"] = True
+        scope = probe_receipt.get("dedup_session_scope")
+        if isinstance(scope, str) and scope.strip():
+            evidence["dedup_session_scope"] = scope
+    elif probe_receipt.get("dedup_reset_called") is False:
+        evidence["dedup_reset_called"] = False
+    parent_hash_after = probe_receipt.get("parent_hash_after") or probe_receipt.get(
+        "parent_sha256"
+    )
+    if isinstance(parent_hash_after, str) and parent_hash_after.strip():
+        evidence["parent_sha"] = parent_hash_after
+    return evidence
+
+
 def build_ca_band_counter_confirmation_receipt(
     *,
     confirmation_root: Path,
@@ -6629,6 +6650,7 @@ def build_ca_band_counter_confirmation_receipt(
     receipt.update(
         build_order_provenance_fields(int(n_states), sampled_set, sampled_order)
     )
+    receipt.update(_probe_subprocess_evidence_from_run(run_b))
     return receipt
 
 

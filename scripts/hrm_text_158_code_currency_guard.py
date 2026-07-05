@@ -36,13 +36,13 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "624f3ac39945cf5ef5caa5a249a4a168a1071b3057ef4469f038d565540aa412"
     ),
     "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py": (
-        "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
+        "ab79f8bcb1abc800e3f5217247b187f83455c60b5a46427d1d3ae7a04eb865d1"
     ),
     "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": (
         "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f"
     ),
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": (
-        "0b30fc4d60e46003c7f2ebba291a6d8a24497d874d2b6c425cc8cc7aa7c99e3f"
+        "a0dc750edd98a64dca629e2989ca9ec646b44f7074a0ecbb9408840bff3f5c11"
     ),
     "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py": (
         "4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1"
@@ -54,7 +54,7 @@ PHASE3B_PINNED_SOURCE_FILES: dict[str, str] = {
         "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688"
     ),
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "56300178621652e66baac432f011863ebfd55c589b71cc5cb1af30bfe45b2384"
+        "33340dffc28f45fee02a7204802f489e4810337a0ab9ed64e56df628817bdaeb"
     ),
 }
 

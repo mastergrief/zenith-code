@@ -3553,6 +3553,17 @@ def build_receipt_terminal_status(
     }
 
 
+def _attach_obmalloc_dedup_evidence(receipt: dict[str, Any]) -> None:
+    """Transcribe dedup fields from the reset call witness (never hardcoded true)."""
+    from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+        build_obmalloc_dedup_evidence_from_witness,
+    )
+
+    evidence = build_obmalloc_dedup_evidence_from_witness()
+    receipt["dedup_reset_called"] = evidence.get("dedup_reset_called")
+    receipt["dedup_session_scope"] = evidence.get("dedup_session_scope")
+
+
 def _median_or_none(values: Sequence[float]) -> float | None:
     if not values:
         return None
@@ -8613,6 +8624,7 @@ def run_c2p1_probe(
             )
             with phase_progress.phase("receipt_write", path=str(receipt_path)):
                 receipt["phase_telemetry"] = phase_progress.to_dict()
+                _attach_obmalloc_dedup_evidence(receipt)
                 receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
             receipt["phase_telemetry"] = phase_progress.to_dict()
             return receipt
@@ -9191,6 +9203,7 @@ def run_c2p1_probe(
         )
         with phase_progress.phase("receipt_write", path=str(receipt_path)):
             receipt["phase_telemetry"] = phase_progress.to_dict()
+            _attach_obmalloc_dedup_evidence(receipt)
             if not slim_receipt_emit:
                 compact_probe_receipt_for_banking(receipt)
                 compactness_failures = validate_bankable_probe_receipt(receipt)

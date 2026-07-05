@@ -88,6 +88,14 @@ class F3BWhyState0Branch(StrEnum):
     MIXED_OR_INCONCLUSIVE = "F3B_MIXED_OR_INCONCLUSIVE"
 
 
+DECISIVE_F3B_BRANCHES: frozenset[str] = frozenset(
+    {
+        F3BWhyState0Branch.STATE0_IDENTITY_STRUCTURE.value,
+        F3BWhyState0Branch.MEASUREMENT_ORDER_ARTIFACT.value,
+    }
+)
+
+
 BRANCH_PRECEDENCE: tuple[F3BWhyState0Branch, ...] = (
     F3BWhyState0Branch.NO_VERDICT_OPERATIONAL,
     F3BWhyState0Branch.NO_VERDICT_SCHEMA,
@@ -265,6 +273,11 @@ def validate_receipt_schema(receipt: Mapping[str, Any]) -> list[str]:
         failures.append("counts_as_sub2_not_false")
     if receipt.get("pre_full_stack_diagnostic") is not True:
         failures.append("pre_full_stack_diagnostic_not_true")
+    branch = receipt.get("f3b_branch")
+    if branch in DECISIVE_F3B_BRANCHES:
+        parent_sha = receipt.get("parent_sha")
+        if not isinstance(parent_sha, str) or not parent_sha.strip():
+            failures.append("missing:parent_sha_for_decisive_branch")
     failures.extend(_validate_f3b_branch_value(receipt))
     return failures
 

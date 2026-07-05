@@ -2561,6 +2561,11 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 allocation_site_id="C4_enter",
                 optimizer_step_index=step_index,
             )
+            from calm.hrm_text_158.native_full_stack.sparse_cap_gpu_seam_adapter import (
+                record_obmalloc_site_emit_dedup_reset,
+            )
+
+            record_obmalloc_site_emit_dedup_reset("probe_subprocess")
 
             host_allocator_site_emit = (
                 getattr(rss_emit, "site_emit", None) if rss_emit is not None else None

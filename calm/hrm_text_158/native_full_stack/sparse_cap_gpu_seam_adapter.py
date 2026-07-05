@@ -55,11 +55,38 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
 
 
 _SITE_EMIT_DEDUP_KEYS: set[tuple[int, int, str, str]] = set()
+_DEDUP_RESET_WITNESS: dict[str, object] = {"called": False, "scope": None}
 
 
 def reset_obmalloc_site_emit_dedup_session() -> None:
     """Clear cross-apply_cap site-emit dedup state (FIX-G; fresh per probe subprocess)."""
     _SITE_EMIT_DEDUP_KEYS.clear()
+
+
+def record_obmalloc_site_emit_dedup_reset(scope: str) -> None:
+    """Reset dedup session and record a call witness for receipt plumbing."""
+    reset_obmalloc_site_emit_dedup_session()
+    _DEDUP_RESET_WITNESS["called"] = True
+    _DEDUP_RESET_WITNESS["scope"] = str(scope)
+
+
+def obmalloc_site_emit_dedup_reset_witness() -> dict[str, object]:
+    """Read-only witness: whether record_obmalloc_site_emit_dedup_reset ran."""
+    return dict(_DEDUP_RESET_WITNESS)
+
+
+def build_obmalloc_dedup_evidence_from_witness() -> dict[str, object]:
+    """Transcribe dedup receipt fields from the reset call witness (never hardcoded true)."""
+    witness = obmalloc_site_emit_dedup_reset_witness()
+    if witness.get("called") is True and witness.get("scope") == "probe_subprocess":
+        return {
+            "dedup_reset_called": True,
+            "dedup_session_scope": "probe_subprocess",
+        }
+    return {
+        "dedup_reset_called": False,
+        "dedup_session_scope": None,
+    }
 
 
 def _wrap_site_emit_dedup(
