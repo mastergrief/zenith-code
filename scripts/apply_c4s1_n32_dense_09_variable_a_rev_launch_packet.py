@@ -26,8 +26,8 @@ REPLAY = (
     REPO
     / "artifacts/consensus_prep/c4s1_n32_dense_09_variable_a_rev_launch_packet_v1_replay_commands.json"
 )
-HEAD = "bcc4d784a0460c5c3bd810b95f6f7bd4ca93025b"
-SCIENCE_HEAD = "597ff08bdb5a1374eeec7ff1a5648fc8006e7b85"
+HEAD = "bd23cc9f3dd8e2dfc1245e80f970c2a5baaf1888"
+SCIENCE_HEAD = "bd23cc9f3dd8e2dfc1245e80f970c2a5baaf1888"
 ACTIVE_TASK_ID = "1782633464140-b85ec12a"
 UPSTREAM_TASK_ID = "1782633464140-b85ec12a"
 RUN_ROOT = (
@@ -35,7 +35,7 @@ RUN_ROOT = (
 )
 RUN_ID = "C4S1_PHASE3_N32_DENSE_09_VARIABLE_A_REV_V1"
 N_STATES = 32
-PACKET_REVISION = "v1_n32_dense_09_variable_a_rev_bcc4d78"
+PACKET_REVISION = "v1_n32_dense_09_variable_a_rev_bd23cc9"
 FOLD1_SPEC = (
     "artifacts/measurement_closeout/c4s1d7_dense_09_structural_fork_resolution_spec.md"
 )
@@ -67,13 +67,13 @@ EXPECTED_EFFECTIVE_VISIT_ORDER = list(range(9, -1, -1)) + list(range(10, 32))
 
 PINS: dict[str, str] = {
     "scripts/hrm_text_158_slice5_v6i_oom_profile_attribution.py": (
-        "56300178621652e66baac432f011863ebfd55c589b71cc5cb1af30bfe45b2384"
+        "33340dffc28f45fee02a7204802f489e4810337a0ab9ed64e56df628817bdaeb"
     ),
     "scripts/hrm_text_158_code_currency_guard.py": (
-        "86ef7dd11cec33a049208eec7d61e66b4ed16689288223029cc60f26df8489da"
+        "c8aae32b7125c3e683ff026e82fe776d04f6ff4b28cc32ed17e9ca0ca356cb0c"
     ),
     "scripts/hrm_text_158_bounded_delta_acquisition_probe.py": (
-        "51700056d1d71920d10fb858a1ef963464b8239ff55f4560a70e7ff61dfb1ad5"
+        "c3a7a4dbdc1e14d3ff631c0922b3f7b65c5a0c94594e54a7c398ac3afbc2a797"
     ),
     "scripts/hrm_text_158_bounded_delta_acquisition_probe_bootstrap.py": (
         "c7e5ab2283ba14f26db2fb0e4f3892aab786a60302c90d3e7e98b5393c02b27f"
@@ -94,7 +94,7 @@ PINS: dict[str, str] = {
         "af20de289b2b22e18ea1bf169cb20b567343c62b26b7ab782d90e624f7aa520f"
     ),
     "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py": (
-        "0d057eb55737cfc95b2f30cb7a302928b0f154d7ab06f3c16b1c75cb9495b25d"
+        "ab79f8bcb1abc800e3f5217247b187f83455c60b5a46427d1d3ae7a04eb865d1"
     ),
     "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py": (
         "4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1"
@@ -106,10 +106,10 @@ PINS: dict[str, str] = {
         "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794"
     ),
     "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": (
-        "0b30fc4d60e46003c7f2ebba291a6d8a24497d874d2b6c425cc8cc7aa7c99e3f"
+        "a0dc750edd98a64dca629e2989ca9ec646b44f7074a0ecbb9408840bff3f5c11"
     ),
     "calm/hrm_text_158/native_full_stack/f3b_why_state0_branch.py": (
-        "832e9c11d016120f6a46f572c2b3ed29ee3c390470ab76a4b322947e88691c52"
+        "21ad6a9b0d74e1c47ec6e228aad1beefd5e2daadd3ea861aa47ee50746344afb"
     ),
 }
 
@@ -247,7 +247,7 @@ IDENTITY_INERTNESS_WRAPPER_PATH = (
 )
 MECHANISM_RECEIPT_NAME = "fold3b_variable_a_mechanism_diagnosis_receipt.json"
 WRAPPER_RECEIPT_NAME = "ca_confirmation_wrapper_receipt.json"
-GIT_HEAD_REQUIRED = "bcc4d784a0460c5c3bd810b95f6f7bd4ca93025b"
+GIT_HEAD_REQUIRED = "bd23cc9f3dd8e2dfc1245e80f970c2a5baaf1888"
 
 
 def compute_primary_dense_fork_readable(wrapper: dict) -> bool:
@@ -721,7 +721,7 @@ def _update_pin_blocks(draft: dict[str, Any]) -> None:
             draft["box_preflight_role_pins"][key]["rel_path"] = rel
     draft["code_pins"] = build_code_pins()
     draft["code_pins_note"] = (
-        "test_slice5 omitted (not launch-executed). git_head_required=597ff08 is the "
+        "test_slice5 omitted (not launch-executed). git_head_required=bd23cc9 is the "
         "order-control patch science baseline (FDC); descendant HEAD allowed via merge-base "
         "ancestor check. Science code_pins verified @ git_head_required via git show. "
         "Launch-executed infra pins (on-disk): box_lane.py implements descendant-head "
@@ -1227,7 +1227,7 @@ def build_draft() -> dict[str, Any]:
     draft["decision_contract"] = {
         "chosen_path": (
             f"Fold-3B Variable A order-only perturbation via "
-            "run_callsite_band_counter_ca_confirmation @ 597ff08 n_states=32; "
+            "run_callsite_band_counter_ca_confirmation @ bd23cc9 n_states=32; "
             "HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATES=0..9 + "
             f"HRM_TEXT_158_OBMALLOC_EXPANDED_SAMPLED_STATE_ORDER={DENSE_ORDER_VALUE}; "
             "classifier F3B_WHY_STATE0_BRANCH_V1 mechanism verdict"
