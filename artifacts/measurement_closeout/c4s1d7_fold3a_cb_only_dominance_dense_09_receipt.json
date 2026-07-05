@@ -1,0 +1,149 @@
+{
+  "allowed_claim": "the legacy all-sampled-state dominance veto is the wrong measurement object for zero-crossing-heavy data; on the crossing-bearing support the dense-[0..9] bank-scale receipt shows A+C composite dominance while C-only dominance is refuted (c_only_dominance_ok=false).",
+  "allowed_claim_note": "single_cb_support=true marks within-support characterization, NOT cross-state generalization.",
+  "anti_overclaim_verbatim": "decider precondition; NO CA verdict; NO candidate-C resolution; NO reduction eligibility; NOT the ~430MB C4.S1d bank pin; NOT a sub-2 proof; NOT universal crossing census; NOT implementation readiness.",
+  "classifier": "s1d7_cb_only_dominance_v1",
+  "cross_checks": [],
+  "dominance_result": {
+    "a_plus_c_share": 0.9294804923847277,
+    "aggregate_band_bytes": {
+      "a": 22640,
+      "c": 48640,
+      "e": 5408
+    },
+    "band_c_share": 0.6342582933444607,
+    "c_only_dominance_ok": false,
+    "cb_state_count": 1,
+    "cb_state_indices": [
+      0
+    ],
+    "classifier": "s1d7_cb_only_dominance_v1",
+    "excluded_zero_crossing_state_count": 9,
+    "excluded_zero_crossing_states": [
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 1
+      },
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 2
+      },
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 3
+      },
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 4
+      },
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 5
+      },
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 6
+      },
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 7
+      },
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 8
+      },
+      {
+        "band_a_bytes": 112,
+        "band_c_bytes": 0,
+        "band_e_bytes": 0,
+        "crossing_indices_len": 0,
+        "state_index": 9
+      }
+    ],
+    "fail_closed_reason": null,
+    "input_receipt_fields": {
+      "cb_state_count": 1,
+      "eligible_module_limit": 32,
+      "mark_count": 10,
+      "peak_rss_gib": 10.253555297851562,
+      "terminal_branch": "INSUFFICIENT_CB_STATES"
+    },
+    "per_cb_state": [
+      {
+        "band_a_bytes": 22640,
+        "band_c_bytes": 48640,
+        "band_e_bytes": 5408,
+        "crossing_indices_len": 512,
+        "state_index": 0
+      }
+    ],
+    "single_cb_support": true,
+    "terminal_branch": "CB_ONLY_AC_COMPOSITE_DOMINANT",
+    "thresholds": {
+      "ac_composite_share_min": 0.8,
+      "dominance_c_multiplier_min": 3.0,
+      "dominance_c_share_min": 0.8
+    }
+  },
+  "fold": "fold_3a_crossing_bearing_only_dominance_reducer",
+  "git_head_at_closeout": "4421b349640389354c44b315cf5f75a915dfe679",
+  "hard_limits": {
+    "not_implementation_readiness": true,
+    "not_universal_crossing_census": true,
+    "within_support_only": true,
+    "wp_reason": "cb_state_count=1 \u2192 INSUFFICIENT_CB_STATES; no CA_PERSISTS/MIXED/DILUTES",
+    "wp_uncomputable": true
+  },
+  "input_ca_confirmation_summary": {
+    "cb_state_count": 1,
+    "eligible_module_limit": 32,
+    "mark_count": 10,
+    "peak_rss_gib": 10.253555297851562,
+    "sampled_states": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "terminal_branch": "INSUFFICIENT_CB_STATES"
+  },
+  "provenance": {
+    "dispatch_msg_id": "1783246954375-8e9f37aa",
+    "implement_gate_msg_id": "1783247133497-b80fb0a6",
+    "input_ca_confirmation_receipt": "/home/gabe/hrm158_c4s1_phase3_gpu_gate/C4S1_PHASE3_N32_DENSE_09_CA_DECIDER_V1/prelaunch/callsite_band_counter_ca_confirmation/callsite_band_counter_ca_confirmation_receipt.json",
+    "upstream_closeout_receipt": "artifacts/measurement_closeout/c4s1d7_dense_09_structural_fork_resolution_receipt.json",
+    "upstream_closeout_spec": "artifacts/measurement_closeout/c4s1d7_dense_09_structural_fork_resolution_spec.md"
+  },
+  "schema": "hrm_text_158_measurement_closeout_fold3a_cb_only_dominance_receipt/v1",
+  "task_id": "1782633464140-b85ec12a"
+}
