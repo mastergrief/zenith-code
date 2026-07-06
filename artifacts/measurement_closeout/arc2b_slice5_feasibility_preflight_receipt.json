@@ -90,7 +90,7 @@
   },
   "feasibility_verdict": "NEEDS_PATCH",
   "fold": "arc2b_slice5_step1_feasibility_preflight",
-  "git_head_at_preflight": "f1757f8b6f14ef47f89b66bb40ba430ad44ce715",
+  "git_head_at_preflight": "fa50e59afa834df8f0f59b206f70f1e03b913e91",
   "offline_b1_contract": {
     "allowed_terminal_branches": [
       "SLICE5_DIAGNOSTIC_BRACKET_ONLY",

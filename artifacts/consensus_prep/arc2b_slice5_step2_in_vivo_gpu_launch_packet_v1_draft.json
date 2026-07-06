@@ -1,0 +1,95 @@
+{
+  "canonical_lane": "test-operator_gpu_arc2b_slice5_step2_in_vivo",
+  "classifier_binding": {
+    "classifier": "ARC2B_SLICE5_IN_VIVO_BRANCH_V1",
+    "evidence_source": "step2_gpu_live_carrier",
+    "honest_expected_terminal": "D_NEEDS_UPDATE_LAW_REDESIGN",
+    "mechanism_terminal_branches": [
+      "D_NEEDS_UPDATE_LAW_REDESIGN",
+      "SLICE5_IN_VIVO_LAW_BOUND"
+    ],
+    "module_path": "calm/hrm_text_158/native_full_stack/arc2b_slice5_in_vivo_branch.py",
+    "module_sha256": "8c6379e6442ef9eea390f5fa6ebc937799613342722a825b6e5505124079aaf1",
+    "postrun_script": "scripts/hrm_text_158_arc2b_slice5_step2_in_vivo_postrun_classifier.py",
+    "receipt_schema": "hrm_text_158_arc2b_slice5_in_vivo_law_validation_receipt/v1"
+  },
+  "explicit_non_claims": [
+    "not_sub2_readiness",
+    "not_reduction_eligibility",
+    "not_430mb_bank_pin",
+    "not_fold3b_universalization",
+    "not_gpu_launch_until_plus1_launch_gate"
+  ],
+  "fold": "arc2b_slice5_step2_in_vivo_gpu_launch",
+  "git_head_required": "fa50e59afa834df8f0f59b206f70f1e03b913e91",
+  "gpu_hold": true,
+  "law_under_test": {
+    "decay_den": 2,
+    "decay_num": 1,
+    "effective_acc_budget_bpw": 0.4,
+    "tolerance_bpw": 0.0,
+    "window_k": 180
+  },
+  "manifest_binding": {
+    "recorded_selector_internal_manifest_sha256": "5d6e0fea9c0f07600a40c36d6df73dc945296d5a684cafa26ba76b206bd7c996"
+  },
+  "packet_revision": "v1_arc2b_slice5_step2_in_vivo",
+  "parent_checkpoint": {
+    "curriculum_seed": 43,
+    "eligible_scope": "all-bitlinear",
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "support_order_seed": 43
+  },
+  "provenance": {
+    "b1_packet_revision": "v2_rev4e_h200_decensor_relaunch",
+    "co_lead_gate2_msg_id": "1783327022964",
+    "dispatch_msg_id": "1783325394446-3e70a184",
+    "gate1_freeze_msg_id": "1783325898873-e64dc663",
+    "implement_gate_msg_id": "1783327116043-f15b0bc8",
+    "plan_msg_id": "1783325727139-7cc2d891"
+  },
+  "readiness_classification": {
+    "class": "pre_full_stack_diagnostic",
+    "flags": {
+      "counts_as_sub2": false,
+      "pre_full_stack_diagnostic": true,
+      "ready_for_main_science": false
+    }
+  },
+  "replay_commands_artifact": "artifacts/consensus_prep/arc2b_slice5_step2_in_vivo_gpu_launch_packet_v1_replay_commands.json",
+  "replay_commands_sha256": "87bc2caa976b0907ef1c566639ea406d751ac9e2f290e47486d6ad5d4aee548b",
+  "run_id_policy": "FREE \u2014 do NOT reuse B1 run_ids 2189e72001..17",
+  "run_root_template": "/home/gabe/claw-code-creditdir/transient_fp_credit/arc2b_slice5_step2_in_vivo_seed43_{run_id}/",
+  "runtime_requirements": {
+    "carrier_authority_forbidden_tokens": [
+      "--dense-accumulator-w8-clip",
+      "--dense-accumulator-w7-clip",
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION"
+    ],
+    "carrier_authority_required_argv": [
+      "--persistent-accumulator-event-coded-live",
+      "--persistent-q-ternary-base3-codec",
+      "--event-coded-sparse-vote-authority",
+      "--d-live-carrier-snapshot"
+    ],
+    "confirmation_steps": 200,
+    "decay_active": {
+      "decay_den": 2,
+      "decay_num": 1
+    },
+    "decay_cli_flags": [
+      "--vote-update-decay-numerator",
+      "1",
+      "--vote-update-decay-denominator",
+      "2"
+    ],
+    "from_clean_parent_contiguous": true,
+    "horizon_h": 200,
+    "live_carrier_bytes_exact_required": true,
+    "live_carrier_snapshot_required": true,
+    "resume_generation": 0
+  },
+  "schema": "hrm_text_158_arc2b_slice5_step2_in_vivo_gpu_launch_packet/v1",
+  "task_id": "1783272482268-052281aa"
+}

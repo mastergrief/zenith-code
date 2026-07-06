@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import faulthandler
 import hashlib
 import json
@@ -5246,6 +5246,37 @@ def default_vote_update_spec(max_abs_per_tensor: int) -> VoteUpdateSpec:
     )
 
 
+def resolve_probe_vote_update_spec(
+    *,
+    max_abs_per_tensor: int,
+    confirmation_envelope: str | None,
+    vote_update_decay_numerator: int | None = None,
+    vote_update_decay_denominator: int | None = None,
+) -> VoteUpdateSpec:
+    envelope = resolve_confirmation_envelope(confirmation_envelope)
+    if envelope is not None:
+        vote_spec = envelope.vote_update_spec(max_abs_per_tensor=int(max_abs_per_tensor))
+    else:
+        vote_spec = default_vote_update_spec(int(max_abs_per_tensor))
+    if (
+        vote_update_decay_numerator is not None
+        or vote_update_decay_denominator is not None
+    ):
+        decay_num = 1 if vote_update_decay_numerator is None else int(
+            vote_update_decay_numerator
+        )
+        decay_den = 1 if vote_update_decay_denominator is None else int(
+            vote_update_decay_denominator
+        )
+        vote_spec = replace(
+            vote_spec,
+            decay_numerator=decay_num,
+            decay_denominator=decay_den,
+        )
+    vote_spec.validate()
+    return vote_spec
+
+
 def _zero_weighted_grad_sums(
     tensor_states: Mapping[str, Any],
 ) -> dict[str, torch.Tensor]:
@@ -6708,6 +6739,8 @@ def run_bounded_delta_steps(
     carrier_growth_enabled: bool = False,
     confirmation_envelope: str | None = None,
     event_coded_sparse_vote_authority: bool = False,
+    vote_update_decay_numerator: int | None = None,
+    vote_update_decay_denominator: int | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -6724,13 +6757,14 @@ def run_bounded_delta_steps(
         raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
     progress = phase_progress or PhaseProgress(enabled=False, device=device)
     envelope = resolve_confirmation_envelope(confirmation_envelope)
+    vote_spec = resolve_probe_vote_update_spec(
+        max_abs_per_tensor=int(max_abs_per_tensor),
+        confirmation_envelope=confirmation_envelope,
+        vote_update_decay_numerator=vote_update_decay_numerator,
+        vote_update_decay_denominator=vote_update_decay_denominator,
+    )
     rank_spec = (
         envelope.rank_spec if envelope is not None else default_dry_run_rank_vote_spec()
-    )
-    vote_spec = (
-        envelope.vote_update_spec(max_abs_per_tensor=int(max_abs_per_tensor))
-        if envelope is not None
-        else default_vote_update_spec(max_abs_per_tensor)
     )
     vote_specs = {key: vote_spec for key in tensor_states}
     updater_config = {
@@ -7918,6 +7952,8 @@ def run_c2p1_probe(
     dense_accumulator_w7_clip: bool = False,
     dense_accumulator_w8_clip: bool = False,
     event_coded_sparse_vote_authority: bool = False,
+    vote_update_decay_numerator: int | None = None,
+    vote_update_decay_denominator: int | None = None,
 ) -> dict[str, Any]:
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
@@ -8847,6 +8883,8 @@ def run_c2p1_probe(
                 carrier_growth_enabled=bool(carrier_growth_enabled),
                 confirmation_envelope=confirmation_envelope,
                 event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
+                vote_update_decay_numerator=vote_update_decay_numerator,
+                vote_update_decay_denominator=vote_update_decay_denominator,
             )
         if calibration_warmup_collector is not None:
             with phase_progress.phase("calibration_warmup_observations_write"):
@@ -8866,14 +8904,15 @@ def run_c2p1_probe(
                     total_steps=max(1, int(steps)),
                 )
         if not updater_config:
+            vote_spec = resolve_probe_vote_update_spec(
+                max_abs_per_tensor=int(max_abs_per_tensor),
+                confirmation_envelope=confirmation_envelope,
+                vote_update_decay_numerator=vote_update_decay_numerator,
+                vote_update_decay_denominator=vote_update_decay_denominator,
+            )
             envelope = resolve_confirmation_envelope(confirmation_envelope)
             rank_spec = (
                 envelope.rank_spec if envelope is not None else default_dry_run_rank_vote_spec()
-            )
-            vote_spec = (
-                envelope.vote_update_spec(max_abs_per_tensor=int(max_abs_per_tensor))
-                if envelope is not None
-                else default_vote_update_spec(max_abs_per_tensor)
             )
             updater_config = {
                 "rank_vote_spec": rank_spec.to_live_dict(),
@@ -9660,6 +9699,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Mutually exclusive with W5/W6 byte-pack, W7 clip, and V4 event-coded carrier."
         ),
     )
+    ap.add_argument(
+        "--vote-update-decay-numerator",
+        type=int,
+        default=None,
+        help=(
+            "Optional vote-update decay numerator override (default-off: leaves 1/1). "
+            "When set with --vote-update-decay-denominator, wires into the live vote_spec "
+            "and ReplayConstants emission."
+        ),
+    )
+    ap.add_argument(
+        "--vote-update-decay-denominator",
+        type=int,
+        default=None,
+        help=(
+            "Optional vote-update decay denominator override (default-off: leaves 1/1). "
+            "Must be > 0 when set; fail-closed via VoteUpdateSpec.validate()."
+        ),
+    )
     return ap
 
 
@@ -9762,6 +9820,8 @@ def main(argv: list[str] | None = None) -> int:
         confirmation_envelope=args.confirmation_envelope,
         dense_accumulator_w7_clip=bool(args.dense_accumulator_w7_clip),
         dense_accumulator_w8_clip=bool(args.dense_accumulator_w8_clip),
+        vote_update_decay_numerator=args.vote_update_decay_numerator,
+        vote_update_decay_denominator=args.vote_update_decay_denominator,
     )
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     flush_probe_terminal_artifacts(exit_code=0, flush_reason="normal_completion")

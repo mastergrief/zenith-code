@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -528,6 +529,101 @@ def build_branch_input_from_b1_classifier_receipt(
         "effective_acc_budget_bpw": float(
             acc_sizing.get("effective_acc_budget_bpw") or DEFAULT_EFFECTIVE_ACC_BUDGET_BPW
         ),
+        "tolerance_bpw": DEFAULT_TOLERANCE_BPW,
+    }
+
+
+def _load_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    return rows
+
+
+def build_branch_input_from_step2_gpu_run(
+    *,
+    run_root: Path,
+    operational_ok: bool = True,
+    recorded_selector_internal_manifest_sha256: str | None = (
+        B1_RECORDED_SELECTOR_INTERNAL_MANIFEST_SHA256
+    ),
+    recorded_manifest_file_sha256: str | None = B1_RECORDED_MANIFEST_FILE_SHA256,
+    effective_acc_budget_bpw: float = DEFAULT_EFFECTIVE_ACC_BUDGET_BPW,
+    hygiene_receipt: Mapping[str, Any] | None = None,
+    probe_receipt: Mapping[str, Any] | None = None,
+    eligible_weight_numel: int | None = None,
+) -> dict[str, Any]:
+    scratch = run_root / "d_recompute_window_diagnostic"
+    log_path = scratch / "recompute_window_log.jsonl"
+    live_path = scratch / "live_carrier_snapshot.jsonl"
+    manifest_path = run_root / "prelaunch" / "calibrated_selector_manifest.json"
+
+    log_rows = _load_jsonl_rows(log_path)
+    replay_constants = dict(log_rows[0].get("replay_constants") or {}) if log_rows else {}
+    runtime_decay_num = _coerce_int(replay_constants.get("decay_numerator"))
+    runtime_decay_den = _coerce_int(replay_constants.get("decay_denominator"))
+    runtime_window_k = PREREG_LAW_WINDOW_K
+
+    live_rows = [
+        row
+        for row in _load_jsonl_rows(live_path)
+        if row.get("live_carrier_bytes_exact") is True
+    ]
+
+    manifest_binding_ok, _details = verify_manifest_binding(
+        recorded_selector_internal_manifest_sha256=recorded_selector_internal_manifest_sha256,
+        recorded_manifest_file_sha256=recorded_manifest_file_sha256,
+        on_disk_manifest_path=manifest_path,
+        expected_selector_internal_manifest_sha256=recorded_selector_internal_manifest_sha256,
+    )
+
+    resume_generation: int | None = None
+    if hygiene_receipt is not None:
+        if (
+            hygiene_receipt.get("pass") is True
+            and hygiene_receipt.get("bounded_steps_start_count") == 1
+        ):
+            resume_generation = 0
+    elif probe_receipt is not None and probe_receipt.get("resume_generation") == 0:
+        resume_generation = 0
+
+    if eligible_weight_numel is None and probe_receipt is not None:
+        numel_by_key = dict(probe_receipt.get("numel_by_key") or {})
+        if numel_by_key:
+            eligible_weight_numel = sum(int(value) for value in numel_by_key.values())
+    if eligible_weight_numel is None:
+        eligible_weight_numel = 0
+
+    steps_completed = 0
+    if probe_receipt is not None:
+        steps_completed = int(probe_receipt.get("steps_completed") or 0)
+    log_coverage_ok = bool(log_rows) and steps_completed > 0 and len(log_rows) >= steps_completed
+
+    return {
+        "operational_ok": operational_ok,
+        "schema_ok": True,
+        "evidence_source": EVIDENCE_STEP2_GPU_LIVE_CARRIER,
+        "prereg_law_window_k": PREREG_LAW_WINDOW_K,
+        "prereg_law_decay_num": PREREG_LAW_DECAY_NUM,
+        "prereg_law_decay_den": PREREG_LAW_DECAY_DEN,
+        "runtime_decay_num": runtime_decay_num,
+        "runtime_decay_den": runtime_decay_den,
+        "runtime_window_k": runtime_window_k,
+        "recorded_selector_internal_manifest_sha256": recorded_selector_internal_manifest_sha256,
+        "on_disk_selector_manifest_sha256": (
+            sha256_file(manifest_path) if manifest_path.is_file() else None
+        ),
+        "manifest_binding_ok": manifest_binding_ok,
+        "log_coverage_ok": log_coverage_ok,
+        "live_snapshot_present": bool(live_rows),
+        "resume_generation": resume_generation,
+        "offline_bracket_decision": None,
+        "live_carrier_rows": live_rows,
+        "eligible_weight_numel": int(eligible_weight_numel),
+        "effective_acc_budget_bpw": float(effective_acc_budget_bpw),
         "tolerance_bpw": DEFAULT_TOLERANCE_BPW,
     }
 
