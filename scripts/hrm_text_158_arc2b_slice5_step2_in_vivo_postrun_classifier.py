@@ -37,6 +37,7 @@ PARENT_CHECKPOINT = Path(
     "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt"
 )
 PARENT_SHA256 = "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec"
+STEP2_CONFIRMATION_STEPS = 200
 
 
 def git_head(repo_root: Path) -> str:
@@ -52,6 +53,95 @@ def git_head(repo_root: Path) -> str:
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    return rows
+
+
+def _phase_is_liveness_failure(phase_path: Path) -> bool:
+    if not phase_path.is_file():
+        return False
+    phase = _load_json(phase_path)
+    return str(phase.get("failure_class")) == "LIVENESS_FAILURE"
+
+
+def resolve_step2_operational_ok_from_run_artifacts(
+    run_root: Path,
+    *,
+    confirmation_steps: int = STEP2_CONFIRMATION_STEPS,
+) -> bool:
+    """Fold 1: mechanism terminals require completed confirmation evidence only."""
+    retry_witness_path = run_root / "prelaunch" / "calibration_warmup_retry_witness.json"
+    if retry_witness_path.is_file():
+        retry_witness = _load_json(retry_witness_path)
+        if int(retry_witness.get("final_rc") or 0) != 0:
+            return False
+        if retry_witness.get("final_reason") == "non_liveness_failure_no_retry":
+            return False
+
+    if _phase_is_liveness_failure(run_root / "calibration_warmup" / "last_active_phase.json"):
+        return False
+
+    scratch = run_root / "d_recompute_window_diagnostic"
+    probe_receipt_path = scratch / "receipt.json"
+    log_path = scratch / "recompute_window_log.jsonl"
+    live_path = scratch / "live_carrier_snapshot.jsonl"
+
+    if not probe_receipt_path.is_file() or not log_path.is_file():
+        return False
+
+    probe_receipt = _load_json(probe_receipt_path)
+    steps_completed = int(probe_receipt.get("steps_completed") or 0)
+    if steps_completed != int(confirmation_steps):
+        return False
+
+    log_rows = _load_jsonl_rows(log_path)
+    if len(log_rows) < int(confirmation_steps):
+        return False
+
+    replay_constants = dict(log_rows[0].get("replay_constants") or {})
+    if (
+        int(replay_constants.get("decay_numerator", -1)) != PREREG_LAW_DECAY_NUM
+        or int(replay_constants.get("decay_denominator", -1)) != PREREG_LAW_DECAY_DEN
+    ):
+        return False
+
+    live_rows = [
+        row for row in _load_jsonl_rows(live_path) if row.get("live_carrier_bytes_exact") is True
+    ]
+    if not live_rows:
+        return False
+
+    confirmation_rc_path = run_root / "prelaunch" / "confirmation_launch_rc.txt"
+    if confirmation_rc_path.is_file():
+        try:
+            if int(confirmation_rc_path.read_text(encoding="utf-8").strip()) != 0:
+                return False
+        except ValueError:
+            return False
+    else:
+        return False
+
+    hygiene_path = run_root / "prelaunch" / "post_confirmation_hygiene_receipt.json"
+    if not hygiene_path.is_file():
+        return False
+    hygiene_receipt = _load_json(hygiene_path)
+    if hygiene_receipt.get("pass") is not True:
+        return False
+    if hygiene_receipt.get("bounded_steps_start_count") != 1:
+        return False
+
+    if _phase_is_liveness_failure(scratch / "last_active_phase.json"):
+        return False
+
+    return True
 
 
 def _first_replay_constants(run_root: Path) -> dict[str, Any]:
@@ -79,10 +169,11 @@ def build_receipt(
     hygiene_path = run_root / "prelaunch" / "post_confirmation_hygiene_receipt.json"
     probe_receipt = _load_json(probe_receipt_path) if probe_receipt_path.is_file() else {}
     hygiene_receipt = _load_json(hygiene_path) if hygiene_path.is_file() else None
+    operational_ok = resolve_step2_operational_ok_from_run_artifacts(run_root)
 
     branch_inputs = build_branch_input_from_step2_gpu_run(
         run_root=run_root,
-        operational_ok=True,
+        operational_ok=operational_ok,
         recorded_selector_internal_manifest_sha256=(
             B1_RECORDED_SELECTOR_INTERNAL_MANIFEST_SHA256
         ),
@@ -121,6 +212,7 @@ def build_receipt(
         "tolerance_bpw": DEFAULT_TOLERANCE_BPW,
         "live_snapshot_present": branch_inputs.get("live_snapshot_present"),
         "resume_generation": branch_inputs.get("resume_generation"),
+        "operational_ok": operational_ok,
         "offline_bracket_decision": branch_inputs.get("offline_bracket_decision"),
         "live_acc_carrier_bpw_max": classification.get("live_acc_carrier_bpw_max"),
         "slice5_branch": classification.get("terminal_branch"),

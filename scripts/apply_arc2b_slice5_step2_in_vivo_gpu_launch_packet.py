@@ -8,7 +8,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from calm.hrm_text_158.native_full_stack.arc2b_slice5_in_vivo_branch import (
     B1_RECORDED_SELECTOR_INTERNAL_MANIFEST_SHA256,
@@ -21,8 +21,11 @@ from calm.hrm_text_158.native_full_stack.arc2b_slice5_in_vivo_branch import (
 )
 
 REPO = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158")
-HEAD = "5c51d7b51169b5f9e6c6a7385acbdd9dd7119491"
+HEAD = "9185823d0f8b1dd1a0352661cac9a8633bc04ddf"
 STEP2_RUN_ID = "FREE_SLICE5_STEP2"
+STEP2_MAX_SILENT_PHASE_SECONDS = 600
+STEP2_CONFIRMATION_STEPS = 200
+MAX_SILENT_PHASE_FLAG = "--max-silent-phase-seconds"
 B1_RUN_ID_FAMILY_RE = re.compile(r"2189e720(?:0[1-9]|1[0-7])")
 _HEREDOC_SCRUB_KEYS = (
     "cheap_observer_no_rebuild_preflight_command",
@@ -76,6 +79,10 @@ FORBIDDEN_CARRIER_TOKENS = (
     "--dense-accumulator-w7-clip",
     "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION",
 )
+CALIBRATION_WARMUP_RETRY_WITNESS_SCHEMA = (
+    "hrm_text_158_arc2b_slice5_calibration_warmup_retry_witness/v1"
+)
+WARMUP_RETRY_MAX_ATTEMPTS = 2
 
 
 def git_head() -> str:
@@ -131,6 +138,184 @@ def _replace_w8_with_event_coded(command: str) -> str:
     return out
 
 
+def _inject_max_silent_phase(
+    command: str,
+    *,
+    seconds: int = STEP2_MAX_SILENT_PHASE_SECONDS,
+) -> str:
+    if not command.strip():
+        return command
+    stripped = re.sub(
+        rf"{re.escape(MAX_SILENT_PHASE_FLAG)}(?:=\s*|\s+)\d+",
+        "",
+        command,
+    )
+    return f"{stripped.rstrip()} {MAX_SILENT_PHASE_FLAG} {int(seconds)}"
+
+
+def _append_producer_max_silent_phase(command: str) -> str:
+    if MAX_SILENT_PHASE_FLAG in command:
+        return _inject_max_silent_phase(command)
+    return f"{command.rstrip()} {MAX_SILENT_PHASE_FLAG} {STEP2_MAX_SILENT_PHASE_SECONDS}"
+
+
+def _warmup_liveness_failure_at(run_root: Path) -> bool:
+    phase_path = run_root / "calibration_warmup" / "last_active_phase.json"
+    if not phase_path.is_file():
+        return False
+    phase = json.loads(phase_path.read_text(encoding="utf-8"))
+    return str(phase.get("failure_class")) == "LIVENESS_FAILURE"
+
+
+def _run_shell_command(command: str) -> int:
+    proc = subprocess.run(command, shell=True, check=False)
+    return int(proc.returncode)
+
+
+def execute_calibration_warmup_retry(
+    *,
+    run_root: Path,
+    producer_command_template: str,
+    scratch_wipe_template: str,
+    producer_runner: Callable[[str], int] | None = None,
+    max_attempts: int = WARMUP_RETRY_MAX_ATTEMPTS,
+) -> dict[str, Any]:
+    run_root = Path(run_root)
+    witness_path = run_root / "prelaunch" / "calibration_warmup_retry_witness.json"
+    witness_path.parent.mkdir(parents=True, exist_ok=True)
+
+    producer_cmd = producer_command_template.replace("{run_root}", str(run_root))
+    scratch_wipe = scratch_wipe_template.replace("{run_root}", str(run_root))
+    runner = producer_runner or _run_shell_command
+
+    attempt = 1
+    retry_used = False
+    scratch_wiped_between = False
+    final_rc = 0
+    final_reason = "success"
+
+    while attempt <= int(max_attempts):
+        final_rc = int(runner(producer_cmd))
+        if final_rc == 0:
+            final_reason = "success"
+            break
+        if _warmup_liveness_failure_at(run_root) and attempt < int(max_attempts):
+            retry_used = True
+            _run_shell_command(scratch_wipe)
+            scratch_wiped_between = True
+            attempt += 1
+            continue
+        final_reason = (
+            "liveness_failure_exhausted_retries"
+            if _warmup_liveness_failure_at(run_root)
+            else "non_liveness_failure_no_retry"
+        )
+        break
+
+    witness = {
+        "schema": CALIBRATION_WARMUP_RETRY_WITNESS_SCHEMA,
+        "max_attempts": int(max_attempts),
+        "attempts_used": int(attempt),
+        "retry_used": retry_used,
+        "retry_trigger": "liveness_failure_only",
+        "scratch_wiped_between_attempts": scratch_wiped_between,
+        "final_rc": int(final_rc),
+        "final_reason": final_reason,
+    }
+    witness_path.write_text(
+        json.dumps(witness, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return witness
+
+
+def _build_calibration_warmup_retry_command(
+    producer_command: str,
+    scratch_wipe: str,
+) -> str:
+    producer_json = json.dumps(producer_command)
+    scratch_json = json.dumps(scratch_wipe)
+    return (
+        "PYTHONPATH=. python3 - \"{run_root}\" <<'PY'\n"
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from scripts.apply_arc2b_slice5_step2_in_vivo_gpu_launch_packet import (\n"
+        "    execute_calibration_warmup_retry,\n"
+        ")\n"
+        f"PRODUCER_TEMPLATE = {producer_json}\n"
+        f"SCRATCH_WIPE_TEMPLATE = {scratch_json}\n"
+        "witness = execute_calibration_warmup_retry(\n"
+        "    run_root=Path(sys.argv[1]),\n"
+        "    producer_command_template=PRODUCER_TEMPLATE,\n"
+        "    scratch_wipe_template=SCRATCH_WIPE_TEMPLATE,\n"
+        ")\n"
+        "raise SystemExit(0 if int(witness.get('final_rc') or 0) == 0 else int(witness['final_rc']))\n"
+        "PY"
+    )
+
+
+def verify_explicit_max_silent_phase_seconds(replay: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    checked_keys = (
+        "calibration_warmup_command",
+        "scale_smoke_command",
+        "confirmation_launch_command",
+        "shared_probe_argv",
+    )
+    expected = f"{MAX_SILENT_PHASE_FLAG} {STEP2_MAX_SILENT_PHASE_SECONDS}"
+    for key in checked_keys:
+        body = str(replay.get(key) or "")
+        if expected not in body:
+            failures.append(f"missing_explicit_max_silent_phase:{key}")
+    return failures
+
+
+def verify_warmup_retry_metadata(replay: dict[str, Any], packet: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    retry_policy = dict(packet.get("liveness_retry_policy") or {})
+    if retry_policy.get("max_attempts") != 2:
+        failures.append("liveness_retry_policy_max_attempts_not_2")
+    phases = list(retry_policy.get("phases") or [])
+    if phases != ["calibration_warmup"]:
+        failures.append("liveness_retry_policy_phases_mismatch")
+    warmup_cmd = str(replay.get("calibration_warmup_command") or "")
+    if "execute_calibration_warmup_retry" not in warmup_cmd:
+        failures.append("warmup_retry_wrapper_missing_execute_calibration_warmup_retry")
+    if retry_policy.get("witness_receipt") != "prelaunch/calibration_warmup_retry_witness.json":
+        failures.append("warmup_retry_witness_receipt_path_mismatch")
+    if retry_policy.get("non_liveness_failure_no_retry") is not True:
+        failures.append("warmup_retry_non_liveness_guard_missing")
+    if retry_policy.get("retry_trigger") != "liveness_failure_only":
+        failures.append("warmup_retry_trigger_mismatch")
+    return failures
+
+
+def build_liveness_contract() -> dict[str, Any]:
+    return {
+        "max_silent_phase_seconds": STEP2_MAX_SILENT_PHASE_SECONDS,
+        "coherence": (
+            "explicit 600s guard on warmup/scale_smoke/confirmation/shared_probe_argv; "
+            "probe implicit GPU default remains 300s without explicit flag"
+        ),
+        "watcher_liveness_fail_regex": (
+            "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|"
+            "LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL"
+        ),
+        "warmup_liveness_failure_is_operational_not_mechanism_terminal": True,
+    }
+
+
+def build_liveness_retry_policy() -> dict[str, Any]:
+    return {
+        "max_attempts": 2,
+        "phases": ["calibration_warmup"],
+        "retry_trigger": "liveness_failure_only",
+        "scratch_wipe_between_attempts": True,
+        "witness_receipt": "prelaunch/calibration_warmup_retry_witness.json",
+        "non_liveness_failure_no_retry": True,
+    }
+
+
 def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
     template = json.loads(B1_REPLAY_TEMPLATE.read_text(encoding="utf-8"))
     replay: dict[str, Any] = dict(template)
@@ -159,6 +344,29 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
         if key in replay:
             replay[key] = _replace_w8_with_event_coded(str(replay[key]))
 
+    if "scale_smoke_command" in replay:
+        replay["scale_smoke_command"] = _inject_max_silent_phase(
+            str(replay["scale_smoke_command"])
+        )
+    if "confirmation_launch_command" in replay:
+        replay["confirmation_launch_command"] = _inject_max_silent_phase(
+            str(replay["confirmation_launch_command"])
+        )
+    replay["shared_probe_argv"] = _inject_max_silent_phase(
+        _replace_w8_with_event_coded(str(replay.get("shared_probe_argv", "")))
+    )
+
+    producer_warmup = _append_producer_max_silent_phase(
+        str(replay.get("calibration_warmup_command") or "")
+    )
+    scratch_wipe = str(
+        (replay.get("scratch_wipe_commands") or {}).get("calibration_warmup") or ""
+    )
+    replay["calibration_warmup_command"] = _build_calibration_warmup_retry_command(
+        producer_warmup,
+        scratch_wipe,
+    )
+
     replay.pop("baseline_liveness_telemetry_command", None)
     replay.pop("postrun_input_manifest_bind_command", None)
     launch_sequence = [
@@ -171,9 +379,6 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
         )
     ]
 
-    replay["shared_probe_argv"] = _replace_w8_with_event_coded(
-        str(replay.get("shared_probe_argv", ""))
-    )
     replay["shared_gpu_env"] = (
         "PYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1"
     )
@@ -272,14 +477,17 @@ def build_packet(classifier_sha: str, replay_sha: str) -> dict[str, Any]:
             "decay_active": {"decay_num": 1, "decay_den": 2},
             "resume_generation": 0,
             "horizon_h": 200,
-            "confirmation_steps": 200,
+            "confirmation_steps": STEP2_CONFIRMATION_STEPS,
             "from_clean_parent_contiguous": True,
             "live_carrier_snapshot_required": True,
             "live_carrier_bytes_exact_required": True,
             "carrier_authority_required_argv": list(STEP2_CARRIER_REQUIRED),
             "carrier_authority_forbidden_tokens": list(FORBIDDEN_CARRIER_TOKENS),
             "decay_cli_flags": list(STEP2_DECAY_FLAGS),
+            "max_silent_phase_seconds": STEP2_MAX_SILENT_PHASE_SECONDS,
         },
+        "liveness_contract": build_liveness_contract(),
+        "liveness_retry_policy": build_liveness_retry_policy(),
         "classifier_binding": {
             "classifier": CLASSIFIER,
             "module_path": str(CLASSIFIER_MODULE.relative_to(REPO)),
@@ -350,6 +558,15 @@ def verify_replay_commands(replay: dict[str, Any]) -> list[str]:
         failures.append("postrun_not_slice5_classifier")
     failures.extend(verify_no_stale_b1_run_id_in_heredocs(replay))
     failures.extend(verify_no_unsatisfiable_input_manifest_bind(replay))
+    failures.extend(verify_explicit_max_silent_phase_seconds(replay))
+    return failures
+
+
+def verify_packet(packet: dict[str, Any], replay: dict[str, Any]) -> list[str]:
+    failures = verify_replay_commands(replay)
+    failures.extend(verify_warmup_retry_metadata(replay, packet))
+    if packet.get("git_head_required") != HEAD:
+        failures.append("git_head_required_stale")
     return failures
 
 
@@ -365,7 +582,7 @@ def self_verify() -> dict[str, Any]:
 
     if packet.get("classifier_binding", {}).get("module_sha256") != classifier_sha:
         failures.append("classifier_sha_pin_drift")
-    failures.extend(verify_replay_commands(replay))
+    failures.extend(verify_packet(packet, replay))
 
     regen_classifier_sha = sha256_file(CLASSIFIER_MODULE)
     regen_replay = build_replay_commands(regen_classifier_sha)

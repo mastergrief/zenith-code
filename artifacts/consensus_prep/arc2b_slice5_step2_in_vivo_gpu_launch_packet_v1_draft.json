@@ -21,7 +21,7 @@
     "not_gpu_launch_until_plus1_launch_gate"
   ],
   "fold": "arc2b_slice5_step2_in_vivo_gpu_launch",
-  "git_head_required": "5c51d7b51169b5f9e6c6a7385acbdd9dd7119491",
+  "git_head_required": "9185823d0f8b1dd1a0352661cac9a8633bc04ddf",
   "gpu_hold": true,
   "law_under_test": {
     "decay_den": 2,
@@ -29,6 +29,22 @@
     "effective_acc_budget_bpw": 0.4,
     "tolerance_bpw": 0.0,
     "window_k": 180
+  },
+  "liveness_contract": {
+    "coherence": "explicit 600s guard on warmup/scale_smoke/confirmation/shared_probe_argv; probe implicit GPU default remains 300s without explicit flag",
+    "max_silent_phase_seconds": 600,
+    "warmup_liveness_failure_is_operational_not_mechanism_terminal": true,
+    "watcher_liveness_fail_regex": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL"
+  },
+  "liveness_retry_policy": {
+    "max_attempts": 2,
+    "non_liveness_failure_no_retry": true,
+    "phases": [
+      "calibration_warmup"
+    ],
+    "retry_trigger": "liveness_failure_only",
+    "scratch_wipe_between_attempts": true,
+    "witness_receipt": "prelaunch/calibration_warmup_retry_witness.json"
   },
   "manifest_binding": {
     "recorded_selector_internal_manifest_sha256": "5d6e0fea9c0f07600a40c36d6df73dc945296d5a684cafa26ba76b206bd7c996"
@@ -58,7 +74,7 @@
     }
   },
   "replay_commands_artifact": "artifacts/consensus_prep/arc2b_slice5_step2_in_vivo_gpu_launch_packet_v1_replay_commands.json",
-  "replay_commands_sha256": "35f0bfe8b6e1b1444dc3d71458e50fc83b75de968b778d834d89202f6fa06fe7",
+  "replay_commands_sha256": "addc41f740a0034af34f3b3ba9266877ca67d981bbcd39356fa493b03d03f1e7",
   "run_id_policy": "FREE \u2014 do NOT reuse B1 run_ids 2189e72001..17",
   "run_root_template": "/home/gabe/claw-code-creditdir/transient_fp_credit/arc2b_slice5_step2_in_vivo_seed43_{run_id}/",
   "runtime_requirements": {
@@ -88,6 +104,7 @@
     "horizon_h": 200,
     "live_carrier_bytes_exact_required": true,
     "live_carrier_snapshot_required": true,
+    "max_silent_phase_seconds": 600,
     "resume_generation": 0
   },
   "schema": "hrm_text_158_arc2b_slice5_step2_in_vivo_gpu_launch_packet/v1",

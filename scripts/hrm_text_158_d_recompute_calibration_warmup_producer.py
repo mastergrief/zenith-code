@@ -31,9 +31,10 @@ def build_calibration_warmup_probe_argv(
     parent_sha256: str,
     warmup_steps: int,
     observations_out: Path,
+    max_silent_phase_seconds: int | None = None,
 ) -> list[str]:
     warmup_scratch = run_root / "calibration_warmup"
-    return [
+    argv = [
         "python3",
         "-u",
         "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
@@ -76,6 +77,14 @@ def build_calibration_warmup_probe_argv(
         "--d-recompute-calibration-warmup-out",
         str(observations_out),
     ]
+    if max_silent_phase_seconds is not None:
+        argv.extend(
+            [
+                "--max-silent-phase-seconds",
+                str(int(max_silent_phase_seconds)),
+            ]
+        )
+    return argv
 
 
 def run_calibration_warmup_producer(
@@ -86,6 +95,7 @@ def run_calibration_warmup_producer(
     parent: Path | None = None,
     parent_sha256: str | None = None,
     warmup_steps: int = 5,
+    max_silent_phase_seconds: int | None = None,
     probe_runner: Any | None = None,
 ) -> dict[str, Any]:
     parent_path = Path(parent or DEFAULT_PARENT)
@@ -105,6 +115,7 @@ def run_calibration_warmup_producer(
         parent_sha256=expected_parent_sha,
         warmup_steps=int(warmup_steps),
         observations_out=observations_out,
+        max_silent_phase_seconds=max_silent_phase_seconds,
     )
     env = dict(os.environ)
     env.update(
@@ -160,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--parent", type=Path, default=Path(DEFAULT_PARENT))
     parser.add_argument("--parent-sha256", default=DEFAULT_PARENT_SHA)
     parser.add_argument("--warmup-steps", type=int, default=5)
+    parser.add_argument("--max-silent-phase-seconds", type=int, default=None)
     args = parser.parse_args(argv)
     receipt = run_calibration_warmup_producer(
         run_root=args.run_root,
@@ -168,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         parent=args.parent,
         parent_sha256=str(args.parent_sha256),
         warmup_steps=int(args.warmup_steps),
+        max_silent_phase_seconds=args.max_silent_phase_seconds,
     )
     print(json.dumps(receipt, indent=2, sort_keys=True))
     return 0 if bool(receipt["pass"]) else 1
