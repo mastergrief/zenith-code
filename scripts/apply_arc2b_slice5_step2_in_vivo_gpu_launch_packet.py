@@ -21,7 +21,7 @@ from calm.hrm_text_158.native_full_stack.arc2b_slice5_in_vivo_branch import (
 )
 
 REPO = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158")
-HEAD = "0ea96b307ac53ebfceecb44cb18a773f1b5934ab"
+HEAD = "22b591f18e2e9eccdf3148ff3fe84250c1880d08"
 STEP2_RUN_ID = "FREE_SLICE5_STEP2"
 STEP2_MAX_SILENT_PHASE_SECONDS = 600
 STEP2_CONFIRMATION_STEPS = 200
@@ -73,6 +73,12 @@ STEP2_DECAY_FLAGS = (
     "1",
     "--vote-update-decay-denominator",
     "2",
+)
+STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG = "--event-coded-recompute-window-log"
+STEP2_EVENT_CODED_MEASUREMENT_FLAGS = (
+    STEP2_CARRIER_REQUIRED
+    + STEP2_DECAY_FLAGS
+    + (STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG,)
 )
 FORBIDDEN_CARRIER_TOKENS = (
     "--dense-accumulator-w8-clip",
@@ -164,7 +170,7 @@ def _replace_w8_with_event_coded(command: str) -> str:
     for token in ("--dense-accumulator-w8-clip", "--dense-accumulator-w7-clip"):
         out = out.replace(f" {token}", "")
     out = _strip_event_coded_incompatible_flags(out)
-    insert = " ".join(STEP2_CARRIER_REQUIRED + STEP2_DECAY_FLAGS)
+    insert = " ".join(STEP2_EVENT_CODED_MEASUREMENT_FLAGS)
     marker = "--phase d-recompute-window-feasibility"
     if marker in out:
         out = out.replace(marker, f"{marker} {insert}", 1)
@@ -317,6 +323,27 @@ def verify_event_coded_incompatible_flags_absent(replay: dict[str, Any]) -> list
         for flag in EVENT_CODED_INCOMPATIBLE_FLAGS:
             if flag in body:
                 failures.append(f"incompatible_flag_present:{key}:{flag}")
+    return failures
+
+
+def verify_event_coded_recompute_window_log_flag(replay: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    measurement_keys = (
+        "scale_smoke_command",
+        "confirmation_launch_command",
+        "shared_probe_argv",
+    )
+    for key in measurement_keys:
+        body = str(replay.get(key) or "")
+        if "--event-coded-sparse-vote-authority" not in body:
+            continue
+        if STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG not in body:
+            failures.append(f"missing_event_coded_recompute_window_log:{key}")
+        if "--d-recompute-window-instrumentation" in body:
+            failures.append(f"d_instrumentation_present_on_event_coded:{key}")
+    warmup = str(replay.get("calibration_warmup_command") or "")
+    if STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG in warmup:
+        failures.append("event_coded_recompute_window_log_on_warmup")
     return failures
 
 
@@ -620,6 +647,8 @@ def verify_replay_commands(replay: dict[str, Any]) -> list[str]:
     for flag in STEP2_DECAY_FLAGS:
         if flag not in blob:
             failures.append(f"missing_decay_flag:{flag}")
+    if STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG not in blob:
+        failures.append("missing_event_coded_recompute_window_log_flag")
     confirmation = str(replay.get("confirmation_launch_command") or "")
     if "--vote-update-decay-numerator" not in confirmation:
         failures.append("confirmation_missing_decay_numerator_flag")
@@ -631,6 +660,7 @@ def verify_replay_commands(replay: dict[str, Any]) -> list[str]:
     failures.extend(verify_no_unsatisfiable_input_manifest_bind(replay))
     failures.extend(verify_explicit_max_silent_phase_seconds(replay))
     failures.extend(verify_event_coded_incompatible_flags_absent(replay))
+    failures.extend(verify_event_coded_recompute_window_log_flag(replay))
     failures.extend(verify_forbidden_launch_sequence_patterns_reconciled(replay))
     return failures
 

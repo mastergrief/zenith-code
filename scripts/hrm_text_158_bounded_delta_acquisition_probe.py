@@ -81,6 +81,7 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_live_carrier_snapsho
 from calm.hrm_text_158.native_full_stack.d_recompute_window_emit import (
     D_RECOMPUTE_WINDOW_LOG_FILENAME,
     ReplayConstants,
+    emit_event_coded_recompute_window_step_record,
     initialize_recompute_window_log_for_probe_session,
     maybe_emit_d_recompute_window_step_records,
 )
@@ -2070,6 +2071,20 @@ def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
     tmp_path.replace(path)
 
 
+
+
+def validate_recompute_window_log_flag_mutual_exclusion(
+    *,
+    d_recompute_window_instrumentation_enabled: bool,
+    event_coded_recompute_window_log_enabled: bool,
+) -> None:
+    if bool(d_recompute_window_instrumentation_enabled) and bool(
+        event_coded_recompute_window_log_enabled
+    ):
+        raise ValueError(
+            "d_recompute_window_instrumentation_enabled and "
+            "event_coded_recompute_window_log_enabled are mutually exclusive"
+        )
 
 
 def _validate_event_coded_sparse_vote_authority_config(
@@ -6729,6 +6744,7 @@ def run_bounded_delta_steps(
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_window_log_path: Path | None = None,
     d_recompute_selector_manifest: StratifiedSelectorManifest | None = None,
+    event_coded_recompute_window_log_enabled: bool = False,
     d_live_carrier_snapshot_enabled: bool = False,
     d_live_carrier_snapshot_path: Path | None = None,
     receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
@@ -7594,6 +7610,16 @@ def run_bounded_delta_steps(
                         global_summary=step_result.global_summary,
                         selector_manifest=d_recompute_selector_manifest,
                     )
+                if (
+                    event_coded_recompute_window_log_enabled
+                    and d_recompute_window_log_path is not None
+                ):
+                    emit_event_coded_recompute_window_step_record(
+                        enabled=True,
+                        log_path=d_recompute_window_log_path,
+                        step=int(step),
+                        replay_constants=ReplayConstants.from_vote_update_spec(vote_spec),
+                    )
                 if d_live_carrier_snapshot_enabled and d_live_carrier_snapshot_path is not None:
                     if bool(event_coded_sparse_vote_authority):
                         with progress.phase("live_carrier_snapshot_emit", step=int(step)):
@@ -7940,6 +7966,7 @@ def run_c2p1_probe(
     r7_deferred_backlog_carry_enabled: bool = False,
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_selector_manifest_path: Path | None = None,
+    event_coded_recompute_window_log_enabled: bool = False,
     d_live_carrier_snapshot_enabled: bool = False,
     d_diagnostic_compact_step_reports: bool = False,
     d_recompute_calibration_warmup_out: Path | None = None,
@@ -7961,6 +7988,14 @@ def run_c2p1_probe(
             "oracle_screen_max_sampled_candidates must be one of "
             f"{ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES}"
         )
+    validate_recompute_window_log_flag_mutual_exclusion(
+        d_recompute_window_instrumentation_enabled=bool(
+            d_recompute_window_instrumentation_enabled
+        ),
+        event_coded_recompute_window_log_enabled=bool(
+            event_coded_recompute_window_log_enabled
+        ),
+    )
     assert_default_off(enabled)
     assert_profile_tracemalloc_debugmallocstats_mutual_exclusion()
     if bool(persistent_accumulator_w6_byte_packed) and bool(persistent_accumulator_w5_byte_packed):
@@ -8205,12 +8240,13 @@ def run_c2p1_probe(
         d_recompute_window_log_path = (
             scratch_root / D_RECOMPUTE_WINDOW_LOG_FILENAME
             if bool(d_recompute_window_instrumentation_enabled)
+            or bool(event_coded_recompute_window_log_enabled)
             else None
         )
         if d_recompute_window_log_path is not None:
             initialize_recompute_window_log_for_probe_session(d_recompute_window_log_path)
         d_live_carrier_snapshot_path = (
-            Path(scratch_root) / "d_recompute_window_diagnostic" / "live_carrier_snapshot.jsonl"
+            Path(scratch_root) / "live_carrier_snapshot.jsonl"
             if bool(d_live_carrier_snapshot_enabled)
             else None
         )
@@ -8873,6 +8909,9 @@ def run_c2p1_probe(
                 ),
                 d_recompute_window_log_path=d_recompute_window_log_path,
                 d_recompute_selector_manifest=d_recompute_selector_manifest,
+                event_coded_recompute_window_log_enabled=bool(
+                    event_coded_recompute_window_log_enabled
+                ),
                 d_live_carrier_snapshot_enabled=bool(d_live_carrier_snapshot_enabled),
                 d_live_carrier_snapshot_path=d_live_carrier_snapshot_path,
                 receipt_emit_profile=str(receipt_emit_profile),
@@ -9167,6 +9206,13 @@ def run_c2p1_probe(
         if d_recompute_window_instrumentation_enabled:
             assert d_recompute_window_log_path is not None
             receipt["d_recompute_window_instrumentation_enabled"] = True
+            receipt["d_recompute_window_log_path"] = str(d_recompute_window_log_path)
+        if event_coded_recompute_window_log_enabled:
+            assert d_recompute_window_log_path is not None
+            receipt["event_coded_recompute_window_log_enabled"] = True
+            receipt["event_coded_recompute_window_log_path"] = str(
+                d_recompute_window_log_path
+            )
             receipt["d_recompute_window_log_path"] = str(d_recompute_window_log_path)
         if d_live_carrier_snapshot_enabled:
             assert d_live_carrier_snapshot_path is not None
@@ -9590,6 +9636,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--event-coded-recompute-window-log",
+        action="store_true",
+        help=(
+            "Default-off event-coded-compatible lightweight recompute_window_log "
+            "writer. Emits step + replay_constants rows only (no D lane sampling). "
+            "Compatible with --event-coded-sparse-vote-authority; mutually "
+            "exclusive with --d-recompute-window-instrumentation."
+        ),
+    )
+    ap.add_argument(
         "--d-recompute-selector-manifest",
         type=Path,
         default=None,
@@ -9804,6 +9860,9 @@ def main(argv: list[str] | None = None) -> int:
             args.d_recompute_window_instrumentation
         ),
         d_recompute_selector_manifest_path=args.d_recompute_selector_manifest,
+        event_coded_recompute_window_log_enabled=bool(
+            args.event_coded_recompute_window_log
+        ),
         d_diagnostic_compact_step_reports=bool(args.d_diagnostic_compact_step_reports),
         d_recompute_calibration_warmup_out=args.d_recompute_calibration_warmup_out,
         d_live_carrier_snapshot_enabled=bool(args.d_live_carrier_snapshot),

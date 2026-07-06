@@ -21,7 +21,7 @@
     "not_gpu_launch_until_plus1_launch_gate"
   ],
   "fold": "arc2b_slice5_step2_in_vivo_gpu_launch",
-  "git_head_required": "0ea96b307ac53ebfceecb44cb18a773f1b5934ab",
+  "git_head_required": "22b591f18e2e9eccdf3148ff3fe84250c1880d08",
   "gpu_hold": true,
   "law_under_test": {
     "decay_den": 2,
@@ -74,7 +74,7 @@
     }
   },
   "replay_commands_artifact": "artifacts/consensus_prep/arc2b_slice5_step2_in_vivo_gpu_launch_packet_v1_replay_commands.json",
-  "replay_commands_sha256": "3dd2f9f5141532b58e31628c3ef9e5309f93fb343516f54ff90e306f33074aa4",
+  "replay_commands_sha256": "4b755c9c32ce7614383a6119be48e47e1e92ff9684249edd0199de7cc3630324",
   "run_id_policy": "FREE \u2014 do NOT reuse B1 run_ids 2189e72001..17",
   "run_root_template": "/home/gabe/claw-code-creditdir/transient_fp_credit/arc2b_slice5_step2_in_vivo_seed43_{run_id}/",
   "runtime_requirements": {

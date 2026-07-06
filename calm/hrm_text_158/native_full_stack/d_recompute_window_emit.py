@@ -429,6 +429,39 @@ def initialize_recompute_window_log_for_probe_session(log_path: Path | str) -> P
     return path
 
 
+EVENT_CODED_RECOMPUTE_WINDOW_LOG_SCHEMA = (
+    "hrm_text_158_event_coded_recompute_window_step/v1"
+)
+
+
+def build_event_coded_recompute_window_step_entry(
+    *,
+    step: int,
+    replay_constants: ReplayConstants,
+) -> dict[str, Any]:
+    return {
+        "schema_version": EVENT_CODED_RECOMPUTE_WINDOW_LOG_SCHEMA,
+        "step": int(step),
+        "replay_constants": replay_constants.to_dict(),
+    }
+
+
+def emit_event_coded_recompute_window_step_record(
+    *,
+    enabled: bool,
+    log_path: Path | None,
+    step: int,
+    replay_constants: ReplayConstants,
+) -> None:
+    if not enabled or log_path is None:
+        return
+    entry = build_event_coded_recompute_window_step_entry(
+        step=int(step),
+        replay_constants=replay_constants,
+    )
+    append_recompute_window_log_chunk(log_path, entry)
+
+
 def iter_recompute_window_log_records(log_path: Path | str) -> list[dict[str, Any]]:
     path = Path(log_path)
     if not path.is_file():

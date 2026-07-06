@@ -13,6 +13,7 @@ from scripts.apply_arc2b_slice5_step2_in_vivo_gpu_launch_packet import (
     REPO,
     STEP2_CARRIER_REQUIRED,
     STEP2_DECAY_FLAGS,
+    STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG,
     STEP2_FORBIDDEN_LAUNCH_SEQUENCE_PATTERNS,
     STEP2_MAX_SILENT_PHASE_SECONDS,
     _build_calibration_warmup_retry_command,
@@ -24,6 +25,7 @@ from scripts.apply_arc2b_slice5_step2_in_vivo_gpu_launch_packet import (
     self_verify,
     sha256_file,
     verify_event_coded_incompatible_flags_absent,
+    verify_event_coded_recompute_window_log_flag,
     verify_explicit_max_silent_phase_seconds,
     verify_forbidden_launch_sequence_patterns_reconciled,
     verify_warmup_retry_metadata,
@@ -190,7 +192,7 @@ def test_packet_git_head_required_matches_current_head_constant() -> None:
     classifier_sha = sha256_file(CLASSIFIER_MODULE)
     packet = build_packet(classifier_sha, "deadbeef")
     assert packet["git_head_required"] == HEAD
-    assert packet["git_head_required"] == "0ea96b307ac53ebfceecb44cb18a773f1b5934ab"
+    assert packet["git_head_required"] == "22b591f18e2e9eccdf3148ff3fe84250c1880d08"
 
 
 def test_event_coded_measurement_commands_have_no_incompatible_flags() -> None:
@@ -205,6 +207,19 @@ def test_event_coded_measurement_commands_have_no_incompatible_flags() -> None:
             assert flag not in body
         for flag in STEP2_CARRIER_REQUIRED + STEP2_DECAY_FLAGS:
             assert flag in body
+        assert STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG in body
+
+
+def test_event_coded_recompute_window_log_flag_present_on_measurement_only() -> None:
+    classifier_sha = sha256_file(CLASSIFIER_MODULE)
+    replay = build_replay_commands(classifier_sha)
+    failures = verify_event_coded_recompute_window_log_flag(replay)
+    assert failures == []
+    for key in ("scale_smoke_command", "confirmation_launch_command", "shared_probe_argv"):
+        assert STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG in str(replay[key])
+    warmup = str(replay.get("calibration_warmup_command") or "")
+    assert STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG not in warmup
+    assert "--d-recompute-window-instrumentation" not in str(replay["scale_smoke_command"])
 
 
 def test_forbidden_launch_sequence_patterns_reconciled_for_event_coded() -> None:
