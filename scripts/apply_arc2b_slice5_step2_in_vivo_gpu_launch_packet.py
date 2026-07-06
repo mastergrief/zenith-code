@@ -21,7 +21,13 @@ from calm.hrm_text_158.native_full_stack.arc2b_slice5_in_vivo_branch import (
 )
 
 REPO = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158")
-HEAD = "fa50e59afa834df8f0f59b206f70f1e03b913e91"
+HEAD = "5c51d7b51169b5f9e6c6a7385acbdd9dd7119491"
+STEP2_RUN_ID = "FREE_SLICE5_STEP2"
+B1_RUN_ID_FAMILY_RE = re.compile(r"2189e720(?:0[1-9]|1[0-7])")
+_HEREDOC_SCRUB_KEYS = (
+    "cheap_observer_no_rebuild_preflight_command",
+    "run_root_free_assert_command",
+)
 ACTIVE_TASK_ID = "1783272482268-052281aa"
 DISPATCH_MSG_ID = "1783325394446-3e70a184"
 PLAN_MSG_ID = "1783325727139-7cc2d891"
@@ -83,6 +89,33 @@ def git_head() -> str:
     return proc.stdout.strip()
 
 
+def _scrub_stale_b1_run_ids_in_heredocs(replay: dict[str, Any], run_id: str) -> None:
+    for key in _HEREDOC_SCRUB_KEYS:
+        if key not in replay:
+            continue
+        replay[key] = B1_RUN_ID_FAMILY_RE.sub(run_id, str(replay[key]))
+
+
+def verify_no_stale_b1_run_id_in_heredocs(replay: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    for key in _HEREDOC_SCRUB_KEYS:
+        body = str(replay.get(key) or "")
+        hits = sorted(set(B1_RUN_ID_FAMILY_RE.findall(body)))
+        if hits:
+            failures.append(f"stale_b1_run_id_in_heredoc:{key}:{hits}")
+    return failures
+
+
+def verify_no_unsatisfiable_input_manifest_bind(replay: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if "postrun_input_manifest_bind_command" in replay:
+        failures.append("postrun_input_manifest_bind_command_present")
+    launch_sequence = list(replay.get("launch_sequence") or [])
+    if "postrun_input_manifest_bind_command" in launch_sequence:
+        failures.append("postrun_input_manifest_bind_in_launch_sequence")
+    return failures
+
+
 def _replace_w8_with_event_coded(command: str) -> str:
     out = command
     out = out.replace(
@@ -103,11 +136,12 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
     replay: dict[str, Any] = dict(template)
     replay["packet_revision"] = PACKET_REVISION
     replay["binds_main_packet"] = str(DRAFT.relative_to(REPO))
-    replay["run_id"] = "FREE_SLICE5_STEP2"
+    replay["run_id"] = STEP2_RUN_ID
     replay["run_root"] = (
         "/home/gabe/claw-code-creditdir/transient_fp_credit/"
         "arc2b_slice5_step2_in_vivo_seed43_{run_id}/"
     )
+    _scrub_stale_b1_run_ids_in_heredocs(replay, STEP2_RUN_ID)
     replay["schema"] = "hrm_text_158_arc2b_slice5_step2_in_vivo_launch_packet_replay_commands/v1"
     replay["gpu_hold"] = True
     replay["planning_only"] = False
@@ -126,10 +160,15 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
             replay[key] = _replace_w8_with_event_coded(str(replay[key]))
 
     replay.pop("baseline_liveness_telemetry_command", None)
+    replay.pop("postrun_input_manifest_bind_command", None)
     launch_sequence = [
         step
         for step in list(replay.get("launch_sequence") or [])
-        if step != "baseline_liveness_telemetry_command"
+        if step
+        not in (
+            "baseline_liveness_telemetry_command",
+            "postrun_input_manifest_bind_command",
+        )
     ]
 
     replay["shared_probe_argv"] = _replace_w8_with_event_coded(
@@ -147,11 +186,6 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
         "--repo-root . "
         "--out {run_root}/arc2b_slice5_in_vivo_law_validation_receipt.json "
         "|| RC=$?; exit $RC'"
-    )
-    replay["postrun_input_manifest_bind_command"] = (
-        "PYTHONPATH=. python3 scripts/hrm_text_158_d_recompute_input_manifest_bind.py "
-        f"--run-root {{run_root}} --packet {DRAFT.relative_to(REPO)} "
-        "--out {run_root}/prelaunch/postrun_input_manifest.json"
     )
 
     replay["decay_replay_constants_witness_command"] = (
@@ -314,6 +348,8 @@ def verify_replay_commands(replay: dict[str, Any]) -> list[str]:
         replay.get("postrun_command") or ""
     ):
         failures.append("postrun_not_slice5_classifier")
+    failures.extend(verify_no_stale_b1_run_id_in_heredocs(replay))
+    failures.extend(verify_no_unsatisfiable_input_manifest_bind(replay))
     return failures
 
 
