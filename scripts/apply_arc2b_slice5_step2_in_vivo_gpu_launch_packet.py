@@ -21,7 +21,7 @@ from calm.hrm_text_158.native_full_stack.arc2b_slice5_in_vivo_branch import (
 )
 
 REPO = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158")
-HEAD = "9185823d0f8b1dd1a0352661cac9a8633bc04ddf"
+HEAD = "0ea96b307ac53ebfceecb44cb18a773f1b5934ab"
 STEP2_RUN_ID = "FREE_SLICE5_STEP2"
 STEP2_MAX_SILENT_PHASE_SECONDS = 600
 STEP2_CONFIRMATION_STEPS = 200
@@ -79,6 +79,29 @@ FORBIDDEN_CARRIER_TOKENS = (
     "--dense-accumulator-w7-clip",
     "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION",
 )
+EVENT_CODED_INCOMPATIBLE_BOOLEAN_FLAGS = (
+    "--two-tier-carry-w6",
+    "--b2b-sequential-capture",
+    "--votes-emit-enabled",
+    "--carrier-growth-enabled",
+    "--d-recompute-window-instrumentation",
+)
+EVENT_CODED_INCOMPATIBLE_VALUE_FLAGS = (
+    "--d-recompute-calibration-warmup-out",
+)
+EVENT_CODED_INCOMPATIBLE_FLAGS = (
+    EVENT_CODED_INCOMPATIBLE_BOOLEAN_FLAGS + EVENT_CODED_INCOMPATIBLE_VALUE_FLAGS
+)
+STEP2_FORBIDDEN_LAUNCH_SEQUENCE_PATTERNS = (
+    "confirmation_without_scale_smoke_pass",
+    "reuse_run_id_2189e72001_through_17",
+    "per_session_launch_without_prior_scratch_wipe",
+    "confirmation_without_cheap_observer_preflight_pass",
+    "abort_launch_sequence_on_nonzero_confirmation_before_hygiene_classifier",
+    "baseline_d_off_smoke_used_as_launch_eligibility_receipt",
+    "event_coded_measurement_with_d_recompute_window_instrumentation",
+    "event_coded_measurement_with_probe_incompatible_flags",
+)
 CALIBRATION_WARMUP_RETRY_WITNESS_SCHEMA = (
     "hrm_text_158_arc2b_slice5_calibration_warmup_retry_witness/v1"
 )
@@ -123,6 +146,15 @@ def verify_no_unsatisfiable_input_manifest_bind(replay: dict[str, Any]) -> list[
     return failures
 
 
+def _strip_event_coded_incompatible_flags(command: str) -> str:
+    out = command
+    for flag in EVENT_CODED_INCOMPATIBLE_BOOLEAN_FLAGS:
+        out = re.sub(rf" {re.escape(flag)}(?=\s|$)", "", out)
+    for flag in EVENT_CODED_INCOMPATIBLE_VALUE_FLAGS:
+        out = re.sub(rf" {re.escape(flag)}(?:=\S+|\s+\S+)", "", out)
+    return out
+
+
 def _replace_w8_with_event_coded(command: str) -> str:
     out = command
     out = out.replace(
@@ -131,6 +163,7 @@ def _replace_w8_with_event_coded(command: str) -> str:
     )
     for token in ("--dense-accumulator-w8-clip", "--dense-accumulator-w7-clip"):
         out = out.replace(f" {token}", "")
+    out = _strip_event_coded_incompatible_flags(out)
     insert = " ".join(STEP2_CARRIER_REQUIRED + STEP2_DECAY_FLAGS)
     marker = "--phase d-recompute-window-feasibility"
     if marker in out:
@@ -270,6 +303,43 @@ def verify_explicit_max_silent_phase_seconds(replay: dict[str, Any]) -> list[str
     return failures
 
 
+def verify_event_coded_incompatible_flags_absent(replay: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    checked_keys = (
+        "scale_smoke_command",
+        "confirmation_launch_command",
+        "shared_probe_argv",
+    )
+    for key in checked_keys:
+        body = str(replay.get(key) or "")
+        if "--event-coded-sparse-vote-authority" not in body:
+            continue
+        for flag in EVENT_CODED_INCOMPATIBLE_FLAGS:
+            if flag in body:
+                failures.append(f"incompatible_flag_present:{key}:{flag}")
+    return failures
+
+
+def verify_forbidden_launch_sequence_patterns_reconciled(replay: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    patterns = list(replay.get("forbidden_launch_sequence_patterns") or [])
+    stale = (
+        "confirmation_without_d_recompute_window_instrumentation_flag",
+        "scale_smoke_without_d_instrumentation_as_launch_gate",
+    )
+    for entry in stale:
+        if entry in patterns:
+            failures.append(f"stale_forbidden_pattern_present:{entry}")
+    required = (
+        "event_coded_measurement_with_d_recompute_window_instrumentation",
+        "event_coded_measurement_with_probe_incompatible_flags",
+    )
+    for entry in required:
+        if entry not in patterns:
+            failures.append(f"missing_event_coded_forbidden_pattern:{entry}")
+    return failures
+
+
 def verify_warmup_retry_metadata(replay: dict[str, Any], packet: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     retry_policy = dict(packet.get("liveness_retry_policy") or {})
@@ -335,12 +405,7 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
         "Slice-5 postrun classifier"
     )
 
-    for key in (
-        "scale_smoke_command",
-        "confirmation_launch_command",
-        "baseline_liveness_telemetry_command",
-        "calibration_warmup_command",
-    ):
+    for key in ("scale_smoke_command", "confirmation_launch_command"):
         if key in replay:
             replay[key] = _replace_w8_with_event_coded(str(replay[key]))
 
@@ -382,6 +447,9 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
     replay["shared_gpu_env"] = (
         "PYTHONPATH=. HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1 HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1"
     )
+    replay["forbidden_launch_sequence_patterns"] = list(
+        STEP2_FORBIDDEN_LAUNCH_SEQUENCE_PATTERNS
+    )
 
     replay["postrun_command"] = (
         "bash -c 'RC=0; PYTHONPATH=. timeout 1800 python3 "
@@ -421,13 +489,16 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
         "PYTHONPATH=. python3 - \"{run_root}\" <<'PY'\n"
         "import json, sys\nfrom pathlib import Path\n"
         f"forbidden = {list(FORBIDDEN_CARRIER_TOKENS)!r}\n"
+        f"incompatible = {list(EVENT_CODED_INCOMPATIBLE_FLAGS)!r}\n"
         "cmds = json.loads(Path('artifacts/consensus_prep/"
         "arc2b_slice5_step2_in_vivo_gpu_launch_packet_v1_replay_commands.json').read_text())\n"
         "checked = {k: cmds.get(k) for k in ('scale_smoke_command', 'confirmation_launch_command', 'shared_probe_argv')}\n"
         "blob = json.dumps(checked)\n"
         "hits = [t for t in forbidden if t in blob]\n"
         "if hits: raise SystemExit(f'forbidden_tokens_present:{hits}')\n"
-        "print(json.dumps({'pass': True, 'forbidden_checked': forbidden}))\nPY"
+        "incompatible_hits = [t for t in incompatible if t in blob]\n"
+        "if incompatible_hits: raise SystemExit(f'incompatible_flags_present:{incompatible_hits}')\n"
+        "print(json.dumps({'pass': True, 'forbidden_checked': forbidden, 'incompatible_checked': incompatible}))\nPY"
     )
 
     launch_sequence = list(launch_sequence)
@@ -559,6 +630,8 @@ def verify_replay_commands(replay: dict[str, Any]) -> list[str]:
     failures.extend(verify_no_stale_b1_run_id_in_heredocs(replay))
     failures.extend(verify_no_unsatisfiable_input_manifest_bind(replay))
     failures.extend(verify_explicit_max_silent_phase_seconds(replay))
+    failures.extend(verify_event_coded_incompatible_flags_absent(replay))
+    failures.extend(verify_forbidden_launch_sequence_patterns_reconciled(replay))
     return failures
 
 

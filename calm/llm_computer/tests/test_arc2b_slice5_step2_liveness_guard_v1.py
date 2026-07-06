@@ -8,17 +8,24 @@ import subprocess
 from pathlib import Path
 
 from scripts.apply_arc2b_slice5_step2_in_vivo_gpu_launch_packet import (
+    EVENT_CODED_INCOMPATIBLE_FLAGS,
     HEAD,
     REPO,
+    STEP2_CARRIER_REQUIRED,
+    STEP2_DECAY_FLAGS,
+    STEP2_FORBIDDEN_LAUNCH_SEQUENCE_PATTERNS,
     STEP2_MAX_SILENT_PHASE_SECONDS,
     _build_calibration_warmup_retry_command,
+    _strip_event_coded_incompatible_flags,
     build_liveness_retry_policy,
     build_packet,
     build_replay_commands,
     execute_calibration_warmup_retry,
     self_verify,
     sha256_file,
+    verify_event_coded_incompatible_flags_absent,
     verify_explicit_max_silent_phase_seconds,
+    verify_forbidden_launch_sequence_patterns_reconciled,
     verify_warmup_retry_metadata,
 )
 from scripts.hrm_text_158_d_recompute_calibration_warmup_producer import (
@@ -183,7 +190,62 @@ def test_packet_git_head_required_matches_current_head_constant() -> None:
     classifier_sha = sha256_file(CLASSIFIER_MODULE)
     packet = build_packet(classifier_sha, "deadbeef")
     assert packet["git_head_required"] == HEAD
-    assert packet["git_head_required"] == "9185823d0f8b1dd1a0352661cac9a8633bc04ddf"
+    assert packet["git_head_required"] == "0ea96b307ac53ebfceecb44cb18a773f1b5934ab"
+
+
+def test_event_coded_measurement_commands_have_no_incompatible_flags() -> None:
+    classifier_sha = sha256_file(CLASSIFIER_MODULE)
+    replay = build_replay_commands(classifier_sha)
+    failures = verify_event_coded_incompatible_flags_absent(replay)
+    assert failures == []
+    for key in ("scale_smoke_command", "confirmation_launch_command", "shared_probe_argv"):
+        body = str(replay[key])
+        assert "--event-coded-sparse-vote-authority" in body
+        for flag in EVENT_CODED_INCOMPATIBLE_FLAGS:
+            assert flag not in body
+        for flag in STEP2_CARRIER_REQUIRED + STEP2_DECAY_FLAGS:
+            assert flag in body
+
+
+def test_forbidden_launch_sequence_patterns_reconciled_for_event_coded() -> None:
+    classifier_sha = sha256_file(CLASSIFIER_MODULE)
+    replay = build_replay_commands(classifier_sha)
+    failures = verify_forbidden_launch_sequence_patterns_reconciled(replay)
+    assert failures == []
+    patterns = list(replay["forbidden_launch_sequence_patterns"])
+    assert patterns == list(STEP2_FORBIDDEN_LAUNCH_SEQUENCE_PATTERNS)
+    assert "confirmation_without_d_recompute_window_instrumentation_flag" not in patterns
+    assert "scale_smoke_without_d_instrumentation_as_launch_gate" not in patterns
+    assert "event_coded_measurement_with_d_recompute_window_instrumentation" in patterns
+    assert "event_coded_measurement_with_probe_incompatible_flags" in patterns
+
+
+def test_warmup_producer_argv_remains_w8_d_calibration() -> None:
+    argv = build_calibration_warmup_probe_argv(
+        run_root=Path("/tmp/run"),
+        parent=Path("parent.pt"),
+        parent_sha256="abc",
+        warmup_steps=5,
+        observations_out=Path("/tmp/run/prelaunch/calibration_warmup_observations.json"),
+    )
+    assert "--dense-accumulator-w8-clip" in argv
+    assert "--d-recompute-window-instrumentation" in argv
+    assert "--d-recompute-calibration-warmup-out" in argv
+    assert "--event-coded-sparse-vote-authority" not in argv
+
+
+def test_strip_event_coded_incompatible_flags_handles_boolean_and_value_taking() -> None:
+    command = (
+        "probe.py --phase d-recompute-window-feasibility "
+        "--d-recompute-window-instrumentation "
+        "--d-recompute-calibration-warmup-out /tmp/out.json "
+        "--event-coded-sparse-vote-authority"
+    )
+    stripped = _strip_event_coded_incompatible_flags(command)
+    assert "--d-recompute-window-instrumentation" not in stripped
+    assert "--d-recompute-calibration-warmup-out" not in stripped
+    assert "/tmp/out.json" not in stripped
+    assert "--event-coded-sparse-vote-authority" in stripped
 
 
 def test_self_verify_passes_after_render() -> None:
