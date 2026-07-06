@@ -1,0 +1,204 @@
+{
+  "anti_overclaim_verbatim": "Within the Slice-5 packet scope, in-vivo accumulator-carrier law validation classifies as one of the pre-registered branches. FORBIDDEN: sub-2 readiness, reduction eligibility, ~430MB bank pin, Fold-3B universalization, bank mutation, full-stack readiness, implementation readiness, main-science launch from Step-1 CPU prereg alone.",
+  "b1_diagnostic_anchor": {
+    "calibrated_selector_manifest_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72017/prelaunch/calibrated_selector_manifest.json",
+    "classifier_receipt_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72017/classifier_receipt.json",
+    "diagnostic_only": true,
+    "input_artifact_hashes": {
+      "d_recompute_window_diagnostic/receipt.json": {
+        "present": true,
+        "sha256": "e430396c68c180371741bd5449edc15f7e03cd743522bc763aaf1dc18332cbb6"
+      },
+      "d_recompute_window_diagnostic/recompute_window_log.jsonl": {
+        "jsonl_row_count": 3600,
+        "present": true,
+        "sha256": "c408fea4d34c17460b00c5dd836328d86b655de72b3a3e7958b553083dae7882"
+      },
+      "prelaunch/calibrated_selector_manifest.json": {
+        "present": true,
+        "selector_internal_manifest_sha256": "5d6e0fea9c0f07600a40c36d6df73dc945296d5a684cafa26ba76b206bd7c996",
+        "sha256": "8a128d82473389b050015987320acc6677d8bc9186004b682a90ff588cf9bdf6"
+      },
+      "prelaunch/calibration_prepass_receipt.json": {
+        "present": true,
+        "sha256": "8f3b1d9f9a2b7dd2712ac30221af93ec6a79a71ba9cc40d502b1366555af4104"
+      },
+      "prelaunch/parent_checkpoint_rehash.json": {
+        "present": true,
+        "sha256": "eac2a74967805afde2b09702f91f411b42f119b23078398850ab6d00d3a8fc77"
+      },
+      "prelaunch/parent_checkpoint_rehash_after_calibration_warmup.json": {
+        "present": true,
+        "sha256": "89f5fd00adca33d83e114ed81c60323e4a7d71095b16def2905ebcefb00fc384"
+      },
+      "prelaunch/parent_checkpoint_rehash_after_confirmation.json": {
+        "present": true,
+        "sha256": "d38bbbc50e35b1028c9ef84fd1373107cf8d8ceaf85c59b019fe52807b8c6132"
+      },
+      "prelaunch/parent_checkpoint_rehash_after_scale_smoke.json": {
+        "present": true,
+        "sha256": "de9402b20bb165d6b621ea9459e6f2b30739cc85cfab988665538549e6e1f8c1"
+      },
+      "prelaunch/post_confirmation_hygiene_receipt.json": {
+        "present": true,
+        "sha256": "f160bf912e499ac716a1c9e8954b7c53cb7f8b9b17f85ae8d7591addd47a8296"
+      },
+      "prelaunch/scale_smoke_receipt.json": {
+        "present": true,
+        "sha256": "8afee2c88babc0296e2635cc084f4c79038cfc63ccae7a10bd6fab0116c463fc"
+      }
+    },
+    "law_under_test": {
+      "decay_den": 2,
+      "decay_num": 1,
+      "effective_acc_budget_bpw": 0.3999999999999999,
+      "inclusive_acc_bpw": 0.0006423700051229507,
+      "window_k": 180
+    },
+    "logged_density_surface": {
+      "peak_backlog_depth": 130816,
+      "records_in_window": 3600,
+      "steps_in_window": 200
+    },
+    "recompute_window_log_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72017/d_recompute_window_diagnostic/recompute_window_log.jsonl",
+    "run_id": "2189e72017",
+    "run_root": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72017",
+    "runtime_replay_decay": {
+      "decay_den": 1,
+      "decay_num": 1
+    },
+    "sub2_first_launch_gate_receipt_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72017/prelaunch/sub2_first_launch_gate_receipt.json"
+  },
+  "carrier_byte_mapping": {
+    "bpw_formula": "live_acc_carrier_bytes_total * 8 / eligible_weight_numel",
+    "comparison": "strict_less_than",
+    "effective_acc_budget_bpw": 0.4,
+    "live_acc_carrier_bytes_total": "events_bytes + backlog_bytes + hot_exact_bytes + metadata_bytes",
+    "numel_basis_source": "parent_checkpoint_tensor_state_numel",
+    "requires_live_carrier_bytes_exact": true,
+    "tolerance_bpw": 0.0
+  },
+  "design_spec_path": "artifacts/consensus_prep/arc2b_slice5_in_vivo_law_validation_prereg_packet_v1_draft.json",
+  "determinism_evidence": {
+    "classification": "DETERMINISTIC",
+    "empirical_upgrade_path": "Step-2 from-clean-parent contiguous H=200 GPU with decay 1/2 active",
+    "static": [
+      "frozen B1 parent checkpoint pins in launch packet",
+      "deterministic recompute-window log replay constants",
+      "no random/torch.rand in slice5 carrier-byte observer path"
+    ]
+  },
+  "feasibility_verdict": "NEEDS_PATCH",
+  "fold": "arc2b_slice5_step1_feasibility_preflight",
+  "git_head_at_preflight": "f1757f8b6f14ef47f89b66bb40ba430ad44ce715",
+  "offline_b1_contract": {
+    "allowed_terminal_branches": [
+      "SLICE5_DIAGNOSTIC_BRACKET_ONLY",
+      "SLICE5_INCONCLUSIVE_SOURCE_MISMATCH",
+      "SLICE5_INCONCLUSIVE_NO_LIVE_SNAPSHOT",
+      "SLICE5_INCONCLUSIVE_INPUT_DRIFT",
+      "SLICE5_INCONCLUSIVE_LOG_COVERAGE"
+    ],
+    "b1_run_id": "2189e72017",
+    "b1_runtime_decay": {
+      "decay_den": 1,
+      "decay_num": 1
+    },
+    "contract_msg_id": "1783274356049",
+    "decay_mismatch_diagnostic_only": true,
+    "forbidden_terminal_branches": [
+      "D_NEEDS_UPDATE_LAW_REDESIGN",
+      "SLICE5_IN_VIVO_LAW_BOUND"
+    ],
+    "law_under_test": {
+      "decay_den": 2,
+      "decay_num": 1,
+      "window_k": 180
+    },
+    "manifest_binding": {
+      "bind_via_classifier_receipt_hashes_not_on_disk_file_alone": true,
+      "on_drift_branch": "SLICE5_INCONCLUSIVE_INPUT_DRIFT",
+      "recorded_manifest_file_sha256": "8a128d82473389b050015987320acc6677d8bc9186004b682a90ff588cf9bdf6",
+      "recorded_selector_internal_manifest_sha256": "5d6e0fea9c0f07600a40c36d6df73dc945296d5a684cafa26ba76b206bd7c996"
+    }
+  },
+  "provenance": {
+    "co_lead_gate2_msg_id": "1783322348922",
+    "dispatch_msg_id": "1783272622169-d840d3e0",
+    "gate1_freeze_msg_id": "1783274282142-6bbfe32a",
+    "implement_gate_msg_id": "1783322937495-b4cb2763",
+    "offline_bracket_contract_msg_id": "1783274356049",
+    "plan_msg_id": "1783274175050-ccc23e52"
+  },
+  "readiness_classification": {
+    "class": "pre_full_stack_diagnostic",
+    "flags": {
+      "counts_as_sub2": false,
+      "pre_full_stack_diagnostic": true,
+      "ready_for_main_science": false
+    },
+    "q2_rationale": "B1 sub2_first_launch_gate_receipt: ready_for_main_science=false, main_science_launch_blocked=true; q_sidecar_vote_carrier in pre_full_stack_diagnostic surface set."
+  },
+  "run_determinism_classification": "DETERMINISTIC",
+  "schema": "hrm_text_158_arc2b_slice5_feasibility_preflight_receipt/v1",
+  "step2_gpu_launch_scope": {
+    "deferred_until_separate_plus_one_launch": true,
+    "from_clean_parent_contiguous": true,
+    "horizon_h": 200,
+    "live_carrier_bytes_exact_required": true,
+    "live_carrier_snapshot_required": true,
+    "mechanism_terminal_branches": [
+      "D_NEEDS_UPDATE_LAW_REDESIGN",
+      "SLICE5_IN_VIVO_LAW_BOUND"
+    ],
+    "required_runtime_decay": {
+      "decay_den": 2,
+      "decay_num": 1
+    },
+    "required_window_k": 180,
+    "resume_generation": 0
+  },
+  "task_id": "1783272482268-052281aa",
+  "upstream_receipt_grounding": {
+    "b1_classifier_receipt": {
+      "acc_sizing_verdict": "recommended_law",
+      "in_vivo_verdict": "INCONCLUSIVE_REAL_DENSITY_EXCEEDS_ENVELOPE",
+      "manifest_binding_inputs": {
+        "effective_acc_budget_bpw": 0.3999999999999999,
+        "eligible_weight_numel": 15990784,
+        "evidence_source": "b1_offline_bracket",
+        "live_carrier_rows": [],
+        "live_snapshot_present": false,
+        "log_coverage_ok": true,
+        "manifest_binding_ok": true,
+        "offline_bracket_decision": "INCONCLUSIVE_REAL_DENSITY_EXCEEDS_ENVELOPE",
+        "on_disk_selector_manifest_sha256": "8a128d82473389b050015987320acc6677d8bc9186004b682a90ff588cf9bdf6",
+        "operational_ok": true,
+        "prereg_law_decay_den": 2,
+        "prereg_law_decay_num": 1,
+        "prereg_law_window_k": 180,
+        "recorded_selector_internal_manifest_sha256": "5d6e0fea9c0f07600a40c36d6df73dc945296d5a684cafa26ba76b206bd7c996",
+        "resume_generation": null,
+        "runtime_decay_den": 1,
+        "runtime_decay_num": 1,
+        "runtime_window_k": 180,
+        "schema_ok": true,
+        "tolerance_bpw": 0.0
+      },
+      "primary_classifier": "D_RECOMPUTE_SIZED_NOT_SUB2",
+      "receipt_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72017/classifier_receipt.json",
+      "run_id": "2189e72017"
+    },
+    "sub2_first_launch_gate": {
+      "main_science_launch_blocked": true,
+      "pre_full_stack_diagnostic_surface_names": [
+        "q_sidecar_vote_carrier",
+        "activations_residuals",
+        "attention_kv_attention_buffers",
+        "native_kernelized_hot_path"
+      ],
+      "ready_for_main_science": false,
+      "receipt_path": "/home/gabe/claw-code-creditdir/transient_fp_credit/d_recompute_window_feasibility_seed43_43_2189e72017/prelaunch/sub2_first_launch_gate_receipt.json"
+    }
+  }
+}
