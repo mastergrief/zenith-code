@@ -2862,29 +2862,12 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                         q_by_key[state_key] = q_out
                         stats_by_key[state_key] = stats
                 else:
-                    summary["sparse_cap_apply_parallel_mode"] = "parallel_cpu"
-                    from concurrent.futures import ThreadPoolExecutor
-
-                    def _init_sparse_cap_worker() -> None:
-                        torch.set_num_threads(1)
-                        try:
-                            torch.set_num_interop_threads(1)
-                        except RuntimeError:
-                            pass
-
-                    cpu_workers = os.cpu_count() or 4
-                    max_workers = min(cpu_workers, len(cap_result.tensor_results))
-                    with ThreadPoolExecutor(
-                        max_workers=max_workers,
-                        initializer=_init_sparse_cap_worker,
-                    ) as pool:
-                        for state_key, carrier, q_out, stats in pool.map(
-                            _apply_cap_tensor_result,
-                            cap_result.tensor_results,
-                        ):
-                            carriers_by_key[state_key] = carrier
-                            q_by_key[state_key] = q_out
-                            stats_by_key[state_key] = stats
+                    summary["sparse_cap_apply_parallel_mode"] = "serial_cpu"
+                    for item in cap_result.tensor_results:
+                        state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
+                        carriers_by_key[state_key] = carrier
+                        q_by_key[state_key] = q_out
+                        stats_by_key[state_key] = stats
             else:
                 for item in cap_result.tensor_results:
                     state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)

@@ -881,6 +881,29 @@ def test_sparse_cap_apply_serial_on_cuda_device(monkeypatch) -> None:
 
 def test_sparse_cap_apply_parallel_on_cpu_device(monkeypatch) -> None:
     states, sparse_by_key, vote_specs, cap = _two_module_sparse_cap_fixture()
+    credit, moves, rank_spec = _rank_fixture()
+    votes_by_key = {
+        key: rank_bucketed_int16_votes(credit, moves, rank_spec)
+        for key in sorted(sparse_by_key)
+    }
+    states_dense = {
+        key: make_event_coded_live_tensor_state(
+            key,
+            state.q_levels.clone(),
+            0.25,
+            demotion_band=1,
+        )
+        for key, state in states.items()
+    }
+    states_sparse = {
+        key: make_event_coded_live_tensor_state(
+            key,
+            state.q_levels.clone(),
+            0.25,
+            demotion_band=1,
+        )
+        for key, state in states.items()
+    }
     constructed: list[int] = []
     import concurrent.futures
 
@@ -893,15 +916,28 @@ def test_sparse_cap_apply_parallel_on_cpu_device(monkeypatch) -> None:
 
     monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", _TrackingExecutor)
     result = apply_bounded_delta_vote_step(
-        states,
+        states_sparse,
         None,
         vote_specs,
         candidate_sparse_vote_events_by_key=sparse_by_key,
         global_cap_spec=cap,
         event_coded_sparse_vote_authority=True,
     )
-    assert constructed == [1]
-    assert result.global_summary.get("sparse_cap_apply_parallel_mode") == "parallel_cpu"
+    dense = _apply_dense_oracle_cap(
+        states_dense,
+        votes_by_key,
+        sparse_by_key,
+        vote_specs,
+        cap,
+    )
+    assert constructed == []
+    assert result.global_summary.get("sparse_cap_apply_parallel_mode") == "serial_cpu"
+    assert set(result.tensor_states.keys()) == {"mod.a", "mod.b"}
+    assert all(
+        result.tensor_states[key].event_coded_live_carrier is not None
+        for key in ("mod.a", "mod.b")
+    )
+    assert _cap_apply_fingerprint(dense) == _cap_apply_fingerprint(result)
 
 
 def test_sparse_cap_apply_mixed_device_states_fail_closed() -> None:

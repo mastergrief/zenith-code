@@ -247,6 +247,46 @@ def test_run_c2p1_probe_event_coded_log_and_live_snapshot_at_diagnostic_root(
     assert int(first_rc.get("decay_denominator", -1)) == 2
 
 
+def test_run_c2p1_probe_event_coded_sparse_cap_apply_serial_cpu_mode(
+    tmp_path: Path,
+) -> None:
+    """Runnable probe: multi-module event-coded sparse cap apply uses serial_cpu."""
+    parent = tmp_path / "tiny_parent.pt"
+    torch.save(_tiny_parent_blob(), parent)
+    parent_sha = file_sha256(parent)
+    scratch_root = tmp_path / "d_recompute_window_diagnostic"
+    steps = 1
+
+    receipt = run_c2p1_probe(
+        parent=parent,
+        parent_sha256=parent_sha,
+        scratch_root=scratch_root,
+        device="cpu",
+        eligible_scope="all-bitlinear",
+        eligible_module_limit=2,
+        steps=steps,
+        batch_size=16,
+        max_len=TINY_ARCH["max_len"],
+        curriculum_seed=17,
+        enabled=True,
+        persistent_accumulator_event_coded_live=True,
+        persistent_q_ternary_base3_codec=True,
+        event_coded_sparse_vote_authority=True,
+        event_coded_recompute_window_log_enabled=False,
+        d_recompute_window_instrumentation_enabled=False,
+        d_live_carrier_snapshot_enabled=False,
+        global_cap_contract=C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
+        tie_rule_mode=EXACT_GLOBAL_CAP_TIE_RULE_MODE,
+        d_diagnostic_compact_step_reports=True,
+        emit_progress=False,
+    )
+
+    assert int(receipt.get("eligible_module_count") or 0) >= 2
+    global_summary = dict(receipt.get("bounded_delta_global_summary") or {})
+    assert global_summary.get("sparse_cap_apply_parallel_mode") == "serial_cpu"
+    assert int(receipt.get("steps_completed") or 0) == steps
+
+
 def test_decay_replay_constants_witness_reads_registered_source(tmp_path: Path) -> None:
     scratch = tmp_path / "d_recompute_window_diagnostic"
     scratch.mkdir(parents=True)
