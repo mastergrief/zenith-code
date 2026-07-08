@@ -11,6 +11,7 @@ from scripts.apply_arc2b_slice5_step2_in_vivo_gpu_launch_packet import (
     EVENT_CODED_INCOMPATIBLE_FLAGS,
     HEAD,
     REPO,
+    git_head,
     STEP2_CARRIER_REQUIRED,
     STEP2_DECAY_FLAGS,
     STEP2_EVENT_CODED_RECOMPUTE_WINDOW_LOG_FLAG,
@@ -192,7 +193,23 @@ def test_packet_git_head_required_matches_current_head_constant() -> None:
     classifier_sha = sha256_file(CLASSIFIER_MODULE)
     packet = build_packet(classifier_sha, "deadbeef")
     assert packet["git_head_required"] == HEAD
-    assert packet["git_head_required"] == "22b591f18e2e9eccdf3148ff3fe84250c1880d08"
+    assert packet["git_head_required"] == "24c19521e6b453dcb011a1dd57fdc37312196e28"
+
+
+def test_live_git_head_matches_head_constant() -> None:
+    assert git_head() == HEAD
+
+
+def test_self_verify_fails_when_live_git_head_mismatches_head_constant(
+    monkeypatch,
+) -> None:
+    import scripts.apply_arc2b_slice5_step2_in_vivo_gpu_launch_packet as apply_mod
+
+    monkeypatch.setattr(apply_mod, "git_head", lambda: "0" * 40)
+    result = self_verify()
+    assert result["pins_match_commit"] is False
+    assert "pins_match_commit" in result["failures"]
+    assert result["ok"] is False
 
 
 def test_event_coded_measurement_commands_have_no_incompatible_flags() -> None:

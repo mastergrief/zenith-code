@@ -21,7 +21,7 @@ from calm.hrm_text_158.native_full_stack.arc2b_slice5_in_vivo_branch import (
 )
 
 REPO = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158")
-HEAD = "22b591f18e2e9eccdf3148ff3fe84250c1880d08"
+HEAD = "24c19521e6b453dcb011a1dd57fdc37312196e28"
 STEP2_RUN_ID = "FREE_SLICE5_STEP2"
 STEP2_MAX_SILENT_PHASE_SECONDS = 600
 STEP2_CONFIRMATION_STEPS = 200
@@ -704,15 +704,25 @@ def self_verify() -> dict[str, Any]:
         (json.dumps(regen_replay, indent=2, sort_keys=True) + "\n").encode()
     ).hexdigest()
 
+    live_git_head = git_head()
+    pins_match_commit = live_git_head == HEAD
+    if not pins_match_commit:
+        failures.append("pins_match_commit")
+
     return {
-        "ok": not failures and draft_sha == regen_draft_sha and replay_sha == regen_replay_sha,
+        "ok": (
+            not failures
+            and pins_match_commit
+            and draft_sha == regen_draft_sha
+            and replay_sha == regen_replay_sha
+        ),
         "failures": failures,
         "deterministic_regen": draft_sha == regen_draft_sha and replay_sha == regen_replay_sha,
         "draft_sha256": draft_sha,
         "replay_sha256": replay_sha,
         "classifier_module_sha256": classifier_sha,
-        "git_head": git_head(),
-        "pins_match_commit": True,
+        "git_head": live_git_head,
+        "pins_match_commit": pins_match_commit,
     }
 
 
