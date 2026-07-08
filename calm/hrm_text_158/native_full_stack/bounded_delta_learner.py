@@ -2292,8 +2292,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
         EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY,
         EventCodedVoteUpdateState,
         _shape_stub_int16_votes,
-        apply_event_coded_cap_mutations,
-        apply_event_coded_integer_vote_update_from_plan,
+        apply_event_coded_vote_and_cap_from_plan,
         densify_new_acc_i32_at_cap_boundary,
         plan_event_coded_integer_vote_update,
         prepare_event_coded_plan_for_sparse_cap,
@@ -2830,27 +2829,21 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 state_key = str(item.state_key)
                 vu = event_states[state_key]
                 plan = plans_by_key[state_key]
-                local_result = apply_event_coded_integer_vote_update_from_plan(
+                local_result = apply_event_coded_vote_and_cap_from_plan(
                     vu,
                     inputs_by_key[state_key],
                     vote_specs_by_key[state_key],
                     plan,
+                    accepted_flat_by_key[state_key],
                     step_index=int(local_selection_ordering_step),
                     cap_boundary_transient_dense=cap_boundary_transient,
                     lightweight_runtime_stats=bool(event_coded_sparse_vote_authority),
-                )
-                q_out, carrier = apply_event_coded_cap_mutations(
-                    local_result.carrier,
-                    local_result.q_levels,
-                    plan,
-                    accepted_flat_by_key[state_key],
-                    step_index=int(local_selection_ordering_step),
                 )
                 stats = _merge_event_coded_cap_tensor_stats(
                     item.stats,
                     local_result.stats,
                 )
-                return state_key, carrier, q_out, stats
+                return state_key, local_result.carrier, local_result.q_levels, stats
 
             if bool(event_coded_sparse_vote_authority) and len(cap_result.tensor_results) > 1:
                 cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type

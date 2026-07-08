@@ -1321,20 +1321,13 @@ def apply_event_coded_integer_vote_update_reference(
     )
 
 
-def apply_event_coded_cap_mutations(
+def _apply_cap_hot_and_q_writes_in_place(
     carrier: EventCodedAccLiveState,
-    q_levels: torch.Tensor,
+    q_out: torch.Tensor,
     plan: VoteUpdatePlan,
     accepted_indices: Sequence[int],
-    *,
-    step_index: int,
-) -> tuple[torch.Tensor, EventCodedAccLiveState]:
-    """Write global-cap accepted rows through the live carrier (not dense acc_out)."""
-
-    if not accepted_indices:
-        return q_levels, carrier
-    updated = carrier.cow_copy()
-    q_out = q_levels.detach().cpu().clone().to(torch.int8)
+) -> torch.Tensor:
+    """Mutate vote-fork carrier q/hot for accepted cap rows (no cow_copy)."""
     q_flat = q_out.flatten()
     threshold_flat = plan.applied_thresholds.detach().cpu().flatten()
     direction_flat = plan.applied_directions.detach().cpu().flatten()
@@ -1349,8 +1342,8 @@ def apply_event_coded_cap_mutations(
             continue
         direction = int(direction_flat[pos].item())
         q_flat[idx] = int(max(-1, min(1, int(q_flat[idx].item()) + direction)))
-        updated.q_levels[idx] = int(q_flat[idx].item())
-        carry = int(updated.reconstruct_lane(idx))
+        carrier.q_levels[idx] = int(q_flat[idx].item())
+        carry = int(carrier.reconstruct_lane(idx))
         residual = carry - direction * int(threshold_flat[pos].item())
         cap_indices.append(idx)
         cap_values.append(int(residual))
@@ -1358,32 +1351,105 @@ def apply_event_coded_cap_mutations(
         cap_idx = np.array(cap_indices, dtype=np.int32)
         cap_val = np.array(cap_values, dtype=np.int16)
         hot_idx, hot_val = merge_hot_table_arrays(
-            updated._hot.indices_array(),
-            updated._hot.values_array(),
+            carrier._hot.indices_array(),
+            carrier._hot.values_array(),
             np.empty(0, dtype=np.int32),
             cap_idx,
             cap_val,
         )
-        updated._hot.replace_arrays(hot_idx, hot_val)
-        updated._invalidate_packed_caches()
+        carrier._hot.replace_arrays(hot_idx, hot_val)
+        carrier._invalidate_packed_caches()
+    return q_out
+
+
+def apply_event_coded_cap_mutations(
+    carrier: EventCodedAccLiveState,
+    q_levels: torch.Tensor,
+    plan: VoteUpdatePlan,
+    accepted_indices: Sequence[int],
+    *,
+    step_index: int,
+) -> tuple[torch.Tensor, EventCodedAccLiveState]:
+    """Write global-cap accepted rows through the live carrier (not dense acc_out).
+
+    Mutates ``carrier`` in-place; input must already be the vote-fork (L1156).
+    """
+
+    if not accepted_indices:
+        return q_levels, carrier
+    q_out = q_levels.detach().cpu().clone().to(torch.int8)
+    _apply_cap_hot_and_q_writes_in_place(carrier, q_out, plan, accepted_indices)
     apply_event_coded_carrier_step(
-        updated,
+        carrier,
         votes={},
         step_index=int(step_index),
     )
-    q_synced = _sync_q_levels_tensor(updated, q_out)
+    q_synced = _sync_q_levels_tensor(carrier, q_out)
     observation = C8StepObservation()
     persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
         exact_accumulator_shadow=None,
-        event_coded_live_carrier=updated,
+        event_coded_live_carrier=carrier,
         eligible_numel=int(q_levels.numel()),
     )
     assert_c8_runtime_guards(
-        updated,
+        carrier,
         observation=observation,
         persistent_dense_accumulator_materialized_numel=persistent_dense,
     )
-    return q_synced, updated
+    return q_synced, carrier
+
+
+def apply_event_coded_vote_and_cap_from_plan(
+    state: EventCodedVoteUpdateState,
+    inputs: VoteUpdateInputs,
+    spec: VoteUpdateSpec,
+    plan: VoteUpdatePlan,
+    accepted_indices: Sequence[int],
+    *,
+    validate_q_levels: bool = True,
+    step_index: int = 0,
+    cap_boundary_transient_dense: int = 0,
+    lightweight_runtime_stats: bool = False,
+    host_allocator_site_emit: Callable[..., None] | None = None,
+    optimizer_step_index: int | None = None,
+    state_index: int | None = None,
+    site_emit_enabled: bool = False,
+) -> EventCodedVoteUpdateResult:
+    """Single vote-fork + vote apply + in-place cap on the same carrier."""
+
+    vote_result = apply_event_coded_integer_vote_update_from_plan(
+        state,
+        inputs,
+        spec,
+        plan,
+        validate_q_levels=validate_q_levels,
+        step_index=int(step_index),
+        cap_boundary_transient_dense=int(cap_boundary_transient_dense),
+        lightweight_runtime_stats=bool(lightweight_runtime_stats),
+        host_allocator_site_emit=host_allocator_site_emit,
+        optimizer_step_index=optimizer_step_index,
+        state_index=state_index,
+        site_emit_enabled=site_emit_enabled,
+    )
+    if not accepted_indices:
+        return vote_result
+    q_out, carrier = apply_event_coded_cap_mutations(
+        vote_result.carrier,
+        vote_result.q_levels,
+        plan,
+        accepted_indices,
+        step_index=int(step_index),
+    )
+    stats = dict(vote_result.stats)
+    if carrier.step_records:
+        stats["v4_live_observed_surfaces"] = observed_surfaces_dict(carrier.step_records[-1])
+    stats["q_changed_count"] = int((q_out != state.q_levels).sum().item())
+    return EventCodedVoteUpdateResult(
+        q_levels=q_out,
+        carrier=carrier,
+        plan=plan,
+        stats=stats,
+    )
 
 
 def tensor_states_use_event_coded_live_carrier(
