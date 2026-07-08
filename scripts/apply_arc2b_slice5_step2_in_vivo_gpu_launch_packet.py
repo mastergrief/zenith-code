@@ -177,19 +177,77 @@ def _replace_w8_with_event_coded(command: str) -> str:
     return out
 
 
-def _inject_max_silent_phase(
+PROBE_SCRIPT_MARKER = "hrm_text_158_bounded_delta_acquisition_probe.py"
+BASH_C_PROBE_PIPE_MARKERS = (" 2>&1 |", " 2>&1|")
+
+
+def _max_silent_phase_token(*, seconds: int = STEP2_MAX_SILENT_PHASE_SECONDS) -> str:
+    return f"{MAX_SILENT_PHASE_FLAG} {int(seconds)}"
+
+
+def _strip_max_silent_phase_tokens(command: str) -> str:
+    return re.sub(
+        rf"{re.escape(MAX_SILENT_PHASE_FLAG)}(?:=\s*|\s+)\d+",
+        "",
+        command,
+    ).rstrip()
+
+
+def _strip_stranded_max_silent_phase_after_bash_c_close(command: str) -> str:
+    """Remove --max-silent-phase-seconds stranded after the bash -c closing quote."""
+    stripped = _strip_max_silent_phase_tokens(command)
+    return re.sub(
+        rf"'(\s+{re.escape(MAX_SILENT_PHASE_FLAG)}\s+\d+)+\s*$",
+        "'",
+        stripped,
+    )
+
+
+def _inject_max_silent_phase_direct(
     command: str,
     *,
     seconds: int = STEP2_MAX_SILENT_PHASE_SECONDS,
 ) -> str:
     if not command.strip():
         return command
-    stripped = re.sub(
-        rf"{re.escape(MAX_SILENT_PHASE_FLAG)}(?:=\s*|\s+)\d+",
-        "",
-        command,
-    )
-    return f"{stripped.rstrip()} {MAX_SILENT_PHASE_FLAG} {int(seconds)}"
+    stripped = _strip_stranded_max_silent_phase_after_bash_c_close(command)
+    stripped = _strip_max_silent_phase_tokens(stripped)
+    return f"{stripped.rstrip()} {_max_silent_phase_token(seconds=seconds)}"
+
+
+def _inject_max_silent_phase_into_bash_c_probe(
+    command: str,
+    *,
+    seconds: int = STEP2_MAX_SILENT_PHASE_SECONDS,
+) -> str:
+    if not command.strip():
+        return command
+    stripped = _strip_stranded_max_silent_phase_after_bash_c_close(command)
+    match = re.match(r"^bash -c '(.*)'$", stripped, re.DOTALL)
+    if not match:
+        return _inject_max_silent_phase_direct(stripped, seconds=seconds)
+
+    inner = _strip_max_silent_phase_tokens(match.group(1))
+    token = _max_silent_phase_token(seconds=seconds)
+    if PROBE_SCRIPT_MARKER in inner:
+        probe_idx = inner.find(PROBE_SCRIPT_MARKER)
+        pipe_idx = len(inner)
+        for pipe_marker in BASH_C_PROBE_PIPE_MARKERS:
+            candidate = inner.find(pipe_marker, probe_idx)
+            if candidate >= probe_idx:
+                pipe_idx = min(pipe_idx, candidate)
+        inner = inner[:pipe_idx].rstrip() + f" {token}" + inner[pipe_idx:]
+    else:
+        inner = f"{inner.rstrip()} {token}"
+    return f"bash -c '{inner}'"
+
+
+def _inject_max_silent_phase(
+    command: str,
+    *,
+    seconds: int = STEP2_MAX_SILENT_PHASE_SECONDS,
+) -> str:
+    return _inject_max_silent_phase_direct(command, seconds=seconds)
 
 
 def _append_producer_max_silent_phase(command: str) -> str:
@@ -293,20 +351,97 @@ def _build_calibration_warmup_retry_command(
     )
 
 
-def verify_explicit_max_silent_phase_seconds(replay: dict[str, Any]) -> list[str]:
+def _confirmation_probe_argv_receives_max_silent_phase(
+    command: str,
+    *,
+    seconds: int = STEP2_MAX_SILENT_PHASE_SECONDS,
+) -> bool:
+    if "bash -c '" not in command:
+        return False
+    if re.search(
+        rf"exit 0'\s+{re.escape(MAX_SILENT_PHASE_FLAG)}\s+{int(seconds)}",
+        command,
+    ):
+        return False
+    match = re.match(r"^bash -c '(.*)'$", command.strip(), re.DOTALL)
+    if not match:
+        return False
+    inner = match.group(1)
+    if PROBE_SCRIPT_MARKER not in inner:
+        return False
+    token = _max_silent_phase_token(seconds=seconds)
+    probe_idx = inner.find(PROBE_SCRIPT_MARKER)
+    pipe_idx = len(inner)
+    for pipe_marker in BASH_C_PROBE_PIPE_MARKERS:
+        candidate = inner.find(pipe_marker, probe_idx)
+        if candidate >= probe_idx:
+            pipe_idx = min(pipe_idx, candidate)
+    probe_segment = inner[probe_idx:pipe_idx]
+    return token in probe_segment
+
+
+def _direct_probe_argv_receives_max_silent_phase(
+    body: str,
+    *,
+    seconds: int = STEP2_MAX_SILENT_PHASE_SECONDS,
+) -> bool:
+    if re.search(
+        rf"exit 0'\s+{re.escape(MAX_SILENT_PHASE_FLAG)}\s+{int(seconds)}",
+        body,
+    ):
+        return False
+    if "bash -c '" in body and PROBE_SCRIPT_MARKER in body:
+        return _confirmation_probe_argv_receives_max_silent_phase(body, seconds=seconds)
+    return _max_silent_phase_token(seconds=seconds) in body
+
+
+def _warmup_producer_receives_max_silent_phase(
+    body: str,
+    *,
+    seconds: int = STEP2_MAX_SILENT_PHASE_SECONDS,
+) -> bool:
+    token = _max_silent_phase_token(seconds=seconds)
+    match = re.search(r'PRODUCER_TEMPLATE = "(.*)"', body, re.DOTALL)
+    if match is None:
+        return token in body
+    return token in match.group(1)
+
+
+def verify_probe_receives_max_silent_phase_seconds(replay: dict[str, Any]) -> list[str]:
     failures: list[str] = []
-    checked_keys = (
-        "calibration_warmup_command",
-        "scale_smoke_command",
-        "confirmation_launch_command",
-        "shared_probe_argv",
-    )
-    expected = f"{MAX_SILENT_PHASE_FLAG} {STEP2_MAX_SILENT_PHASE_SECONDS}"
-    for key in checked_keys:
+    seconds = STEP2_MAX_SILENT_PHASE_SECONDS
+    checks: dict[str, Callable[[str], bool]] = {
+        "scale_smoke_command": lambda body: _direct_probe_argv_receives_max_silent_phase(
+            body,
+            seconds=seconds,
+        ),
+        "confirmation_launch_command": lambda body: _confirmation_probe_argv_receives_max_silent_phase(
+            body,
+            seconds=seconds,
+        ),
+        "shared_probe_argv": lambda body: _max_silent_phase_token(seconds=seconds) in body,
+        "calibration_warmup_command": lambda body: _warmup_producer_receives_max_silent_phase(
+            body,
+            seconds=seconds,
+        ),
+    }
+    for key, checker in checks.items():
         body = str(replay.get(key) or "")
-        if expected not in body:
-            failures.append(f"missing_explicit_max_silent_phase:{key}")
+        if not body:
+            failures.append(f"missing_command:{key}")
+            continue
+        if not checker(body):
+            failures.append(f"probe_max_silent_phase_not_on_probe_argv:{key}")
+        if key == "confirmation_launch_command" and re.search(
+            rf"exit 0'\s+{re.escape(MAX_SILENT_PHASE_FLAG)}",
+            body,
+        ):
+            failures.append(f"stranded_max_silent_phase_after_bash_c_close:{key}")
     return failures
+
+
+def verify_explicit_max_silent_phase_seconds(replay: dict[str, Any]) -> list[str]:
+    return verify_probe_receives_max_silent_phase_seconds(replay)
 
 
 def verify_event_coded_incompatible_flags_absent(replay: dict[str, Any]) -> list[str]:
@@ -437,11 +572,11 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
             replay[key] = _replace_w8_with_event_coded(str(replay[key]))
 
     if "scale_smoke_command" in replay:
-        replay["scale_smoke_command"] = _inject_max_silent_phase(
+        replay["scale_smoke_command"] = _inject_max_silent_phase_direct(
             str(replay["scale_smoke_command"])
         )
     if "confirmation_launch_command" in replay:
-        replay["confirmation_launch_command"] = _inject_max_silent_phase(
+        replay["confirmation_launch_command"] = _inject_max_silent_phase_into_bash_c_probe(
             str(replay["confirmation_launch_command"])
         )
     replay["shared_probe_argv"] = _inject_max_silent_phase(

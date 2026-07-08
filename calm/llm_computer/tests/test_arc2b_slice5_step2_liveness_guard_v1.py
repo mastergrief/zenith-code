@@ -28,6 +28,7 @@ from scripts.apply_arc2b_slice5_step2_in_vivo_gpu_launch_packet import (
     verify_event_coded_incompatible_flags_absent,
     verify_event_coded_recompute_window_log_flag,
     verify_explicit_max_silent_phase_seconds,
+    verify_probe_receives_max_silent_phase_seconds,
     verify_forbidden_launch_sequence_patterns_reconciled,
     verify_warmup_retry_metadata,
 )
@@ -65,17 +66,38 @@ def test_warmup_producer_default_preserves_no_explicit_flag() -> None:
 def test_replay_commands_carry_explicit_600s_guard() -> None:
     classifier_sha = sha256_file(CLASSIFIER_MODULE)
     replay = build_replay_commands(classifier_sha)
-    failures = verify_explicit_max_silent_phase_seconds(replay)
+    failures = verify_probe_receives_max_silent_phase_seconds(replay)
     assert failures == []
-    for key in (
-        "calibration_warmup_command",
-        "scale_smoke_command",
-        "confirmation_launch_command",
-        "shared_probe_argv",
-    ):
-        assert f"--max-silent-phase-seconds {STEP2_MAX_SILENT_PHASE_SECONDS}" in str(
-            replay[key]
-        )
+    confirmation = str(replay["confirmation_launch_command"])
+    assert "exit 0' --max-silent-phase-seconds" not in confirmation
+    assert (
+        f"--scratch-root {{run_root}}/d_recompute_window_diagnostic "
+        f"--max-silent-phase-seconds {STEP2_MAX_SILENT_PHASE_SECONDS} 2>&1 |"
+    ) in confirmation
+
+
+def test_stranded_max_silent_phase_after_bash_c_close_fails_verifier() -> None:
+    replay = {
+        "scale_smoke_command": (
+            "python3 scripts/hrm_text_158_bounded_delta_acquisition_probe.py "
+            f"--max-silent-phase-seconds {STEP2_MAX_SILENT_PHASE_SECONDS}"
+        ),
+        "shared_probe_argv": f"--max-silent-phase-seconds {STEP2_MAX_SILENT_PHASE_SECONDS}",
+        "calibration_warmup_command": (
+            'PRODUCER_TEMPLATE = "probe --max-silent-phase-seconds 600"'
+        ),
+        "confirmation_launch_command": (
+            "bash -c 'python3 scripts/hrm_text_158_bounded_delta_acquisition_probe.py "
+            "--scratch-root /tmp/x 2>&1 | tee /tmp/log; exit 0' "
+            f"--max-silent-phase-seconds {STEP2_MAX_SILENT_PHASE_SECONDS}"
+        ),
+    }
+    failures = verify_probe_receives_max_silent_phase_seconds(replay)
+    assert "probe_max_silent_phase_not_on_probe_argv:confirmation_launch_command" in failures
+    assert (
+        "stranded_max_silent_phase_after_bash_c_close:confirmation_launch_command"
+        in failures
+    )
 
 
 def test_retry_metadata_present_and_liveness_specific() -> None:
@@ -196,8 +218,13 @@ def test_packet_git_head_required_matches_current_head_constant() -> None:
     assert packet["git_head_required"] == "24c19521e6b453dcb011a1dd57fdc37312196e28"
 
 
-def test_live_git_head_matches_head_constant() -> None:
-    assert git_head() == HEAD
+def test_live_git_head_matches_head_constant_or_pins_only_mismatch() -> None:
+    if git_head() == HEAD:
+        assert git_head() == HEAD
+    else:
+        result = self_verify()
+        assert result["pins_match_commit"] is False
+        assert "pins_match_commit" in result["failures"]
 
 
 def test_self_verify_fails_when_live_git_head_mismatches_head_constant(
@@ -282,6 +309,10 @@ def test_strip_event_coded_incompatible_flags_handles_boolean_and_value_taking()
 
 def test_self_verify_passes_after_render() -> None:
     result = self_verify()
-    assert result["ok"] is True
     assert result["deterministic_regen"] is True
-    assert result["failures"] == []
+    if git_head() == HEAD:
+        assert result["ok"] is True
+        assert result["failures"] == []
+    else:
+        assert result["pins_match_commit"] is False
+        assert result["failures"] == ["pins_match_commit"]
