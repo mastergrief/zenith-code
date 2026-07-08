@@ -1,0 +1,209 @@
+{
+  "arms": {
+    "arm_c": {
+      "carrier_required_flags": [
+        "--persistent-accumulator-event-coded-live",
+        "--persistent-q-ternary-base3-codec",
+        "--event-coded-sparse-vote-authority",
+        "--d-live-carrier-snapshot"
+      ],
+      "decay_den": 4,
+      "decay_num": 1,
+      "eligible_module_limit": 8,
+      "event_coded_incompatible_flags": [
+        "--two-tier-carry-w6",
+        "--b2b-sequential-capture",
+        "--votes-emit-enabled",
+        "--carrier-growth-enabled",
+        "--d-recompute-window-instrumentation"
+      ],
+      "forbidden_carrier_tokens": [
+        "--dense-accumulator-w8-clip",
+        "--dense-accumulator-w7-clip",
+        "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION"
+      ],
+      "from_clean_parent_contiguous": true,
+      "live_carrier_bytes_exact_required": true,
+      "max_silent_phase_seconds": 600,
+      "max_steps_hard": 25,
+      "postrun_script": "scripts/hrm_text_158_arc2b_slice5_discovery_live_postrun.py",
+      "replay_commands_artifact": "artifacts/consensus_prep/arc2b_slice5_discovery_h25_launch_packet_v2_arm_c_replay_commands.json",
+      "resume_generation_required": 0,
+      "step_time_bound_seconds": 300,
+      "steps": 25
+    },
+    "arm_d": {
+      "carrier_required_flags": [
+        "--persistent-accumulator-event-coded-live",
+        "--persistent-q-ternary-base3-codec",
+        "--event-coded-sparse-vote-authority",
+        "--d-live-carrier-snapshot"
+      ],
+      "decay_den": 2,
+      "decay_num": 1,
+      "eligible_module_limit": 8,
+      "event_coded_incompatible_flags": [
+        "--two-tier-carry-w6",
+        "--b2b-sequential-capture",
+        "--votes-emit-enabled",
+        "--carrier-growth-enabled",
+        "--d-recompute-window-instrumentation"
+      ],
+      "forbidden_carrier_tokens": [
+        "--dense-accumulator-w8-clip",
+        "--dense-accumulator-w7-clip",
+        "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION"
+      ],
+      "from_clean_parent_contiguous": true,
+      "live_carrier_bytes_exact_required": true,
+      "max_silent_phase_seconds": 600,
+      "max_steps_hard": 25,
+      "postrun_script": "scripts/hrm_text_158_arc2b_slice5_discovery_live_postrun.py",
+      "replay_commands_artifact": "artifacts/consensus_prep/arc2b_slice5_discovery_h25_launch_packet_v2_arm_d_replay_commands.json",
+      "resume_generation_required": 0,
+      "step_time_bound_seconds": 300,
+      "steps": 25
+    },
+    "arm_e": {
+      "carrier_required_flags": [
+        "--persistent-accumulator-event-coded-live",
+        "--persistent-q-ternary-base3-codec",
+        "--event-coded-sparse-vote-authority",
+        "--d-live-carrier-snapshot"
+      ],
+      "decay_den": 10,
+      "decay_num": 9,
+      "eligible_module_limit": 8,
+      "event_coded_incompatible_flags": [
+        "--two-tier-carry-w6",
+        "--b2b-sequential-capture",
+        "--votes-emit-enabled",
+        "--carrier-growth-enabled",
+        "--d-recompute-window-instrumentation"
+      ],
+      "forbidden_carrier_tokens": [
+        "--dense-accumulator-w8-clip",
+        "--dense-accumulator-w7-clip",
+        "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION"
+      ],
+      "from_clean_parent_contiguous": true,
+      "live_carrier_bytes_exact_required": true,
+      "max_silent_phase_seconds": 600,
+      "max_steps_hard": 25,
+      "postrun_script": "scripts/hrm_text_158_arc2b_slice5_discovery_live_postrun.py",
+      "replay_commands_artifact": "artifacts/consensus_prep/arc2b_slice5_discovery_h25_launch_packet_v2_arm_e_replay_commands.json",
+      "resume_generation_required": 0,
+      "step_time_bound_seconds": 300,
+      "steps": 25
+    }
+  },
+  "canonical_lane": "test-operator_gpu_arc2b_slice5_discovery_h25",
+  "classifier_binding": {
+    "classifier": "ARC2B_SLICE5_DISCOVERY_BRANCH_V1",
+    "evidence_source": "live_decay_curve",
+    "mechanism_terminals": [
+      "REPRESENTATION_NEW_MECHANISM",
+      "MORE_FORGETTING_HELPS",
+      "LESS_FORGETTING_HELPS",
+      "BOTH_IMPROVE",
+      "DECAY_DIRECTION_AMBIGUOUS"
+    ],
+    "module_path": "calm/hrm_text_158/native_full_stack/arc2b_slice5_discovery_branch.py",
+    "module_sha256": "e2e8fb327779253976101bb5496487cfe5808329597dd299816642a7bd63d8f1",
+    "receipt_schema": "hrm_text_158_arc2b_slice5_discovery_branch_receipt/v1"
+  },
+  "explicit_non_claims": [
+    "not_sub2_readiness",
+    "not_reduction_eligibility",
+    "not_bank_pin",
+    "not_fold3b_universalization",
+    "not_h200_d_terminal_verdict",
+    "not_asymptotic_k_star_at_h100_h200",
+    "not_backlog_direction_flip_erosion",
+    "not_from_clean_parent_contiguous_proof",
+    "not_terminal_verdict_before_registered_complete_arms",
+    "not_gpu_launch_until_plus1_launch_gate",
+    "not_h50_extension_in_this_packet"
+  ],
+  "fidelity_contract": {
+    "not_smaller_model": true,
+    "same_carrier_accounting": true,
+    "same_q_acc_candidate_gen": true,
+    "same_tier_b_checkpoint": true,
+    "same_trainer": true,
+    "shrink_only": [
+      "horizon",
+      "eligible_scope",
+      "instrumentation"
+    ]
+  },
+  "fold": "arc2b_slice5_discovery_h25_launch",
+  "gap_d_fail_closed": {
+    "computes_real_bpw": true,
+    "gate_check_arm_c_e": "gap_d_gate_check_command",
+    "precondition": "if control gap(D) <= 0 at read => classifier fails closed / rescope (no 2x2 terminal)",
+    "witness_command_arm_d": "gap_d_fail_closed_witness_command"
+  },
+  "git_head_required": "406fe012d97fdfe4d399f5e7e8da3d285d9b6c20",
+  "gpu_hold": true,
+  "harness_commit_sha": "406fe012d97fdfe4d399f5e7e8da3d285d9b6c20",
+  "lane_field_fail_closed": {
+    "arm_b_offline_fails_closed_on_missing": true,
+    "required_fields": [
+      "lane_indices",
+      "acc_before_lanes",
+      "acc_after_lanes",
+      "vote_lanes"
+    ]
+  },
+  "liveness_contract": {
+    "liveness_fail_action": "kill + classify operational/inconclusive, no terminal",
+    "max_silent_phase_seconds": 600,
+    "phase_budget_exceed_action": "stack-sample + classify operational",
+    "step_time_bound_seconds": 300
+  },
+  "operational_guard": {
+    "any_live_arm_ineligible_or_liveness_fails": "no_2x2_terminal",
+    "classify_operational_or_inconclusive": true
+  },
+  "ordering": [
+    "arm_d",
+    "arm_c",
+    "arm_e"
+  ],
+  "packet_revision": "v2_arc2b_slice5_discovery_h25_launch_ready",
+  "packet_status": "LAUNCH_READY_GPU_HOLD_UNTIL_PLUS1_LAUNCH",
+  "parent_checkpoint": {
+    "curriculum_seed": 43,
+    "eligible_module_limit": 8,
+    "eligible_scope": "all-bitlinear",
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "support_order_seed": 43
+  },
+  "provenance": {
+    "co_lead_gate2_msg_id": "1783512484577-a5195760",
+    "dispatch_msg_id": "1783529234305-834187b2",
+    "gate1_freeze_msg_id": "1783512308286-b3269c20",
+    "harness_commit_sha": "406fe012d97fdfe4d399f5e7e8da3d285d9b6c20",
+    "implement_gate_msg_id": "1783526612437-ed9e3bba",
+    "plan_msg_id": "1783512246673-8b8492e8"
+  },
+  "readiness_classification": {
+    "class": "pre_full_stack_diagnostic",
+    "flags": {
+      "counts_as_sub2": false,
+      "pre_full_stack_diagnostic": true,
+      "ready_for_main_science": false
+    }
+  },
+  "schema": "hrm_text_158_arc2b_slice5_discovery_h25_launch_packet/v2",
+  "selector": {
+    "budget_gap_bpw": "live_acc_carrier_bpw_max - effective_acc_budget_bpw",
+    "direction_tol_factor": 0.1,
+    "effective_acc_budget_bpw": 0.4,
+    "materiality_factor": 0.8
+  },
+  "separate_launch_gate_required": true,
+  "task_id": "1783272482268-052281aa"
+}

@@ -74,7 +74,7 @@
     }
   },
   "replay_commands_artifact": "artifacts/consensus_prep/arc2b_slice5_step2_in_vivo_gpu_launch_packet_v1_replay_commands.json",
-  "replay_commands_sha256": "88fd9239304cc2e4169fadf269c418ecd6101006839f0daa4fc4dfceadf7f64c",
+  "replay_commands_sha256": "be4a75da86d3356bf8464c58786d165d4dba6f19b1a7e3b75e8b8193c4217a1c",
   "run_id_policy": "FREE \u2014 do NOT reuse B1 run_ids 2189e72001..17",
   "run_root_template": "/home/gabe/claw-code-creditdir/transient_fp_credit/arc2b_slice5_step2_in_vivo_seed43_{run_id}/",
   "runtime_requirements": {

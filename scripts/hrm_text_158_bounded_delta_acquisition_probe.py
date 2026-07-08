@@ -1513,6 +1513,21 @@ class C2PhaseTimeout(RuntimeError):
         super().__init__(json.dumps(self.payload, sort_keys=True))
 
 
+def is_terminal_liveness_breach(payload: Mapping[str, Any]) -> bool:
+    """True only for terminal breach records, not healthy enter/resume guards."""
+    if payload.get("liveness_failure") is True:
+        return True
+    if str(payload.get("guard_event")) == "breach":
+        return True
+    guard_event = str(payload.get("guard_event", ""))
+    if (
+        str(payload.get("failure_class")) == "LIVENESS_FAILURE"
+        and guard_event not in {"enter", "resume", "cleared"}
+    ):
+        return True
+    return False
+
+
 def enforce_phase_bound(
     *,
     phase: str,
@@ -1547,7 +1562,8 @@ def build_phase_budget_interrupt_authority_contract(
         "first_milestone_budget_seconds": dict(
             PHASE3_C4S1_FIRST_MILESTONE_REPORT_ONLY_BUDGET_SECONDS
         ),
-        "interrupt_authority": "faulthandler_silent_phase_guard",
+        "interrupt_authority": "heartbeat_stale_active_phase_guard",
+        "faulthandler_timer_backup": False,
         "interrupt_timeout_seconds": interrupt_seconds,
         "phase_timeout_scalar_is_aggregate_cap_not_milestone_interrupt": True,
         "milestone_budget_breach_triggers_interrupt": False,
@@ -2426,7 +2442,7 @@ class PhaseProgress:
         silent_phase_timeout_seconds: float | int | None = None,
         phase_heartbeat_interval_seconds: float | int | None = None,
         last_active_phase_path: Path | None = None,
-        arm_faulthandler_timer: bool = True,
+        arm_faulthandler_timer: bool = False,
         phase_timeout_exemptions: frozenset[str] | set[str] | None = None,
         phase_timeout_exemption_contract: str = PHASE_TIMEOUT_EXEMPTION_CONTRACT_OFF,
         milestone_emitter: PhaseMilestoneEmitter | None = None,
@@ -2457,6 +2473,7 @@ class PhaseProgress:
         self._phase_stack: list[dict[str, Any]] = []
         self._last_active_phase_payload: dict[str, Any] | None = None
         self._live_heartbeat_threads: list[threading.Thread] = []
+        self._heartbeat_breach_exc: C2PhaseTimeout | None = None
         self._ring_sampler = None
         self._ring_jsonl_path: Path | None = None
         if last_active_phase_path is not None:
@@ -3253,6 +3270,7 @@ class PhaseProgress:
         record: Mapping[str, Any],
         *,
         guard_event: str,
+        breach: bool = False,
     ) -> dict[str, Any]:
         budget = self.silent_phase_timeout_seconds
         guard_started_at = float(record.get("guard_started_at", self.clock()))
@@ -3267,13 +3285,35 @@ class PhaseProgress:
             "breach_after_silent_seconds": budget,
             "device": str(self.device),
             "pid": int(os.getpid()),
-            "failure_class": "LIVENESS_FAILURE",
-            "stack_source": "faulthandler.dump_traceback_later",
-            "fail_closed_termination": "faulthandler_exit_true",
+            "liveness_failure": False,
             "resource_snapshot": _proc_self_resource_snapshot(),
             **dict(record.get("fields", {})),
         }
+        if breach or str(guard_event) == "breach":
+            payload.update(
+                {
+                    "liveness_failure": True,
+                    "failure_class": "LIVENESS_FAILURE",
+                    "stack_source": "check_stale_active_phase",
+                    "fail_closed_termination": "heartbeat_stale_phase_guard",
+                }
+            )
         return payload
+
+    def _write_breach_last_active_phase(
+        self,
+        record: Mapping[str, Any],
+        *,
+        silent_seconds: float,
+        timeout_seconds: float,
+        bound_kind: str = "silent_phase",
+    ) -> None:
+        payload = self._active_phase_payload(record, guard_event="breach", breach=True)
+        payload["bound_kind"] = str(bound_kind)
+        payload["silent_seconds"] = float(silent_seconds)
+        payload["timeout_seconds"] = float(timeout_seconds)
+        self._last_active_phase_payload = payload
+        self._write_last_active_phase(payload)
 
     def _write_last_active_phase(self, payload: Mapping[str, Any]) -> None:
         if self.last_active_phase_path is None:
@@ -3389,6 +3429,12 @@ class PhaseProgress:
         while not stop_event.wait(timeout=float(interval)):
             if not self._phase_stack or self._phase_stack[-1]["phase"] != str(phase):
                 return
+            try:
+                self.check_stale_active_phase()
+            except C2PhaseTimeout as exc:
+                self._heartbeat_breach_exc = exc
+                stop_event.set()
+                return
             elapsed = max(0.0, float(self.clock() - phase_started_at))
             self.mark(
                 phase,
@@ -3433,6 +3479,12 @@ class PhaseProgress:
         if silent_seconds <= budget:
             return None
         fields = dict(record.get("fields", {}))
+        self._write_breach_last_active_phase(
+            record,
+            silent_seconds=silent_seconds,
+            timeout_seconds=budget,
+            bound_kind="silent_phase",
+        )
         raise C2PhaseTimeout(
             phase=str(record["phase"]),
             bound_kind="silent_phase",
@@ -3442,14 +3494,16 @@ class PhaseProgress:
             active_phase=str(record["phase"]),
             silent_seconds=silent_seconds,
             pid=int(os.getpid()),
-            stack_source="faulthandler.dump_traceback_later",
-            fail_closed_termination="faulthandler_exit_true",
+            stack_source="check_stale_active_phase",
+            fail_closed_termination="heartbeat_stale_phase_guard",
+            liveness_failure=True,
             **fields,
         )
 
     @contextmanager
     def phase(self, phase: str, **fields: Any) -> Any:
         phase_start = float(self.clock())
+        self._heartbeat_breach_exc = None
         self._enter_phase(phase, phase_start, fields)
         self.mark(phase, "start", **fields)
         self._emit_host_rss_profile_mark(phase, "enter", fields)
@@ -3489,7 +3543,23 @@ class PhaseProgress:
                 stop_event.set()
                 heartbeat_thread.join(timeout=1.0)
                 self._unregister_heartbeat_thread(heartbeat_thread)
+        if self._heartbeat_breach_exc is not None:
+            breach_exc = self._heartbeat_breach_exc
+            self._heartbeat_breach_exc = None
+            self._exit_phase(phase)
+            timeout_fields = {
+                key: value
+                for key, value in breach_exc.payload.items()
+                if key not in {"schema", "phase", "event"} and key not in fields
+            }
+            self.mark(phase, "timeout", **fields, **timeout_fields)
+            raise breach_exc
         duration = max(0.0, float(self.clock() - phase_start))
+        phase_record = (
+            self._phase_stack[-1]
+            if self._phase_stack and self._phase_stack[-1]["phase"] == str(phase)
+            else None
+        )
         self._exit_phase(phase)
         try:
             enforce_phase_bound(
@@ -3500,6 +3570,13 @@ class PhaseProgress:
             )
             self._check_total_bound(phase)
         except C2PhaseTimeout as exc:
+            if phase_record is not None:
+                self._write_breach_last_active_phase(
+                    phase_record,
+                    silent_seconds=float(exc.payload.get("duration_seconds", 0.0)),
+                    timeout_seconds=float(exc.payload.get("timeout_seconds", 0.0)),
+                    bound_kind=str(exc.payload.get("bound_kind", "phase")),
+                )
             timeout_fields = {
                 key: value
                 for key, value in exc.payload.items()

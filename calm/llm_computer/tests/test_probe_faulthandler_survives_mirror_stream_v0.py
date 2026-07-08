@@ -51,7 +51,9 @@ def test_phase_progress_writes_liveness_stack_dump_before_timer_arm(tmp_path: Pa
     assert "guard_event=enter" in dump_text
     assert "phase=step_update" in dump_text
     payload = json.loads(dump_text.splitlines()[2])
-    assert payload["failure_class"] == "LIVENESS_FAILURE"
+    assert payload["guard_event"] == "enter"
+    assert payload["liveness_failure"] is False
+    assert "failure_class" not in payload
 
 
 def test_h200_replay_confirmation_command_tees_confirmation_stderr_log() -> None:

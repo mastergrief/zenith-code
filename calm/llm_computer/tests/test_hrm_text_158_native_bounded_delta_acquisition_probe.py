@@ -1667,8 +1667,10 @@ def test_phase_progress_silent_phase_guard_breaches_before_phase_exit(tmp_path: 
     assert payload["step"] == 1
     last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
     assert last_active["phase"] == "step_update"
+    assert last_active["guard_event"] == "breach"
     assert last_active["budget_seconds"] == 5.0
     assert last_active["failure_class"] == "LIVENESS_FAILURE"
+    assert last_active["liveness_failure"] is True
 
 
 def test_phase_progress_silent_phase_guard_allows_normal_progress(tmp_path: Path):
@@ -1710,6 +1712,7 @@ def test_phase_progress_arms_faulthandler_timer_without_firing(monkeypatch, tmp_
         device=torch.device("cpu"),
         silent_phase_timeout_seconds=7.0,
         last_active_phase_path=tmp_path / "last_active_phase.json",
+        arm_faulthandler_timer=True,
     )
 
     with progress.phase("step_update", step=1):
@@ -1737,6 +1740,7 @@ def test_phase_progress_fails_closed_when_faulthandler_timer_cannot_arm(monkeypa
         device=torch.device("cpu"),
         silent_phase_timeout_seconds=7.0,
         last_active_phase_path=tmp_path / "last_active_phase.json",
+        arm_faulthandler_timer=True,
     )
 
     with pytest.raises(RuntimeError, match="failed to arm silent phase faulthandler guard"):
@@ -1775,9 +1779,9 @@ def test_phase_progress_nested_exit_rearms_parent_without_cleared_record(tmp_pat
         assert last_active["phase"] == "parent"
         assert last_active["guard_event"] == "resume"
         assert last_active["parent_flag"] == 1
-        assert last_active["failure_class"] == "LIVENESS_FAILURE"
         assert last_active.get("guard_event") != "cleared"
         assert last_active.get("phase_status") != "completed"
+        assert "failure_class" not in last_active
 
     last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
     assert last_active["guard_event"] == "cleared"
@@ -1835,6 +1839,7 @@ def test_phase_progress_hung_timeout_still_records_liveness_failure(tmp_path: Pa
 
     last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
     assert last_active["failure_class"] == "LIVENESS_FAILURE"
+    assert last_active["guard_event"] == "breach"
     assert last_active.get("guard_event") != "cleared"
 
 
@@ -1866,6 +1871,7 @@ def test_phase_progress_post_body_timeout_does_not_clear_last_active_phase(
 
     last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
     assert last_active["phase"] == "slow_phase"
+    assert last_active["guard_event"] == "breach"
     assert last_active["failure_class"] == "LIVENESS_FAILURE"
     assert last_active.get("guard_event") != "cleared"
 
@@ -1887,7 +1893,7 @@ def test_phase_progress_exception_preserves_liveness_failure_sentinel(tmp_path: 
     last_active = json.loads(last_active_path.read_text(encoding="utf-8"))
     assert last_active["phase"] == "bad_phase"
     assert last_active["guard_event"] == "enter"
-    assert last_active["failure_class"] == "LIVENESS_FAILURE"
+    assert "failure_class" not in last_active
     assert last_active.get("guard_event") != "cleared"
 
 
@@ -2180,8 +2186,8 @@ def test_tiny_step0_receipt_write_uses_guarded_phase(monkeypatch, tmp_path: Path
     assert last_active["phase"] == "receipt_write"
     assert last_active["liveness_failure"] is False
     assert "failure_class" not in last_active
-    assert ("dump", 11.0, False, True) in calls
-    assert receipt_write_armed == [True]
+    assert calls == []
+    assert receipt_write_armed == [False]
     disk_receipt = json.loads((scratch_root / "receipt.json").read_text(encoding="utf-8"))
     assert disk_receipt["receipt_path"] == str(scratch_root / "receipt.json")
 
@@ -3156,7 +3162,8 @@ def test_register_probe_faulthandler_succeeds_under_activation_credit_env_log_ca
     assert report["enabled_after"] is True
     assert ("enable", True, stderr_fd) in calls
     if getattr(probe_module.signal, "SIGQUIT", None) is not None:
-        assert any(call[0] == "register" and call[4] == stderr_fd for call in calls)
+        assert report["signals"]["SIGQUIT"]["status"] == "registered"
+        assert report["signals"]["SIGQUIT"]["handler"] == "probe_sigquit_flush_then_exit"
 
 
 def test_activation_credit_cli_main_logs_traceback_to_named_stderr(

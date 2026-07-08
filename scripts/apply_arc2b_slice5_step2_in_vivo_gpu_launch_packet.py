@@ -579,6 +579,13 @@ def build_replay_commands(classifier_sha: str) -> dict[str, Any]:
         replay["confirmation_launch_command"] = _inject_max_silent_phase_into_bash_c_probe(
             str(replay["confirmation_launch_command"])
         )
+        from scripts.apply_arc2b_slice5_discovery_h25_launch_packet_v2 import (
+            honest_confirmation_launch_rc,
+        )
+
+        replay["confirmation_launch_command"] = honest_confirmation_launch_rc(
+            str(replay["confirmation_launch_command"])
+        )
     replay["shared_probe_argv"] = _inject_max_silent_phase(
         _replace_w8_with_event_coded(str(replay.get("shared_probe_argv", "")))
     )
