@@ -1,0 +1,118 @@
+{
+  "canonical_lane": "test-operator_gpu_arc2b_slice5_step2_scale_smoke",
+  "classifier_binding": {
+    "classifier": "ARC2B_SLICE5_IN_VIVO_BRANCH_V1",
+    "module_path": "calm/hrm_text_158/native_full_stack/arc2b_slice5_in_vivo_branch.py",
+    "module_sha256": "8c6379e6442ef9eea390f5fa6ebc937799613342722a825b6e5505124079aaf1",
+    "witness_only": true
+  },
+  "explicit_non_claims": [
+    "not_h200_confirmation",
+    "not_mechanism_terminal",
+    "not_sub2_readiness",
+    "not_reduction_eligibility",
+    "not_gpu_launch_until_plus1_launch_gate"
+  ],
+  "fold": "arc2b_slice5_step2_scale_smoke_gpu_launch",
+  "git_head_required": "3d52a96abd8ecab00b902f9d6a837c2a30b80894",
+  "gpu_hold": true,
+  "law_under_test": {
+    "decay_den": 2,
+    "decay_num": 1,
+    "effective_acc_budget_bpw": 0.4,
+    "tolerance_bpw": 0.0,
+    "window_k": 180
+  },
+  "liveness_contract": {
+    "coherence": "explicit 600s guard on warmup/scale_smoke/confirmation/shared_probe_argv; probe implicit GPU default remains 300s without explicit flag",
+    "max_silent_phase_seconds": 600,
+    "warmup_liveness_failure_is_operational_not_mechanism_terminal": true,
+    "watcher_liveness_fail_regex": "LIVENESS_FAIL_KERNELIZED_BUT_STALLED|phase_milestone_stall|LIVENESS_FAIL_TOTAL_TIMEOUT|total_timeout|LIVENESS_FAILURE|LIVENESS_FAIL"
+  },
+  "liveness_retry_policy": {
+    "max_attempts": 2,
+    "non_liveness_failure_no_retry": true,
+    "phases": [
+      "calibration_warmup"
+    ],
+    "retry_trigger": "liveness_failure_only",
+    "scratch_wipe_between_attempts": true,
+    "witness_receipt": "prelaunch/calibration_warmup_retry_witness.json"
+  },
+  "manifest_binding": {
+    "recorded_selector_internal_manifest_sha256": "5d6e0fea9c0f07600a40c36d6df73dc945296d5a684cafa26ba76b206bd7c996"
+  },
+  "operational_pass_criteria": {
+    "forbidden_terminal_wording": [
+      "D_NEEDS_UPDATE_LAW_REDESIGN",
+      "sub-2",
+      "H=200"
+    ],
+    "requires_launch_eligibility_pass": true,
+    "requires_scale_smoke_receipt_pass": true,
+    "requires_witness_pass": true
+  },
+  "packet_revision": "v1_arc2b_slice5_step2_scale_smoke",
+  "parent_checkpoint": {
+    "curriculum_seed": 43,
+    "eligible_scope": "all-bitlinear",
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "support_order_seed": 43
+  },
+  "provenance": {
+    "co_lead_gate2_msg_id": "1783499259427",
+    "dispatch_msg_id": "1783498076466-345c8cec",
+    "gate1_freeze_msg_id": "1783499093445-da036c4b",
+    "implement_gate_msg_id": "1783499312705-6ea128fc",
+    "plan_msg_id": "1783499011075-226e43bf"
+  },
+  "readiness_classification": {
+    "class": "pre_full_stack_diagnostic",
+    "flags": {
+      "counts_as_sub2": false,
+      "pre_full_stack_diagnostic": true,
+      "ready_for_main_science": false
+    }
+  },
+  "replay_commands_artifact": "artifacts/consensus_prep/arc2b_slice5_step2_scale_smoke_launch_packet_v1_replay_commands.json",
+  "replay_commands_sha256": "a06b93b2640d4758210a7b553f4cdb5b63654dc8a9c52563e16fc74ed9b94426",
+  "run_id_policy": "FREE \u2014 fresh scale_smoke run_id; do NOT reuse B1 2189e72001..17",
+  "run_root_template": "/home/gabe/claw-code-creditdir/transient_fp_credit/arc2b_slice5_step2_scale_smoke_seed43_{run_id}/",
+  "runtime_requirements": {
+    "carrier_authority_forbidden_tokens": [
+      "--dense-accumulator-w8-clip",
+      "--dense-accumulator-w7-clip",
+      "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION"
+    ],
+    "carrier_authority_required_argv": [
+      "--persistent-accumulator-event-coded-live",
+      "--persistent-q-ternary-base3-codec",
+      "--event-coded-sparse-vote-authority",
+      "--d-live-carrier-snapshot"
+    ],
+    "decay_active": {
+      "decay_den": 2,
+      "decay_num": 1
+    },
+    "decay_cli_flags": [
+      "--vote-update-decay-numerator",
+      "1",
+      "--vote-update-decay-denominator",
+      "2"
+    ],
+    "from_clean_parent_contiguous": true,
+    "live_carrier_snapshot_required": true,
+    "max_silent_phase_seconds": 600,
+    "resume_generation": 0
+  },
+  "scale_smoke": {
+    "fresh_process_required": true,
+    "max_steps_hard": 5,
+    "resume_generation": 0,
+    "scratch_wipe_before_smoke": true,
+    "smoke_steps": 5
+  },
+  "schema": "hrm_text_158_arc2b_slice5_step2_scale_smoke_launch_packet/v1",
+  "task_id": "1783272482268-052281aa"
+}
