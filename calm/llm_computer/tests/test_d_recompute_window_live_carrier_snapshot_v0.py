@@ -180,6 +180,9 @@ def test_snapshot_emit_writes_exact_rows(tmp_path) -> None:
     row = log_path.read_text(encoding="utf-8").strip()
     assert '"live_carrier_bytes_exact": true' in row
     assert '"step": 3' in row
+    # Stage A LEN-LOG fields (passive): present even when q_levels empty.
+    assert '"len_q_levels": 0' in row
+    assert '"global_len_q_levels": 0' in row
 
 
 def test_snapshot_read_p95_under_one_millisecond_cpu_gate() -> None:
