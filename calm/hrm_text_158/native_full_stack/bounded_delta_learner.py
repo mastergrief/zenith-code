@@ -2799,14 +2799,19 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                 sub_phase_id="C2b_cpu_reference_cap_apply",
                 optimizer_step_index=step_index,
             ):
-                cap_result = apply_global_rate_cap_reference(
-                    cap_inputs,
-                    global_cap_spec,
-                    deferred_backlog=deferred_backlog,
-                    tie_rule_mode=global_cap_tie_rule_mode,
-                    contract_name=global_cap_contract_name,
-                    event_coded_sparse_cap_enabled=bool(event_coded_sparse_vote_authority),
-                )
+                with _host_rss_subphase_scope(
+                    rss_emit,
+                    sub_phase_id="C2b_sel_cpu_reference_cap_selection",
+                    optimizer_step_index=step_index,
+                ):
+                    cap_result = apply_global_rate_cap_reference(
+                        cap_inputs,
+                        global_cap_spec,
+                        deferred_backlog=deferred_backlog,
+                        tie_rule_mode=global_cap_tie_rule_mode,
+                        contract_name=global_cap_contract_name,
+                        event_coded_sparse_cap_enabled=bool(event_coded_sparse_vote_authority),
+                    )
                 if bool(event_coded_sparse_vote_authority):
                     cap_selection_path = "cpu_reference"
                 backlog = cap_result.deferred_backlog
@@ -2850,28 +2855,33 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     )
                     return state_key, local_result.carrier, local_result.q_levels, stats
 
-                if bool(event_coded_sparse_vote_authority) and len(cap_result.tensor_results) > 1:
-                    cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type
-                    if cap_apply_device_type == "cuda":
-                        summary["sparse_cap_apply_parallel_mode"] = "serial_cuda"
-                        for item in cap_result.tensor_results:
-                            state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
-                            carriers_by_key[state_key] = carrier
-                            q_by_key[state_key] = q_out
-                            stats_by_key[state_key] = stats
+                with _host_rss_subphase_scope(
+                    rss_emit,
+                    sub_phase_id="C2b_app_cpu_reference_cap_apply",
+                    optimizer_step_index=step_index,
+                ):
+                    if bool(event_coded_sparse_vote_authority) and len(cap_result.tensor_results) > 1:
+                        cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type
+                        if cap_apply_device_type == "cuda":
+                            summary["sparse_cap_apply_parallel_mode"] = "serial_cuda"
+                            for item in cap_result.tensor_results:
+                                state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
+                                carriers_by_key[state_key] = carrier
+                                q_by_key[state_key] = q_out
+                                stats_by_key[state_key] = stats
+                        else:
+                            summary["sparse_cap_apply_parallel_mode"] = "serial_cpu"
+                            for item in cap_result.tensor_results:
+                                state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
+                                carriers_by_key[state_key] = carrier
+                                q_by_key[state_key] = q_out
+                                stats_by_key[state_key] = stats
                     else:
-                        summary["sparse_cap_apply_parallel_mode"] = "serial_cpu"
                         for item in cap_result.tensor_results:
                             state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
                             carriers_by_key[state_key] = carrier
                             q_by_key[state_key] = q_out
                             stats_by_key[state_key] = stats
-                else:
-                    for item in cap_result.tensor_results:
-                        state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
-                        carriers_by_key[state_key] = carrier
-                        q_by_key[state_key] = q_out
-                        stats_by_key[state_key] = stats
         if bool(event_coded_sparse_vote_authority):
             if cap_selection_path is not None:
                 cap_selection_kind_by_path = {
