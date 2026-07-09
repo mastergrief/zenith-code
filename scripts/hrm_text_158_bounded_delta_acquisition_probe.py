@@ -352,6 +352,19 @@ PROFILE_HOST_RSS_OBMALLOC_SCHEMA = "hrm_text_158_profile_host_rss_mark/v8"
 PROFILE_HOST_RSS_OBMALLOC_SITE_SCHEMA = "hrm_text_158_profile_host_rss_mark/v9"
 PROFILE_S1D7_TRACEMALLOC_SITE_SCHEMA = "hrm_text_158_s1d7_tracemalloc_site/v1"
 PROFILE_S1D7_BAND_COUNTER_SITE_SCHEMA = "hrm_text_158_s1d7_band_counter_site/v1"
+# Slice-10 C2b_app classify site IDs (cpu_reference host_allocator_site_emit).
+# Registered for survival/emit-count proofs; site_emit itself is not filtered by this set
+# (GPU legacy C4.S1* marks must continue to emit when PROFILE_ALLOCATOR_NATIVE=1).
+PROFILE_HOST_RSS_SLICE10_C2B_APP_SITE_IDS = frozenset({
+    "C4.S1a",
+    "C2b.S1_vote_first_sync_clone",
+    "C2b.S1_vote_first_sync_hot_list",
+    "C2b.S1_vote_first_sync_contig",
+    "C2b.S1_cap_mut_q_clone",
+    "C2b.S1_cap_mut_sync_clone",
+    "C2b.S1_cap_mut_sync_hot_list",
+    "C2b.S1_cap_mut_sync_contig",
+})
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",

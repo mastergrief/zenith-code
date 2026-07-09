@@ -1034,6 +1034,28 @@ def _votes_dict_from_tensor(votes: torch.Tensor) -> dict[int, int]:
     return {int(index): int(value) for index, value in zip(indices, values)}
 
 
+# Slice-10 C2b_app classify site IDs (cpu_reference only). Survival fail-closed:
+# every NEW ID below MUST remain as a literal in this module. Do NOT bank OWNER on
+# legacy C4.S1c_clone / C4.S1c_contig for Slice-10.
+SLICE10_VOTE_FIRST_SYNC_PREFIX = "C2b.S1_vote_first_sync"
+SLICE10_CAP_MUT_SYNC_PREFIX = "C2b.S1_cap_mut_sync"
+SLICE10_CAP_MUT_Q_CLONE_SITE_ID = "C2b.S1_cap_mut_q_clone"
+SLICE10_C2B_APP_CLASSIFY_SITE_IDS: tuple[str, ...] = (
+    "C4.S1a",  # existing cow — activated by GAP A
+    "C2b.S1_vote_first_sync_clone",
+    "C2b.S1_vote_first_sync_hot_list",
+    "C2b.S1_vote_first_sync_contig",
+    "C2b.S1_cap_mut_q_clone",
+    "C2b.S1_cap_mut_sync_clone",
+    "C2b.S1_cap_mut_sync_hot_list",
+    "C2b.S1_cap_mut_sync_contig",
+)
+SLICE10_C2B_APP_FORBIDDEN_OWNER_SITE_IDS: tuple[str, ...] = (
+    "C4.S1c_clone",
+    "C4.S1c_contig",
+)
+
+
 def _sync_q_levels_tensor(
     carrier: EventCodedAccLiveState,
     q_levels: torch.Tensor,
@@ -1042,7 +1064,15 @@ def _sync_q_levels_tensor(
     site_emit_enabled: bool = False,
     optimizer_step_index: int | None = None,
     state_index: int | None = None,
+    classify_site_prefix: str | None = None,
 ) -> torch.Tensor:
+    """Sync carrier hot q into a dense tensor.
+
+    When ``classify_site_prefix`` is set (Slice-10 C2b_app classify), emit distinct
+    C2b-scoped site IDs for clone / hot_list / contig. When unset, keep legacy
+    ``C4.S1c_clone`` / ``C4.S1c_contig`` marks (gpu / non-classify callers).
+    """
+
     def _site(site_id: str, suffix: str, line: int) -> None:
         if host_allocator_site_emit is None or not site_emit_enabled:
             return
@@ -1055,14 +1085,25 @@ def _sync_q_levels_tensor(
             state_index=int(state_index if state_index is not None else -1),
         )
 
-    _site("C4.S1c_clone", "pre", 1021)
+    if classify_site_prefix:
+        clone_id = f"{classify_site_prefix}_clone"
+        hot_id = f"{classify_site_prefix}_hot_list"
+        contig_id = f"{classify_site_prefix}_contig"
+    else:
+        clone_id = "C4.S1c_clone"
+        hot_id = None  # legacy path has no dedicated hot-list mark
+        contig_id = "C4.S1c_contig"
+
+    _site(clone_id, "pre", 1021)
     q_out = q_levels.detach().clone().to(torch.int8)
-    _site("C4.S1c_clone", "post", 1021)
+    _site(clone_id, "post", 1021)
     if not carrier.q_levels:
-        _site("C4.S1c_contig", "pre", 1023)
+        _site(contig_id, "pre", 1023)
         result = q_out.contiguous()
-        _site("C4.S1c_contig", "post", 1023)
+        _site(contig_id, "post", 1023)
         return result
+    if hot_id is not None:
+        _site(hot_id, "pre", 1066)
     hot_items = sorted(carrier.q_levels.items(), key=lambda item: int(item[0]))
     flat_indices = torch.tensor(
         [int(index) for index, _ in hot_items],
@@ -1074,11 +1115,13 @@ def _sync_q_levels_tensor(
         device=q_out.device,
         dtype=torch.int8,
     )
+    if hot_id is not None:
+        _site(hot_id, "post", 1076)
     flat = q_out.flatten()
     flat.index_put_((flat_indices,), flat_values)
-    _site("C4.S1c_contig", "pre", 1037)
+    _site(contig_id, "pre", 1037)
     result = flat.view_as(q_levels).contiguous()
-    _site("C4.S1c_contig", "post", 1037)
+    _site(contig_id, "post", 1037)
     return result
 
 
@@ -1150,6 +1193,7 @@ def apply_event_coded_integer_vote_update_from_plan(
     optimizer_step_index: int | None = None,
     state_index: int | None = None,
     site_emit_enabled: bool = False,
+    classify_site_prefix: str | None = None,
 ) -> EventCodedVoteUpdateResult:
     def _site(site_id: str, suffix: str, line: int) -> None:
         if host_allocator_site_emit is None or not site_emit_enabled:
@@ -1218,6 +1262,8 @@ def apply_event_coded_integer_vote_update_from_plan(
         site_emit_enabled=site_emit_enabled,
         optimizer_step_index=optimizer_step_index if optimizer_step_index is not None else step_index,
         state_index=state_index,
+        # Only set by cpu_reference vote_and_cap (Slice-10); GPU seam leaves None → legacy C4.S1c_*.
+        classify_site_prefix=classify_site_prefix,
     )
     persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
         exact_accumulator_shadow=None,
@@ -1389,22 +1435,52 @@ def apply_event_coded_cap_mutations(
     accepted_indices: Sequence[int],
     *,
     step_index: int,
+    host_allocator_site_emit: Callable[..., None] | None = None,
+    site_emit_enabled: bool = False,
+    optimizer_step_index: int | None = None,
+    state_index: int | None = None,
 ) -> tuple[torch.Tensor, EventCodedAccLiveState]:
     """Write global-cap accepted rows through the live carrier (not dense acc_out).
 
     Mutates ``carrier`` in-place; input must already be the vote-fork (L1156).
     """
 
+    def _site(site_id: str, suffix: str, line: int) -> None:
+        if host_allocator_site_emit is None or not site_emit_enabled:
+            return
+        host_allocator_site_emit(
+            site_id,
+            suffix,
+            origin_file="event_coded_vote_update_adapter.py",
+            origin_line=int(line),
+            optimizer_step_index=int(
+                optimizer_step_index if optimizer_step_index is not None else step_index
+            ),
+            state_index=int(state_index if state_index is not None else -1),
+        )
+
     if not accepted_indices:
         return q_levels, carrier
+    _site(SLICE10_CAP_MUT_Q_CLONE_SITE_ID, "pre", 1400)
     q_out = q_levels.detach().cpu().clone().to(torch.int8)
+    _site(SLICE10_CAP_MUT_Q_CLONE_SITE_ID, "post", 1400)
     _apply_cap_hot_and_q_writes_in_place(carrier, q_out, plan, accepted_indices)
     apply_event_coded_carrier_step(
         carrier,
         votes={},
         step_index=int(step_index),
     )
-    q_synced = _sync_q_levels_tensor(carrier, q_out)
+    q_synced = _sync_q_levels_tensor(
+        carrier,
+        q_out,
+        host_allocator_site_emit=host_allocator_site_emit,
+        site_emit_enabled=site_emit_enabled,
+        optimizer_step_index=optimizer_step_index if optimizer_step_index is not None else step_index,
+        state_index=state_index,
+        classify_site_prefix=(
+            SLICE10_CAP_MUT_SYNC_PREFIX if site_emit_enabled else None
+        ),
+    )
     observation = C8StepObservation()
     persistent_dense = measure_persistent_dense_accumulator_materialized_numel(
         exact_accumulator_shadow=None,
@@ -1450,6 +1526,9 @@ def apply_event_coded_vote_and_cap_from_plan(
         optimizer_step_index=optimizer_step_index,
         state_index=state_index,
         site_emit_enabled=site_emit_enabled,
+        classify_site_prefix=(
+            SLICE10_VOTE_FIRST_SYNC_PREFIX if site_emit_enabled else None
+        ),
     )
     if not accepted_indices:
         return vote_result
@@ -1459,6 +1538,10 @@ def apply_event_coded_vote_and_cap_from_plan(
         plan,
         accepted_indices,
         step_index=int(step_index),
+        host_allocator_site_emit=host_allocator_site_emit,
+        site_emit_enabled=site_emit_enabled,
+        optimizer_step_index=optimizer_step_index,
+        state_index=state_index,
     )
     stats = dict(vote_result.stats)
     if carrier.step_records:

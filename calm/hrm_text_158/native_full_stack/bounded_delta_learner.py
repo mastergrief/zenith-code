@@ -2835,10 +2835,17 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                     for item in cap_result.tensor_results
                 }
 
-                def _apply_cap_tensor_result(item: Any) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
+                def _apply_cap_tensor_result(
+                    item: Any,
+                    *,
+                    state_index: int = -1,
+                ) -> tuple[str, EventCodedAccLiveState, torch.Tensor, dict[str, Any]]:
                     state_key = str(item.state_key)
                     vu = event_states[state_key]
                     plan = plans_by_key[state_key]
+                    host_allocator_site_emit = (
+                        getattr(rss_emit, "site_emit", None) if rss_emit is not None else None
+                    )
                     local_result = apply_event_coded_vote_and_cap_from_plan(
                         vu,
                         inputs_by_key[state_key],
@@ -2848,6 +2855,10 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                         step_index=int(local_selection_ordering_step),
                         cap_boundary_transient_dense=cap_boundary_transient,
                         lightweight_runtime_stats=bool(event_coded_sparse_vote_authority),
+                        host_allocator_site_emit=host_allocator_site_emit,
+                        site_emit_enabled=host_allocator_site_emit is not None,
+                        optimizer_step_index=int(step_index),
+                        state_index=int(state_index),
                     )
                     stats = _merge_event_coded_cap_tensor_stats(
                         item.stats,
@@ -2864,21 +2875,27 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                         cap_apply_device_type = next(iter(tensor_states.values())).q_levels.device.type
                         if cap_apply_device_type == "cuda":
                             summary["sparse_cap_apply_parallel_mode"] = "serial_cuda"
-                            for item in cap_result.tensor_results:
-                                state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
+                            for state_index, item in enumerate(cap_result.tensor_results):
+                                state_key, carrier, q_out, stats = _apply_cap_tensor_result(
+                                    item, state_index=int(state_index)
+                                )
                                 carriers_by_key[state_key] = carrier
                                 q_by_key[state_key] = q_out
                                 stats_by_key[state_key] = stats
                         else:
                             summary["sparse_cap_apply_parallel_mode"] = "serial_cpu"
-                            for item in cap_result.tensor_results:
-                                state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
+                            for state_index, item in enumerate(cap_result.tensor_results):
+                                state_key, carrier, q_out, stats = _apply_cap_tensor_result(
+                                    item, state_index=int(state_index)
+                                )
                                 carriers_by_key[state_key] = carrier
                                 q_by_key[state_key] = q_out
                                 stats_by_key[state_key] = stats
                     else:
-                        for item in cap_result.tensor_results:
-                            state_key, carrier, q_out, stats = _apply_cap_tensor_result(item)
+                        for state_index, item in enumerate(cap_result.tensor_results):
+                            state_key, carrier, q_out, stats = _apply_cap_tensor_result(
+                                item, state_index=int(state_index)
+                            )
                             carriers_by_key[state_key] = carrier
                             q_by_key[state_key] = q_out
                             stats_by_key[state_key] = stats
