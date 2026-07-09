@@ -64,6 +64,7 @@ def _minimal_plan(*, applied_indices: list[int], numel: int) -> VoteUpdatePlan:
 
 
 def _record_tuple(record: StepSurfaceRecord) -> tuple[Any, ...]:
+    # Decisive-record contract: record.q_levels is applied∪crossing only.
     return (
         int(record.step_index),
         record.crossing_indices,
@@ -77,12 +78,26 @@ def _record_tuple(record: StepSurfaceRecord) -> tuple[Any, ...]:
     )
 
 
+def _assert_decisive_record_contract(
+    record: StepSurfaceRecord,
+    live_q_levels: dict[int, int],
+) -> None:
+    decisive = {int(i) for i in record.applied_indices} | {
+        int(i) for i in record.crossing_indices
+    }
+    assert set(record.q_levels.keys()) == decisive
+    for index, value in record.q_levels.items():
+        assert int(value) == int(live_q_levels.get(int(index), 0))
+
+
 def _carrier_snap(carrier: EventCodedAccLiveState, q_levels: torch.Tensor) -> dict[str, Any]:
     decoded = tuple(carrier.events)
     return {
         "carrier_sha256": carrier_content_sha256(carrier),
         "q_sha256": hashlib.sha256(q_levels.detach().cpu().numpy().tobytes()).hexdigest(),
         "step_records": [_record_tuple(r) for r in carrier.step_records],
+        # DIRECT live-q coverage (full dense map) — not via record.q_levels.
+        "live_q_levels_dict": dict(carrier.q_levels),
         "events": decoded,
         "events_bytes": carrier._event_store.encode_bytes(),
         "events_len": len(carrier.events),
@@ -290,6 +305,19 @@ def test_dual_path_bit_exact_vote_cap_and_checkpoint_rt() -> None:
         snap_p = _carrier_snap(res_p.carrier, res_p.q_levels)
         snap_t = _carrier_snap(res_t.carrier, res_t.q_levels)
         assert snap_p == snap_t, f"step {step_index} diverged"
+        # DIRECT live-q + decisive-record contract (Item2 Class-A fold).
+        # Historical records keep decisive keys only; value==live only for latest.
+        assert snap_p["live_q_levels_dict"] == dict(res_p.carrier.q_levels)
+        for record in res_p.carrier.step_records:
+            decisive = {int(i) for i in record.applied_indices} | {
+                int(i) for i in record.crossing_indices
+            }
+            assert set(record.q_levels.keys()) == decisive
+        if res_p.carrier.step_records:
+            _assert_decisive_record_contract(
+                res_p.carrier.step_records[-1],
+                res_p.carrier.q_levels,
+            )
         # decode==legacy encode (list semantics)
         decoded = tuple(res_p.carrier.events)
         assert res_p.carrier._event_store.encode_bytes() == encode_event_coded_acc_events(

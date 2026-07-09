@@ -49,6 +49,7 @@ def _minimal_plan(*, applied_indices: list[int], numel: int) -> VoteUpdatePlan:
 
 
 def _record_tuple(record: StepSurfaceRecord) -> tuple[Any, ...]:
+    # Decisive-record contract: record.q_levels is applied∪crossing only.
     return (
         int(record.step_index),
         record.crossing_indices,
@@ -72,6 +73,8 @@ def serialize_carrier_equivalence_snapshot(
         "step_records": [_record_tuple(record) for record in carrier.step_records],
         "events_len": len(carrier.events),
         "backlog": tuple(sorted(int(i) for i in carrier.backlog)),
+        # DIRECT live-q coverage (full dense map) — not via record.q_levels.
+        "live_q_levels_dict": dict(carrier.q_levels),
         "q_levels_dict": dict(carrier.q_levels),
         "hot_exact": dict(carrier.hot_exact),
     }

@@ -54,6 +54,7 @@ def _minimal_plan(
 
 
 def _record_tuple(record: StepSurfaceRecord) -> tuple[Any, ...]:
+    # Decisive-record contract: record.q_levels is applied∪crossing only.
     return (
         record.crossing_indices,
         record.applied_indices,
@@ -73,14 +74,23 @@ def _assert_apply_equivalent(
     step_index: int = 0,
 ) -> None:
     fast = carrier_seed.cow_copy()
-    oracle_carrier = carrier_seed.cow_copy()
-    oracle_record = apply_step_dict_reference(
-        oracle_carrier,
+    oracle = carrier_seed.cow_copy()
+    oracle_record = _apply_step_dict_impl(
+        oracle,
         int(step_index),
         votes=dict(votes),
     )
     fast_record = fast.apply_step(int(step_index), votes=dict(votes))
+    # Decisive-record contract comparison (narrowed retention).
     assert _record_tuple(fast_record) == _record_tuple(oracle_record)
+    # DIRECT full live-q assertion (oracle coverage that record.q_levels no longer carries).
+    assert dict(fast.q_levels) == dict(oracle.q_levels)
+    decisive = {int(i) for i in fast_record.applied_indices} | {
+        int(i) for i in fast_record.crossing_indices
+    }
+    assert set(fast_record.q_levels.keys()) == decisive
+    for index, value in fast_record.q_levels.items():
+        assert int(value) == int(fast.q_levels.get(int(index), 0))
 
 
 def test_e1_sparse_votes_equivalence() -> None:
@@ -241,13 +251,16 @@ def test_b2_duplicate_hot_risk_override_matches_oracle() -> None:
         hot_risk_override=duplicate_override,
     )
     oracle_carrier = carrier.cow_copy()
-    oracle_record = apply_step_dict_reference(
+    # Mutating oracle path (apply_step_dict_reference deepcopies and would leave
+    # oracle_carrier.q_levels stale — use _apply_step_dict_impl for live-q assert).
+    oracle_record = _apply_step_dict_impl(
         oracle_carrier,
         0,
         votes=votes,
         hot_risk_override=duplicate_override,
     )
     assert _record_tuple(fast_record) == _record_tuple(oracle_record)
+    assert dict(fast.q_levels) == dict(oracle_carrier.q_levels)
 
 
 def test_b2_cold_non_voted_override_matches_oracle() -> None:
@@ -273,6 +286,7 @@ def test_b2_cold_non_voted_override_matches_oracle() -> None:
     )
     assert _record_tuple(fast_record) == _record_tuple(oracle_record)
     assert dict(fast.hot_exact) == dict(oracle_carrier.hot_exact)
+    assert dict(fast.q_levels) == dict(oracle_carrier.q_levels)
     assert carrier_content_sha256(fast) == carrier_content_sha256(oracle_carrier)
 
 
@@ -344,6 +358,7 @@ def test_non_override_near_threshold_touched_proxy_equivalence(k_touched: int) -
     )
     assert _record_tuple(fast_record) == _record_tuple(oracle_record)
     assert carrier_content_sha256(fast) == carrier_content_sha256(oracle_carrier)
+    assert dict(fast.q_levels) == dict(oracle_carrier.q_levels)
 
 
 @pytest.mark.slow

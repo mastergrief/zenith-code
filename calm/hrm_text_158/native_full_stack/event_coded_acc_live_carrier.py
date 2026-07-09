@@ -817,7 +817,11 @@ class EventCodedAccLiveState:
                 crossing_indices=(),
                 applied_indices=(),
                 backlog_indices=tuple(sorted(self.backlog)),
-                q_levels=dict(self.q_levels),
+                q_levels=decisive_q_levels_snapshot(
+                    self.q_levels,
+                    applied_indices=(),
+                    crossing_indices=(),
+                ),
                 hot_exact_row_count=len(self._hot),
                 promotion_count=0,
                 demotion_on_decay_count=0,
@@ -1020,7 +1024,11 @@ class EventCodedAccLiveState:
             crossing_indices=tuple(crossing_indices),
             applied_indices=tuple(applied_indices),
             backlog_indices=tuple(sorted(self.backlog)),
-            q_levels=dict(self.q_levels),
+            q_levels=decisive_q_levels_snapshot(
+                self.q_levels,
+                applied_indices=applied_indices,
+                crossing_indices=crossing_indices,
+            ),
             hot_exact_row_count=len(self._hot),
             promotion_count=int(promotion_count),
             demotion_on_decay_count=int(demotion_on_decay),
@@ -1176,7 +1184,11 @@ def _apply_step_dict_impl(
         crossing_indices=tuple(crossing_indices),
         applied_indices=tuple(applied_indices),
         backlog_indices=tuple(sorted(carrier.backlog)),
-        q_levels=dict(carrier.q_levels),
+        q_levels=decisive_q_levels_snapshot(
+            carrier.q_levels,
+            applied_indices=applied_indices,
+            crossing_indices=crossing_indices,
+        ),
         hot_exact_row_count=len(carrier._hot),
         promotion_count=int(promotion_count),
         demotion_on_decay_count=int(demotion_on_decay),
@@ -1227,7 +1239,10 @@ class DenseOracleState:
             crossing_indices=tuple(crossing_indices),
             applied_indices=tuple(applied_indices),
             backlog_indices=(),
-            q_levels={index: int(value) for index, value in enumerate(self.q_levels)},
+            q_levels={
+                int(index): int(self.q_levels[int(index)])
+                for index in sorted(set(applied_indices) | set(crossing_indices))
+            },
             hot_exact_row_count=int(self.logical_numel),
             promotion_count=0,
             demotion_on_decay_count=0,
@@ -1237,11 +1252,30 @@ class DenseOracleState:
         return record
 
 
+def decisive_q_levels_snapshot(
+    q_levels: Mapping[int, int],
+    *,
+    applied_indices: Iterable[int],
+    crossing_indices: Iterable[int],
+) -> dict[int, int]:
+    """Retain q only on decisive lanes (applied∪crossing). Live carrier q is unchanged."""
+
+    indices = {int(index) for index in applied_indices} | {
+        int(index) for index in crossing_indices
+    }
+    return {
+        int(index): int(q_levels.get(int(index), 0)) for index in sorted(indices)
+    }
+
+
 def _decisive_q_snapshot(record: StepSurfaceRecord) -> dict[int, int]:
     """Compare q only on decisive lanes (crossing/applied), not full-tensor oracle keys."""
 
-    indices = set(record.applied_indices) | set(record.crossing_indices)
-    return {int(index): int(record.q_levels.get(int(index), 0)) for index in sorted(indices)}
+    return decisive_q_levels_snapshot(
+        record.q_levels,
+        applied_indices=record.applied_indices,
+        crossing_indices=record.crossing_indices,
+    )
 
 
 def observed_surfaces_dict(record: StepSurfaceRecord) -> dict[str, Any]:
