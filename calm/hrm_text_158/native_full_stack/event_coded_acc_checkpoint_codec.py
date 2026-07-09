@@ -284,28 +284,52 @@ def pack_event_coded_acc_checkpoint_v1(
   if logical <= 0:
     raise ValueError("logical_numel must be positive")
   event_list = tuple(events)
+  events_bytes = encode_event_coded_acc_events(event_list)
+  return pack_event_coded_acc_checkpoint_v1_from_packed_events(
+    logical_numel=logical,
+    events_bytes=events_bytes,
+    event_count=len(event_list),
+    backlog_indices=backlog_indices,
+    hot_exact_indices=hot_exact_indices,
+    hot_exact_values=hot_exact_values,
+  )
+
+
+def pack_event_coded_acc_checkpoint_v1_from_packed_events(
+  *,
+  logical_numel: int,
+  events_bytes: bytes | bytearray,
+  event_count: int,
+  backlog_indices: Sequence[int] | None = None,
+  hot_exact_indices: Sequence[int] | None = None,
+  hot_exact_values: Sequence[int] | None = None,
+) -> PackedEventCodedAccState:
+  """Build a V1 checkpoint from already-packed event bytes (no EventCodedAccEvent materialization)."""
+
+  logical = int(logical_numel)
+  if logical <= 0:
+    raise ValueError("logical_numel must be positive")
+  count = int(event_count)
+  if count < 0:
+    raise ValueError("event_count must be non-negative")
+  packed = bytes(events_bytes)
   backlog = tuple(int(item) for item in (backlog_indices or ()))
-  hot_indices = hot_exact_indices
-  hot_values = hot_exact_values
   if isinstance(hot_exact_indices, np.ndarray) and isinstance(hot_exact_values, np.ndarray):
     hot_indices = tuple(int(item) for item in hot_exact_indices.tolist())
     hot_values = tuple(int(item) for item in hot_exact_values.tolist())
+    hot_bytes = encode_hot_exact_rows_from_arrays(hot_exact_indices, hot_exact_values)
   else:
     hot_indices = tuple(int(item) for item in (hot_exact_indices or ()))
     hot_values = tuple(int(item) for item in (hot_exact_values or ()))
+    hot_bytes = encode_hot_exact_rows(hot_indices, hot_values)
   if len(hot_indices) != len(hot_values):
     raise ValueError("hot_exact index/value count mismatch")
-  events_bytes = encode_event_coded_acc_events(event_list)
   backlog_bytes = encode_event_coded_backlog_indices(backlog)
-  if isinstance(hot_exact_indices, np.ndarray) and isinstance(hot_exact_values, np.ndarray):
-    hot_bytes = encode_hot_exact_rows_from_arrays(hot_exact_indices, hot_exact_values)
-  else:
-    hot_bytes = encode_hot_exact_rows(hot_indices, hot_values)
   return PackedEventCodedAccState(
-    events_packed=torch.tensor(list(events_bytes), dtype=torch.uint8),
+    events_packed=torch.tensor(list(packed), dtype=torch.uint8),
     backlog_packed=torch.tensor(list(backlog_bytes), dtype=torch.uint8),
     logical_numel=logical,
-    event_count=len(event_list),
+    event_count=count,
     backlog_entry_count=len(backlog),
     schema=EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1,
     hot_exact_packed=torch.tensor(list(hot_bytes), dtype=torch.uint8),

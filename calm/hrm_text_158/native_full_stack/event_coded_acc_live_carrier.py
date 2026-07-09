@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable, Iterable, Iterator, Mapping, MutableMapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -11,9 +11,12 @@ import torch
 
 from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
     EventCodedAccEvent,
-    encode_event_coded_acc_events,
     encode_event_coded_backlog_indices,
-    pack_event_coded_acc_checkpoint_v1,
+    pack_event_coded_acc_checkpoint_v1_from_packed_events,
+)
+from calm.hrm_text_158.native_full_stack.event_coded_acc_event_store import (
+    EventCodedAccEventStore,
+    EventCodedAccEventsView,
 )
 from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     EVENT_CODED_ACC_METADATA_HEADER_BYTES,
@@ -439,7 +442,8 @@ class EventCodedAccLiveState:
     threshold_abs: int = DEFAULT_CROSSING_THRESHOLD_ABS
     demotion_band: int = 3
     _hot: _PackedHotTable = field(default_factory=_PackedHotTable.empty, repr=False, compare=False)
-    events: list[EventCodedAccEvent] = field(default_factory=list)
+    # Ctor kw `events=` accepted via InitVar alias; public `.events` is the view.
+    events: InitVar[Any] = None
     backlog: _TrackedBacklog = field(default_factory=_TrackedBacklog)
     q_levels: dict[int, int] = field(default_factory=dict)
     step_records: list[StepSurfaceRecord] = field(default_factory=list)
@@ -447,17 +451,64 @@ class EventCodedAccLiveState:
     _hot_packed_bytes_cache: bytes | None = field(default=None, repr=False, compare=False)
     _live_carrier_events_bytes: int = field(default=0, repr=False, compare=False)
     _live_carrier_backlog_bytes: int = field(default=0, repr=False, compare=False)
+    _event_store: EventCodedAccEventStore = field(
+        default_factory=EventCodedAccEventStore.empty,
+        repr=False,
+        compare=False,
+        init=False,
+    )
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, events: Any = None) -> None:
         if not isinstance(self.backlog, _TrackedBacklog):
             self.backlog = _TrackedBacklog(self.backlog)
         self.backlog._attach_owner(self)
+        if isinstance(events, EventCodedAccEventStore):
+            object.__setattr__(self, "_event_store", events)
+        elif events is None:
+            object.__setattr__(self, "_event_store", EventCodedAccEventStore.empty())
+        else:
+            object.__setattr__(
+                self,
+                "_event_store",
+                EventCodedAccEventStore.from_events(events),
+            )
         if (
             self._live_carrier_events_bytes == 0
             and self._live_carrier_backlog_bytes == 0
-            and (self.events or len(self.backlog) or len(self._hot))
+            and (self._event_store or len(self.backlog) or len(self._hot))
         ):
             self.rebuild_live_carrier_byte_counters()
+        self._install_events_proxy()
+
+    # Public attribute access: instance attribute `events` is a thin proxy that
+    # always delegates to the current packed store (coherent .append).
+    def _install_events_proxy(self) -> None:
+        store_holder = self
+
+        class _EventsProxy(EventCodedAccEventsView):
+            def __init__(self) -> None:
+                # Do not call parent __init__; override methods to re-resolve store.
+                pass
+
+            def __len__(self) -> int:
+                return len(store_holder._event_store)
+
+            def __bool__(self) -> bool:
+                return bool(store_holder._event_store)
+
+            def __iter__(self):
+                return iter(store_holder._event_store)
+
+            def __getitem__(self, index: int) -> EventCodedAccEvent:
+                return store_holder._event_store.as_tuple()[int(index)]
+
+            def append(self, event: EventCodedAccEvent) -> None:
+                store_holder._append_event(event)
+
+            def as_tuple(self):
+                return store_holder._event_store.as_tuple()
+
+        object.__setattr__(self, "events", _EventsProxy())
 
     def _invalidate_packed_caches(self) -> None:
         self._hot_packed_bytes_cache = None
@@ -468,20 +519,18 @@ class EventCodedAccLiveState:
         )
 
     def _append_event(self, event: EventCodedAccEvent) -> None:
-        self.events.append(event)
-        self._live_carrier_events_bytes += len(encode_event_coded_acc_events((event,)))
+        encoded_len = self._event_store.append(event)
+        self._live_carrier_events_bytes += int(encoded_len)
 
     def rebuild_live_carrier_byte_counters(self) -> None:
-        self._live_carrier_events_bytes = len(
-            encode_event_coded_acc_events(tuple(self.events))
-        )
+        self._live_carrier_events_bytes = len(self._event_store.encode_bytes())
         self._live_carrier_backlog_bytes = len(
             encode_event_coded_backlog_indices(tuple(sorted(self.backlog)))
         )
         self._invalidate_packed_caches()
 
     def _exact_byte_components_from_codec(self) -> dict[str, int]:
-        events_bytes = len(encode_event_coded_acc_events(tuple(self.events)))
+        events_bytes = len(self._event_store.encode_bytes())
         backlog_bytes = len(
             encode_event_coded_backlog_indices(tuple(sorted(self.backlog)))
         )
@@ -581,7 +630,7 @@ class EventCodedAccLiveState:
             threshold_abs=int(self.threshold_abs),
             demotion_band=int(self.demotion_band),
             _hot=self._hot.fork(),
-            events=list(self.events),
+            events=self._event_store.cow_copy(),
             backlog=self.backlog.copy_indices(),
             q_levels=dict(self.q_levels),
             step_records=list(self.step_records),
@@ -983,9 +1032,11 @@ class EventCodedAccLiveState:
         return record
 
     def to_checkpoint_payload(self):
-        return pack_event_coded_acc_checkpoint_v1(
+        # FOLD A: packed export — never materialize tuple(self.events).
+        return pack_event_coded_acc_checkpoint_v1_from_packed_events(
             logical_numel=int(self.logical_numel),
-            events=tuple(self.events),
+            events_bytes=self._event_store.encode_bytes(),
+            event_count=len(self._event_store),
             backlog_indices=tuple(sorted(self.backlog)),
             hot_exact_indices=self._hot.indices_array(),
             hot_exact_values=self._hot.values_array(),
@@ -1017,7 +1068,10 @@ def _carrier_as_dict_state(carrier: EventCodedAccLiveState) -> EventCodedAccLive
         threshold_abs=int(carrier.threshold_abs),
         demotion_band=int(carrier.demotion_band),
         _hot=_PackedHotTable.from_dict(carrier._hot.to_dict()),
-        events=list(carrier.events),
+        events=EventCodedAccEventStore.from_packed_bytes(
+            carrier._event_store.encode_bytes(),
+            event_count=len(carrier._event_store),
+        ),
         backlog=carrier.backlog.copy_indices(),
         q_levels=dict(carrier.q_levels),
         step_records=list(carrier.step_records),

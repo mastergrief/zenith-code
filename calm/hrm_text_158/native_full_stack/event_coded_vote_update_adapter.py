@@ -192,12 +192,12 @@ class EventCodedVoteUpdateResult:
 
 def carrier_content_sha256(carrier: EventCodedAccLiveState) -> str:
     from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
-        encode_event_coded_acc_events,
         encode_event_coded_backlog_indices,
     )
 
+    # Use packed store bytes — do not materialize EventCodedAccEvent shells.
     packed = bytearray()
-    packed += encode_event_coded_acc_events(tuple(carrier.events))
+    packed += carrier._event_store.encode_bytes()
     packed += encode_event_coded_backlog_indices(tuple(sorted(carrier.backlog)))
     packed += carrier.hot_packed_bytes()
     return hashlib.sha256(bytes(packed)).hexdigest()
@@ -253,15 +253,35 @@ def hydrate_event_coded_live_carrier_from_packed(
     cold_default: int = DEFAULT_COLD_DEFAULT,
     threshold_abs: int = DEFAULT_CROSSING_THRESHOLD_ABS,
 ) -> EventCodedAccLiveState:
-    events, backlog, hot_indices, hot_values = unpack_event_coded_acc_checkpoint_v1(packed)
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_checkpoint_codec import (
+        decode_event_coded_backlog_indices,
+        decode_hot_exact_rows,
+    )
+    from calm.hrm_text_158.native_full_stack.event_coded_acc_event_store import (
+        EventCodedAccEventStore,
+    )
+
+    # Prefer packed event bytes; do not decode EventCodedAccEvent shells at hydrate.
+    backlog = decode_event_coded_backlog_indices(
+        packed.backlog_packed,
+        backlog_entry_count=int(packed.backlog_entry_count),
+    )
+    hot_indices, hot_values = decode_hot_exact_rows(
+        packed.hot_exact_packed,
+        hot_exact_row_count=int(packed.hot_exact_row_count),
+    )
     hot_exact = {int(i): int(v) for i, v in zip(hot_indices, hot_values)}
+    events_bytes = bytes(packed.events_packed.detach().cpu().contiguous().tolist())
     return EventCodedAccLiveState(
         logical_numel=int(packed.logical_numel),
         cold_default=int(cold_default),
         threshold_abs=int(threshold_abs),
         demotion_band=int(demotion_band),
         _hot=_PackedHotTable.from_dict(hot_exact),
-        events=list(events),
+        events=EventCodedAccEventStore.from_packed_bytes(
+            events_bytes,
+            event_count=int(packed.event_count),
+        ),
         backlog=set(int(item) for item in backlog),
     )
 
