@@ -355,6 +355,7 @@ PROFILE_S1D7_BAND_COUNTER_SITE_SCHEMA = "hrm_text_158_s1d7_band_counter_site/v1"
 PROFILE_HOST_RSS_SUBPHASE_IDS = frozenset({
     "C1_vote_plan_build",
     "C2_cap_input_assembly",
+    "C2b_cpu_reference_cap_apply",
     "C3_gpu_cap_selection",
     "C4_gpu_cap_apply_sync",
     "C5_next_state_materialize",
