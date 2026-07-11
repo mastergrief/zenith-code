@@ -74,6 +74,10 @@ from calm.hrm_text_158.native_full_stack.r7_cap_defer_pressure_instrumentation i
     optional_selection_scores_from_step_result_compact,
     pressure_mass_from_tensor_states,
 )
+from calm.hrm_text_158.native_full_stack.r7_selective_drain_eligibility_census import (
+    SIDECAR_FILENAME as R7_SELECTIVE_DRAIN_ELIGIBILITY_CENSUS_SIDECAR_FILENAME,
+    ObserverContinuityTracker,
+)
 from calm.hrm_text_158.native_full_stack.d_recompute_window_live_carrier_snapshot import (
     emit_live_carrier_snapshots_for_probe_step,
     initialize_live_carrier_snapshot_log,
@@ -234,6 +238,7 @@ from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     PERSISTENT_Q_TERNARY_BYTE_PACKED_ENV,
     Q_CODEC_SELECTOR_2BIT,
     Q_CODEC_SELECTOR_BASE3,
+    build_checkpoint_payload_summary,
     persistent_q_ternary_base3_codec_enabled,
     persistent_q_ternary_byte_packed_enabled,
     persistent_w6_byte_packed_enabled,
@@ -6834,6 +6839,9 @@ def run_bounded_delta_steps(
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
     r7_cap_defer_pressure_sidecar_path: Path | None = None,
+    r7_selective_drain_eligibility_census_enabled: bool = False,
+    r7_selective_drain_eligibility_census_sidecar_path: Path | None = None,
+    r7_selective_drain_eligibility_census_tracker: ObserverContinuityTracker | None = None,
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_window_log_path: Path | None = None,
     d_recompute_selector_manifest: StratifiedSelectorManifest | None = None,
@@ -7104,6 +7112,9 @@ def run_bounded_delta_steps(
     prior_applied_by_state_key: dict[str, list[int]] = {}
     carry_backlog: dict[str, dict[int, dict[str, int]]] | None = None
     prior_pressure_mass: int | None = None
+    if bool(r7_selective_drain_eligibility_census_enabled) and r7_selective_drain_eligibility_census_tracker is None:
+        r7_selective_drain_eligibility_census_tracker = ObserverContinuityTracker()
+        r7_selective_drain_eligibility_census_tracker.reset()
     for step in range(1, int(steps) + 1):
         with progress.phase("step", step=int(step)):
             step_timing_start = _timing_start(device)
@@ -7434,6 +7445,15 @@ def run_bounded_delta_steps(
                         ),
                         host_rss_subphase_emit=progress.make_host_rss_subphase_emitter(
                             step=int(step),
+                        ),
+                        r7_selective_drain_eligibility_census_enabled=bool(
+                            r7_selective_drain_eligibility_census_enabled
+                        ),
+                        r7_selective_drain_eligibility_census_sidecar_path=(
+                            r7_selective_drain_eligibility_census_sidecar_path
+                        ),
+                        r7_selective_drain_eligibility_census_tracker=(
+                            r7_selective_drain_eligibility_census_tracker
                         ),
                         **two_tier_vote_step_kwargs,
                         **resolve_r7_deferred_backlog_vote_step_kwargs(
@@ -8057,6 +8077,7 @@ def run_c2p1_probe(
     persistent_q_ternary_base3_codec: bool = False,
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
+    r7_selective_drain_eligibility_census_enabled: bool = False,
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_selector_manifest_path: Path | None = None,
     event_coded_recompute_window_log_enabled: bool = False,
@@ -8330,6 +8351,18 @@ def run_c2p1_probe(
             if bool(r7_cap_defer_pressure_instrumentation_enabled)
             else None
         )
+        r7_selective_drain_eligibility_census_sidecar_path = (
+            scratch_root / R7_SELECTIVE_DRAIN_ELIGIBILITY_CENSUS_SIDECAR_FILENAME
+            if bool(r7_selective_drain_eligibility_census_enabled)
+            else None
+        )
+        r7_selective_drain_eligibility_census_tracker = (
+            ObserverContinuityTracker()
+            if bool(r7_selective_drain_eligibility_census_enabled)
+            else None
+        )
+        if r7_selective_drain_eligibility_census_tracker is not None:
+            r7_selective_drain_eligibility_census_tracker.reset()
         d_recompute_window_log_path = (
             scratch_root / D_RECOMPUTE_WINDOW_LOG_FILENAME
             if bool(d_recompute_window_instrumentation_enabled)
@@ -8770,7 +8803,9 @@ def run_c2p1_probe(
                         "total_run_duration_seconds": total_run_duration_seconds,
                     },
                 ),
-                "checkpoint_payload": checkpoint_payload,
+                "checkpoint_payload_summary": build_checkpoint_payload_summary(
+                    checkpoint_payload
+                ),
                 "memory": cuda_memory_receipt(torch_device),
                 "oracle_screen": oracle_screen,
                 "branch_classification": oracle_screen["branch_classification"],
@@ -8894,20 +8929,9 @@ def run_c2p1_probe(
                     "parent_hash_before": parent_hash_before,
                     "parent_hash_current": parent_hash_current,
                     "parent_hash_unchanged": parent_hash_current == parent_hash_before,
-                    "checkpoint_payload_summary": {
-                        "schema": checkpoint_payload["schema"],
-                        "artifact_role": checkpoint_payload["artifact_role"],
-                        "step": checkpoint_payload["step"],
-                        "dry_run": checkpoint_payload["dry_run"],
-                        "checkpoint_written": checkpoint_payload["checkpoint_written"],
-                        "authoritative_state_sha256": checkpoint_payload[
-                            "authoritative_state_sha256"
-                        ],
-                        "updater_config_sha256": checkpoint_payload[
-                            "updater_config_sha256"
-                        ],
-                        "tensor_summary_count": len(checkpoint_payload["tensor_summaries"]),
-                    },
+                    "checkpoint_payload_summary": build_checkpoint_payload_summary(
+                        checkpoint_payload
+                    ),
                     "target_audit": dict(target_audit),
                     "coverage_by_support": {
                         support: dict(coverage)
@@ -8997,6 +9021,15 @@ def run_c2p1_probe(
                 ),
                 r7_deferred_backlog_carry_enabled=bool(r7_deferred_backlog_carry_enabled),
                 r7_cap_defer_pressure_sidecar_path=r7_cap_defer_pressure_sidecar_path,
+                r7_selective_drain_eligibility_census_enabled=bool(
+                    r7_selective_drain_eligibility_census_enabled
+                ),
+                r7_selective_drain_eligibility_census_sidecar_path=(
+                    r7_selective_drain_eligibility_census_sidecar_path
+                ),
+                r7_selective_drain_eligibility_census_tracker=(
+                    r7_selective_drain_eligibility_census_tracker
+                ),
                 d_recompute_window_instrumentation_enabled=bool(
                     d_recompute_window_instrumentation_enabled
                 ),
@@ -9226,7 +9259,9 @@ def run_c2p1_probe(
                 stop_reason=stop_reason,
                 timing_summary=timing_summary,
             ),
-            "checkpoint_payload": checkpoint_payload,
+            "checkpoint_payload_summary": build_checkpoint_payload_summary(
+                checkpoint_payload
+            ),
             "memory": cuda_memory_receipt(torch_device),
             "phase_telemetry": phase_progress.to_dict(),
             "b2b_sequential_capture": b2b_capture_receipt,
@@ -9295,6 +9330,12 @@ def run_c2p1_probe(
             receipt["r7_cap_defer_pressure_instrumentation_enabled"] = True
             receipt["r7_cap_defer_pressure_sidecar_path"] = str(
                 r7_cap_defer_pressure_sidecar_path
+            )
+        if r7_selective_drain_eligibility_census_enabled:
+            assert r7_selective_drain_eligibility_census_sidecar_path is not None
+            receipt["r7_selective_drain_eligibility_census_enabled"] = True
+            receipt["r7_selective_drain_eligibility_census_sidecar_path"] = str(
+                r7_selective_drain_eligibility_census_sidecar_path
             )
         if d_recompute_window_instrumentation_enabled:
             assert d_recompute_window_log_path is not None
@@ -9721,6 +9762,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--r7-selective-drain-eligibility-census",
+        action="store_true",
+        help=(
+            "Default-off observation-only selective-drain eligibility census "
+            "(CPU-reference land). When enabled, append compact census chunks to "
+            "r7_selective_drain_eligibility_census.jsonl."
+        ),
+    )
+    ap.add_argument(
         "--d-recompute-window-instrumentation",
         action="store_true",
         help=(
@@ -9949,6 +9999,9 @@ def main(argv: list[str] | None = None) -> int:
             args.r7_cap_defer_pressure_instrumentation
         ),
         r7_deferred_backlog_carry_enabled=bool(args.r7_deferred_backlog_carry),
+        r7_selective_drain_eligibility_census_enabled=bool(
+            args.r7_selective_drain_eligibility_census
+        ),
         d_recompute_window_instrumentation_enabled=bool(
             args.d_recompute_window_instrumentation
         ),

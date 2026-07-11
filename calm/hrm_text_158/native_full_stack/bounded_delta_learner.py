@@ -2285,6 +2285,9 @@ def _apply_bounded_delta_vote_step_event_coded_live(
     event_coded_sparse_vote_authority: bool = False,
     sparse_cap_submilestone_emit: Any = None,
     host_rss_subphase_emit: Callable[..., None] | None = None,
+    r7_selective_drain_eligibility_census_enabled: bool = False,
+    r7_selective_drain_eligibility_census_sidecar_path: Any = None,
+    r7_selective_drain_eligibility_census_tracker: Any = None,
 ) -> BoundedDeltaLearnerStepResult:
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         C8StepObservation,
@@ -2812,6 +2815,22 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                         contract_name=global_cap_contract_name,
                         event_coded_sparse_cap_enabled=bool(event_coded_sparse_vote_authority),
                     )
+                    if bool(r7_selective_drain_eligibility_census_enabled):
+                        from calm.hrm_text_158.native_full_stack.r7_selective_drain_eligibility_census import (
+                            maybe_run_selective_drain_census,
+                        )
+
+                        maybe_run_selective_drain_census(
+                            enabled=True,
+                            pre_step_backlog=deferred_backlog,
+                            pre_step_backlog_before_cap=deferred_backlog,
+                            cap_result=cap_result,
+                            plans_by_key=plans_by_key,
+                            step=int(step_index),
+                            ordering_mode=str(local_selection_ordering_mode),
+                            tracker=r7_selective_drain_eligibility_census_tracker,
+                            sidecar_path=r7_selective_drain_eligibility_census_sidecar_path,
+                        )
                 if bool(event_coded_sparse_vote_authority):
                     cap_selection_path = "cpu_reference"
                 backlog = cap_result.deferred_backlog
@@ -3064,6 +3083,9 @@ def apply_bounded_delta_vote_step(
     candidate_global_cap_production_seam_enabled: bool = False,
     sparse_cap_submilestone_emit: Any = None,
     host_rss_subphase_emit: Callable[..., None] | None = None,
+    r7_selective_drain_eligibility_census_enabled: bool = False,
+    r7_selective_drain_eligibility_census_sidecar_path: Any = None,
+    r7_selective_drain_eligibility_census_tracker: Any = None,
 ) -> BoundedDeltaLearnerStepResult:
     expected_keys = set(tensor_states)
     _validate_sparse_vote_authority_only_gate(
@@ -3149,6 +3171,15 @@ def apply_bounded_delta_vote_step(
             event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
             sparse_cap_submilestone_emit=sparse_cap_submilestone_emit,
             host_rss_subphase_emit=host_rss_subphase_emit,
+            r7_selective_drain_eligibility_census_enabled=bool(
+                r7_selective_drain_eligibility_census_enabled
+            ),
+            r7_selective_drain_eligibility_census_sidecar_path=(
+                r7_selective_drain_eligibility_census_sidecar_path
+            ),
+            r7_selective_drain_eligibility_census_tracker=(
+                r7_selective_drain_eligibility_census_tracker
+            ),
         )
     if candidate_mode is not None:
         if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:
