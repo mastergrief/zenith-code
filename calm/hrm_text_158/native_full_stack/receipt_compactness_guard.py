@@ -1,11 +1,14 @@
-"""Bankable receipt compactness guard for probe step_reports surfaces."""
+"""Bankable receipt compactness guard for probe receipts (recursive)."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, MutableMapping, Sequence
 
-# Mirrors TIER_A_PROBE_RECEIPT_INDEX_SURFACE_KEYS in the probe harness.
+import numpy as np
+
+# Legacy alias: kept for importers; recursive visitor uses QUALIFYING set below.
 TIER_A_INLINE_INDEX_SURFACES: frozenset[str] = frozenset(
     {
         "pre_veto_selected_indices",
@@ -15,8 +18,35 @@ TIER_A_INLINE_INDEX_SURFACES: frozenset[str] = frozenset(
     }
 )
 
+QUALIFYING_RAW_INDEX_SURFACE_KEYS: frozenset[str] = frozenset(
+    {
+        "pre_veto_selected_indices",
+        "applied_indices",
+        "post_veto_would_apply_pre_cap_indices",
+        "post_veto_applied_indices",
+        "replay_ce_veto_indices",
+        "global_rate_cap_deferred_indices",
+        "global_rate_cap_accepted_indices",
+    }
+)
+
+IDENTITY_SIGNAL_INDEX_FIELDS: frozenset[str] = frozenset(
+    {
+        "global_rate_cap_accepted_indices",
+        "global_rate_cap_deferred_indices",
+        "post_veto_applied_indices",
+        "replay_ce_veto_indices",
+    }
+)
+
 RECEIPT_BANKABLE_MAX_BYTES = 10 * 1024 * 1024
 RECEIPT_BANKABLE_MAX_INLINE_INDEX_LEN = 64
+BANKABLE_INDEX_SURFACE_SUMMARY_SCHEMA = "hrm_text_158_bankable_index_surface_summary/v1"
+RECEIPT_COMPACTNESS_GUARD_SCHEMA = "hrm_text_158_probe_receipt_compactness_guard/v1"
+
+
+class ReceiptCompactnessCollisionError(ValueError):
+    """Existing sibling count/hash disagrees with the compacted index list."""
 
 
 def _sha16(indices: Sequence[int]) -> str:
@@ -24,64 +54,194 @@ def _sha16(indices: Sequence[int]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def canonical_int64_index_list_sha256_v1(indices: Sequence[int]) -> str:
+    """Full SHA-256 matching global_rate_cap._tensor_sha256(torch.int64 tensor).
+
+    Encoding: sha256(b\"torch.int64\" + str(shape).encode() + int64_le_tobytes).
+    Pure (no torch import). Summary hash16 is a different contract and must not
+    be treated as equivalent to this digest.
+    """
+
+    arr = np.asarray([int(value) for value in indices], dtype=np.int64)
+    digest = hashlib.sha256()
+    digest.update(b"torch.int64")
+    digest.update(str(tuple(arr.shape)).encode("utf-8"))
+    digest.update(arr.tobytes())
+    return digest.hexdigest()
+
+
+def _as_int_index_list(value: Any) -> list[int] | None:
+    if not isinstance(value, list):
+        return None
+    indices: list[int] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, (int, np.integer)):
+            return None
+        indices.append(int(item))
+    return indices
+
+
+def qualifies_as_raw_index_array(
+    key: str,
+    value: Any,
+    *,
+    max_inline_len: int = RECEIPT_BANKABLE_MAX_INLINE_INDEX_LEN,
+) -> bool:
+    if str(key) not in QUALIFYING_RAW_INDEX_SURFACE_KEYS:
+        return False
+    indices = _as_int_index_list(value)
+    if indices is None:
+        return False
+    return len(indices) > int(max_inline_len)
+
+
 def summarize_inline_index_surface(value: Any) -> dict[str, Any]:
     if not isinstance(value, list):
         return {
+            "schema": BANKABLE_INDEX_SURFACE_SUMMARY_SCHEMA,
+            "schema_version": BANKABLE_INDEX_SURFACE_SUMMARY_SCHEMA,
             "tier_a_index_surface_omitted": True,
             "value_type": type(value).__name__,
         }
     indices = [int(item) for item in value]
+    count = len(indices)
     return {
+        "schema": BANKABLE_INDEX_SURFACE_SUMMARY_SCHEMA,
+        "schema_version": BANKABLE_INDEX_SURFACE_SUMMARY_SCHEMA,
         "tier_a_index_surface_omitted": True,
-        "len": len(indices),
+        "count": count,
+        "len": count,
+        "dtype": "int",
+        "shape": [count],
+        "order_sensitive_content_hash16": _sha16(indices),
         "applied_flat_indices_hash16": _sha16(indices),
     }
 
 
+def _emit_identity_siblings(row: MutableMapping[str, Any], key: str, indices: Sequence[int]) -> None:
+    count_key = f"{key}_count"
+    sha_key = f"{key}_sha256"
+    expected_count = int(len(indices))
+    expected_sha = canonical_int64_index_list_sha256_v1(indices)
+
+    if count_key in row:
+        existing_count = row[count_key]
+        if int(existing_count) != expected_count:
+            raise ReceiptCompactnessCollisionError(
+                f"{count_key} mismatch: existing={existing_count!r} expected={expected_count}"
+            )
+    else:
+        row[count_key] = expected_count
+
+    if sha_key in row:
+        existing_sha = str(row[sha_key])
+        if existing_sha != expected_sha:
+            raise ReceiptCompactnessCollisionError(
+                f"{sha_key} mismatch: existing={existing_sha!r} expected={expected_sha}"
+            )
+        if len(existing_sha) != 64:
+            raise ReceiptCompactnessCollisionError(
+                f"{sha_key} must be full 64-hex digest, got len={len(existing_sha)}"
+            )
+    else:
+        row[sha_key] = expected_sha
+
+
+def _compact_mapping_node(
+    node: MutableMapping[str, Any],
+    *,
+    max_inline_len: int,
+) -> None:
+    for key in list(node.keys()):
+        value = node[key]
+        if qualifies_as_raw_index_array(str(key), value, max_inline_len=max_inline_len):
+            indices = _as_int_index_list(value)
+            assert indices is not None
+            if str(key) in IDENTITY_SIGNAL_INDEX_FIELDS:
+                _emit_identity_siblings(node, str(key), indices)
+            node.pop(key)
+            node[f"{key}_summary"] = summarize_inline_index_surface(indices)
+            continue
+        if isinstance(value, dict):
+            _compact_mapping_node(value, max_inline_len=max_inline_len)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    _compact_mapping_node(item, max_inline_len=max_inline_len)
+
+
+def _scan_mapping_node(
+    node: Mapping[str, Any],
+    *,
+    max_inline_len: int,
+    path: str,
+    failures: list[str],
+) -> None:
+    for key, value in node.items():
+        key_s = str(key)
+        child_path = f"{path}.{key_s}" if path else key_s
+        if qualifies_as_raw_index_array(key_s, value, max_inline_len=max_inline_len):
+            indices = _as_int_index_list(value)
+            assert indices is not None
+            failures.append(f"{child_path} len={len(indices)}")
+            continue
+        if isinstance(value, dict):
+            _scan_mapping_node(
+                value, max_inline_len=max_inline_len, path=child_path, failures=failures
+            )
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                if isinstance(item, dict):
+                    _scan_mapping_node(
+                        item,
+                        max_inline_len=max_inline_len,
+                        path=f"{child_path}[{index}]",
+                        failures=failures,
+                    )
+
+
 def compact_tensor_stats_for_bankable_receipt(
     tensor_stats: Mapping[str, Any],
+    *,
+    max_inline_len: int = RECEIPT_BANKABLE_MAX_INLINE_INDEX_LEN,
 ) -> dict[str, Any]:
-    compact: dict[str, Any] = {}
-    for state_key, stats in tensor_stats.items():
-        if not isinstance(stats, dict):
-            compact[str(state_key)] = stats
-            continue
-        row = dict(stats)
-        for surface_key in TIER_A_INLINE_INDEX_SURFACES:
-            if surface_key not in row:
-                continue
-            raw = row.pop(surface_key)
-            row[f"{surface_key}_summary"] = summarize_inline_index_surface(raw)
-        compact[str(state_key)] = row
+    """Compat helper: compact one tensor_stats mapping via the recursive visitor."""
+
+    compact = copy.deepcopy(dict(tensor_stats))
+    _compact_mapping_node(compact, max_inline_len=max_inline_len)
     return compact
 
 
 def compact_step_reports_for_bankable_receipt(
     step_reports: Mapping[str, Any],
+    *,
+    max_inline_len: int = RECEIPT_BANKABLE_MAX_INLINE_INDEX_LEN,
 ) -> dict[str, Any]:
-    compact: dict[str, Any] = {}
-    for step_id, report in step_reports.items():
-        if not isinstance(report, dict):
-            compact[str(step_id)] = report
-            continue
-        row = dict(report)
-        tensor_stats = row.get("tensor_stats")
-        if isinstance(tensor_stats, dict):
-            row["tensor_stats"] = compact_tensor_stats_for_bankable_receipt(tensor_stats)
-        compact[str(step_id)] = row
+    """Compat helper: compact step_reports via the recursive visitor."""
+
+    compact = copy.deepcopy(dict(step_reports))
+    _compact_mapping_node(compact, max_inline_len=max_inline_len)
     return compact
 
 
-def compact_probe_receipt_for_banking(receipt: dict[str, Any]) -> dict[str, Any]:
-    """Replace raw tier-A index arrays with compact summaries (receipt shape only)."""
+def compact_probe_receipt_for_banking(
+    receipt: dict[str, Any],
+    *,
+    max_inline_len: int = RECEIPT_BANKABLE_MAX_INLINE_INDEX_LEN,
+) -> dict[str, Any]:
+    """Replace over-threshold raw index arrays with summaries (transform-on-copy).
 
-    step_reports = receipt.get("step_reports")
-    if isinstance(step_reports, dict):
-        receipt["step_reports"] = compact_step_reports_for_bankable_receipt(step_reports)
-    receipt["receipt_compactness_guard_applied"] = True
-    receipt["receipt_compactness_guard_schema"] = (
-        "hrm_text_158_probe_receipt_compactness_guard/v0"
-    )
+    Mutates ``receipt`` to the compacted form for probe call-site compatibility,
+    but builds the transform on a deep copy so the caller's pre-compact nested
+    raw lists remain intact if they retained separate references.
+    """
+
+    compacted = copy.deepcopy(receipt)
+    _compact_mapping_node(compacted, max_inline_len=max_inline_len)
+    compacted["receipt_compactness_guard_applied"] = True
+    compacted["receipt_compactness_guard_schema"] = RECEIPT_COMPACTNESS_GUARD_SCHEMA
+    receipt.clear()
+    receipt.update(compacted)
     return receipt
 
 
@@ -91,27 +251,10 @@ def find_raw_inline_index_violations(
     max_inline_len: int = RECEIPT_BANKABLE_MAX_INLINE_INDEX_LEN,
 ) -> list[str]:
     failures: list[str] = []
-    step_reports = receipt.get("step_reports")
-    if not isinstance(step_reports, dict):
-        return failures
-    for step_id, report in sorted(step_reports.items(), key=lambda item: str(item[0])):
-        if not isinstance(report, dict):
-            continue
-        tensor_stats = report.get("tensor_stats")
-        if not isinstance(tensor_stats, dict):
-            continue
-        for state_key, stats in tensor_stats.items():
-            if not isinstance(stats, dict):
-                continue
-            for surface_key in TIER_A_INLINE_INDEX_SURFACES:
-                if surface_key not in stats:
-                    continue
-                raw = stats[surface_key]
-                if isinstance(raw, list) and len(raw) > max_inline_len:
-                    failures.append(
-                        f"step={step_id} state={state_key} surface={surface_key} "
-                        f"len={len(raw)}"
-                    )
+    if isinstance(receipt, dict):
+        _scan_mapping_node(
+            receipt, max_inline_len=max_inline_len, path="", failures=failures
+        )
     return failures
 
 
