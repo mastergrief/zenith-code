@@ -3547,6 +3547,22 @@ def apply_bounded_delta_vote_step(
             tie_rule_mode=global_cap_tie_rule_mode,
             contract_name=global_cap_contract_name,
         )
+        if bool(r7_selective_drain_eligibility_census_enabled):
+            from calm.hrm_text_158.native_full_stack.r7_selective_drain_eligibility_census import (
+                maybe_run_selective_drain_census,
+            )
+
+            maybe_run_selective_drain_census(
+                enabled=True,
+                pre_step_backlog=deferred_backlog,
+                pre_step_backlog_before_cap=deferred_backlog,
+                cap_result=cap_result,
+                plans_by_key=plans_by_key,
+                step=int(local_selection_ordering_step),
+                ordering_mode=str(local_selection_ordering_mode),
+                tracker=r7_selective_drain_eligibility_census_tracker,
+                sidecar_path=r7_selective_drain_eligibility_census_sidecar_path,
+            )
         q_acc_by_key = {
             item.state_key: (item.q_levels, item.accumulators, item.stats)
             for item in cap_result.tensor_results
