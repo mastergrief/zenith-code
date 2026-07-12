@@ -77,6 +77,7 @@ from calm.hrm_text_158.native_full_stack.r7_cap_defer_pressure_instrumentation i
 from calm.hrm_text_158.native_full_stack.r7_selective_drain_eligibility_census import (
     SIDECAR_FILENAME as R7_SELECTIVE_DRAIN_ELIGIBILITY_CENSUS_SIDECAR_FILENAME,
     ObserverContinuityTracker,
+    initialize_selective_drain_census_observer_continuity_at_step0,
 )
 from calm.hrm_text_158.native_full_stack.d_recompute_window_live_carrier_snapshot import (
     emit_live_carrier_snapshots_for_probe_step,
@@ -7115,6 +7116,22 @@ def run_bounded_delta_steps(
     if bool(r7_selective_drain_eligibility_census_enabled) and r7_selective_drain_eligibility_census_tracker is None:
         r7_selective_drain_eligibility_census_tracker = ObserverContinuityTracker()
         r7_selective_drain_eligibility_census_tracker.reset()
+    if bool(r7_selective_drain_eligibility_census_enabled):
+        if r7_selective_drain_eligibility_census_tracker is None:
+            raise RuntimeError(
+                "r7 selective-drain census enabled but tracker is None after ensure"
+            )
+        if r7_selective_drain_eligibility_census_sidecar_path is None:
+            raise RuntimeError(
+                "r7 selective-drain census enabled but sidecar_path is None; "
+                "authoritative census jsonl path is required for step-0 observer init"
+            )
+        initialize_selective_drain_census_observer_continuity_at_step0(
+            tracker=r7_selective_drain_eligibility_census_tracker,
+            observed_step=0,
+            sidecar_path=r7_selective_drain_eligibility_census_sidecar_path,
+            pre_step_backlog=carry_backlog,
+        )
     for step in range(1, int(steps) + 1):
         with progress.phase("step", step=int(step)):
             step_timing_start = _timing_start(device)

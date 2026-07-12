@@ -17,11 +17,21 @@ from typing import Any, Iterable, Mapping, Sequence
 DEFAULT_K_GRID: tuple[int, ...] = (2, 4, 8, 12, 16)
 SIDECAR_FILENAME = "r7_selective_drain_eligibility_census.jsonl"
 SCHEMA = "hrm_text_158_r7_selective_drain_eligibility_census_step_chunk/v1"
+OBSERVER_INIT_SCHEMA = (
+    "hrm_text_158_r7_selective_drain_eligibility_census_observer_init/v1"
+)
+OBSERVER_INIT_KIND = "observer_continuity_init"
 DIGEST_SCHEMA = "order_independent_v1_blake2b"
 DIGEST_TAG = b"pre_step_backlog_oi_v1_blake2b\n"
 
 CENSUS_OK = "OK"
 CENSUS_INVALID = "INVALID"
+
+
+class SelectiveDrainCensusObserverInitError(ValueError):
+    """Fail-closed observer-continuity init precondition breach."""
+
+
 TABLE2_OK = "OK"
 TABLE2_NOT_EVALUABLE = "NOT_EVALUABLE_EMPTY_PRE_STEP_BACKLOG"
 
@@ -354,6 +364,84 @@ class ObserverContinuityTracker:
     def consec_below(self, ident: tuple[str, int]) -> int:
         rec = self._records.get(ident)
         return 0 if rec is None else int(rec.consec_below)
+
+
+def _pre_step_backlog_is_truly_empty(
+    pre_step_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None,
+) -> bool:
+    if pre_step_backlog is None:
+        return True
+    if len(pre_step_backlog) == 0:
+        return True
+    for _state_key, inner in pre_step_backlog.items():
+        if inner:
+            return False
+    return True
+
+
+def initialize_selective_drain_census_observer_continuity_at_step0(
+    *,
+    tracker: ObserverContinuityTracker,
+    observed_step: int,
+    sidecar_path: Path | str,
+    pre_step_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None = None,
+) -> dict[str, Any]:
+    """Thin in-memory observer init at step 0. Never appends an ordinary census row."""
+    if not (type(observed_step) is int and observed_step == 0):
+        raise SelectiveDrainCensusObserverInitError(
+            "observed_step must be canonical integer 0 "
+            f"(type(observed_step) is int and == 0); got {observed_step!r}"
+        )
+    if sidecar_path is None or not isinstance(sidecar_path, (str, Path)):
+        raise SelectiveDrainCensusObserverInitError(
+            "sidecar_path must be a required str or Path (None/invalid type forbidden); "
+            f"got {sidecar_path!r}"
+        )
+    resolved_sidecar = Path(sidecar_path)
+    if resolved_sidecar.exists():
+        raise SelectiveDrainCensusObserverInitError(
+            "census sidecar path must be ABSENT for fresh observer init; "
+            f"found existing path {resolved_sidecar}"
+        )
+    if tracker.status != CENSUS_OK:
+        raise SelectiveDrainCensusObserverInitError(
+            f"tracker.status must be {CENSUS_OK!r} for fresh init; got {tracker.status!r}"
+        )
+    if tracker.enabled_at_step is not None:
+        raise SelectiveDrainCensusObserverInitError(
+            "tracker.enabled_at_step must be None for fresh init "
+            f"(duplicate/mid-run); got {tracker.enabled_at_step!r}"
+        )
+    if tracker.last_step is not None:
+        raise SelectiveDrainCensusObserverInitError(
+            "tracker.last_step must be None for fresh init "
+            f"(duplicate/mid-run); got {tracker.last_step!r}"
+        )
+    if tracker.cardinality() != 0:
+        raise SelectiveDrainCensusObserverInitError(
+            "tracker continuity records must be empty for fresh init; "
+            f"cardinality={tracker.cardinality()}"
+        )
+    if not _pre_step_backlog_is_truly_empty(pre_step_backlog):
+        raise SelectiveDrainCensusObserverInitError(
+            "pre_step_backlog must be truly empty for step-0 observer init"
+        )
+
+    tracker.enabled_at_step = 0
+    tracker.last_step = 0
+    return {
+        "schema_version": OBSERVER_INIT_SCHEMA,
+        "kind": OBSERVER_INIT_KIND,
+        "step": 0,
+        "observed_step": 0,
+        "enabled_at_step": 0,
+        "last_step": 0,
+        "pre_step_backlog_empty": True,
+        "ordinary_sidecar_rows_appended": False,
+        "sidecar_was_absent": True,
+        "sidecar_path": str(resolved_sidecar),
+        "tracker_cardinality": 0,
+    }
 
 
 def _state_key_coder(keys: Iterable[str]) -> tuple[tuple[str, ...], dict[str, int]]:
