@@ -738,6 +738,97 @@ def append_census_chunk(sidecar_path: Path, chunk: Mapping[str, Any]) -> None:
         handle.write(json.dumps(dict(chunk), sort_keys=True) + "\n")
 
 
+def eligible_ids_for_k(
+    dto: SelectiveDrainCensusStepDTO,
+    tracker: ObserverContinuityTracker,
+    k: int,
+) -> tuple[tuple[str, int], ...]:
+    """Shared Table-3 eligible identity extraction for occupancy normalize seam."""
+    table = dto.state_key_table
+    def_codes = array("I")
+    if dto.deferred_state_key_codes:
+        def_codes.frombytes(dto.deferred_state_key_codes)
+    def_flat = _unpack_u64(dto.deferred_flat_index)
+    frontier = dto.frontier_abs_new_acc
+    k_i = int(k)
+    out: list[tuple[str, int]] = []
+    for i, fi in enumerate(def_flat):
+        ident = (table[int(def_codes[i])], int(fi))
+        if tracker.prior_window_accepted(ident, k_i):
+            continue
+        if tracker.prior_window_replay(ident, k_i):
+            continue
+        if not tracker.prior_k_continuous_deferred(ident, k_i):
+            continue
+        if frontier is None:
+            continue
+        if tracker.consec_below(ident) < k_i:
+            continue
+        out.append(ident)
+    return tuple(out)
+
+
+def normalize_block_occupancy_input(
+    *,
+    dto: SelectiveDrainCensusStepDTO,
+    tracker: ObserverContinuityTracker,
+    plans_by_key: Mapping[str, Any] | None,
+    k: int = 12,
+    B: int = 64,
+) -> Any:
+    """Thin seam: literal VoteUpdatePlan.new_acc_i32 -> BlockOccupancyInput (bytes-backed)."""
+    from calm.hrm_text_158.native_full_stack.r7_block_occupancy_b64 import (
+        BlockOccupancyInput,
+        BlockOccupancyMissingObservablesError,
+        PerStateOccupancySource,
+    )
+
+    if plans_by_key is None:
+        raise BlockOccupancyMissingObservablesError("plans_by_key is None")
+    # Cover every state_key appearing on the DTO table / deferred / accepted / replay.
+    needed: set[str] = set(str(sk) for sk in dto.state_key_table)
+    for sk in needed:
+        if sk not in plans_by_key:
+            raise BlockOccupancyMissingObservablesError(f"missing plans_by_key entry for {sk!r}")
+    per_state: list[PerStateOccupancySource] = []
+    for sk in sorted(needed):
+        plan = plans_by_key[sk]
+        if getattr(plan, "event_coded_sparse_active_idx", None) is not None:
+            raise BlockOccupancyMissingObservablesError(
+                f"{sk}: event_coded_sparse_active_idx set (dense observation path required)"
+            )
+        if not hasattr(plan, "new_acc_i32"):
+            raise BlockOccupancyMissingObservablesError(
+                f"{sk}: plan missing required attribute new_acc_i32"
+            )
+        new_acc = getattr(plan, "new_acc_i32")
+        q_i16 = getattr(plan, "q_i16", None)
+        if new_acc is None or q_i16 is None:
+            raise BlockOccupancyMissingObservablesError(f"{sk}: new_acc_i32/q_i16 missing")
+        # Contiguous int32 LE bytes — no Python int materialization of the full vector.
+        import torch
+
+        acc_cpu = new_acc.detach().cpu().contiguous().to(dtype=torch.int32).reshape(-1)
+        q_numel = int(q_i16.detach().cpu().numel())
+        logical_numel = int(acc_cpu.numel())
+        acc_i32_le = acc_cpu.numpy().tobytes()
+        per_state.append(
+            PerStateOccupancySource(
+                state_key=str(sk),
+                logical_numel=logical_numel,
+                acc_i32_le=acc_i32_le,
+                q_numel=q_numel,
+            )
+        )
+    eligible = eligible_ids_for_k(dto, tracker, int(k))
+    return BlockOccupancyInput(
+        per_state=tuple(per_state),
+        eligible_ids_k=eligible,
+        k=int(k),
+        B=int(B),
+    )
+
+
 def maybe_run_selective_drain_census(
     *,
     enabled: bool,
@@ -751,6 +842,7 @@ def maybe_run_selective_drain_census(
     sidecar_path: Path | str | None = None,
     k_grid: Sequence[int] = DEFAULT_K_GRID,
     pre_step_backlog_before_cap: Mapping[str, Mapping[int, Mapping[str, int]]] | None = None,
+    block_occupancy_B64_enabled: bool = False,
 ) -> dict[str, Any] | None:
     """Shared CPU-land orchestrator. Default-off skips DTO construction entirely."""
     if not enabled:
@@ -777,6 +869,20 @@ def maybe_run_selective_drain_census(
     try:
         tracker.update_from_dto(dto)
         chunk = build_census_chunk(dto, tracker, k_grid=k_grid)
+        if bool(block_occupancy_B64_enabled):
+            from calm.hrm_text_158.native_full_stack.r7_block_occupancy_b64 import (
+                build_block_occupancy_B64,
+            )
+
+            occ_input = normalize_block_occupancy_input(
+                dto=dto,
+                tracker=tracker,
+                plans_by_key=plans_by_key,
+                k=12,
+                B=64,
+            )
+            chunk["block_occupancy_B64"] = build_block_occupancy_B64(occ_input).to_chunk_dict()
+        # else: field ABSENT (not null)
         if sidecar_path is not None:
             append_census_chunk(Path(sidecar_path), chunk)
         return chunk

@@ -2288,6 +2288,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
     r7_selective_drain_eligibility_census_enabled: bool = False,
     r7_selective_drain_eligibility_census_sidecar_path: Any = None,
     r7_selective_drain_eligibility_census_tracker: Any = None,
+    r7_block_occupancy_B64_enabled: bool = False,
 ) -> BoundedDeltaLearnerStepResult:
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         C8StepObservation,
@@ -2830,6 +2831,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
                             ordering_mode=str(local_selection_ordering_mode),
                             tracker=r7_selective_drain_eligibility_census_tracker,
                             sidecar_path=r7_selective_drain_eligibility_census_sidecar_path,
+                            block_occupancy_B64_enabled=bool(r7_block_occupancy_B64_enabled),
                         )
                 if bool(event_coded_sparse_vote_authority):
                     cap_selection_path = "cpu_reference"
@@ -3086,6 +3088,7 @@ def apply_bounded_delta_vote_step(
     r7_selective_drain_eligibility_census_enabled: bool = False,
     r7_selective_drain_eligibility_census_sidecar_path: Any = None,
     r7_selective_drain_eligibility_census_tracker: Any = None,
+    r7_block_occupancy_B64_enabled: bool = False,
 ) -> BoundedDeltaLearnerStepResult:
     expected_keys = set(tensor_states)
     _validate_sparse_vote_authority_only_gate(
@@ -3180,6 +3183,7 @@ def apply_bounded_delta_vote_step(
             r7_selective_drain_eligibility_census_tracker=(
                 r7_selective_drain_eligibility_census_tracker
             ),
+            r7_block_occupancy_B64_enabled=bool(r7_block_occupancy_B64_enabled),
         )
     if candidate_mode is not None:
         if candidate_mode != ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE:
@@ -3562,6 +3566,7 @@ def apply_bounded_delta_vote_step(
                 ordering_mode=str(local_selection_ordering_mode),
                 tracker=r7_selective_drain_eligibility_census_tracker,
                 sidecar_path=r7_selective_drain_eligibility_census_sidecar_path,
+                block_occupancy_B64_enabled=bool(r7_block_occupancy_B64_enabled),
             )
         q_acc_by_key = {
             item.state_key: (item.q_levels, item.accumulators, item.stats)
