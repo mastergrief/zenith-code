@@ -6843,6 +6843,7 @@ def run_bounded_delta_steps(
     r7_selective_drain_eligibility_census_enabled: bool = False,
     r7_selective_drain_eligibility_census_sidecar_path: Path | None = None,
     r7_selective_drain_eligibility_census_tracker: ObserverContinuityTracker | None = None,
+    r7_block_occupancy_B64_enabled: bool = False,
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_window_log_path: Path | None = None,
     d_recompute_selector_manifest: StratifiedSelectorManifest | None = None,
@@ -7472,6 +7473,9 @@ def run_bounded_delta_steps(
                         r7_selective_drain_eligibility_census_tracker=(
                             r7_selective_drain_eligibility_census_tracker
                         ),
+                        r7_block_occupancy_B64_enabled=bool(
+                            r7_block_occupancy_B64_enabled
+                        ),
                         **two_tier_vote_step_kwargs,
                         **resolve_r7_deferred_backlog_vote_step_kwargs(
                             r7_deferred_backlog_carry_enabled=bool(
@@ -8095,6 +8099,7 @@ def run_c2p1_probe(
     r7_cap_defer_pressure_instrumentation_enabled: bool = False,
     r7_deferred_backlog_carry_enabled: bool = False,
     r7_selective_drain_eligibility_census_enabled: bool = False,
+    r7_block_occupancy_B64_enabled: bool = False,
     d_recompute_window_instrumentation_enabled: bool = False,
     d_recompute_selector_manifest_path: Path | None = None,
     event_coded_recompute_window_log_enabled: bool = False,
@@ -9047,6 +9052,7 @@ def run_c2p1_probe(
                 r7_selective_drain_eligibility_census_tracker=(
                     r7_selective_drain_eligibility_census_tracker
                 ),
+                r7_block_occupancy_B64_enabled=bool(r7_block_occupancy_B64_enabled),
                 d_recompute_window_instrumentation_enabled=bool(
                     d_recompute_window_instrumentation_enabled
                 ),
@@ -9354,6 +9360,8 @@ def run_c2p1_probe(
             receipt["r7_selective_drain_eligibility_census_sidecar_path"] = str(
                 r7_selective_drain_eligibility_census_sidecar_path
             )
+        if r7_block_occupancy_B64_enabled:
+            receipt["r7_block_occupancy_B64_enabled"] = True
         if d_recompute_window_instrumentation_enabled:
             assert d_recompute_window_log_path is not None
             receipt["d_recompute_window_instrumentation_enabled"] = True
@@ -9788,6 +9796,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--r7-block-occupancy-B64",
+        action="store_true",
+        help=(
+            "Default-off. When set with --r7-selective-drain-eligibility-census, "
+            "thread r7_block_occupancy_B64_enabled=True into "
+            "apply_bounded_delta_vote_step so census attaches block_occupancy_B64."
+        ),
+    )
+    ap.add_argument(
         "--d-recompute-window-instrumentation",
         action="store_true",
         help=(
@@ -10019,6 +10036,7 @@ def main(argv: list[str] | None = None) -> int:
         r7_selective_drain_eligibility_census_enabled=bool(
             args.r7_selective_drain_eligibility_census
         ),
+        r7_block_occupancy_B64_enabled=bool(args.r7_block_occupancy_B64),
         d_recompute_window_instrumentation_enabled=bool(
             args.d_recompute_window_instrumentation
         ),
