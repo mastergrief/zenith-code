@@ -17,8 +17,6 @@ SCHEMA_VERSION = "hrm_text_158_r7_block_occupancy_B64/v1"
 DEFAULT_B = 64
 DEFAULT_K = 12
 BINARY_ENCODING = "base64"
-# Soft compact ceiling per step (all states combined, encoded JSON payload body).
-COMPACT_SIZE_CEILING_BYTES = 64 * 1024
 
 
 class BlockOccupancyError(ValueError):
@@ -33,6 +31,21 @@ def _require_canonical_int(value: object, *, name: str) -> int:
     if type(value) is not int:
         raise BlockOccupancyError(f"{name} must be canonical int, got {type(value)!r}")
     return value
+
+
+def expected_compact_payload_bytes(n_blocks_per_state: Sequence[int]) -> int:
+    """Exact structural size: Σ_s (3 * n_blocks_s + ceil(n_blocks_s / 8)).
+
+    Bitmap padding is per-state — do NOT use ceil(Σ_s n_blocks_s / 8).
+    Operational disk/JSON budgets are out-of-band (preflight), not encoded here.
+    """
+    total = 0
+    for n in n_blocks_per_state:
+        n_i = _require_canonical_int(n, name="n_blocks")
+        if n_i < 0:
+            raise BlockOccupancyError(f"n_blocks must be >= 0, got {n_i}")
+        total += 3 * n_i + (n_i + 7) // 8
+    return total
 
 
 def _block_len(numel: int, block_index: int, B: int) -> int:
@@ -304,10 +317,19 @@ def build_block_occupancy_B64(
     )
     per_state: list[PerStateBlockOccupancy] = []
     payload = 0
+    # Expected from validated geometry (ceil(numel/B)), independent of array lengths.
+    n_blocks_from_geometry: list[int] = []
     for src in occupancy_input.per_state:
+        numel_s = _require_canonical_int(src.logical_numel, name="logical_numel")
+        n_blocks_from_geometry.append((numel_s + B_i - 1) // B_i)
         built = _build_one_state(
             src, eligible=eligible_by_key[str(src.state_key)], B=B_i
         )
+        if built.n_blocks != n_blocks_from_geometry[-1]:
+            raise BlockOccupancyError(
+                f"{built.state_key}: n_blocks {built.n_blocks} != geometry "
+                f"{n_blocks_from_geometry[-1]}"
+            )
         per_state.append(built)
         payload += (
             len(built.per_block_eligible_u8)
@@ -315,9 +337,11 @@ def build_block_occupancy_B64(
             + len(built.per_block_empty_u8)
             + len(built.fully_eoe_block_bitmap)
         )
-    if payload > COMPACT_SIZE_CEILING_BYTES:
+    expected = expected_compact_payload_bytes(n_blocks_from_geometry)
+    if payload != expected:
         raise BlockOccupancyError(
-            f"compact payload {payload} exceeds ceiling {COMPACT_SIZE_CEILING_BYTES}"
+            f"compact payload {payload} != expected structural {expected} "
+            f"(n_blocks_per_state={n_blocks_from_geometry})"
         )
     return BlockOccupancyResult(
         schema_version=SCHEMA_VERSION,

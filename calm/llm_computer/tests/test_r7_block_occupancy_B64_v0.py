@@ -23,6 +23,7 @@ from calm.hrm_text_158.native_full_stack.r7_block_occupancy_b64 import (
     BlockOccupancyMissingObservablesError,
     PerStateOccupancySource,
     build_block_occupancy_B64,
+    expected_compact_payload_bytes,
     rebuild_bitmap_from_chunk_state,
 )
 from calm.hrm_text_158.native_full_stack.r7_selective_drain_eligibility_census import (
@@ -209,16 +210,14 @@ def test_compact_size_bound_and_no_raw_arrays():
     body = result.to_chunk_dict()
     encoded = json.dumps(body, sort_keys=True)
     encoded_bytes = len(encoded.encode("utf-8"))
-    assert result.compact_payload_bytes < 64 * 1024
+    # Structural equality (replaces fixture-scale 64KiB ceiling guard).
+    n_blocks = result.per_state[0].n_blocks
+    assert result.compact_payload_bytes == expected_compact_payload_bytes([n_blocks])
     assert "raw_" not in encoded
     assert "per_weight" not in encoded
-    # ~6KiB binary payload; JSON+b64 larger — report measured
-    assert result.compact_payload_bytes == (
-        result.per_state[0].n_blocks * 3
-        + (result.per_state[0].n_blocks + 7) // 8
-    )
-    # freeze measured evidence for receipt (also assert sane band)
+    # ~6KiB binary payload measurement band (not a ceiling).
     assert 5000 <= result.compact_payload_bytes <= 9000
+    # Tiny-fixture JSON wire size is still small; report measured (not a producer guard).
     assert encoded_bytes < 64 * 1024
     assert elapsed_ms < 5000.0  # generous CPU bound; evidence not "negligible" claim
     # expose for operators reading pytest -s
@@ -461,3 +460,68 @@ def test_normalize_uses_bytes_not_tolist():
     )
     assert isinstance(occ_in.per_state[0].acc_i32_le, bytes)
     assert len(occ_in.per_state[0].acc_i32_le) == 256 * 4
+
+
+def test_expected_compact_payload_tier_b_acceptance_fixture():
+    """Tier-B geometry acceptance via formula — no 29M-weight unit build."""
+    weights = 29_360_128
+    B = 64
+    n_blocks = (weights + B - 1) // B
+    assert n_blocks == 458_752
+    assert expected_compact_payload_bytes([n_blocks]) == 1_433_600
+    # Single-partition global form coincides; multi-state must still use per-state.
+    assert 3 * n_blocks + (n_blocks + 7) // 8 == 1_433_600
+
+
+def test_multi_state_non_byte_aligned_bitmap_padding():
+    """Per-state ceil must not regress to global ceil(Σ n / 8)."""
+    n_blocks_list = [3, 5, 7]
+    per_state_expected = expected_compact_payload_bytes(n_blocks_list)
+    assert per_state_expected == 48
+    global_form = 3 * sum(n_blocks_list) + (sum(n_blocks_list) + 7) // 8
+    assert global_form == 47
+    assert per_state_expected != global_form
+
+    sources = []
+    eligible = []
+    for i, n_b in enumerate(n_blocks_list):
+        sk = f"s{i}"
+        vals = [0] * (n_b * 64)
+        sources.append(_src(sk, vals))
+        eligible.append((sk, 0))
+    inp = BlockOccupancyInput(
+        per_state=tuple(sources),
+        eligible_ids_k=tuple(eligible),
+        k=12,
+        B=64,
+    )
+    result = build_block_occupancy_B64(inp)
+    assert [ps.n_blocks for ps in result.per_state] == n_blocks_list
+    assert result.compact_payload_bytes == 48
+    assert result.compact_payload_bytes == expected_compact_payload_bytes(n_blocks_list)
+
+
+def test_structural_mismatch_fail_closed(monkeypatch):
+    """Deliberately wrong-length u8 array must fail closed on structural equality."""
+    import calm.hrm_text_158.native_full_stack.r7_block_occupancy_b64 as mod
+    from dataclasses import replace
+
+    real_build = mod._build_one_state
+
+    def _bad_build(src, *, eligible, B):
+        built = real_build(src, eligible=eligible, B=B)
+        return replace(
+            built,
+            per_block_eligible_u8=built.per_block_eligible_u8 + b"\x00",
+        )
+
+    monkeypatch.setattr(mod, "_build_one_state", _bad_build)
+    vals = [0] * 64
+    inp = BlockOccupancyInput(
+        per_state=(_src("w", vals),),
+        eligible_ids_k=(("w", 0),),
+        k=12,
+        B=64,
+    )
+    with pytest.raises(BlockOccupancyError, match="!= expected structural"):
+        build_block_occupancy_B64(inp)
