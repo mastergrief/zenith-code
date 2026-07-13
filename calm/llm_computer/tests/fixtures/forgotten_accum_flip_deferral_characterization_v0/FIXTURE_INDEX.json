@@ -1,0 +1,12 @@
+{
+  "schema": "forgotten_accum_flip_deferral_FIXTURE_INDEX/v1",
+  "frozen_against_head": "d86b7417df5bc6ab62ce0690e4972de468fc4c2e",
+  "files": {
+    "cap_off_parity.json": "6a7e5b24c122dae66925d4ac56e9267ed1a810503c7e77451e5980000c88450f",
+    "cap_on_ordinary_saturated.json": "2e77246df19fd76b56dfaabaf3a9640bf529133c409f94506a2e6246ab158867",
+    "cap_on_ordinary_unsaturated.json": "9e3da5f72450e3282ae0892a0060874b130faf11afa5342f32ce439ca39b7b13",
+    "cap_on_ordinary_with_seed_backlog.json": "b25dac08c3e155c513838d950aa9fbdf972cfd28f58e625423e7a2e7a53821f2",
+    "crossing_witness_shared_start.json": "b978b2b8ba0518f438579e54f2a4e86a2ce6d7d633303ad9f2c73e734dbe207f"
+  },
+  "never_rebaseline": true
+}

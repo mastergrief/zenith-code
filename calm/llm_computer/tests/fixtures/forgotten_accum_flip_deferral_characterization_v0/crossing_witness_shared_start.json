@@ -1,0 +1,43 @@
+{
+  "note": "Shared zeroed acc+backlog; identical votes; used for R0 vs RW multi-step witness",
+  "W": 2,
+  "inputs_template": [
+    {
+      "state_key": "A",
+      "q": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "votes": [
+        0,
+        25,
+        0,
+        25,
+        0,
+        25
+      ]
+    }
+  ],
+  "spec": {
+    "cap": 1,
+    "step": 3,
+    "mutate_outputs": true,
+    "contract_name": "c1_banked_faithful_long_run_global_cap"
+  },
+  "seed_backlog": {},
+  "pre_W_acc_sha_A": "15ec7bf0b50732b49f8228e07d24365338f9e3ab994b00af08e5a3bffe55fd8b",
+  "pre_W_backlog_sha": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "pre_W_backlog_cardinality": 0
+}

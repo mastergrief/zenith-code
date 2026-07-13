@@ -1,0 +1,116 @@
+{
+  "inputs": [
+    {
+      "state_key": "A",
+      "q": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "votes": [
+        0,
+        25,
+        0,
+        25,
+        0,
+        25
+      ]
+    },
+    {
+      "state_key": "B",
+      "q": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "votes": [
+        25,
+        0,
+        25,
+        0
+      ]
+    }
+  ],
+  "spec": {
+    "cap": 64,
+    "step": 3,
+    "mutate_outputs": true,
+    "contract_name": "c1_banked_faithful_long_run_global_cap"
+  },
+  "seed_backlog": {},
+  "expected": {
+    "q_shas": {
+      "A": "7b9453f4b6c2ef939d3959400b0ef356025da295b5402bab5e3ec0312f166c52",
+      "B": "507503b51960cceda8d924904fb85377fe7d177fb8dfcf56b24e4557644ed486"
+    },
+    "acc_shas": {
+      "A": "ecff39b650e9144696e4a441ff729750842fca7e0915900cdbfdf3742c0d376e",
+      "B": "b2a3209fc942d9e5de899dd0c6fd5cfd68ffd18356eeda3d56eac99562a7d307"
+    },
+    "q_lists": {
+      "A": [
+        0,
+        1,
+        0,
+        1,
+        0,
+        1
+      ],
+      "B": [
+        1,
+        0,
+        1,
+        0
+      ]
+    },
+    "acc_lists": {
+      "A": [
+        0,
+        9,
+        0,
+        9,
+        0,
+        9
+      ],
+      "B": [
+        9,
+        0,
+        9,
+        0
+      ]
+    },
+    "backlog": {},
+    "backlog_sha": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "backlog_cardinality": 0,
+    "step_summary_authority": {
+      "global_rate_cap_enabled": true,
+      "global_rate_cap_cap": 64,
+      "global_rate_cap_accepted_count": 5,
+      "global_rate_cap_applied_count": 5,
+      "global_rate_cap_deferred_count": 0,
+      "q_changed_count": 5,
+      "global_rate_cap_saturated": false
+    },
+    "accepted_count": 5,
+    "deferred_count": 0,
+    "demand_count": 5
+  }
+}

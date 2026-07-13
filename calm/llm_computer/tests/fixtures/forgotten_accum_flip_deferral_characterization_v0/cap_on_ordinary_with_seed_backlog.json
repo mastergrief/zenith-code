@@ -1,0 +1,144 @@
+{
+  "inputs": [
+    {
+      "state_key": "A",
+      "q": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "votes": [
+        0,
+        25,
+        0,
+        25,
+        0,
+        25
+      ]
+    },
+    {
+      "state_key": "B",
+      "q": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "acc": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "votes": [
+        25,
+        0,
+        25,
+        0
+      ]
+    }
+  ],
+  "spec": {
+    "cap": 2,
+    "step": 3,
+    "mutate_outputs": true,
+    "contract_name": "c1_banked_faithful_long_run_global_cap"
+  },
+  "seed_backlog": {
+    "A": {
+      "1": {
+        "first_step": 1,
+        "last_deferred_step": 1,
+        "defer_count": 1
+      }
+    }
+  },
+  "expected": {
+    "q_shas": {
+      "A": "7d0dbcb9098c2c3fa6067030876f74322fdc2a40225745581a7bad247cafd7b7",
+      "B": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+    },
+    "acc_shas": {
+      "A": "7cd571c0898f4e98d7913690934743fdfb3640f825b5a96709b73465910d0acd",
+      "B": "19bc3feb8f5110301b4dc20e86f35a175e7e74fcd030c989e0e65316b0cd3512"
+    },
+    "q_lists": {
+      "A": [
+        0,
+        1,
+        0,
+        1,
+        0,
+        0
+      ],
+      "B": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "acc_lists": {
+      "A": [
+        0,
+        9,
+        0,
+        9,
+        0,
+        25
+      ],
+      "B": [
+        25,
+        0,
+        25,
+        0
+      ]
+    },
+    "backlog": {
+      "A": {
+        "5": {
+          "first_step": 3,
+          "last_deferred_step": 3,
+          "defer_count": 1
+        }
+      },
+      "B": {
+        "0": {
+          "first_step": 3,
+          "last_deferred_step": 3,
+          "defer_count": 1
+        },
+        "2": {
+          "first_step": 3,
+          "last_deferred_step": 3,
+          "defer_count": 1
+        }
+      }
+    },
+    "backlog_sha": "600fa2fb90610c72a09610479d92cbbdbe47934df13afd236062af703e4f0f55",
+    "backlog_cardinality": 3,
+    "step_summary_authority": {
+      "global_rate_cap_enabled": true,
+      "global_rate_cap_cap": 2,
+      "global_rate_cap_accepted_count": 2,
+      "global_rate_cap_applied_count": 2,
+      "global_rate_cap_deferred_count": 3,
+      "q_changed_count": 2,
+      "global_rate_cap_saturated": true
+    },
+    "accepted_count": 2,
+    "deferred_count": 3,
+    "demand_count": 5
+  }
+}

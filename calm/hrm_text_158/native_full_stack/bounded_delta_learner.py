@@ -31,6 +31,12 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     execute_direct_bounded_local_vote_update_candidate,
     INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP,
 )
+from calm.hrm_text_158.native_full_stack.forgotten_accum_flip_deferral_apply import (
+    apply_global_rate_cap_with_optional_flip_deferral,
+)
+from calm.hrm_text_158.native_full_stack.forgotten_accum_flip_deferral_contracts import (
+    DENSE_LEGACY_CAP_SITE_ID,
+)
 from calm.hrm_text_158.native_full_stack.global_rate_cap import (
     EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     GlobalRateCapSpec,
@@ -3089,6 +3095,7 @@ def apply_bounded_delta_vote_step(
     r7_selective_drain_eligibility_census_sidecar_path: Any = None,
     r7_selective_drain_eligibility_census_tracker: Any = None,
     r7_block_occupancy_B64_enabled: bool = False,
+    flip_application_deferred: bool = False,
 ) -> BoundedDeltaLearnerStepResult:
     expected_keys = set(tensor_states)
     _validate_sparse_vote_authority_only_gate(
@@ -3544,12 +3551,15 @@ def apply_bounded_delta_vote_step(
         )
 
     if global_cap_spec is not None:
-        cap_result = apply_global_rate_cap_reference(
+        # DENSE_LEGACY production pin: facade default-False is byte-identical to
+        # apply_global_rate_cap_reference; True applies W flip-deferral/backlog law.
+        cap_result = apply_global_rate_cap_with_optional_flip_deferral(
             cap_inputs,
             global_cap_spec,
             deferred_backlog=deferred_backlog,
             tie_rule_mode=global_cap_tie_rule_mode,
             contract_name=global_cap_contract_name,
+            flip_application_deferred=bool(flip_application_deferred),
         )
         if bool(r7_selective_drain_eligibility_census_enabled):
             from calm.hrm_text_158.native_full_stack.r7_selective_drain_eligibility_census import (
@@ -3575,6 +3585,8 @@ def apply_bounded_delta_vote_step(
         backlog = cap_result.deferred_backlog
         summary = dict(cap_result.step_summary)
         summary["global_rate_cap_enabled"] = True
+        summary["forgotten_accum_cap_site_branch"] = DENSE_LEGACY_CAP_SITE_ID
+        summary["flip_application_deferred"] = bool(flip_application_deferred)
         if not two_tier_carry_w6_enabled:
             summary["local_selection_ordering_mode"] = str(local_selection_ordering_mode)
             summary["local_selection_ordering_seed"] = int(local_selection_ordering_seed)
