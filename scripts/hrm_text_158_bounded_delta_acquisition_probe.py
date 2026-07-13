@@ -101,6 +101,11 @@ from calm.hrm_text_158.native_full_stack.d_recompute_window_stratified_selector 
     StratifiedSelectorManifest,
     load_stratified_selector_manifest,
 )
+from calm.hrm_text_158.native_full_stack.bounded_delta_runner_hook_contract import (
+    BoundedDeltaPostStepEvent,
+    invoke_post_step_hook,
+    seed_initial_deferred_backlog,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     decode_bounded_accumulator_to_i16,
 )
@@ -6864,6 +6869,10 @@ def run_bounded_delta_steps(
     event_coded_sparse_vote_authority: bool = False,
     vote_update_decay_numerator: int | None = None,
     vote_update_decay_denominator: int | None = None,
+    post_step_hook: Callable[[BoundedDeltaPostStepEvent], None] | None = None,
+    initial_deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None = None,
+    start_step: int = 1,
+    global_horizon: int | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -7116,7 +7125,15 @@ def run_bounded_delta_steps(
     stop_reason = "max_steps_completed"
     steps_completed = 0
     prior_applied_by_state_key: dict[str, list[int]] = {}
-    carry_backlog: dict[str, dict[int, dict[str, int]]] | None = None
+    if initial_deferred_backlog is not None and not bool(r7_deferred_backlog_carry_enabled):
+        raise ValueError(
+            "initial_deferred_backlog requires r7_deferred_backlog_carry_enabled=True"
+        )
+    carry_backlog: dict[str, dict[int, dict[str, int]]] | None = (
+        seed_initial_deferred_backlog(initial_deferred_backlog)
+        if bool(r7_deferred_backlog_carry_enabled)
+        else None
+    )
     prior_pressure_mass: int | None = None
     if bool(r7_selective_drain_eligibility_census_enabled) and r7_selective_drain_eligibility_census_tracker is None:
         r7_selective_drain_eligibility_census_tracker = ObserverContinuityTracker()
@@ -7137,7 +7154,7 @@ def run_bounded_delta_steps(
             sidecar_path=r7_selective_drain_eligibility_census_sidecar_path,
             pre_step_backlog=carry_backlog,
         )
-    for step in range(1, int(steps) + 1):
+    for step in range(int(start_step), int(start_step) + int(steps)):
         with progress.phase("step", step=int(step)):
             step_timing_start = _timing_start(device)
             batch_item = step_batches[(step - 1) % len(step_batches)]
@@ -7146,7 +7163,14 @@ def run_bounded_delta_steps(
             model.zero_grad(set_to_none=True)
             if optimizer is not None:
                 optimizer.zero_grad(set_to_none=True)
-            extras = model.compute_train_extra_args(step, max(1, int(steps)))
+            # global_horizon is the GLOBAL bp total_steps (warmup ramp); default
+            # None preserves prior local-segment end for start_step=1 callers.
+            bp_horizon = (
+                int(global_horizon)
+                if global_horizon is not None
+                else int(start_step) + int(steps) - 1
+            )
+            extras = model.compute_train_extra_args(step, max(1, bp_horizon))
             with progress.phase("step_forward_backward", step=int(step)):
                 weighted_grads, loss, metrics = _compute_ce_weighted_grads(
                     model,
@@ -7594,6 +7618,17 @@ def run_bounded_delta_steps(
                     )
                 if r7_deferred_backlog_carry_enabled:
                     carry_backlog = step_result.deferred_backlog
+                # Thin post-step hook wire (S1): AFTER backlog update, BEFORE batch t+1.
+                # No Fork-B logic here — invoke_post_step_hook FAIL-CLOSED (no swallow).
+                invoke_post_step_hook(
+                    post_step_hook,
+                    BoundedDeltaPostStepEvent(
+                        step=int(step),
+                        states=states,
+                        carry_backlog=carry_backlog,
+                        step_batch_metadata=step_batch_metadata,
+                    ),
+                )
                 q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
                 if b2b_sequential_capture_enabled and b2b_step_capture is not None:
                     assert b2b_sequential_capture_out is not None
@@ -7797,6 +7832,9 @@ def run_bounded_delta_steps(
                     "duration_seconds": step_duration_seconds,
                     "metrics": _metrics_to_dict(metrics),
                     "bp_steps": int(extras["bp_steps"]),
+                    "start_step": int(start_step),
+                    "local_steps": int(steps),
+                    "global_horizon": int(bp_horizon),
                     "q_changed_count": q_changed_count,
                     "science_arm": str(science_arm),
                     "target_vote_law": _science_arm_vote_law(str(science_arm)),
