@@ -6874,6 +6874,7 @@ def run_bounded_delta_steps(
     start_step: int = 1,
     global_horizon: int | None = None,
     flip_application_deferred: bool = False,
+    flip_application_deferred_schedule: Callable[[int], bool] | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -7505,7 +7506,13 @@ def run_bounded_delta_steps(
                         r7_block_occupancy_B64_enabled=bool(
                             r7_block_occupancy_B64_enabled
                         ),
-                        flip_application_deferred=bool(flip_application_deferred),
+                        # Default-off equivalence (schedule is None):
+                        # flip_application_deferred=bool(flip_application_deferred)
+                        flip_application_deferred=(
+                            bool(flip_application_deferred_schedule(int(step)))
+                            if flip_application_deferred_schedule is not None
+                            else bool(flip_application_deferred)
+                        ),
                         **two_tier_vote_step_kwargs,
                         **resolve_r7_deferred_backlog_vote_step_kwargs(
                             r7_deferred_backlog_carry_enabled=bool(
