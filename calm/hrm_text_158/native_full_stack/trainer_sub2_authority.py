@@ -469,7 +469,12 @@ def _authority_countability_ledger(
     }
 
 
-def _checkpoint_payload_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
+def build_checkpoint_payload_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Compact, bankable receipt view of an authoritative checkpoint payload.
+
+    Preserves resume/audit provability fields without embedding tensor state.
+    Superset of the historical private helper: adds ``updater_config_sha256``.
+    """
     return {
         "schema": payload.get("schema"),
         "artifact_role": payload.get("artifact_role"),
@@ -480,9 +485,14 @@ def _checkpoint_payload_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
         "q_codec": payload.get("q_codec"),
         "bounded_accumulator_schema": payload.get("bounded_accumulator_schema"),
         "authoritative_state_sha256": payload.get("authoritative_state_sha256"),
+        "updater_config_sha256": payload.get("updater_config_sha256"),
         "tensor_summary_count": len(payload.get("tensor_summaries") or {}),
         "tensor_keys": sorted((payload.get("tensor_summaries") or {}).keys()),
     }
+
+
+def _checkpoint_payload_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return build_checkpoint_payload_summary(payload)
 
 
 def _default_local_vote_update_spec() -> VoteUpdateSpec:
