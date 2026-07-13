@@ -1,0 +1,47 @@
+{
+  "field_set": [
+    "exact_future_batch_sample_ids",
+    "loader_cursor",
+    "non_manipulated_manifest_fields",
+    "optimizer_empty_proof",
+    "q_scales_weights_code_hash",
+    "rate_cap_backlog_schedule",
+    "rng_states"
+  ],
+  "schema_id": "fork_b_non_target_snapshot/v1",
+  "snapshot": {
+    "contributes_persistent_bpw": false,
+    "exact_future_batch_sample_ids": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "is_checkpoint_authority": false,
+    "loader_cursor": {
+      "idx": 0
+    },
+    "non_manipulated_manifest_fields": {
+      "phase": "x",
+      "seed": 17
+    },
+    "optimizer_empty_proof": {
+      "eligible_excluded": true
+    },
+    "q_scales_weights_code_hash": {
+      "code": "c1",
+      "q": "q1"
+    },
+    "rate_cap_backlog_schedule": {
+      "backlog": 0,
+      "cap": 512,
+      "step": 4
+    },
+    "rng_states": {
+      "torch": "abc"
+    },
+    "run_local_test_evidence_only": true,
+    "schema_id": "fork_b_non_target_snapshot/v1"
+  },
+  "snapshot_sha256": "42ba4ab63de4fb321c18511b9a40aaf8772829bb361603184ffd5531eea1e865"
+}

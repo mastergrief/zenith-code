@@ -1,0 +1,20 @@
+{
+  "fixed_packed": {
+    "cut_t": 16,
+    "delta_bits": 7,
+    "dense_shadow_field_persistent_bpw": 0,
+    "fixed_size_packed_slab_delta_bits": 0,
+    "post_refresh_bounded_bits": 1000,
+    "pre_refresh_bounded_bits": 1000,
+    "schema_metadata_delta_bits": 7
+  },
+  "variable": {
+    "cut_t": 16,
+    "delta_bits": 155,
+    "dense_shadow_field_persistent_bpw": 0,
+    "fixed_size_packed_slab_delta_bits": 0,
+    "post_refresh_bounded_bits": 250,
+    "pre_refresh_bounded_bits": 100,
+    "schema_metadata_delta_bits": 5
+  }
+}

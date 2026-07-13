@@ -1,0 +1,41 @@
+{
+  "C": {
+    "arm": "C",
+    "dense_int16_persistent_accumulator_saved": false,
+    "path_class": "REAL_on_disk_trainer_sub2_authority_save_load",
+    "post_load_shadow_present_all_false": true,
+    "required_keys": [
+      "blob_sha256",
+      "checkpoint_path",
+      "dense_int16_persistent_accumulator_saved",
+      "on_disk_bytes",
+      "on_disk_sha256",
+      "path_class",
+      "post_load_shadow_present",
+      "pre_save_shadow_present",
+      "sidecar_sha256",
+      "simulated"
+    ],
+    "simulated": false
+  },
+  "S": {
+    "arm": "S",
+    "dense_int16_persistent_accumulator_saved": false,
+    "path_class": "REAL_on_disk_trainer_sub2_authority_save_load",
+    "post_load_shadow_present_all_false": true,
+    "required_keys": [
+      "blob_sha256",
+      "checkpoint_path",
+      "dense_int16_persistent_accumulator_saved",
+      "on_disk_bytes",
+      "on_disk_sha256",
+      "path_class",
+      "post_load_shadow_present",
+      "pre_save_shadow_present",
+      "sidecar_sha256",
+      "simulated"
+    ],
+    "simulated": false
+  },
+  "required_path_class": "REAL_on_disk_trainer_sub2_authority_save_load"
+}

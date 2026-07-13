@@ -1,0 +1,101 @@
+"""Fork B resume-parity certificate — THIN public facade / stable re-exports.
+
+Preserves prior ``__all__`` for existing tests + probe. Logic lives in
+contracts / reducers / arm_ops / checkpoint_adapter.
+"""
+
+from __future__ import annotations
+
+from calm.hrm_text_158.native_full_stack.fork_b_resume_parity_arm_ops import (
+    clone_f_in_memory,
+    comparison_stats_from_state,
+    estimate_bounded_bits,
+    evolve_shadow_one_step,
+    prepare_c_stale_for_save,
+    prepare_s_refresh_for_save,
+    rehydrate_from_bounded,
+    rehydrate_z_zeros,
+)
+from calm.hrm_text_158.native_full_stack.fork_b_resume_parity_checkpoint_adapter import (
+    emit_fork_b_cli_scaffold_receipt,
+    real_trainer_sub2_authority_checkpoint_roundtrip,
+)
+from calm.hrm_text_158.native_full_stack.fork_b_resume_parity_contracts import (
+    BARRED_PROXIES,
+    CERTIFICATE_SCHEMA,
+    CS_MANIFEST_DIFF_ALLOWLIST,
+    CUTS_DEFAULT,
+    DENSE_SHADOW_FIELD_PERSISTENT_BPW,
+    FORK_B_NON_TARGET_SNAPSHOT_SCHEMA,
+    GATE_BEARING_FIELDS,
+    K_DEFAULT,
+    NON_TARGET_SNAPSHOT_SCHEMA_FIELDS,
+    SCHEMA_ID,
+    Z_BINDING_CUT_T,
+    ArmId,
+    NonTargetSnapshot,
+    PreScienceClass,
+    ScienceLabel,
+    assert_cs_manifests_or_mismatch,
+    assert_non_target_equality,
+    build_non_target_snapshot,
+    canonical_json_sha256,
+    manifests_equal_outside_allowlist,
+    non_target_schema_field_set,
+    parent_seed_scope_tag,
+    snapshot_not_loadable_as_checkpoint_authority,
+)
+from calm.hrm_text_158.native_full_stack.fork_b_resume_parity_reducers import (
+    PerCutArmResult,
+    PerCutResult,
+    SAccountingLedger,
+    classify_terminal,
+    compute_s_accounting,
+    extract_comparison_surface,
+    surfaces_equal,
+    z_decision_sensitive,
+)
+
+__all__ = [
+    "ArmId",
+    "BARRED_PROXIES",
+    "CERTIFICATE_SCHEMA",
+    "CS_MANIFEST_DIFF_ALLOWLIST",
+    "CUTS_DEFAULT",
+    "DENSE_SHADOW_FIELD_PERSISTENT_BPW",
+    "FORK_B_NON_TARGET_SNAPSHOT_SCHEMA",
+    "GATE_BEARING_FIELDS",
+    "K_DEFAULT",
+    "NON_TARGET_SNAPSHOT_SCHEMA_FIELDS",
+    "NonTargetSnapshot",
+    "PerCutArmResult",
+    "PerCutResult",
+    "PreScienceClass",
+    "SCHEMA_ID",
+    "SAccountingLedger",
+    "ScienceLabel",
+    "Z_BINDING_CUT_T",
+    "assert_cs_manifests_or_mismatch",
+    "assert_non_target_equality",
+    "build_non_target_snapshot",
+    "canonical_json_sha256",
+    "classify_terminal",
+    "clone_f_in_memory",
+    "comparison_stats_from_state",
+    "compute_s_accounting",
+    "emit_fork_b_cli_scaffold_receipt",
+    "estimate_bounded_bits",
+    "evolve_shadow_one_step",
+    "extract_comparison_surface",
+    "manifests_equal_outside_allowlist",
+    "non_target_schema_field_set",
+    "parent_seed_scope_tag",
+    "prepare_c_stale_for_save",
+    "prepare_s_refresh_for_save",
+    "real_trainer_sub2_authority_checkpoint_roundtrip",
+    "rehydrate_from_bounded",
+    "rehydrate_z_zeros",
+    "snapshot_not_loadable_as_checkpoint_authority",
+    "surfaces_equal",
+    "z_decision_sensitive",
+]

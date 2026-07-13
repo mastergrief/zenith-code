@@ -1,0 +1,322 @@
+{
+  "cases": {
+    "control_invalid_f": {
+      "dense_shadow_field_persistent_bpw": 0,
+      "explicitly_not": [
+        "dense_int16_shadow_necessity",
+        "universal_C1_moot"
+      ],
+      "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4",
+      "per_cut": {
+        "16": {
+          "c_matches_u": true,
+          "cut_t": 16,
+          "f_matches_u": false,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "28": {
+          "c_matches_u": true,
+          "cut_t": 28,
+          "f_matches_u": false,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "4": {
+          "c_matches_u": true,
+          "cut_t": 4,
+          "f_matches_u": false,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        }
+      },
+      "pre_science": "CONTROL_INVALID",
+      "schema": "fork_b_resume_parity_certificate/v1",
+      "science_label": null
+    },
+    "control_invalid_z": {
+      "dense_shadow_field_persistent_bpw": 0,
+      "explicitly_not": [
+        "dense_int16_shadow_necessity",
+        "universal_C1_moot"
+      ],
+      "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4",
+      "per_cut": {
+        "16": {
+          "c_matches_u": true,
+          "cut_t": 16,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": false
+        },
+        "28": {
+          "c_matches_u": true,
+          "cut_t": 28,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "4": {
+          "c_matches_u": true,
+          "cut_t": 4,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        }
+      },
+      "pre_science": "CONTROL_INVALID",
+      "schema": "fork_b_resume_parity_certificate/v1",
+      "science_label": null
+    },
+    "current_all": {
+      "c_fail_cuts": [],
+      "dense_shadow_field_persistent_bpw": 0,
+      "explicitly_not": [
+        "dense_int16_shadow_necessity",
+        "universal_C1_moot",
+        "SHADOW_NECESSARY_PERSISTENT"
+      ],
+      "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4",
+      "per_cut": {
+        "16": {
+          "c_matches_u": true,
+          "cut_t": 16,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "28": {
+          "c_matches_u": true,
+          "cut_t": 28,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "4": {
+          "c_matches_u": true,
+          "cut_t": 4,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        }
+      },
+      "pre_science": null,
+      "s_fail_cuts": [],
+      "schema": "fork_b_resume_parity_certificate/v1",
+      "science_label": "CURRENT_PATH_RECONSTRUCTABLE_AT_ALL_TESTED_CUTS",
+      "z_binding_cut_t": 16
+    },
+    "infra": {
+      "dense_shadow_field_persistent_bpw": 0,
+      "explicitly_not": [
+        "dense_int16_shadow_necessity",
+        "universal_C1_moot"
+      ],
+      "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4",
+      "per_cut": {
+        "16": {
+          "c_matches_u": true,
+          "cut_t": 16,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": "INFRA_FAILURE",
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "28": {
+          "c_matches_u": true,
+          "cut_t": 28,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": "INFRA_FAILURE",
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "4": {
+          "c_matches_u": true,
+          "cut_t": 4,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": "INFRA_FAILURE",
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        }
+      },
+      "pre_science": "INFRA_FAILURE",
+      "schema": "fork_b_resume_parity_certificate/v1",
+      "science_label": null
+    },
+    "insufficient": {
+      "c_fail_cuts": [
+        4,
+        16
+      ],
+      "dense_shadow_field_persistent_bpw": 0,
+      "explicitly_not": [
+        "dense_int16_shadow_necessity",
+        "universal_C1_moot",
+        "SHADOW_NECESSARY_PERSISTENT"
+      ],
+      "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4",
+      "per_cut": {
+        "16": {
+          "c_matches_u": false,
+          "cut_t": 16,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": false,
+          "z_decision_sensitive": true
+        },
+        "28": {
+          "c_matches_u": true,
+          "cut_t": 28,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "4": {
+          "c_matches_u": false,
+          "cut_t": 4,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": false,
+          "z_decision_sensitive": true
+        }
+      },
+      "pre_science": null,
+      "s_fail_cuts": [
+        4,
+        16
+      ],
+      "schema": "fork_b_resume_parity_certificate/v1",
+      "science_label": "TESTED_RECONSTRUCTIONS_INSUFFICIENT_AT_4+16",
+      "z_binding_cut_t": 16
+    },
+    "missing_cuts": {
+      "dense_shadow_field_persistent_bpw": 0,
+      "explicitly_not": [
+        "dense_int16_shadow_necessity",
+        "universal_C1_moot"
+      ],
+      "missing_cuts": [
+        16,
+        28
+      ],
+      "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4",
+      "pre_science": "MISSING_OBSERVABLE",
+      "schema": "fork_b_resume_parity_certificate/v1",
+      "science_label": null
+    },
+    "non_target": {
+      "dense_shadow_field_persistent_bpw": 0,
+      "explicitly_not": [
+        "dense_int16_shadow_necessity",
+        "universal_C1_moot"
+      ],
+      "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4",
+      "per_cut": {
+        "16": {
+          "c_matches_u": true,
+          "cut_t": 16,
+          "f_matches_u": true,
+          "non_target_ok": false,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "28": {
+          "c_matches_u": true,
+          "cut_t": 28,
+          "f_matches_u": true,
+          "non_target_ok": false,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "4": {
+          "c_matches_u": true,
+          "cut_t": 4,
+          "f_matches_u": true,
+          "non_target_ok": false,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        }
+      },
+      "pre_science": "NON_TARGET_STATE_MISMATCH",
+      "schema": "fork_b_resume_parity_certificate/v1",
+      "science_label": null
+    },
+    "refreshed_all": {
+      "c_fail_cuts": [
+        4,
+        16,
+        28
+      ],
+      "dense_shadow_field_persistent_bpw": 0,
+      "explicitly_not": [
+        "dense_int16_shadow_necessity",
+        "universal_C1_moot",
+        "SHADOW_NECESSARY_PERSISTENT"
+      ],
+      "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4",
+      "per_cut": {
+        "16": {
+          "c_matches_u": false,
+          "cut_t": 16,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "28": {
+          "c_matches_u": false,
+          "cut_t": 28,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        },
+        "4": {
+          "c_matches_u": false,
+          "cut_t": 4,
+          "f_matches_u": true,
+          "non_target_ok": true,
+          "pre_science": null,
+          "s_matches_u": true,
+          "z_decision_sensitive": true
+        }
+      },
+      "pre_science": null,
+      "s_fail_cuts": [],
+      "schema": "fork_b_resume_parity_certificate/v1",
+      "science_label": "REFRESHED_BOUNDED_RECONSTRUCTABLE_AT_ALL_TESTED_CUTS",
+      "z_binding_cut_t": 16
+    }
+  },
+  "parent_seed_scope": "AT_TESTED_CUT_PARENT_SEED::9b4e311a22787e7d::seed::44/43/17::cuts::{4,16,28}::K::4"
+}

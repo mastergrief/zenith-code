@@ -10013,7 +10013,67 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "Must be > 0 when set; fail-closed via VoteUpdateSpec.validate()."
         ),
     )
+    # Fork B resume-parity certificate (default-off; non-Fork-B path unchanged when absent).
+    ap.add_argument(
+        "--fork-b-resume-parity-certificate",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable Fork B resume-parity 5-arm certificate artifact emission "
+            "(fork_b_non_target_snapshot/v1 + arm receipt). Default-off."
+        ),
+    )
+    ap.add_argument(
+        "--fork-b-arm",
+        type=str,
+        default=None,
+        choices=["U", "F", "C", "S", "Z"],
+        help="Fork B arm id when --fork-b-resume-parity-certificate is set.",
+    )
+    ap.add_argument(
+        "--fork-b-cut-t",
+        type=int,
+        default=None,
+        help="Fork B cut step t when --fork-b-resume-parity-certificate is set.",
+    )
+    ap.add_argument(
+        "--fork-b-artifact-dir",
+        type=str,
+        default=None,
+        help="Directory for Fork B certificate artifacts (required when certificate enabled).",
+    )
     return ap
+
+
+def _maybe_emit_fork_b_resume_parity_artifacts(
+    *,
+    args: argparse.Namespace,
+    parent_receipt: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Thin CLI hook: emit Fork B artifacts when enabled; no-op when flags absent."""
+    if not bool(getattr(args, "fork_b_resume_parity_certificate", False)):
+        return None
+    from calm.hrm_text_158.native_full_stack.fork_b_resume_parity_certificate import (
+        FORK_B_NON_TARGET_SNAPSHOT_SCHEMA,
+        ArmId,
+        emit_fork_b_cli_scaffold_receipt,
+    )
+
+    arm_raw = getattr(args, "fork_b_arm", None)
+    cut_t = getattr(args, "fork_b_cut_t", None)
+    artifact_dir = getattr(args, "fork_b_artifact_dir", None)
+    if arm_raw is None or cut_t is None or not artifact_dir:
+        raise SystemExit(
+            "Fork B certificate requires --fork-b-arm, --fork-b-cut-t, "
+            "and --fork-b-artifact-dir"
+        )
+    return emit_fork_b_cli_scaffold_receipt(
+        arm=ArmId(str(arm_raw)),
+        cut_t=int(cut_t),
+        artifact_dir=Path(str(artifact_dir)),
+        parent_receipt_keys=sorted(parent_receipt.keys()),
+        schema=FORK_B_NON_TARGET_SNAPSHOT_SCHEMA,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -10127,6 +10187,12 @@ def main(argv: list[str] | None = None) -> int:
         vote_update_decay_numerator=args.vote_update_decay_numerator,
         vote_update_decay_denominator=args.vote_update_decay_denominator,
     )
+    fork_b_meta = _maybe_emit_fork_b_resume_parity_artifacts(
+        args=args,
+        parent_receipt=receipt if isinstance(receipt, dict) else {},
+    )
+    if fork_b_meta is not None and isinstance(receipt, dict):
+        receipt = {**receipt, "fork_b_resume_parity": fork_b_meta}
     print(json.dumps(receipt, indent=2, sort_keys=True), flush=True)
     flush_probe_terminal_artifacts(exit_code=0, flush_reason="normal_completion")
     return 0

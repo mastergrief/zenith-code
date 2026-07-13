@@ -1,0 +1,9 @@
+{
+  "fixtures": {
+    "classifier_outputs_fixture.json": "c948d7776995bc8fc75cdd748998d4edba8de22c01316d8cb7f88e799541084c",
+    "non_target_snapshot_fixture.json": "6a8199fb01148e069a83d5859089dca41b5be256b31a65878fca07908a03b7ad",
+    "real_path_disclosure_fixture.json": "a406d26f420a5c11b5cdef63b8b749fa72ddcd83932298d6566079a3308ff644",
+    "s_accounting_fixture.json": "fbada96ab4ea16e69ccb6c6bf2f74fd79f61819ae2efe16ff9efe7704cb1cb52"
+  },
+  "pre_extraction_god_file_sha256": "92e62e235fa8604f1028d35d964d2160c16ebd6f7d04489f3726534368d4bd27"
+}
