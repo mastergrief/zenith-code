@@ -290,6 +290,28 @@ nomenclature (distinguish armed vs fired).
 **Next rung:** Slice-5 in-vivo live validation (route to a real, non-envelope
 worst-case sub-2 claim).
 
+### 2026-07-13 — R8 fixed-width local null → sparse/forgettable design → Phase-0 TOTAL-bpw ceilings
+
+**Arc (receipt-only):** fixed-width dense-acc width screen local null → Branch-B sparse/forgettable design → Phase-0 CPU TOTAL-bpw projector (ceilings; kill-on-floor-only).
+
+**R8 retrospective observation (one parent/seed; 32 steps):** complete-vector first divergence vs W8 was W4@step3 and W6@step9; applied-index/q divergence for W4 began at step4. Steps1–2 were control-invalid; steps3–8 were RETROSPECTIVE_EXPLORATORY_W4_BREAK_W6_HOLD, NEVER SCREEN_PASS. acc_abs_max_after_decay_vote is a post-decay+vote proxy, NOT causal preclip evidence and NOT proof of a ±31 threshold.
+
+**co_lead literal boundaries (1783938731962 — binding):**
+- R8 = one-parent/seed LOCAL bounded negative; DEPRIORITIZE_FIXED_WIDTH_FOR_SUB2, NOT universal fixed-width closure or a causal ±31 threshold.
+- C2 = PHASE_A_RETRIAL_ELIMINATED scope classification, NOT a new empirical kill.
+- C4 = C4_EXPLICIT_ADDRESS_ENCODING_KILLED at the 0.4 accumulator budget; dense-W8 comparison UNRESOLVED; NOT mechanism-family closure.
+- C1/C3/C5 = OCCUPANCY_UNRESOLVED, NOT survivors.
+- Accepted Phase-0 evidence is v2 5d2dcfa1 ONLY; v1 610de76f recorded as REJECTED/SUPERSEDED evidence, NEVER cited as terminal truth.
+
+**Gate chain / artifacts (creditdir + board; full shas):**
+- banked null `05918d53a839191a4dfbd9c6173be520ecde1cbcf84a646570f50aaa795d0454`
+- per-step reducer `7aa4f638699464451e712402d767639cd364c6ee68696990238e30af198415be` / gate-2 `1783937235036`
+- design packet `8c6fd824489fdc3d093427392225bff8864bc8f83b111eb0ed77851588945f47`
+- Phase-0 packet `3a48ac92b9787a407fbefa08dc4ca9862e1f65c24b9f3cd3f0598f3155cd4c79` / gate-2 `1783938274845`
+- Phase-0 execution terminal PASS `1783938636597` on accepted evidence v2 `5d2dcfa16ca458f3ef9a9a27785a081d709cb96470ae2f2acee19e6e454e6980` (`phase0_projector_EXECUTION_RECEIPT_v2.json`); rejected/superseded v1 `610de76fe0df1ce6a590a46b0a8e965161675a76c332969355f70e35630b1c26` NEVER cited as terminal truth
+
+**Non-claims:** no science/run authority from this append; no winner; no GPU; no full-sub2/bank/readiness; no eager-tier rules mutation; pre-existing mirror-line-count drift left untouched.
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,
