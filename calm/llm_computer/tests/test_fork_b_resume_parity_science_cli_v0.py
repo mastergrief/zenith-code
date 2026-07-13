@@ -121,7 +121,7 @@ def _spy(cli, *, raise_exc: Exception | None = None, sha_seq: list[str] | None =
             "require_z_gate_break": True, "runner_identity": cli.RUNNER_IDENTITY,
             "global_horizon": 32,
             "runner_kwargs": {
-                "global_horizon": 32, "eligible_scope": "all-bitlinear", "batch_size": 1,
+                "global_horizon": 32,
                 "max_abs_per_tensor": 4096, "r7_deferred_backlog_carry_enabled": True,
                 "require_q_change": False,
             },
@@ -277,8 +277,55 @@ def test_cli_formal_success_receipt_authority_fields_and_spy_every_binding(cli):
     assert b["developer_validation"] is False and b["require_strict_f_equals_u"] is True
     assert b["require_z_gate_break"] is True and b["runner_kwargs"]["global_horizon"] == 32
     assert b["eligible_scope"] == "all-bitlinear" and b["batch_size"] == 1
-    assert b["support_batch_size"] == 1 and b["runner_kwargs"]["batch_size"] == 1
+    assert b["support_batch_size"] == 1
+    assert "batch_size" not in b["runner_kwargs"]
+    assert "eligible_scope" not in b["runner_kwargs"]
     assert rec["batch_size"] == 1 and calls["cert"] == 1
+
+
+def test_runner_kwargs_signature_compat_and_batch1_pin_survives(cli, monkeypatch, tmp_path: Path):
+    """Six-point CPU proof: spurious kwargs gone + batch1/eligible paths survive."""
+    import inspect
+    from types import SimpleNamespace
+    import torch
+    probe = importlib.import_module("scripts.hrm_text_158_bounded_delta_acquisition_probe")
+    cap: dict[str, Any] = {}
+    eligible = {"mod.a": object()}
+    batches = [{"batch": {"input_ids": "B1"}}]
+
+    def _batches(**kw):
+        cap["batch_kw"] = dict(kw); return batches, {}
+
+    def _select(model, eligible_scope="all-bitlinear"):
+        cap["scope"] = eligible_scope; return eligible
+
+    def _cert(**kw):
+        cap["rk"] = dict(kw.get("runner_kwargs") or {})
+        cap["mods"] = kw.get("eligible_modules")
+        return {"terminal": {"label": "OK"}, "pre_science": None, "science_label": None, "notes": {}}
+
+    monkeypatch.setattr(torch, "load", lambda *a, **k: {})
+    monkeypatch.setattr(probe, "build_model_from_checkpoint",
+                        lambda c, d: (object(), object(), SimpleNamespace(max_seq_len=64)))
+    monkeypatch.setattr(probe, "build_identity_full_support_batches", _batches)
+    monkeypatch.setattr(probe, "select_eligible_bitlinears", _select)
+    monkeypatch.setattr(probe, "derive_tensor_states_and_check_init_fidelity",
+                        lambda el, threshold=0.0: ({}, {"all_pass": True}))
+    cli._run_certificate = _cert
+    n = "sixpoint001"
+    scratch = _scratch(cli, n)
+    assert cli.main(_formal_argv(cli, n=n, scratch=scratch)) == 0
+    rec = _receipt(scratch)
+    rk = cap["rk"]
+    assert "batch_size" not in rk and "eligible_scope" not in rk  # (a)(b)
+    inspect.signature(probe.run_bounded_delta_steps).bind_partial(**rk)  # (c)
+    assert cap["batch_kw"]["batch_size"] == 1  # (d)
+    assert rec["batch_size"] == 1 and rec["spy_bindings"]["batch_size"] == 1  # (e)
+    assert rec["spy_bindings"]["support_batch_size"] == 1
+    assert "batch_size" not in rec["spy_bindings"]["runner_kwargs"]
+    assert cap["scope"] == "all-bitlinear" and cap["mods"] is eligible  # (f)
+    assert rec["eligible_scope"] == "all-bitlinear"
+    assert rec["spy_bindings"]["eligible_scope"] == "all-bitlinear"
 
 
 def test_cli_formal_omit_batch_size_refuses(cli, tmp_path: Path):

@@ -306,12 +306,10 @@ def _default_load_and_run(args: argparse.Namespace, *, parent_before: str) -> di
         raise RuntimeError(f"init fidelity failed: {report}")
     runner_kwargs = {
         "global_horizon": 32,
-        "batch_size": int(args.batch_size),
         "global_cap_contract": C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
         "max_abs_per_tensor": 4096,
         "r7_deferred_backlog_carry_enabled": True,
         "require_q_change": False,
-        "eligible_scope": "all-bitlinear",
     }
     assert FORMAL_GLOBAL_HORIZON == 32
     assert run_bounded_delta_steps.__module__.endswith(
