@@ -17,6 +17,8 @@ from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     clip_then_roundtrip_w7_tensor,
     clip_then_roundtrip_w8_tensor,
     clip_then_pack_w6,
+    clip_to_w4_tensor,
+    clip_to_w6_tensor,
     pack_w5,
     pack_w6,
     strict_roundtrip_w6_tensor,
@@ -42,8 +44,32 @@ RUN_NARROW_CARRIER_W7_TRAINER_INTEGRATION_ENV = (
 RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV = (
     "HRM_TEXT_158_RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION"
 )
+RUN_NARROW_CARRIER_W6_CLIP_ONLY_TRAINER_INTEGRATION_ENV = (
+    "HRM_TEXT_158_RUN_NARROW_CARRIER_W6_CLIP_ONLY_TRAINER_INTEGRATION"
+)
+RUN_NARROW_CARRIER_W4_CLIP_ONLY_TRAINER_INTEGRATION_ENV = (
+    "HRM_TEXT_158_RUN_NARROW_CARRIER_W4_CLIP_ONLY_TRAINER_INTEGRATION"
+)
 PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED_ENV = (
     "HRM_TEXT_158_PERSISTENT_ACCUMULATOR_W5_BYTE_PACKED"
+)
+
+# Canonical trainer-boundary selection tokens (single source for apply + telemetry).
+NARROW_BOUNDARY_NONE = "none"
+NARROW_BOUNDARY_W5 = "w5"
+NARROW_BOUNDARY_W6_PACK = "w6_pack"
+NARROW_BOUNDARY_W6_CLIP_ONLY = "w6_clip_only"
+NARROW_BOUNDARY_W4_CLIP_ONLY = "w4_clip_only"
+NARROW_BOUNDARY_W7 = "w7"
+NARROW_BOUNDARY_W8 = "w8"
+NARROW_BOUNDARY_SELECTIONS: tuple[str, ...] = (
+    NARROW_BOUNDARY_NONE,
+    NARROW_BOUNDARY_W5,
+    NARROW_BOUNDARY_W6_PACK,
+    NARROW_BOUNDARY_W6_CLIP_ONLY,
+    NARROW_BOUNDARY_W4_CLIP_ONLY,
+    NARROW_BOUNDARY_W7,
+    NARROW_BOUNDARY_W8,
 )
 
 CLASSIFIER_S2_HARNESS_FAIL = "S2_HARNESS_FAIL"
@@ -195,11 +221,65 @@ def narrow_carrier_w8_enabled(*, enabled: bool | None = None) -> bool:
     return os.environ.get(RUN_NARROW_CARRIER_W8_TRAINER_INTEGRATION_ENV) == "1"
 
 
+def narrow_carrier_w6_clip_only_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(RUN_NARROW_CARRIER_W6_CLIP_ONLY_TRAINER_INTEGRATION_ENV) == "1"
+
+
+def narrow_carrier_w4_clip_only_enabled(*, enabled: bool | None = None) -> bool:
+    if enabled is not None:
+        return bool(enabled)
+    return os.environ.get(RUN_NARROW_CARRIER_W4_CLIP_ONLY_TRAINER_INTEGRATION_ENV) == "1"
+
+
+def resolve_narrow_carrier_boundary_selection(
+    *,
+    enabled: bool | None = None,
+    w5_enabled: bool | None = None,
+    w6_enabled: bool | None = None,
+    w6_clip_only_enabled: bool | None = None,
+    w4_clip_only_enabled: bool | None = None,
+    w7_enabled: bool | None = None,
+    w8_enabled: bool | None = None,
+) -> str:
+    """Canonical dense narrow-carrier selection for trainer apply AND telemetry.
+
+    Exactly one of {w5, w6_pack, w6_clip_only, w4_clip_only, w7, w8} may be on.
+    """
+
+    flags: dict[str, bool] = {
+        NARROW_BOUNDARY_W5: narrow_carrier_w5_enabled(enabled=w5_enabled),
+        NARROW_BOUNDARY_W6_PACK: narrow_carrier_w6_enabled(
+            enabled=w6_enabled if w6_enabled is not None else enabled
+        ),
+        NARROW_BOUNDARY_W6_CLIP_ONLY: narrow_carrier_w6_clip_only_enabled(
+            enabled=w6_clip_only_enabled
+        ),
+        NARROW_BOUNDARY_W4_CLIP_ONLY: narrow_carrier_w4_clip_only_enabled(
+            enabled=w4_clip_only_enabled
+        ),
+        NARROW_BOUNDARY_W7: narrow_carrier_w7_enabled(enabled=w7_enabled),
+        NARROW_BOUNDARY_W8: narrow_carrier_w8_enabled(enabled=w8_enabled),
+    }
+    selected = [name for name, on in flags.items() if on]
+    if len(selected) > 1:
+        raise ValueError(
+            "W5, W6-pack, W6-clip-only, W4-clip-only, W7, and W8 narrow-carrier "
+            "trainer integration are mutually exclusive"
+        )
+    if not selected:
+        return NARROW_BOUNDARY_NONE
+    return selected[0]
+
+
 def resolve_live_acc_carrier_selector(
     *,
     v4_enabled: bool | None = None,
     w5_enabled: bool | None = None,
     w6_enabled: bool | None = None,
+    w6_clip_only_enabled: bool | None = None,
+    w4_clip_only_enabled: bool | None = None,
     w7_enabled: bool | None = None,
     w8_enabled: bool | None = None,
 ) -> str:
@@ -211,6 +291,8 @@ def resolve_live_acc_carrier_selector(
         v4_enabled=v4_enabled,
         w5_enabled=w5_enabled,
         w6_enabled=w6_enabled,
+        w6_clip_only_enabled=w6_clip_only_enabled,
+        w4_clip_only_enabled=w4_clip_only_enabled,
         w7_enabled=w7_enabled,
         w8_enabled=w8_enabled,
     )
@@ -250,11 +332,13 @@ def apply_trainer_boundary_narrow_carrier(
     enabled: bool | None = None,
     w5_enabled: bool | None = None,
     w6_enabled: bool | None = None,
+    w6_clip_only_enabled: bool | None = None,
+    w4_clip_only_enabled: bool | None = None,
     w7_enabled: bool | None = None,
     w8_enabled: bool | None = None,
     v4_enabled: bool | None = None,
 ) -> torch.Tensor:
-    """Default-off trainer boundary: identity int16 when off; W5/W6/W7/W8 clip paths."""
+    """Default-off trainer boundary: identity int16 when off; W5/W6/W7/W8/W4 clip paths."""
 
     from calm.hrm_text_158.native_full_stack.event_coded_vote_update_adapter import (
         event_coded_live_carrier_enabled,
@@ -266,22 +350,26 @@ def apply_trainer_boundary_narrow_carrier(
         )
     if accumulators.dtype != torch.int16:
         raise ValueError(f"accumulators must be torch.int16, got {accumulators.dtype}")
-    use_w5 = narrow_carrier_w5_enabled(enabled=w5_enabled)
-    use_w6 = narrow_carrier_w6_enabled(enabled=w6_enabled if w6_enabled is not None else enabled)
-    use_w7 = narrow_carrier_w7_enabled(enabled=w7_enabled)
-    use_w8 = narrow_carrier_w8_enabled(enabled=w8_enabled)
-    enabled_count = sum(int(flag) for flag in (use_w5, use_w6, use_w7, use_w8))
-    if enabled_count > 1:
-        raise ValueError(
-            "W5, W6, W7, and W8 narrow-carrier trainer integration are mutually exclusive"
-        )
-    if use_w5:
+    selection = resolve_narrow_carrier_boundary_selection(
+        enabled=enabled,
+        w5_enabled=w5_enabled,
+        w6_enabled=w6_enabled,
+        w6_clip_only_enabled=w6_clip_only_enabled,
+        w4_clip_only_enabled=w4_clip_only_enabled,
+        w7_enabled=w7_enabled,
+        w8_enabled=w8_enabled,
+    )
+    if selection == NARROW_BOUNDARY_W5:
         return clip_then_roundtrip_w5_tensor(accumulators.detach())
-    if use_w6:
+    if selection == NARROW_BOUNDARY_W6_PACK:
         return strict_roundtrip_w6_tensor(accumulators.detach())
-    if use_w7:
+    if selection == NARROW_BOUNDARY_W6_CLIP_ONLY:
+        return clip_to_w6_tensor(accumulators.detach())
+    if selection == NARROW_BOUNDARY_W4_CLIP_ONLY:
+        return clip_to_w4_tensor(accumulators.detach())
+    if selection == NARROW_BOUNDARY_W7:
         return clip_then_roundtrip_w7_tensor(accumulators.detach())
-    if use_w8:
+    if selection == NARROW_BOUNDARY_W8:
         return clip_then_roundtrip_w8_tensor(accumulators.detach())
     return accumulators
 

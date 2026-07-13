@@ -48,6 +48,8 @@ RUN_EVENT_CODED_ACC_LIVE_CARRIER_ENV = "HRM_TEXT_158_RUN_EVENT_CODED_ACC_LIVE_CA
 LIVE_ACC_CARRIER_V4_LIVE = "v4_live"
 LIVE_ACC_CARRIER_W5 = "w5"
 LIVE_ACC_CARRIER_W6 = "w6"
+LIVE_ACC_CARRIER_W6_CLIP_ONLY = "w6_clip_only"
+LIVE_ACC_CARRIER_W4 = "w4"
 LIVE_ACC_CARRIER_W7 = "w7"
 LIVE_ACC_CARRIER_W8 = "w8"
 LIVE_ACC_CARRIER_NONE = "none"
@@ -113,35 +115,48 @@ def resolve_live_acc_carrier_selector(
     v4_enabled: bool | None = None,
     w5_enabled: bool | None = None,
     w6_enabled: bool | None = None,
+    w6_clip_only_enabled: bool | None = None,
+    w4_clip_only_enabled: bool | None = None,
     w7_enabled: bool | None = None,
     w8_enabled: bool | None = None,
 ) -> str:
     from calm.hrm_text_158.native_full_stack.narrow_carrier_trainer_integration import (
-        narrow_carrier_w5_enabled,
-        narrow_carrier_w6_enabled,
-        narrow_carrier_w7_enabled,
-        narrow_carrier_w8_enabled,
+        NARROW_BOUNDARY_NONE,
+        NARROW_BOUNDARY_W4_CLIP_ONLY,
+        NARROW_BOUNDARY_W5,
+        NARROW_BOUNDARY_W6_CLIP_ONLY,
+        NARROW_BOUNDARY_W6_PACK,
+        NARROW_BOUNDARY_W7,
+        NARROW_BOUNDARY_W8,
+        resolve_narrow_carrier_boundary_selection,
     )
 
     use_v4 = event_coded_live_carrier_enabled(enabled=v4_enabled)
-    use_w5 = narrow_carrier_w5_enabled(enabled=w5_enabled)
-    use_w6 = narrow_carrier_w6_enabled(enabled=w6_enabled)
-    use_w7 = narrow_carrier_w7_enabled(enabled=w7_enabled)
-    use_w8 = narrow_carrier_w8_enabled(enabled=w8_enabled)
-    selected = sum(int(flag) for flag in (use_v4, use_w5, use_w6, use_w7, use_w8))
-    if selected > 1:
+    narrow = resolve_narrow_carrier_boundary_selection(
+        w5_enabled=w5_enabled,
+        w6_enabled=w6_enabled,
+        w6_clip_only_enabled=w6_clip_only_enabled,
+        w4_clip_only_enabled=w4_clip_only_enabled,
+        w7_enabled=w7_enabled,
+        w8_enabled=w8_enabled,
+    )
+    if use_v4 and narrow != NARROW_BOUNDARY_NONE:
         raise ValueError(
-            "V4-LIVE event-coded carrier is mutually exclusive with W5/W6/W7/W8 narrow carriers"
+            "V4-LIVE event-coded carrier is mutually exclusive with W5/W6/W7/W8/W4 narrow carriers"
         )
     if use_v4:
         return LIVE_ACC_CARRIER_V4_LIVE
-    if use_w5:
+    if narrow == NARROW_BOUNDARY_W5:
         return LIVE_ACC_CARRIER_W5
-    if use_w6:
+    if narrow == NARROW_BOUNDARY_W6_PACK:
         return LIVE_ACC_CARRIER_W6
-    if use_w7:
+    if narrow == NARROW_BOUNDARY_W6_CLIP_ONLY:
+        return LIVE_ACC_CARRIER_W6_CLIP_ONLY
+    if narrow == NARROW_BOUNDARY_W4_CLIP_ONLY:
+        return LIVE_ACC_CARRIER_W4
+    if narrow == NARROW_BOUNDARY_W7:
         return LIVE_ACC_CARRIER_W7
-    if use_w8:
+    if narrow == NARROW_BOUNDARY_W8:
         return LIVE_ACC_CARRIER_W8
     return LIVE_ACC_CARRIER_NONE
 

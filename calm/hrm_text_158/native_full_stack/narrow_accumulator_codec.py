@@ -492,6 +492,43 @@ def count_w7_clip_events_tensor(before: torch.Tensor, after: torch.Tensor) -> in
     return int((before.to(torch.int32) != after.to(torch.int32)).sum().item())
 
 
+W4_WIDTH_BITS = 4
+W4_SIGNED_MIN = -signed_w_max(W4_WIDTH_BITS)
+W4_SIGNED_MAX = signed_w_max(W4_WIDTH_BITS)
+
+
+def clip_to_w4(value: int) -> int:
+    clip_min, clip_max = effective_clip_bounds(
+        W4_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    return max(clip_min, min(clip_max, int(value)))
+
+
+def clip_to_w4_tensor(acc: torch.Tensor) -> torch.Tensor:
+    """Clip-only W4 trainer boundary (int16 storage, effective clip ±7)."""
+
+    clip_min, clip_max = effective_clip_bounds(
+        W4_WIDTH_BITS,
+        VOTE_UPDATE_SOURCE_CLIP_MIN,
+        VOTE_UPDATE_SOURCE_CLIP_MAX,
+    )
+    return torch.clamp(acc.to(torch.int32), clip_min, clip_max).to(torch.int16)
+
+
+def clip_then_roundtrip_w4_tensor(acc: torch.Tensor) -> torch.Tensor:
+    """Clip-only W4 alias (name-parity with W7/W8; still clip-only, never pack)."""
+
+    return clip_to_w4_tensor(acc)
+
+
+def count_w4_clip_events_tensor(before: torch.Tensor, after: torch.Tensor) -> int:
+    if before.shape != after.shape:
+        raise ValueError("count_w4_clip_events_tensor requires matching shapes")
+    return int((before.to(torch.int32) != after.to(torch.int32)).sum().item())
+
+
 W8_WIDTH_BITS = 8
 W8_SIGNED_MIN = -signed_w_max(W8_WIDTH_BITS)
 W8_SIGNED_MAX = signed_w_max(W8_WIDTH_BITS)
