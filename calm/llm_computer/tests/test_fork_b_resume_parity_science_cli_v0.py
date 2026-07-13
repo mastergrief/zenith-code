@@ -1,4 +1,4 @@
-"""CPU-only fail-closed matrix for Fork B science CLI (plan v1.3 T1–T15)."""
+"""CPU-only fail-closed matrix for Fork B science CLI (clean-archive Option A)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 CLI_MOD = "scripts.fork_b_resume_parity_science_run"
+# Non-stub 40-hex defaults for formal argv (must NEVER equal forbidden stubs).
+TEST_HEAD = "84dd4b74061b94fb3f1be3b6b537e8f41df9a7d9"
+TEST_TREE = "1f7dfdbf6343d85fee9adbf81b4169cd5089caf9"
 
 
 @pytest.fixture()
@@ -30,24 +33,48 @@ def _scratch(cli, n: str | None = None) -> Path:
     return Path(cli.SCRATCH_TEMPLATE.replace("{LAUNCH_NONCE}", n or _n()))
 
 
-def _formal_argv(cli, *, n: str | None = None, scratch: Path | None = None, **over: Any) -> list[str]:
+def _formal_argv(
+    cli,
+    *,
+    n: str | None = None,
+    scratch: Path | None = None,
+    head: str | None = TEST_HEAD,
+    tree: str | None = TEST_TREE,
+    **over: Any,
+) -> list[str]:
     nonce = n or _n()
-    concrete = cli.concrete_argv_from_nonce(nonce)
-    sc = str(scratch) if scratch is not None else cli.SCRATCH_TEMPLATE.replace("{LAUNCH_NONCE}", nonce)
+    use_head = over.get("clean_archive_head", head)
+    use_tree = over.get("clean_archive_tree", tree)
+    # Concrete hash uses actuals when all three launch-bound fields are present.
+    concrete = None
+    if use_head and use_tree and over.get("launch_nonce", nonce) is not None:
+        concrete = cli.concrete_argv_from_launch(
+            nonce=str(over.get("launch_nonce", nonce)),
+            clean_archive_head=str(use_head),
+            clean_archive_tree=str(use_tree),
+        )
+    sc = str(scratch) if scratch is not None else cli.SCRATCH_TEMPLATE.replace(
+        "{LAUNCH_NONCE}", nonce
+    )
     argv = [
-        "--allow-gpu-launch", "--formal-science", "--eligible-scope", over.get("eligible_scope", "all-bitlinear"),
+        "--allow-gpu-launch", "--formal-science",
+        "--eligible-scope", over.get("eligible_scope", "all-bitlinear"),
         "--batch-size", str(over.get("batch_size", 1)),
         "--parent", cli.PARENT_PATH, "--parent-sha256", cli.PARENT_SHA256,
         "--scratch-root", sc, "--device", "cuda:0",
         "--cuts", over.get("cuts", "4,16,28"), "--k-steps", str(over.get("k_steps", 4)),
-        "--steps", str(over.get("steps", 32)), "--global-horizon", str(over.get("global_horizon", 32)),
+        "--steps", str(over.get("steps", 32)),
+        "--global-horizon", str(over.get("global_horizon", 32)),
         "--batch-seed", str(over.get("batch_seed", 44)),
         "--support-order-seed", str(over.get("support_order_seed", 43)),
         "--ordering-seed", str(over.get("ordering_seed", 17)),
         "--launch-nonce", over.get("launch_nonce", nonce),
+        "--clean-archive-head", use_head if use_head is not None else "",
+        "--clean-archive-tree", use_tree if use_tree is not None else "",
         "--argv-template-sha256", over.get("argv_template_sha256", cli.ARGV_TEMPLATE_SHA256),
         "--concrete-argv-sha256", over.get(
-            "concrete_argv_sha256", cli.canonical_argv_sha256(concrete if over.get("launch_nonce", nonce) == nonce else cli.concrete_argv_from_nonce(str(over.get("launch_nonce", nonce))))
+            "concrete_argv_sha256",
+            cli.canonical_argv_sha256(concrete) if concrete else "0" * 64,
         ),
     ]
     omit_flags = set()
@@ -55,8 +82,12 @@ def _formal_argv(cli, *, n: str | None = None, scratch: Path | None = None, **ov
         omit_flags.add("--eligible-scope")
     if "batch_size" in over and over["batch_size"] is None:
         omit_flags.add("--batch-size")
+    if "omit_clean_archive_head" in over and over["omit_clean_archive_head"]:
+        omit_flags.add("--clean-archive-head")
+    if "omit_clean_archive_tree" in over and over["omit_clean_archive_tree"]:
+        omit_flags.add("--clean-archive-tree")
     if omit_flags:
-        out = []
+        out: list[str] = []
         i = 0
         while i < len(argv):
             if argv[i] in omit_flags:
@@ -134,7 +165,9 @@ def test_cli_allow_without_formal_refuses(cli, tmp_path: Path):
     calls = _spy(cli)
     rc = cli.main([
         "--allow-gpu-launch", "--parent", cli.PARENT_PATH, "--parent-sha256", cli.PARENT_SHA256,
-        "--scratch-root", str(scratch), "--launch-nonce", _n(), "--eligible-scope", "all-bitlinear",
+        "--scratch-root", str(scratch), "--launch-nonce", _n(),
+        "--eligible-scope", "all-bitlinear",
+        "--clean-archive-head", TEST_HEAD, "--clean-archive-tree", TEST_TREE,
     ])
     assert rc != 0 and calls["cert"] == 0
     assert _receipt(scratch)["pre_science"] == "ALLOW_WITHOUT_FORMAL"
@@ -204,6 +237,8 @@ def test_cli_certificate_exception_emits_atomic_failure_receipt(cli):
     assert rec["status"] == "FAILED" and rec["pre_science"] == "CERTIFICATE_EXCEPTION"
     assert rec["science_label"] is None and rec["launch_nonce"] == n
     assert rec["parent_sha256_after"] == cli.PARENT_SHA256 and calls["cert"] == 1
+    assert rec["clean_archive_head_sha"] == TEST_HEAD
+    assert rec["clean_archive_tree_sha"] == TEST_TREE
 
 
 def test_cli_parent_after_hash_mismatch_marks_failure(cli):
@@ -232,6 +267,11 @@ def test_cli_formal_success_receipt_authority_fields_and_spy_every_binding(cli):
     assert rec["cuts"] == [4, 16, 28] and rec["k_steps"] == 4 and rec["steps"] == 32
     assert (rec["batch_seed"], rec["support_order_seed"], rec["ordering_seed"]) == (44, 43, 17)
     assert rec["argv_template_sha256"] == cli.ARGV_TEMPLATE_SHA256
+    assert rec["argv_template_sha256"] == (
+        "b633f624179a882ab0f8eb10dc7c2d608b0ea78a5f40a40fef683a3053257117"
+    )
+    assert rec["clean_archive_head_sha"] == TEST_HEAD
+    assert rec["clean_archive_tree_sha"] == TEST_TREE
     assert rec["parent_unchanged"] is True
     b = calls["bindings"]
     assert b["developer_validation"] is False and b["require_strict_f_equals_u"] is True
@@ -239,8 +279,6 @@ def test_cli_formal_success_receipt_authority_fields_and_spy_every_binding(cli):
     assert b["eligible_scope"] == "all-bitlinear" and b["batch_size"] == 1
     assert b["support_batch_size"] == 1 and b["runner_kwargs"]["batch_size"] == 1
     assert rec["batch_size"] == 1 and calls["cert"] == 1
-
-
 
 
 def test_cli_formal_omit_batch_size_refuses(cli, tmp_path: Path):
@@ -271,8 +309,141 @@ def test_cli_fresh_process_entrypoint_exit_and_receipt(cli, tmp_path: Path):
         "import scripts.fork_b_resume_parity_science_run as m\n"
         f"raise SystemExit(m.main({flags!r}))\n"
     )
-    proc = subprocess.run([sys.executable, "-c", code], cwd=str(REPO), capture_output=True, text=True, timeout=120)
+    proc = subprocess.run(
+        [sys.executable, "-c", code], cwd=str(REPO),
+        capture_output=True, text=True, timeout=120,
+    )
     assert proc.returncode == 0, proc.stderr + proc.stdout
     rec = _receipt(scratch)
     assert rec["status"] == "COMPLETE" and cli.STUB_TOKEN not in json.dumps(rec)
     assert rec["batch_size"] == 1
+    assert rec["clean_archive_head_sha"] == TEST_HEAD
+    assert rec["clean_archive_tree_sha"] == TEST_TREE
+
+
+# --- T16a–d / T17 / T18 / T19 / T20 (clean-archive Option A) ---
+
+def test_cli_missing_clean_archive_head_refuses(cli, tmp_path: Path):
+    rec = _pre_refuse(cli, tmp_path, omit_clean_archive_head=True)
+    assert rec["pre_science"] == "MISSING_CLEAN_ARCHIVE_HEAD"
+
+
+def test_cli_missing_clean_archive_tree_refuses(cli, tmp_path: Path):
+    rec = _pre_refuse(cli, tmp_path, omit_clean_archive_tree=True)
+    assert rec["pre_science"] == "MISSING_CLEAN_ARCHIVE_TREE"
+
+
+def test_cli_malformed_clean_archive_head_refuses(cli, tmp_path: Path):
+    rec = _pre_refuse(cli, tmp_path, clean_archive_head="not-40-hex")
+    assert rec["pre_science"] == "MALFORMED_CLEAN_ARCHIVE_HEAD"
+
+
+def test_cli_malformed_clean_archive_tree_refuses(cli, tmp_path: Path):
+    rec = _pre_refuse(cli, tmp_path, clean_archive_tree="zzzz")
+    assert rec["pre_science"] == "MALFORMED_CLEAN_ARCHIVE_TREE"
+
+
+def test_cli_template_normalization_stable_across_head_tree_nonce(cli):
+    """T17: after normalize-only, different actuals recompute to same template sha."""
+    assert cli.canonical_argv_sha256(cli.ARGV_TEMPLATE) == cli.ARGV_TEMPLATE_SHA256
+    assert cli.ARGV_TEMPLATE_SHA256 == (
+        "b633f624179a882ab0f8eb10dc7c2d608b0ea78a5f40a40fef683a3053257117"
+    )
+    variants = [
+        ("nonceAAA", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        ("nonceBBB", "cccccccccccccccccccccccccccccccccccccccc",
+         "dddddddddddddddddddddddddddddddddddddddd"),
+        ("nonceCCC", TEST_HEAD, TEST_TREE),
+    ]
+    shas = []
+    for nonce, head, tree in variants:
+        concrete = cli.concrete_argv_from_launch(
+            nonce=nonce, clean_archive_head=head, clean_archive_tree=tree,
+        )
+        normalized = cli.normalize_argv_to_template_placeholders(
+            concrete, nonce=nonce, head=head, tree=tree,
+        )
+        shas.append(cli.canonical_argv_sha256(normalized))
+        assert normalized == cli.ARGV_TEMPLATE
+    assert len(set(shas)) == 1
+    assert shas[0] == cli.ARGV_TEMPLATE_SHA256
+
+
+def test_cli_concrete_hash_sensitive_to_head_tree_and_nonce(cli):
+    """T18: changing any one of nonce/head/tree changes concrete sha."""
+    base = cli.concrete_argv_from_launch(
+        nonce="n0", clean_archive_head=TEST_HEAD, clean_archive_tree=TEST_TREE,
+    )
+    base_sha = cli.canonical_argv_sha256(base)
+    alt_nonce = cli.canonical_argv_sha256(cli.concrete_argv_from_launch(
+        nonce="n1", clean_archive_head=TEST_HEAD, clean_archive_tree=TEST_TREE,
+    ))
+    alt_head = cli.canonical_argv_sha256(cli.concrete_argv_from_launch(
+        nonce="n0",
+        clean_archive_head="eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        clean_archive_tree=TEST_TREE,
+    ))
+    alt_tree = cli.canonical_argv_sha256(cli.concrete_argv_from_launch(
+        nonce="n0", clean_archive_head=TEST_HEAD,
+        clean_archive_tree="ffffffffffffffffffffffffffffffffffffffff",
+    ))
+    assert len({base_sha, alt_nonce, alt_head, alt_tree}) == 4
+
+
+def test_cli_success_and_failure_receipts_record_actual_clean_archive(cli):
+    """T19: both receipts carry actual head/tree; never stub ids."""
+    head = "1111111111111111111111111111111111111111"
+    tree = "2222222222222222222222222222222222222222"
+    n_ok = "oknonce001"
+    scratch_ok = _scratch(cli, n_ok)
+    _spy(cli)
+    assert cli.main(_formal_argv(
+        cli, n=n_ok, scratch=scratch_ok, head=head, tree=tree,
+    )) == 0
+    ok = _receipt(scratch_ok)
+    assert ok["status"] == "COMPLETE"
+    assert ok["clean_archive_head_sha"] == head
+    assert ok["clean_archive_tree_sha"] == tree
+
+    n_fail = "failnonce001"
+    scratch_fail = _scratch(cli, n_fail)
+    _spy(cli, raise_exc=RuntimeError("fail-for-receipt"))
+    assert cli.main(_formal_argv(
+        cli, n=n_fail, scratch=scratch_fail, head=head, tree=tree,
+    )) != 0
+    fail = _receipt(scratch_fail)
+    assert fail["status"] == "FAILED"
+    assert fail["clean_archive_head_sha"] == head
+    assert fail["clean_archive_tree_sha"] == tree
+
+    stub_head = "f86c7ec109dc260ffcc9657714def194b708101d"
+    stub_tree = "1d592f18cf0ac518079b3434ab550389d3e5c6a2"
+    for rec in (ok, fail):
+        blob = json.dumps(rec)
+        assert stub_head not in blob and stub_tree not in blob
+        assert "f86c7ec1" not in blob and "1d592f18" not in blob
+
+
+def test_cli_authority_data_never_emits_stub_clean_archive_ids(cli):
+    """T20: source + success/failure authority JSON never contain stub SHAs."""
+    stub_head = "f86c7ec109dc260ffcc9657714def194b708101d"
+    stub_tree = "1d592f18cf0ac518079b3434ab550389d3e5c6a2"
+    src = Path(cli.__file__).read_text(encoding="utf-8")
+    assert "CLEAN_ARCHIVE_HEAD_SHA" not in src
+    assert "CLEAN_ARCHIVE_TREE_SHA" not in src
+    assert stub_head not in src and stub_tree not in src
+    assert "f86c7ec1" not in src and "1d592f18" not in src
+    n = "authstub001"
+    scratch = _scratch(cli, n)
+    _spy(cli)
+    assert cli.main(_formal_argv(cli, n=n, scratch=scratch)) == 0
+    ok_blob = json.dumps(_receipt(scratch))
+    assert stub_head not in ok_blob and stub_tree not in ok_blob
+
+    n2 = "authstub002"
+    scratch2 = _scratch(cli, n2)
+    _spy(cli, raise_exc=RuntimeError("auth-fail"))
+    assert cli.main(_formal_argv(cli, n=n2, scratch=scratch2)) != 0
+    fail_blob = json.dumps(_receipt(scratch2))
+    assert stub_head not in fail_blob and stub_tree not in fail_blob

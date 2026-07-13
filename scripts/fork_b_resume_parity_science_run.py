@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -27,6 +28,9 @@ PARENT_PATH = (
 SCRATCH_TEMPLATE = (
     "/home/gabe/claw-code-creditdir/transient_fp_credit/fork_b_formal_{LAUNCH_NONCE}"
 )
+PLACEHOLDER_NONCE = "{LAUNCH_NONCE}"
+PLACEHOLDER_HEAD = "{CLEAN_ARCHIVE_HEAD}"
+PLACEHOLDER_TREE = "{CLEAN_ARCHIVE_TREE}"
 ARGV_TEMPLATE: list[str] = [
     "python", "-u", "scripts/fork_b_resume_parity_science_run.py",
     "--allow-gpu-launch", "--formal-science", "--eligible-scope", "all-bitlinear",
@@ -35,28 +39,70 @@ ARGV_TEMPLATE: list[str] = [
     "--scratch-root", SCRATCH_TEMPLATE, "--device", "cuda:0",
     "--cuts", "4,16,28", "--k-steps", "4", "--steps", "32",
     "--global-horizon", "32", "--batch-seed", "44", "--support-order-seed", "43",
-    "--ordering-seed", "17", "--launch-nonce", "{LAUNCH_NONCE}",
+    "--ordering-seed", "17",
+    "--launch-nonce", PLACEHOLDER_NONCE,
+    "--clean-archive-head", PLACEHOLDER_HEAD,
+    "--clean-archive-tree", PLACEHOLDER_TREE,
 ]
-ARGV_TEMPLATE_SHA256 = "06bcc9072bbf798373b05b87b86e48be89412bd6e5af65336e053a68792ce354"
-CLEAN_ARCHIVE_HEAD_SHA = "f86c7ec109dc260ffcc9657714def194b708101d"
-CLEAN_ARCHIVE_TREE_SHA = "1d592f18cf0ac518079b3434ab550389d3e5c6a2"
+ARGV_TEMPLATE_SHA256 = "b633f624179a882ab0f8eb10dc7c2d608b0ea78a5f40a40fef683a3053257117"
 FORMAL_CUTS = (4, 16, 28)
 RUNNER_IDENTITY = (
     "scripts.hrm_text_158_bounded_delta_acquisition_probe.run_bounded_delta_steps"
 )
+_HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
-# Test hooks (monkeypatch targets).
 _sha256_file: Callable[[Path], str] | None = None
 _run_certificate: Callable[..., Any] | None = None
 _load_parent_and_run: Callable[..., Any] | None = None
+
 
 def canonical_argv_sha256(argv: Sequence[str]) -> str:
     return hashlib.sha256(
         json.dumps(list(argv), separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     ).hexdigest()
 
-def concrete_argv_from_nonce(nonce: str) -> list[str]:
-    return [t.replace("{LAUNCH_NONCE}", str(nonce)) for t in ARGV_TEMPLATE]
+
+def concrete_argv_from_launch(
+    *, nonce: str, clean_archive_head: str, clean_archive_tree: str,
+) -> list[str]:
+    out: list[str] = []
+    for tok in ARGV_TEMPLATE:
+        out.append(
+            tok.replace(PLACEHOLDER_NONCE, str(nonce))
+            .replace(PLACEHOLDER_HEAD, str(clean_archive_head))
+            .replace(PLACEHOLDER_TREE, str(clean_archive_tree))
+        )
+    return out
+
+
+def normalize_argv_to_template_placeholders(
+    argv: Sequence[str], *, nonce: str, head: str, tree: str,
+) -> list[str]:
+    """Normalize ONLY launch-bound fields back to placeholders for template recompute."""
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--launch-nonce" and i + 1 < len(argv):
+            out.extend([tok, PLACEHOLDER_NONCE]); i += 2; continue
+        if tok == "--clean-archive-head" and i + 1 < len(argv):
+            out.extend([tok, PLACEHOLDER_HEAD]); i += 2; continue
+        if tok == "--clean-archive-tree" and i + 1 < len(argv):
+            out.extend([tok, PLACEHOLDER_TREE]); i += 2; continue
+        if tok == "--scratch-root" and i + 1 < len(argv):
+            out.extend([tok, SCRATCH_TEMPLATE]); i += 2; continue
+        # Also normalize scratch/nonce/head/tree if they appear as bare substituted values.
+        if tok == str(nonce):
+            out.append(PLACEHOLDER_NONCE); i += 1; continue
+        if tok == str(head):
+            out.append(PLACEHOLDER_HEAD); i += 1; continue
+        if tok == str(tree):
+            out.append(PLACEHOLDER_TREE); i += 1; continue
+        if tok == SCRATCH_TEMPLATE.replace(PLACEHOLDER_NONCE, str(nonce)):
+            out.append(SCRATCH_TEMPLATE); i += 1; continue
+        out.append(tok); i += 1
+    return out
+
 
 def sha256_file(path: Path) -> str:
     if _sha256_file is not None:
@@ -66,6 +112,7 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Fork B 5-arm resume-parity science run")
@@ -85,15 +132,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--support-order-seed", type=int, default=43)
     p.add_argument("--ordering-seed", type=int, default=17)
     p.add_argument("--launch-nonce", default=None)
+    p.add_argument("--clean-archive-head", default=None)
+    p.add_argument("--clean-archive-tree", default=None)
     p.add_argument("--argv-template-sha256", default=None)
     p.add_argument("--concrete-argv-sha256", default=None)
     return p
 
+
 def _parse_cuts(raw: str) -> list[int]:
     return [int(x) for x in str(raw).split(",") if str(x).strip()]
 
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,20 +154,30 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> Path:
     tmp.replace(path)
     return path
 
+
+def _is_hex40(value: str | None) -> bool:
+    return bool(value and _HEX40.match(str(value)))
+
+
 def _base_receipt(*, args: argparse.Namespace, started: str, pre_science: str | None,
                   status: str, science_label: Any = None, terminal: Any = None,
                   parent_before: str | None = None, parent_after: str | None = None,
                   parent_unchanged: bool | None = None, error: str | None = None) -> dict[str, Any]:
     nonce = str(args.launch_nonce or "")
-    concrete = concrete_argv_from_nonce(nonce) if nonce else []
+    head = str(args.clean_archive_head or "")
+    tree = str(args.clean_archive_tree or "")
+    concrete = (
+        concrete_argv_from_launch(nonce=nonce, clean_archive_head=head, clean_archive_tree=tree)
+        if nonce and head and tree else []
+    )
     return {
         "schema": RECEIPT_SCHEMA,
         "status": status,
         "launch_nonce": nonce or None,
         "argv_template_sha256": ARGV_TEMPLATE_SHA256,
         "concrete_argv_sha256": canonical_argv_sha256(concrete) if concrete else None,
-        "clean_archive_head_sha": CLEAN_ARCHIVE_HEAD_SHA,
-        "clean_archive_tree_sha": CLEAN_ARCHIVE_TREE_SHA,
+        "clean_archive_head_sha": head or None,
+        "clean_archive_tree_sha": tree or None,
         "parent_path": str(args.parent),
         "parent_sha256_before": parent_before,
         "parent_sha256_after": parent_after,
@@ -143,6 +205,7 @@ def _base_receipt(*, args: argparse.Namespace, started: str, pre_science: str | 
         "error": error,
     }
 
+
 def _fail(args: argparse.Namespace, *, pre_science: str, started: str,
           parent_before: str | None = None, parent_after: str | None = None,
           parent_unchanged: bool | None = None, error: str | None = None,
@@ -157,11 +220,20 @@ def _fail(args: argparse.Namespace, *, pre_science: str, started: str,
     print(json.dumps({"receipt_path": str(path), "science_label": None, "pre_science": pre_science}))
     return exit_code
 
+
 def _frozen_tuple_preflight(args: argparse.Namespace) -> str | None:
     if not args.formal_science:
         return "ALLOW_WITHOUT_FORMAL"
     if not args.launch_nonce or not str(args.launch_nonce).strip():
         return "EMPTY_LAUNCH_NONCE"
+    if not args.clean_archive_head or not str(args.clean_archive_head).strip():
+        return "MISSING_CLEAN_ARCHIVE_HEAD"
+    if not args.clean_archive_tree or not str(args.clean_archive_tree).strip():
+        return "MISSING_CLEAN_ARCHIVE_TREE"
+    if not _is_hex40(str(args.clean_archive_head)):
+        return "MALFORMED_CLEAN_ARCHIVE_HEAD"
+    if not _is_hex40(str(args.clean_archive_tree)):
+        return "MALFORMED_CLEAN_ARCHIVE_TREE"
     if args.eligible_scope != "all-bitlinear":
         return "FROZEN_TUPLE_MISMATCH"
     if args.batch_size is None or int(args.batch_size) != 1:
@@ -178,16 +250,32 @@ def _frozen_tuple_preflight(args: argparse.Namespace) -> str | None:
         return "FROZEN_TUPLE_MISMATCH"
     if str(args.parent) != PARENT_PATH:
         return "FROZEN_TUPLE_MISMATCH"
-    expected_template = ARGV_TEMPLATE_SHA256
-    expected_concrete = canonical_argv_sha256(concrete_argv_from_nonce(str(args.launch_nonce)))
-    if not args.argv_template_sha256 or str(args.argv_template_sha256) != expected_template:
+
+    # Template hash: normalize launch-bound actuals → placeholders, then compare.
+    concrete = concrete_argv_from_launch(
+        nonce=str(args.launch_nonce),
+        clean_archive_head=str(args.clean_archive_head),
+        clean_archive_tree=str(args.clean_archive_tree),
+    )
+    normalized = normalize_argv_to_template_placeholders(
+        concrete,
+        nonce=str(args.launch_nonce),
+        head=str(args.clean_archive_head),
+        tree=str(args.clean_archive_tree),
+    )
+    recomputed_template = canonical_argv_sha256(normalized)
+    if recomputed_template != ARGV_TEMPLATE_SHA256:
         return "ARGV_HASH_MISMATCH"
+    if not args.argv_template_sha256 or str(args.argv_template_sha256) != ARGV_TEMPLATE_SHA256:
+        return "ARGV_HASH_MISMATCH"
+    expected_concrete = canonical_argv_sha256(concrete)
     if not args.concrete_argv_sha256 or str(args.concrete_argv_sha256) != expected_concrete:
         return "ARGV_HASH_MISMATCH"
-    expected_scratch = SCRATCH_TEMPLATE.replace("{LAUNCH_NONCE}", str(args.launch_nonce))
+    expected_scratch = SCRATCH_TEMPLATE.replace(PLACEHOLDER_NONCE, str(args.launch_nonce))
     if str(args.scratch_root) != expected_scratch:
         return "FROZEN_TUPLE_MISMATCH"
     return None
+
 
 def _default_load_and_run(args: argparse.Namespace, *, parent_before: str) -> dict[str, Any]:
     import torch
@@ -271,6 +359,7 @@ def _default_load_and_run(args: argparse.Namespace, *, parent_before: str) -> di
     }
     return payload
 
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     started = _utc_now()
@@ -329,7 +418,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     receipt["certificate_notes"] = cert_out.get("notes")
     receipt["spy_bindings"] = cert_out.get("_spy_bindings")
-    if STUB_TOKEN in json.dumps(receipt):
+    blob = json.dumps(receipt)
+    if STUB_TOKEN in blob:
         return _fail(args, pre_science="STUB_TOKEN_LEAK", started=started,
                      parent_before=parent_before, parent_after=parent_after,
                      parent_unchanged=True, error="stub token forbidden on success")
@@ -344,6 +434,9 @@ def main(argv: list[str] | None = None) -> int:
     }))
     return 0
 
+
+# Self-check: hardcoded constant must match placeholder-form recompute.
+assert canonical_argv_sha256(ARGV_TEMPLATE) == ARGV_TEMPLATE_SHA256
 
 if __name__ == "__main__":
     raise SystemExit(main())
