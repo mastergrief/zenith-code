@@ -6873,6 +6873,7 @@ def run_bounded_delta_steps(
     initial_deferred_backlog: Mapping[str, Mapping[int, Mapping[str, int]]] | None = None,
     start_step: int = 1,
     global_horizon: int | None = None,
+    flip_application_deferred: bool = False,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -7504,6 +7505,7 @@ def run_bounded_delta_steps(
                         r7_block_occupancy_B64_enabled=bool(
                             r7_block_occupancy_B64_enabled
                         ),
+                        flip_application_deferred=bool(flip_application_deferred),
                         **two_tier_vote_step_kwargs,
                         **resolve_r7_deferred_backlog_vote_step_kwargs(
                             r7_deferred_backlog_carry_enabled=bool(
