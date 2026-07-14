@@ -53,7 +53,24 @@ def _fake_runner_factory(resolved_log: list):
                         step=step, states=states, carry_backlog=dict(backlog)
                     )
                 )
-        return ({}, {}, states, {}, "ok", int(steps), None, None, [])
+        # Behavior-only fake AFTER real-signature bind in driver. Must emit A-EFF stamp
+        # matching consumed pins so three-way equality is exercisable on CPU.
+        from calm.hrm_text_158.native_full_stack.forgotten_accum_runner_contract import (
+            EFFECTIVE_STAMP_KEY,
+            finalize_a_eff_stamp_from_observations,
+        )
+
+        horizon = int(kw["global_horizon"])
+        stamp = finalize_a_eff_stamp_from_observations(
+            horizon_obs=[horizon],
+            cap_name_obs=[str(kw["global_cap_contract"])],
+            cap_resolved_obs=[True],
+            max_abs_per_tensor=int(kw["max_abs_per_tensor"]),
+            r7_consumed=bool(kw["r7_deferred_backlog_carry_enabled"]),
+            require_q_change_consumed=bool(kw["require_q_change"]),
+        )
+        updater_config = {EFFECTIVE_STAMP_KEY: stamp}
+        return ({}, updater_config, states, {}, "ok", int(steps), None, None, [])
 
     return fake_runner
 

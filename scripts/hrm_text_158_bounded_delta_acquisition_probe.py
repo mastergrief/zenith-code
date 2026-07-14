@@ -6914,6 +6914,12 @@ def run_bounded_delta_steps(
         "aux_vote_law": FIXED_RANK_BUCKET_NON_TARGET_AUX,
         "default_rank_bucket_path_unchanged": str(science_arm) == ARM_A0_RANK_BUCKET_CURRENT,
     }
+    # A-EFF observability (stamp only; no control-flow change). Consumer-site facts.
+    _a_eff_horizon_obs: list[int] = []
+    _a_eff_cap_name_obs: list[str | None] = []
+    _a_eff_cap_resolved_obs: list[bool] = []
+    _a_eff_max_abs = int(vote_spec.max_abs_per_tensor)
+    _a_eff_require_q_change_consumed: bool | None = None
     optimizer, optimizer_checks = build_optimizer_excluding_eligible_masters(
         model,
         eligible_modules,
@@ -7136,6 +7142,8 @@ def run_bounded_delta_steps(
         if bool(r7_deferred_backlog_carry_enabled)
         else None
     )
+    # A-EFF: r7 captured at carry/selector gate (consumed bool), not entry-only.
+    _a_eff_r7_consumed = bool(r7_deferred_backlog_carry_enabled)
     prior_pressure_mass: int | None = None
     if bool(r7_selective_drain_eligibility_census_enabled) and r7_selective_drain_eligibility_census_tracker is None:
         r7_selective_drain_eligibility_census_tracker = ObserverContinuityTracker()
@@ -7172,6 +7180,7 @@ def run_bounded_delta_steps(
                 if global_horizon is not None
                 else int(start_step) + int(steps) - 1
             )
+            _a_eff_horizon_obs.append(int(bp_horizon))
             extras = model.compute_train_extra_args(step, max(1, bp_horizon))
             with progress.phase("step_forward_backward", step=int(step)):
                 weighted_grads, loss, metrics = _compute_ce_weighted_grads(
@@ -7323,6 +7332,13 @@ def run_bounded_delta_steps(
                 effective_global_cap_spec = _science_global_cap_spec_for_arm(
                     global_cap_spec,
                     science_arm=str(science_arm),
+                )
+                # A-EFF: canonical effective cap name only when resolved spec present.
+                _a_eff_cap_resolved_obs.append(effective_global_cap_spec is not None)
+                _a_eff_cap_name_obs.append(
+                    str(global_cap_contract)
+                    if effective_global_cap_spec is not None
+                    else None
                 )
 
                 b2b_step_capture: dict[str, Any] | None = None
@@ -7650,6 +7666,8 @@ def run_bounded_delta_steps(
                         trace_record,
                     )
                     b2b_trace_hashes.append(str(b2b_step_capture["source_table_hash"]))
+                # A-EFF: require_q_change captured at post-step validation gate that consumes it.
+                _a_eff_require_q_change_consumed = bool(require_q_change)
                 if require_q_change and q_changed_count <= 0:
                     raise RuntimeError("bounded-delta step produced no q movement under --require-q-change")
                 identity_proof = prove_eligible_master_identity_after_optimizer_step(
@@ -7931,6 +7949,38 @@ def run_bounded_delta_steps(
                 max_sampled_candidates=int(b2b_sequential_max_sampled_candidates),
             )
         )
+    # A-EFF finalize via pure helper (proof unchanged; keeps probe stamp LOC bounded).
+    from calm.hrm_text_158.native_full_stack.forgotten_accum_runner_contract import (
+        EFFECTIVE_STAMP_KEY,
+        finalize_a_eff_stamp_from_observations,
+    )
+    _a_eff_stamp = finalize_a_eff_stamp_from_observations(
+        horizon_obs=_a_eff_horizon_obs,
+        cap_name_obs=_a_eff_cap_name_obs,
+        cap_resolved_obs=_a_eff_cap_resolved_obs,
+        max_abs_per_tensor=int(_a_eff_max_abs),
+        r7_consumed=bool(_a_eff_r7_consumed),
+        require_q_change_consumed=(
+            False
+            if _a_eff_require_q_change_consumed is None
+            else bool(_a_eff_require_q_change_consumed)
+        ),
+    )
+    if _a_eff_require_q_change_consumed is None:
+        _a_eff_stamp = dict(_a_eff_stamp)
+        _a_eff_stamp["within_arm_consistent"] = False
+        _a_eff_stamp["require_q_change"] = None
+        _inc = list(_a_eff_stamp.get("inconsistency") or [])
+        _inc.append("require_q_change gate never reached (no step validation)")
+        _a_eff_stamp["inconsistency"] = _inc
+    _a_eff_stamp["a_eff_loci"] = {
+        "global_horizon": "bp_horizon obs @ compute_train_extra_args site",
+        "max_abs_per_tensor": "vote_spec.max_abs_per_tensor after resolve",
+        "global_cap_contract": "learner call iff effective_global_cap_spec is not None",
+        "r7_deferred_backlog_carry_enabled": "carry_backlog seed gate",
+        "require_q_change": "post-step q-change validation gate",
+    }
+    updater_config[EFFECTIVE_STAMP_KEY] = _a_eff_stamp
     return (
         step_reports,
         updater_config,

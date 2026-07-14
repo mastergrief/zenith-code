@@ -15,6 +15,13 @@ def _load_run_mod():
     return importlib.import_module("scripts.forgotten_accum_training_equivalence_run")
 
 
+def _load_launch_mod():
+    sys.path.insert(0, str(REPO))
+    return importlib.import_module(
+        "calm.hrm_text_158.native_full_stack.forgotten_accum_run_arms_launch"
+    )
+
+
 def test_run_arms_default_refuse_no_driver_invoke(monkeypatch):
     mod = _load_run_mod()
     called = []
@@ -23,7 +30,7 @@ def test_run_arms_default_refuse_no_driver_invoke(monkeypatch):
         called.append(1)
         raise AssertionError("launch must not run")
 
-    monkeypatch.setattr(mod, "launch_run_arms", boom)
+    monkeypatch.setattr(_load_launch_mod(), "launch_run_arms", boom)
     code = mod.main(
         [
             "run-arms",
@@ -43,7 +50,7 @@ def test_run_arms_requires_authority_pairs(monkeypatch):
     mod = _load_run_mod()
     called = []
     monkeypatch.setattr(
-        mod, "launch_run_arms", lambda args: called.append(args) or ({"status": "OK"}, 0)
+        _load_launch_mod(), "launch_run_arms", lambda args: called.append(args) or ({"status": "OK"}, 0)
     )
     only_gpu = mod.main(
         [
@@ -91,7 +98,7 @@ def test_run_arms_smoke_formal_mutual_exclusion(monkeypatch):
     mod = _load_run_mod()
     called = []
     monkeypatch.setattr(
-        mod, "launch_run_arms", lambda args: called.append(1) or ({"status": "OK"}, 0)
+        _load_launch_mod(), "launch_run_arms", lambda args: called.append(1) or ({"status": "OK"}, 0)
     )
     code = mod.main(
         [
@@ -126,7 +133,7 @@ def test_run_arms_smoke_authority_reaches_launch(monkeypatch, tmp_path: Path):
             "bankable": False,
         }, 0
 
-    monkeypatch.setattr(mod, "launch_run_arms", fake_launch)
+    monkeypatch.setattr(_load_launch_mod(), "launch_run_arms", fake_launch)
     code = mod.main(
         [
             "run-arms",
@@ -160,7 +167,7 @@ def test_run_arms_formal_authority_reaches_launch(monkeypatch, tmp_path: Path):
         seen["kwargs"] = mod.run_arms_kwargs_from_args(args)
         return {"status": "OK", "science_label": None}, 0
 
-    monkeypatch.setattr(mod, "launch_run_arms", fake_launch)
+    monkeypatch.setattr(_load_launch_mod(), "launch_run_arms", fake_launch)
     code = mod.main(
         [
             "run-arms",

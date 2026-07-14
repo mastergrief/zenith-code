@@ -40,6 +40,15 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_le
     ArmComputeCounts,
     build_ledger,
 )
+from calm.hrm_text_158.native_full_stack.forgotten_accum_runner_contract import (
+    RUNNER_CONTRACT_INVALID,
+    ForgottenAccumRunnerContract,
+    RunnerContractRefuse,
+    build_forgotten_accum_runner_contract,
+)
+from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_ark_invoke import (
+    invoke_arm_with_a_rk,
+)
 
 RunnerFn = Callable[..., Any]
 CadenceSaverFn = Callable[..., Path]
@@ -202,20 +211,6 @@ class ScienceDriverResult:
         return blob
 
 
-def _invoke(runner, model, batch, states, eligible, device, steps, start_step,
-            global_horizon, hook, backlog, flip, schedule, rk, arm, log):
-    kw = dict(rk)
-    kw.update({
-        "start_step": int(start_step), "global_horizon": int(global_horizon),
-        "post_step_hook": hook, "initial_deferred_backlog": backlog,
-        "flip_application_deferred": bool(flip),
-        "flip_application_deferred_schedule": schedule,
-    })
-    log.append({"arm": arm, "start_step": int(start_step), "steps": int(steps),
-                "has_schedule": schedule is not None})
-    return runner(model, batch, states, eligible, device=device, steps=int(steps), **kw)
-
-
 def _bank(arm: str, blob: Mapping[str, Any]):
     return evaluate_arm_bank_gate(
         arm=arm, acquire_pct=float(blob.get("acquire_pct", 100.0)),
@@ -242,24 +237,53 @@ def run_forgotten_accum_training_equivalence_arms(
     t_cut: int = T_CUT, runway_steps: int = RUNWAY_STEPS, W: int = W_REWARM_STEPS,
     save_cadence: Sequence[int] = SAVE_CADENCE,
     runner_kwargs: Mapping[str, Any] | None = None,
+    runner_contract: ForgottenAccumRunnerContract | None = None,
     bank_inputs: Mapping[str, Mapping[str, Any]] | None = None,
     cadence_saver: CadenceSaverFn | None = None, developer_validation: bool = True,
     config: Mapping[str, Any] | None = None,
 ) -> ScienceDriverResult:
     root = Path(experiment_root); root.mkdir(parents=True, exist_ok=True)
     cfg = dict(config or {"eligible_scope": eligible_scope})
+    contract = runner_contract or build_forgotten_accum_runner_contract(
+        runway_steps=int(runway_steps)
+    )
+    if int(contract.runway_steps) != int(runway_steps) or int(
+        contract.global_horizon
+    ) != int(runway_steps):
+        raise RunnerContractRefuse(
+            f"runner_contract horizon/runway mismatch: contract={contract.runway_steps} "
+            f"runway_steps={runway_steps}"
+        )
+    # No `runner_kwargs or {}` science defaults — pins come only from the typed contract.
+    # Optional runner_kwargs may add non-science keys only; contract pins always win.
     rk = dict(runner_kwargs or {})
+    for k, v in contract.as_runner_kwargs().items():
+        rk[k] = v
     inv: list[dict[str, Any]] = []
+    a_rk_receipts: list[dict[str, Any]] = []
     call_counts = {a.value: 0 for a in ArmId}
     cadence_paths_by_arm: dict[str, dict[int, str]] = {}
     fp_pairs: list[tuple[str, str]] = []
-    notes = {"parent_sha256": str(parent_sha256), "single_call_design": True,
-             "two_call_rw_segmentation": False}
+    notes = {
+        "parent_sha256": str(parent_sha256),
+        "single_call_design": True,
+        "two_call_rw_segmentation": False,
+        "runner_contract_pins": contract.as_pins_dict(),
+        "a_rk_per_arm": a_rk_receipts,
+    }
     base = dict(developer_validation=developer_validation, arm_call_counts=call_counts,
                 runner_invocations=inv, notes=notes)
 
     def _res(status, fail=None, **extra):
         return ScienceDriverResult(status=status, fail_closed_class=fail, **base, **extra)
+
+    def _call(*args, **kwargs):
+        return invoke_arm_with_a_rk(
+            *args,
+            **kwargs,
+            runner_contract=contract,
+            a_rk_receipts=a_rk_receipts,
+        )
 
     try:
         assert_carrier_preflight(
@@ -283,7 +307,7 @@ def run_forgotten_accum_training_equivalence_arms(
             cadence_paths=u_paths, fingerprints_pre_post=fp_pairs, saver=cadence_saver,
             eligible_scope=eligible_scope,
         )
-        _invoke(runner, model, batch, tensor_states, eligible_modules, device,
+        _call(runner, model, batch, tensor_states, eligible_modules, device,
                 int(runway_steps), 1, int(runway_steps), u_hook, None, False, None,
                 rk, ArmId.U.value, inv)
         call_counts[ArmId.U.value] = 1
@@ -313,7 +337,7 @@ def run_forgotten_accum_training_equivalence_arms(
                 cadence_paths=paths, fingerprints_pre_post=fp_pairs, saver=cadence_saver,
                 eligible_scope=eligible_scope,
             )
-            _invoke(
+            _call(
                 runner, model, batch, resumes[arm].tensor_states, eligible_modules, device,
                 post, int(t_cut) + 1, int(runway_steps), hook, resumes[arm].deferred_backlog,
                 False, rw_sched if arm is ArmId.RW else None, rk, arm.value, inv,
@@ -361,9 +385,25 @@ def run_forgotten_accum_training_equivalence_arms(
             return _res("FAILURE", FailClosedClass.REWARM_ACCOUNTING_INVALID.value,
                         ledger=ledger.as_dict(), **common)
         return _res("OK", ledger=ledger.as_dict(), **common)
+    except RunnerContractRefuse as exc:
+        return _res(
+            "FAILURE",
+            RUNNER_CONTRACT_INVALID,
+            error=str(exc),
+            cadence_paths_by_arm=cadence_paths_by_arm,
+            cadence_fingerprint_pairs=fp_pairs,
+        )
     except ValueError as exc:
         if str(exc).startswith("PREFLIGHT_REFUSE"):
             return _res("REFUSED", error=str(exc))
+        if str(exc).startswith(RUNNER_CONTRACT_INVALID):
+            return _res(
+                "FAILURE",
+                RUNNER_CONTRACT_INVALID,
+                error=str(exc),
+                cadence_paths_by_arm=cadence_paths_by_arm,
+                cadence_fingerprint_pairs=fp_pairs,
+            )
         return _res("FAILURE", error=str(exc), traceback=traceback.format_exc(),
                     cadence_paths_by_arm=cadence_paths_by_arm,
                     cadence_fingerprint_pairs=fp_pairs)

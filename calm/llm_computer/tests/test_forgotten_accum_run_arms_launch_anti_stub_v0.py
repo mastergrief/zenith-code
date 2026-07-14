@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-RUN_PY = REPO / "scripts/forgotten_accum_training_equivalence_run.py"
+LAUNCH_PY = REPO / "calm/hrm_text_158/native_full_stack/forgotten_accum_run_arms_launch.py"
 
 
 def _load_run_mod():
@@ -19,7 +19,7 @@ def _load_run_mod():
 
 
 def test_launch_run_arms_ast_not_unconditional_raise_stub():
-    src = RUN_PY.read_text()
+    src = LAUNCH_PY.read_text()
     tree = ast.parse(src)
     func = None
     for node in tree.body:
