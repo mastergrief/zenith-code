@@ -1,4 +1,4 @@
-"""CLI characterization for forgotten-accum run-arms (default refuse; argv mapping)."""
+"""CLI characterization for forgotten-accum run-arms (authority matrix + refuse)."""
 from __future__ import annotations
 
 import importlib
@@ -39,7 +39,7 @@ def test_run_arms_default_refuse_no_driver_invoke(monkeypatch):
     assert called == []
 
 
-def test_run_arms_requires_both_authority_flags(monkeypatch):
+def test_run_arms_requires_authority_pairs(monkeypatch):
     mod = _load_run_mod()
     called = []
     monkeypatch.setattr(
@@ -69,12 +69,90 @@ def test_run_arms_requires_both_authority_flags(monkeypatch):
             "/tmp/s",
         ]
     )
+    only_smoke = mod.main(
+        [
+            "run-arms",
+            "--i-have-claude-run-arms-smoke-authority",
+            "--parent",
+            "/tmp/p.pt",
+            "--parent-sha256",
+            "x",
+            "--scratch-root",
+            "/tmp/s",
+        ]
+    )
     assert only_gpu == mod.EXIT_RUN_ARMS_NO_AUTHORITY
     assert only_formal == mod.EXIT_RUN_ARMS_NO_AUTHORITY
+    assert only_smoke == mod.EXIT_RUN_ARMS_NO_AUTHORITY
     assert called == []
 
 
-def test_run_arms_argv_to_kwargs_and_launch_wire(monkeypatch, tmp_path: Path):
+def test_run_arms_smoke_formal_mutual_exclusion(monkeypatch):
+    mod = _load_run_mod()
+    called = []
+    monkeypatch.setattr(
+        mod, "launch_run_arms", lambda args: called.append(1) or ({"status": "OK"}, 0)
+    )
+    code = mod.main(
+        [
+            "run-arms",
+            "--allow-gpu-launch",
+            "--formal-science",
+            "--i-have-claude-run-arms-smoke-authority",
+            "--parent",
+            "/tmp/p.pt",
+            "--parent-sha256",
+            "x",
+            "--scratch-root",
+            "/tmp/s",
+        ]
+    )
+    assert code == mod.EXIT_RUN_ARMS_NO_AUTHORITY
+    assert called == []
+
+
+def test_run_arms_smoke_authority_reaches_launch(monkeypatch, tmp_path: Path):
+    mod = _load_run_mod()
+    seen = {}
+
+    def fake_launch(args):
+        seen["mode"] = mod.resolve_run_arms_authority(args)
+        seen["kwargs"] = mod.run_arms_kwargs_from_args(args)
+        return {
+            "status": "OK",
+            "run_kind": "REAL_DEVICE_SMOKE",
+            "science_label": None,
+            "claimable_science": False,
+            "bankable": False,
+        }, 0
+
+    monkeypatch.setattr(mod, "launch_run_arms", fake_launch)
+    code = mod.main(
+        [
+            "run-arms",
+            "--allow-gpu-launch",
+            "--i-have-claude-run-arms-smoke-authority",
+            "--parent",
+            str(tmp_path / "parent.pt"),
+            "--parent-sha256",
+            "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+            "--scratch-root",
+            str(tmp_path / "scratch"),
+            "--t-cut",
+            "2",
+            "--runway-steps",
+            "4",
+            "--W",
+            "1",
+        ]
+    )
+    assert code == 0
+    assert seen["mode"] == "smoke"
+    assert seen["kwargs"]["developer_validation"] is True
+    assert seen["kwargs"]["formal_science"] is False
+
+
+def test_run_arms_formal_authority_reaches_launch(monkeypatch, tmp_path: Path):
     mod = _load_run_mod()
     seen = {}
 
@@ -103,9 +181,8 @@ def test_run_arms_argv_to_kwargs_and_launch_wire(monkeypatch, tmp_path: Path):
     assert code == 0
     kw = seen["kwargs"]
     assert kw["allow_gpu_launch"] is True and kw["formal_science"] is True
-    assert kw["live_acc_carrier_selector"] == "NONE"
-    assert kw["eligible_scope"] == "all-bitlinear"
-    assert kw["developer_validation"] is False  # formal-science
+    assert kw["developer_validation"] is False
+    assert kw["authority_mode"] == "formal"
 
 
 def test_run_arms_fresh_process_refuse():
