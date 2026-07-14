@@ -130,7 +130,11 @@ def test_driver_one_call_per_arm_rw_schedule_cadence_and_control(tmp_path: Path)
         cadence_saver=_cpu_saver,
         developer_validation=True,
     )
-    assert result.status == "OK"
+    assert result.status == "FAILURE"
+    assert (
+        result.fail_closed_class
+        == FailClosedClass.A_LEDGER_ACCOUNTING_UNVERIFIED.value
+    )
     assert result.science_label is None
     assert result.bank_receipts is None
     assert result.notes.get("bank_section") == "suppressed"
@@ -243,6 +247,9 @@ def test_driver_preflight_refuse_short_circuits_before_runner(tmp_path: Path):
         device="cpu",
         experiment_root=tmp_path,
         live_acc_carrier_selector="EVENT_CODED",
+        t_cut=2,
+        runway_steps=6,
+        W=2,
     )
     assert result.status == "REFUSED"
     assert calls == []

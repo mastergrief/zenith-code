@@ -92,6 +92,41 @@ class FailClosedClass(str, Enum):
     FORGET_REWARM_NOT_TOLERATED = "FORGET_REWARM_NOT_TOLERATED"
     REWARM_ACCOUNTING_INVALID = "REWARM_ACCOUNTING_INVALID"
     BANK_INPUTS_INVALID = "BANK_INPUTS_INVALID"
+    A_LEDGER_ACCOUNTING_UNVERIFIED = "A_LEDGER_ACCOUNTING_UNVERIFIED"
+
+
+# C-b closed set: (t_cut, runway_steps, rewarm_window_steps). Cardinality == 2.
+OPTION_A_ADMITTED_CHARACTERIZATION_GEOMETRIES = frozenset({(2, 4, 1), (2, 6, 2)})
+
+
+def is_option_a_admitted_characterization_geometry(
+    *, t_cut: int, runway_steps: int, rewarm_window_steps: int
+) -> bool:
+    """Exact C-b membership only; geometry never constructs validity."""
+    return (
+        int(t_cut),
+        int(runway_steps),
+        int(rewarm_window_steps),
+    ) in OPTION_A_ADMITTED_CHARACTERIZATION_GEOMETRIES
+
+
+def notes_indicate_unverified_ledger(notes: Mapping[str, Any] | None) -> bool:
+    """Option A: no measured seam — every notes shape is unverified. Never VERIFIED."""
+    return True  # total-True; forged MEASURED/claimable cannot mint validity
+
+
+def option_a_geometry_refuse_receipt(notes: Mapping[str, Any]) -> dict[str, Any]:
+    """Pre-work UNVERIFIED shell shared by launch (zero arms/materialize)."""
+    return {
+        "status": "FAILURE",
+        "fail_closed_class": FailClosedClass.A_LEDGER_ACCOUNTING_UNVERIFIED.value,
+        "science_label": None,
+        "claimable_science": False,
+        "bankable": False,
+        "notes": dict(notes),
+        "arm_call_counts": {"U": 0, "E": 0, "R0": 0, "RW": 0},
+        "runner_invocations": [],
+    }
 
 
 RESUME_ARMS = (ArmId.E, ArmId.R0, ArmId.RW)
@@ -186,24 +221,6 @@ def build_all_arm_manifests(
     return out
 
 
-@dataclass(frozen=True)
-class LedgerFieldSchema:
-    required_fields: tuple[str, ...] = (
-        "base_packed_q_bpw",
-        "mandatory_metadata_bpw",
-        "accumulator_persistent_bpw_claimed",
-        "resume_seed_schedule_RNG_version_fields_bits",
-        "replay_payload_bpw",
-        "rewarm_examples_seen",
-        "forward_count",
-        "backward_count",
-        "update_count",
-        "gpu_time_seconds",
-        "surplus_compute_vs_E",
-        "surplus_compute_vs_U",
-    )
-
-
 SMOKE_CPU_PREDICATES = (
     "carrier_must_be_dense_legacy_not_event_coded",
     "forgotten_accum_cap_site_branch_equals_DENSE_LEGACY_CAP_SITE_ID",
@@ -225,12 +242,15 @@ __all__ = [
     "FailClosedClass",
     "IdentityManifest",
     "ArmManifest",
-    "LedgerFieldSchema",
     "DENSE_LEGACY_CAP_SITE_ID",
     "PRE_W_ZEROED_ACC_AND_BACKLOG_IDENTITY",
     "FUTURE_STREAM_MATCHED_BUDGET",
     "build_all_arm_manifests",
     "flip_defer_schedule",
+    "is_option_a_admitted_characterization_geometry",
+    "notes_indicate_unverified_ledger",
+    "option_a_geometry_refuse_receipt",
+    "OPTION_A_ADMITTED_CHARACTERIZATION_GEOMETRIES",
     "policy_for_arm",
     "SMOKE_CPU_PREDICATES",
     "PARENT_SHA256_FULL",

@@ -42,6 +42,8 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_co
     FailClosedClass,
     ResumePolicy,
     assert_carrier_preflight,
+    is_option_a_admitted_characterization_geometry,
+    notes_indicate_unverified_ledger,
 )
 from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_ledger import (
     ArmComputeCounts,
@@ -267,6 +269,12 @@ def run_forgotten_accum_training_equivalence_arms(
         )
         notes["bank_section"] = bank_section
         notes.update(synthetic_ledger_notes())
+        # C-b: non-admitted refuses after notes, before arms; admitted may run.
+        _adm = is_option_a_admitted_characterization_geometry(
+            t_cut=int(t_cut), runway_steps=int(runway_steps), rewarm_window_steps=int(W)
+        )
+        if notes_indicate_unverified_ledger(notes) and not _adm:
+            return _res("FAILURE", FailClosedClass.A_LEDGER_ACCOUNTING_UNVERIFIED.value)
         assert_carrier_preflight(
             live_acc_carrier_selector=live_acc_carrier_selector,
             global_cap_contract=global_cap_contract, eligible_scope=eligible_scope,
@@ -360,6 +368,10 @@ def run_forgotten_accum_training_equivalence_arms(
         notes["schedule_W"] = int(W)
         notes["ledger_rewarm_W"] = int(W_REWARM_STEPS)
         ledger = build_ledger(arm_counts=counts)
+        # UNVERIFIED precedes synthetic REWARM; OK unreachable under Option A.
+        if notes_indicate_unverified_ledger(notes) or ledger.classification is None:
+            return _res("FAILURE", FailClosedClass.A_LEDGER_ACCOUNTING_UNVERIFIED.value,
+                        ledger=ledger.as_dict(), **common)
         if ledger.classification == FailClosedClass.REWARM_ACCOUNTING_INVALID.value:
             return _res("FAILURE", FailClosedClass.REWARM_ACCOUNTING_INVALID.value,
                         ledger=ledger.as_dict(), **common)

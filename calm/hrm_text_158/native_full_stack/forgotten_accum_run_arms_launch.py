@@ -25,6 +25,10 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_ba
     refuse_formal_unresolved_policy,
     synthetic_ledger_notes,
 )
+from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_contracts import (
+    is_option_a_admitted_characterization_geometry,
+    option_a_geometry_refuse_receipt,
+)
 
 EXIT_RUN_ARMS_NO_AUTHORITY = 20
 EXIT_RUN_ARMS_PREFLIGHT = 21
@@ -115,6 +119,17 @@ def launch_run_arms(args: argparse.Namespace) -> tuple[dict, int]:
             refuse_formal_unresolved_policy(bank_inputs=None)
         except BankInputsRefuse as exc:
             return _bank_refuse_receipt(exc, mode=mode), EXIT_RUN_ARMS_BANK_INPUTS
+
+    # C-b: non-admitted geometry refuses BEFORE materialization (after Scope-A).
+    if not is_option_a_admitted_characterization_geometry(
+        t_cut=int(args.t_cut),
+        runway_steps=int(args.runway_steps),
+        rewarm_window_steps=int(args.W),
+    ):
+        notes = dict(synthetic_ledger_notes())
+        notes["option_a_geometry_refused"] = True
+        receipt = option_a_geometry_refuse_receipt(notes)
+        return apply_claim_coupling(receipt, mode=mode), EXIT_RUN_ARMS_FAILURE
 
     assert_carrier_preflight(
         live_acc_carrier_selector=str(args.live_acc_carrier_selector),

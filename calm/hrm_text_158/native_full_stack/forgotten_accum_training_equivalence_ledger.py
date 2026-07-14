@@ -9,11 +9,28 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_co
     W_REWARM_STEPS,
     ArmId,
     FailClosedClass,
-    LedgerFieldSchema,
 )
 
 
 LOG2_3 = math.log2(3.0)  # ≈ 1.58496250072
+
+
+@dataclass(frozen=True)
+class LedgerFieldSchema:
+    required_fields: tuple[str, ...] = (
+        "base_packed_q_bpw",
+        "mandatory_metadata_bpw",
+        "accumulator_persistent_bpw_claimed",
+        "resume_seed_schedule_RNG_version_fields_bits",
+        "replay_payload_bpw",
+        "rewarm_examples_seen",
+        "forward_count",
+        "backward_count",
+        "update_count",
+        "gpu_time_seconds",
+        "surplus_compute_vs_E",
+        "surplus_compute_vs_U",
+    )
 
 
 @dataclass(frozen=True)

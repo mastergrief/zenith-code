@@ -65,7 +65,14 @@ def test_real_launch_reaches_materialize_then_driver(monkeypatch, tmp_path: Path
 
     class _Result:
         def as_dict(self):
-            return {"status": "OK", "fail_closed_class": None, "science_label": None}
+            return {
+                "status": "FAILURE",
+                "fail_closed_class": "A_LEDGER_ACCOUNTING_UNVERIFIED",
+                "science_label": None,
+                "claimable_science": False,
+                "bankable": False,
+                "notes": {"ledger_claimable": False},
+            }
 
     def fake_driver(**kwargs):
         calls["driver"] += 1
@@ -108,7 +115,14 @@ def test_real_launch_reaches_materialize_then_driver(monkeypatch, tmp_path: Path
     receipt, code = mod.launch_run_arms(args)
     assert calls["materialize"] == 1
     assert calls["driver"] == 1
-    assert code == 0
+    # Option A C-b: admitted (2,4,1) may materialize+drive, but terminal OK unreachable.
+    from calm.hrm_text_158.native_full_stack.forgotten_accum_run_arms_launch import (
+        EXIT_RUN_ARMS_FAILURE,
+    )
+
+    assert code == EXIT_RUN_ARMS_FAILURE
+    assert receipt["status"] != "OK"
+    assert receipt["fail_closed_class"] == "A_LEDGER_ACCOUNTING_UNVERIFIED"
     assert receipt["run_kind"] == "REAL_DEVICE_SMOKE"
     assert receipt["claimable_science"] is False
     assert receipt["bankable"] is False
