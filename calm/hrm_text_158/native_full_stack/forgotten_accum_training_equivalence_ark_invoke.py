@@ -6,6 +6,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from calm.hrm_text_158.native_full_stack.forgotten_accum_ordered_apply_event import (
+    ATTACHMENT_KEY,
+    ExpectedIdentity,
+    snapshot_ordered_apply_event_log,
+    validate_ordered_apply_event_sequence,
+)
 from calm.hrm_text_158.native_full_stack.forgotten_accum_runner_contract import (
     ForgottenAccumRunnerContract,
     assert_horizon_matches_runway,
@@ -50,8 +56,15 @@ def invoke_arm_with_a_rk(
             "flip_application_deferred_schedule": schedule,
         }
     )
+    ordered_apply_event_log: list[Any] = []
     args = (model, batch, states, eligible)
-    call_kwargs = dict(device=device, steps=int(steps), **kw)
+    call_kwargs = dict(
+        device=device,
+        steps=int(steps),
+        ordered_apply_event_log=ordered_apply_event_log,
+        ordered_apply_event_arm_id=str(arm),
+        **kw,
+    )
     # Conformance bind uses the REAL probe signature — never a fake runner's **kw.
     from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
         run_bounded_delta_steps as _real_run_bounded_delta_steps,
@@ -70,6 +83,19 @@ def invoke_arm_with_a_rk(
         }
     )
     result = runner(*args, **call_kwargs)
+    snapshot = snapshot_ordered_apply_event_log(ordered_apply_event_log)
+    summary = validate_ordered_apply_event_sequence(
+        snapshot,
+        ExpectedIdentity(arm_id=str(arm), start_step=int(start_step), steps=int(steps)),
+    )
+    # Frozen order: attach summary to a preliminary receipt entry BEFORE discard /
+    # existing A-RK checks, so a later A-RK raise cannot lose normal-return evidence.
+    receipt_row: dict[str, Any] = {
+        "arm": arm,
+        ATTACHMENT_KEY: summary,
+    }
+    a_rk_receipts.append(receipt_row)
+    ordered_apply_event_log.clear()
     effective = extract_effective_from_runner_return(result)
     three = assert_three_way_equal(
         requested=runner_contract, bound_pins=bound_pins, effective=effective
@@ -79,9 +105,8 @@ def invoke_arm_with_a_rk(
         runway_steps=int(runner_contract.runway_steps),
         arm=str(arm),
     )
-    a_rk_receipts.append(
+    receipt_row.update(
         {
-            "arm": arm,
             "bound_pins": bound_pins,
             "effective": {
                 k: effective[k]

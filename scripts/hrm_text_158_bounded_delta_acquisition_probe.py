@@ -106,6 +106,11 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_runner_hook_contract impo
     invoke_post_step_hook,
     seed_initial_deferred_backlog,
 )
+from calm.hrm_text_158.native_full_stack.forgotten_accum_ordered_apply_event import (
+    OrderedApplyEventLogRefuse,
+    make_success_apply_event,
+    require_empty_ordered_apply_event_log,
+)
 from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     decode_bounded_accumulator_to_i16,
 )
@@ -6875,6 +6880,8 @@ def run_bounded_delta_steps(
     global_horizon: int | None = None,
     flip_application_deferred: bool = False,
     flip_application_deferred_schedule: Callable[[int], bool] | None = None,
+    ordered_apply_event_log: list[Any] | None = None,
+    ordered_apply_event_arm_id: str | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, Any],
@@ -6886,6 +6893,11 @@ def run_bounded_delta_steps(
     dict[str, Any] | None,
     list[int],
 ]:
+    require_empty_ordered_apply_event_log(ordered_apply_event_log)
+    if ordered_apply_event_log is not None and ordered_apply_event_arm_id is None:
+        raise OrderedApplyEventLogRefuse(
+            "ordered_apply_event_arm_id required when ordered_apply_event_log is enabled"
+        )
     model.train()
     if str(science_arm) not in SCIENCE_ARM_CHOICES:
         raise ValueError(f"science_arm must be one of {SCIENCE_ARM_CHOICES}, got {science_arm!r}")
@@ -7628,6 +7640,18 @@ def run_bounded_delta_steps(
                         optimizer_step_index=int(step),
                     )
                 states = step_result.tensor_states
+                if ordered_apply_event_log is not None:
+                    ordered_apply_event_log.append(
+                        make_success_apply_event(
+                            seq=len(ordered_apply_event_log),
+                            arm_id=str(ordered_apply_event_arm_id),
+                            optimizer_step_id=int(step),
+                            q_changed_count=int(
+                                step_result.global_summary.get("q_changed_count", 0)
+                            ),
+                            tensor_state_key_count=len(states),
+                        )
+                    )
                 if carrier_growth_collector is not None:
                     from calm.hrm_text_158.native_full_stack.carrier_growth_summary import (
                         maybe_emit_carrier_growth_step_record,
