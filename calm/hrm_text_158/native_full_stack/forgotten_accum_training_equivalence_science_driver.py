@@ -22,9 +22,15 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_ar
 )
 from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_bank_eval import (
     e_must_match_u_bank,
-    evaluate_arm_bank_gate,
+)
+from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_bank_measure import (
+    BankInputsRefuse,
+    evaluate_parsed_bank_blobs,
+    resolve_bank_blobs_for_driver,
+    synthetic_ledger_notes,
 )
 from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_contracts import (
+    CARRIER_NONE,
     ELIGIBLE_SCOPE,
     GLOBAL_CAP_CONTRACT,
     PARENT_SHA256_FULL,
@@ -35,6 +41,7 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_co
     ArmId,
     FailClosedClass,
     ResumePolicy,
+    assert_carrier_preflight,
 )
 from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_ledger import (
     ArmComputeCounts,
@@ -53,7 +60,6 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_ar
 RunnerFn = Callable[..., Any]
 CadenceSaverFn = Callable[..., Path]
 SCHEMA = "forgotten_accum_training_equivalence_science_driver_receipt/v1"
-CARRIER_NONE = "NONE"
 
 
 def resolve_flip_application_deferred_for_step(
@@ -84,23 +90,6 @@ def rw_resolved_flags_for_absolute_window(
     end = int(through_step) if through_step is not None else int(t_cut) + int(W) + 1
     sched = make_rw_absolute_flip_schedule(t_cut=t_cut, W=W)
     return {s: bool(sched(s)) for s in range(int(t_cut) + 1, end + 1)}
-
-
-def assert_carrier_preflight(
-    *,
-    live_acc_carrier_selector: str,
-    global_cap_contract: str,
-    eligible_scope: str,
-    event_coded_flags_present: bool = False,
-) -> None:
-    if live_acc_carrier_selector != CARRIER_NONE:
-        raise ValueError(f"PREFLIGHT_REFUSE: carrier must be {CARRIER_NONE!r}")
-    if global_cap_contract != GLOBAL_CAP_CONTRACT:
-        raise ValueError(f"PREFLIGHT_REFUSE: cap must be {GLOBAL_CAP_CONTRACT!r}")
-    if eligible_scope != ELIGIBLE_SCOPE:
-        raise ValueError(f"PREFLIGHT_REFUSE: scope must be {ELIGIBLE_SCOPE!r}")
-    if event_coded_flags_present:
-        raise ValueError("PREFLIGHT_REFUSE: event-coded flags must be ABSENT")
 
 
 def authoritative_state_fingerprint(
@@ -189,7 +178,7 @@ class ScienceDriverResult:
     arm_call_counts: dict[str, int] = field(default_factory=dict)
     runner_invocations: list[dict[str, Any]] = field(default_factory=list)
     cadence_paths_by_arm: dict[str, dict[int, str]] = field(default_factory=dict)
-    bank_receipts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    bank_receipts: dict[str, dict[str, Any]] | None = None
     ledger: dict[str, Any] | None = None
     rw_schedule_flags: dict[str, bool] = field(default_factory=dict)
     zero_seed_proof: str | None = None
@@ -209,21 +198,6 @@ class ScienceDriverResult:
             {"pre": a, "post": b} for a, b in self.cadence_fingerprint_pairs
         ]
         return blob
-
-
-def _bank(arm: str, blob: Mapping[str, Any]):
-    return evaluate_arm_bank_gate(
-        arm=arm, acquire_pct=float(blob.get("acquire_pct", 100.0)),
-        retain_pct_by_support=dict(
-            blob.get("retain_pct_by_support") or {"L0b": 100.0, "math_a0": 100.0}
-        ),
-        clears_by_save={int(k): bool(v) for k, v in dict(
-            blob.get("clears_by_save") or {1500: True}
-        ).items()},
-        parent_consistency_ok=bool(blob.get("parent_consistency_ok", True)),
-        close_sibling_ok=bool(blob.get("close_sibling_ok", True)),
-        hashes_diagnostic=dict(blob.get("hashes_diagnostic") or {}),
-    )
 
 
 def run_forgotten_accum_training_equivalence_arms(
@@ -286,6 +260,13 @@ def run_forgotten_accum_training_equivalence_arms(
         )
 
     try:
+        # Scope (A): formal refuses BEFORE any arm/model/optimizer/cadence work.
+        bank_blobs, bank_section = resolve_bank_blobs_for_driver(
+            bank_inputs=bank_inputs,
+            developer_validation=bool(developer_validation),
+        )
+        notes["bank_section"] = bank_section
+        notes.update(synthetic_ledger_notes())
         assert_carrier_preflight(
             live_acc_carrier_selector=live_acc_carrier_selector,
             global_cap_contract=global_cap_contract, eligible_scope=eligible_scope,
@@ -349,19 +330,17 @@ def run_forgotten_accum_training_equivalence_arms(
         if sum(1 for row in inv if row["arm"] == "RW") != 1:
             raise RuntimeError("RW must be a single runner invocation")
 
-        bank_blobs = dict(bank_inputs or {}) or {
-            a.value: {
-                "acquire_pct": 100.0,
-                "retain_pct_by_support": {"L0b": 100.0, "math_a0": 100.0},
-                "clears_by_save": {int(s): True for s in save_cadence},
-                "parent_consistency_ok": True, "close_sibling_ok": True,
-            }
-            for a in ArmId
-        }
-        receipts = {n: _bank(n, b) for n, b in bank_blobs.items()}
+        if bank_blobs is None:
+            receipts = {}
+            bank_receipts = None
+            notes["bank_receipts_suppressed"] = True
+        else:
+            receipts = evaluate_parsed_bank_blobs(bank_blobs)
+            bank_receipts = {k: v.as_dict() for k, v in receipts.items()}
+            notes["bank_receipts_suppressed"] = False
         common = dict(
             cadence_paths_by_arm=cadence_paths_by_arm,
-            bank_receipts={k: v.as_dict() for k, v in receipts.items()},
+            bank_receipts=bank_receipts,
             rw_schedule_flags=flag_map, zero_seed_proof=zero_proof,
             cadence_fingerprint_pairs=fp_pairs,
         )
@@ -372,8 +351,8 @@ def run_forgotten_accum_training_equivalence_arms(
                         error="E bank outcome diverges from U", **common)
         counts = {
             a.value: ArmComputeCounts(
-                a.value, runway_steps, runway_steps, runway_steps, 0.0,
-                # Ledger schema pins formal W_REWARM_STEPS; schedule may use local W.
+                a.value, int(runway_steps), int(runway_steps), int(runway_steps), 0.0,
+                # Schema pin is formal W_REWARM_STEPS; values remain SYNTHETIC (A-LEDGER).
                 int(W_REWARM_STEPS) if a is ArmId.RW else 0,
             )
             for a in ArmId
@@ -385,6 +364,15 @@ def run_forgotten_accum_training_equivalence_arms(
             return _res("FAILURE", FailClosedClass.REWARM_ACCOUNTING_INVALID.value,
                         ledger=ledger.as_dict(), **common)
         return _res("OK", ledger=ledger.as_dict(), **common)
+    except BankInputsRefuse as exc:
+        notes["bank_section"] = getattr(exc, "kind", "UNRESOLVED_POLICY")
+        notes["bank_refuse_kind"] = getattr(exc, "kind", "UNRESOLVED_POLICY")
+        notes.update(synthetic_ledger_notes())
+        return _res(
+            "FAILURE",
+            FailClosedClass.BANK_INPUTS_INVALID.value,
+            error=str(exc),
+        )
     except RunnerContractRefuse as exc:
         return _res(
             "FAILURE",

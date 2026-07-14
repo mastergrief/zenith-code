@@ -18,6 +18,7 @@ PARENT_SHA256_FULL = (
 PARENT_SHA256_PREFIX = "9b4e311a"
 GLOBAL_CAP_CONTRACT = "c1_banked_faithful_long_run_global_cap"
 ELIGIBLE_SCOPE = "all-bitlinear"
+CARRIER_NONE = "NONE"
 BATCH_SEED = 44
 SUPPORT_ORDER_SEED = 43
 ORDERING_SEED = 17
@@ -61,6 +62,7 @@ class FailClosedClass(str, Enum):
     FORGET_REWARM_PARTIAL_OR_CUT_DEPENDENT = "FORGET_REWARM_PARTIAL_OR_CUT_DEPENDENT"
     FORGET_REWARM_NOT_TOLERATED = "FORGET_REWARM_NOT_TOLERATED"
     REWARM_ACCOUNTING_INVALID = "REWARM_ACCOUNTING_INVALID"
+    BANK_INPUTS_INVALID = "BANK_INPUTS_INVALID"
 
 
 RESUME_ARMS = (ArmId.E, ArmId.R0, ArmId.RW)
@@ -182,6 +184,9 @@ SMOKE_CPU_PREDICATES = (
 
 
 __all__ = [
+    "CARRIER_NONE",
+    "assert_carrier_preflight",
+
     "SCHEMA_VERSION",
     "ArmId",
     "ResumePolicy",
@@ -201,3 +206,20 @@ __all__ = [
     "T_CUT",
     "W_REWARM_STEPS",
 ]
+
+
+def assert_carrier_preflight(
+    *,
+    live_acc_carrier_selector: str,
+    global_cap_contract: str,
+    eligible_scope: str,
+    event_coded_flags_present: bool = False,
+) -> None:
+    if live_acc_carrier_selector != CARRIER_NONE:
+        raise ValueError(f"PREFLIGHT_REFUSE: carrier must be {CARRIER_NONE!r}")
+    if global_cap_contract != GLOBAL_CAP_CONTRACT:
+        raise ValueError(f"PREFLIGHT_REFUSE: cap must be {GLOBAL_CAP_CONTRACT!r}")
+    if eligible_scope != ELIGIBLE_SCOPE:
+        raise ValueError(f"PREFLIGHT_REFUSE: scope must be {ELIGIBLE_SCOPE!r}")
+    if event_coded_flags_present:
+        raise ValueError("PREFLIGHT_REFUSE: event-coded flags must be ABSENT")

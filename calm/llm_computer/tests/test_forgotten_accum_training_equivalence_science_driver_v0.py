@@ -15,8 +15,10 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_co
     FailClosedClass,
     PRE_W_ZEROED_ACC_AND_BACKLOG_IDENTITY,
 )
-from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_science_driver import (
+from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_contracts import (
     assert_carrier_preflight,
+)
+from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_science_driver import (
     authoritative_state_fingerprint,
     make_cadence_cut_post_step_hook,
     resolve_flip_application_deferred_for_step,
@@ -130,6 +132,9 @@ def test_driver_one_call_per_arm_rw_schedule_cadence_and_control(tmp_path: Path)
     )
     assert result.status == "OK"
     assert result.science_label is None
+    assert result.bank_receipts is None
+    assert result.notes.get("bank_section") == "suppressed"
+    assert result.notes.get("ledger_claimable") is False
     assert result.arm_call_counts == {"U": 1, "E": 1, "R0": 1, "RW": 1}
     assert sum(1 for r in result.runner_invocations if r["arm"] == "RW") == 1
     assert result.zero_seed_proof == PRE_W_ZEROED_ACC_AND_BACKLOG_IDENTITY
@@ -215,6 +220,7 @@ def test_driver_control_invalid_when_e_bank_diverges(tmp_path: Path):
         save_cadence=(2, 6),
         cadence_saver=_cpu_saver,
         bank_inputs=bank,
+        developer_validation=True,
     )
     assert result.status == "FAILURE"
     assert result.fail_closed_class == FailClosedClass.CONTROL_INVALID.value
