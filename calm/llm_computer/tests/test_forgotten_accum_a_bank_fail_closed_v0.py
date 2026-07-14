@@ -34,8 +34,11 @@ def _complete_blob(**overrides):
         "acquire_pct": 100.0,
         "retain_pct_by_support": {"L0b": 100.0, "math_a0": 100.0},
         "clears_by_save": {250: True, 500: True, 1500: True},
-        "parent_consistency_ok": True,
-        "close_sibling_ok": True,
+        "close_sibling_report": {
+            "numeric_close_sibling_clear": True,
+            "same_surface_parent_relative_hole_count": 0,
+            "parent_floor_status": "UNRESOLVED_POLICY",
+        },
     }
     blob.update(overrides)
     return blob
@@ -180,6 +183,10 @@ def test_claim_coupling_blocks_unconditional_formal_true():
     assert out["claimable_science"] is False
     assert out["bankable"] is False
     assert out["ledger_synthetic"] is True
+    blockers = out["notes"]["formal_claim_blockers"]
+    assert "RULE_CONFLICT_UNRESOLVED" in blockers
+    assert "A_LEDGER_SYNTHETIC" in blockers
+    assert out["claim_blocked_reason"] == "RULE_CONFLICT_UNRESOLVED"
 
 
 def test_exit_26_constant():

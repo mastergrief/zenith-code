@@ -1,4 +1,4 @@
-"""Unit tests for bank_measure parse/refuse seam (scope A)."""
+"""Unit tests for bank_measure parse/refuse seam (Option B schema v2)."""
 from __future__ import annotations
 
 import pytest
@@ -13,13 +13,22 @@ from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_ba
 )
 
 
+def _sibling(**kw):
+    base = {
+        "numeric_close_sibling_clear": True,
+        "same_surface_parent_relative_hole_count": 0,
+        "parent_floor_status": "UNRESOLVED_POLICY",
+    }
+    base.update(kw)
+    return base
+
+
 def _blob(**kw):
     base = {
         "acquire_pct": 95.0,
         "retain_pct_by_support": {"L0b": 91.0, "math_a0": 92.0},
         "clears_by_save": {250: True, 1500: False},
-        "parent_consistency_ok": True,
-        "close_sibling_ok": True,
+        "close_sibling_report": _sibling(),
     }
     base.update(kw)
     return base
@@ -33,9 +42,15 @@ def test_parse_and_evaluate_complete_injected_bank():
     assert receipts["U"].earliest_all_clear_save == 250
 
 
+def test_v1_boolean_fields_schema_invalid():
+    blob = _blob(parent_consistency_ok=True, close_sibling_ok=True)
+    with pytest.raises(BankInputsRefuse, match="SCHEMA_INVALID"):
+        parse_required_arm_bank_blob("U", blob)
+
+
 def test_literal_default_path_cannot_synthesize():
     blob = _blob()
-    del blob["close_sibling_ok"]
+    del blob["close_sibling_report"]
     with pytest.raises(BankInputsRefuse, match="PARTIAL"):
         parse_required_arm_bank_blob("U", blob)
 

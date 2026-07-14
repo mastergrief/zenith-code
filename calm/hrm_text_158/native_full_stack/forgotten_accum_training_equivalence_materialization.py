@@ -387,37 +387,6 @@ def run_readonly_actual_parent_preflight(
     }
 
 
-def stamp_authority_receipt(receipt: dict, *, mode: str) -> dict:
-    """Stamp smoke/formal claim-boundary fields onto a driver receipt."""
-
-    out = dict(receipt)
-    if mode == "smoke":
-        out["run_kind"] = "REAL_DEVICE_SMOKE"
-        out["science_label"] = None
-        out["claimable_science"] = False
-        out["bankable"] = False
-        for key in (
-            "bank_gate_pass",
-            "acquire_rate",
-            "retain_rate",
-            "bpw",
-            "earliest_all_clear",
-            "90/90",
-            "acquire_pct",
-            "retain_pct_by_support",
-        ):
-            out.pop(key, None)
-        if isinstance(out.get("bank_receipts"), dict):
-            out["bank_receipts"] = None
-            out["bank_receipts_suppressed"] = True
-    else:
-        out["run_kind"] = "FORMAL_SCIENCE"
-        out.setdefault("science_label", "forgotten_accum_training_equivalence_4arm")
-        out["claimable_science"] = True
-        out["bankable"] = True
-    return out
-
-
 def assert_formal_canonical_params(*, t_cut: int, runway_steps: int, W: int) -> None:
     from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_contracts import (
         RUNWAY_STEPS,
@@ -450,6 +419,5 @@ __all__ = [
     "bind_cadence_saver",
     "materialize_run_arms_live_bundle",
     "run_readonly_actual_parent_preflight",
-    "stamp_authority_receipt",
     "assert_formal_canonical_params",
 ]

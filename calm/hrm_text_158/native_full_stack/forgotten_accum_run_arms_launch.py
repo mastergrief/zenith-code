@@ -97,7 +97,6 @@ def launch_run_arms(args: argparse.Namespace) -> tuple[dict, int]:
 
     from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_materialization import (
         materialize_run_arms_live_bundle,
-        stamp_authority_receipt,
     )
     from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_science_driver import (
         assert_carrier_preflight,
@@ -168,7 +167,7 @@ def launch_run_arms(args: argparse.Namespace) -> tuple[dict, int]:
     receipt["identity_inventory"] = bundle.identity_inventory
     receipt["runner_contract_requested_digest"] = contract_digest(runner_contract)
     receipt["runner_contract_pins"] = runner_contract.as_pins_dict()
-    receipt = stamp_authority_receipt(receipt, mode=mode)
+    # Claim/mode labels live in bank_measure (safe-by-construction).
     receipt = apply_claim_coupling(receipt, mode=mode)
     if receipt.get("fail_closed_class") == RUNNER_CONTRACT_INVALID:
         return receipt, EXIT_RUN_ARMS_RUNNER_CONTRACT

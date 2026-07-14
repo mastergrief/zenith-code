@@ -176,34 +176,35 @@ def test_driver_one_call_per_arm_rw_schedule_cadence_and_control(tmp_path: Path)
 def test_driver_control_invalid_when_e_bank_diverges(tmp_path: Path):
     resolved: list = []
     # Bank-eval earliest-all-clear uses formal SAVE_CADENCE keys (not reduced smoke cadence).
+    _sib = {
+        "numeric_close_sibling_clear": True,
+        "same_surface_parent_relative_hole_count": 0,
+        "parent_floor_status": "UNRESOLVED_POLICY",
+    }
     bank = {
         "U": {
             "acquire_pct": 100.0,
             "retain_pct_by_support": {"L0b": 100.0, "math_a0": 100.0},
             "clears_by_save": {250: True, 500: True, 1500: True},
-            "parent_consistency_ok": True,
-            "close_sibling_ok": True,
+            "close_sibling_report": dict(_sib),
         },
         "E": {
             "acquire_pct": 50.0,
             "retain_pct_by_support": {"L0b": 50.0, "math_a0": 50.0},
             "clears_by_save": {250: False, 500: False, 1500: False},
-            "parent_consistency_ok": True,
-            "close_sibling_ok": True,
+            "close_sibling_report": dict(_sib),
         },
         "R0": {
             "acquire_pct": 50.0,
             "retain_pct_by_support": {"L0b": 50.0, "math_a0": 50.0},
             "clears_by_save": {250: False, 500: False, 1500: False},
-            "parent_consistency_ok": True,
-            "close_sibling_ok": True,
+            "close_sibling_report": dict(_sib),
         },
         "RW": {
             "acquire_pct": 50.0,
             "retain_pct_by_support": {"L0b": 50.0, "math_a0": 50.0},
             "clears_by_save": {250: False, 500: False, 1500: False},
-            "parent_consistency_ok": True,
-            "close_sibling_ok": True,
+            "close_sibling_report": dict(_sib),
         },
     }
     result = run_forgotten_accum_training_equivalence_arms(

@@ -10,6 +10,35 @@ from typing import Any, Mapping
 
 
 SCHEMA_VERSION = "forgotten_accum_training_equivalence_contracts/v1"
+BANK_EVIDENCE_SCHEMA_VERSION = 2
+BANK_EVIDENCE_SCHEMA_V1_FORBIDDEN = (
+    "parent_consistency_ok",
+    "close_sibling_ok",
+)
+
+
+@dataclass(frozen=True)
+class ParentConsistencyMechanismReceipt:
+    """Recipe/launch compliance ONLY — outside bank-score reducer."""
+
+    expected_parent_sha256: str
+    observed_parent_sha256: str
+    match: bool
+    recipe_compliance_ok: bool
+    notes: Mapping[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "ParentConsistencyMechanismReceipt",
+            "expected_parent_sha256": self.expected_parent_sha256,
+            "observed_parent_sha256": self.observed_parent_sha256,
+            "match": bool(self.match),
+            "recipe_compliance_ok": bool(self.recipe_compliance_ok),
+            "notes": dict(self.notes),
+            "counts_as_retention_evidence": False,
+            "may_raise_retain_ok": False,
+            "may_clear_bank_gate": False,
+        }
 
 # Identity pins (re-hash parent at launch)
 PARENT_SHA256_FULL = (
@@ -188,6 +217,9 @@ __all__ = [
     "assert_carrier_preflight",
 
     "SCHEMA_VERSION",
+    "BANK_EVIDENCE_SCHEMA_VERSION",
+    "BANK_EVIDENCE_SCHEMA_V1_FORBIDDEN",
+    "ParentConsistencyMechanismReceipt",
     "ArmId",
     "ResumePolicy",
     "FailClosedClass",

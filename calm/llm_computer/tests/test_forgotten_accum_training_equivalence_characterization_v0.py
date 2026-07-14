@@ -220,15 +220,24 @@ def test_ledger_arithmetic_matched_budget():
 
 
 def test_bank_eval_earliest_all_clear_and_E_matches_U():
+    from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_bank_eval import (
+        CloseSiblingReport,
+        ParentFloorStatus,
+    )
+
     clears = {250: False, 500: True, 750: True, 1500: True}
     assert select_earliest_all_clear(clears) == 500
+    sib = CloseSiblingReport(
+        numeric_close_sibling_clear=True,
+        same_surface_parent_relative_hole_count=0,
+        parent_floor_status=ParentFloorStatus.UNRESOLVED_POLICY,
+    )
     u = evaluate_arm_bank_gate(
         arm="U",
         acquire_pct=91.0,
         retain_pct_by_support={"L0b": 90.0, "math_a0": 92.0},
         clears_by_save=clears,
-        parent_consistency_ok=True,
-        close_sibling_ok=True,
+        close_sibling_report=sib,
         hashes_diagnostic={"q": "abc"},
     )
     e = evaluate_arm_bank_gate(
@@ -236,13 +245,14 @@ def test_bank_eval_earliest_all_clear_and_E_matches_U():
         acquire_pct=91.0,
         retain_pct_by_support={"L0b": 90.0, "math_a0": 92.0},
         clears_by_save=clears,
-        parent_consistency_ok=True,
-        close_sibling_ok=True,
+        close_sibling_report=sib,
         hashes_diagnostic={"q": "def"},  # diagnostic — does not veto
     )
     assert u.bank_clear and e.bank_clear
     assert e_must_match_u_bank(u, e)
     assert u.as_dict()["hashes_grant_or_veto"] is False
+    assert "parent_consistency_ok" not in u.as_dict()
+    assert "close_sibling_ok" not in u.as_dict()
 
 
 def test_probe_threads_flip_application_deferred_default_false():
