@@ -287,13 +287,46 @@ def test_expected_head_fail_closed_and_match(tmp_path, monkeypatch):
     with pytest.raises(R.StepCBlock) as ei2:
         R.verify_head_origin_pin(repo=repo, expected_head="UNRESOLVED_POST_COMMIT")
     assert ei2.value.code == "HEAD_PIN_UNRESOLVED"
-    with pytest.raises(R.StepCBlock) as ei3:
+    with pytest.raises(R.StepCBlock) as ei_mal:
+        R.verify_head_origin_pin(repo=repo, expected_head="not-a-valid-sha")
+    assert ei_mal.value.code == "HEAD_PIN_UNRESOLVED"
+
+    fake_head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    fake_origin = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+    def _git_double(cmd, cwd=None, text=False, **kwargs):
+        args = [str(x) for x in cmd]
+        if "rev-parse" not in args:
+            raise AssertionError(f"unexpected subprocess cmd={args!r}")
+        if "HEAD" in args:
+            out = fake_head
+        elif "origin/feature/hrm-text-1.58" in args:
+            out = fake_head
+        else:
+            raise AssertionError(f"unexpected rev-parse cmd={args!r}")
+        return out + ("\n" if text else "")
+
+    monkeypatch.setattr(R.subprocess, "check_output", _git_double)
+    ok = R.verify_head_origin_pin(repo=repo, expected_head=fake_head)
+    assert ok == fake_head
+    with pytest.raises(R.StepCBlock) as ei_wrong:
         R.verify_head_origin_pin(repo=repo, expected_head="deadbeef" * 5)
-    assert ei3.value.code == "SOURCE_OR_CHECKPOINT_DRIFT"
-    ok = R.verify_head_origin_pin(
-        repo=repo, expected_head=R.PREIMPLEMENTATION_HEAD_BASELINE,
-    )
-    assert ok == R.PREIMPLEMENTATION_HEAD_BASELINE
+    assert ei_wrong.value.code == "SOURCE_OR_CHECKPOINT_DRIFT"
+
+    def _mismatch_double(cmd, cwd=None, text=False, **kwargs):
+        args = [str(x) for x in cmd]
+        if "HEAD" in args:
+            out = fake_head
+        elif "origin/feature/hrm-text-1.58" in args:
+            out = fake_origin
+        else:
+            raise AssertionError(f"unexpected rev-parse cmd={args!r}")
+        return out + ("\n" if text else "")
+
+    monkeypatch.setattr(R.subprocess, "check_output", _mismatch_double)
+    with pytest.raises(R.StepCBlock) as ei_mm:
+        R.verify_head_origin_pin(repo=repo, expected_head=fake_head)
+    assert ei_mm.value.code == "SOURCE_OR_CHECKPOINT_DRIFT"
 
 
 def test_new_module_tamper_refused(tmp_path):
