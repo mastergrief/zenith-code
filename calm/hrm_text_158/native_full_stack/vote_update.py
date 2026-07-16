@@ -1068,6 +1068,141 @@ def plan_integer_vote_update_reference(
     )
 
 
+def _validate_ternary_q_levels(state: VoteUpdateState) -> None:
+    q = state.q_levels
+    if q.dtype.is_floating_point or q.dtype != torch.int8:
+        raise ValueError(
+            "FP master tensors are not accepted; pass q:int8 levels"
+            if q.dtype.is_floating_point
+            else f"q_levels must be torch.int8, got {q.dtype}"
+        )
+    allowed = torch.tensor([-1, 0, 1], dtype=torch.int8, device=q.device)
+    if not bool(torch.isin(q, allowed).all().item()):
+        raise ValueError("q_levels must contain only ternary int8 levels {-1, 0, +1}")
+
+
+def _reject_duplicate_or_oor_indices(name: str, indices: torch.Tensor, *, numel: int) -> None:
+    if indices.numel() == 0:
+        return
+    if bool((indices < 0).any().item()) or bool((indices >= int(numel)).any().item()):
+        raise ValueError(f"{name} contains out-of-range indices for numel={int(numel)}")
+    if indices.numel() > 1:
+        sorted_idx, _ = torch.sort(indices)
+        if bool((sorted_idx[1:] == sorted_idx[:-1]).any().item()):
+            raise ValueError(f"{name} contains duplicate indices")
+
+
+_SUPPORTED_INDEX_DTYPES = (torch.int32, torch.int64)
+_SUPPORTED_DIR_THR_DTYPES = (torch.int8, torch.int16, torch.int32, torch.int64)
+
+
+def _reject_pm1_dirs_and_positive_thresholds(
+    *, directions: torch.Tensor, thresholds: torch.Tensor, dir_name: str, thr_name: str
+) -> None:
+    if directions.numel() == 0:
+        return
+    if bool((directions.abs() != 1).any().item()):
+        raise ValueError(f"{dir_name} must be exactly ±1")
+    if bool((thresholds <= 0).any().item()):
+        raise ValueError(f"{thr_name} must be positive")
+
+
+def _validate_frozen_plan_binding(state: VoteUpdateState, plan: VoteUpdatePlan) -> None:
+    """Fail-closed state↔plan binding for public from_frozen_plan callers."""
+    if plan.q_i16.dtype != torch.int16 or plan.new_acc_i32.dtype != torch.int32:
+        raise ValueError("plan.q_i16 must be int16 and plan.new_acc_i32 must be int32")
+    if int(plan.q_i16.numel()) != int(state.q_levels.numel()):
+        raise ValueError("plan.q_i16 numel must match state.q_levels")
+    if int(plan.new_acc_i32.numel()) != int(state.accumulators.numel()):
+        raise ValueError("plan.new_acc_i32 numel must match state.accumulators")
+    try:
+        q_plan = plan.q_i16.view_as(state.q_levels)
+        plan.new_acc_i32.view_as(state.accumulators)
+    except RuntimeError as exc:
+        raise ValueError("plan q/acc tensors must view_as state q/acc shapes") from exc
+    if bool((q_plan != state.q_levels.to(dtype=torch.int16, device=plan.q_i16.device)).any().item()):
+        raise ValueError("plan.q_i16 must equal state.q_levels as int16 (q base binding)")
+
+    arrays = (
+        ("applied_indices", plan.applied_indices, _SUPPORTED_INDEX_DTYPES, "int32/int64"),
+        ("applied_directions", plan.applied_directions, _SUPPORTED_DIR_THR_DTYPES, "explicit integer dtype int8/16/32/64"),
+        ("applied_thresholds", plan.applied_thresholds, _SUPPORTED_DIR_THR_DTYPES, "explicit integer dtype int8/16/32/64"),
+        ("replay_ce_veto_indices", plan.replay_ce_veto_indices, _SUPPORTED_INDEX_DTYPES, "int32/int64"),
+        ("replay_veto_directions", plan.replay_veto_directions, _SUPPORTED_DIR_THR_DTYPES, "explicit integer dtype int8/16/32/64"),
+        ("replay_veto_thresholds", plan.replay_veto_thresholds, _SUPPORTED_DIR_THR_DTYPES, "explicit integer dtype int8/16/32/64"),
+    )
+    for name, tensor, allowed, label in arrays:
+        if int(tensor.ndim) != 1:
+            raise ValueError(f"{name} must have ndim==1 before coercion, got ndim={int(tensor.ndim)}")
+        if tensor.dtype not in allowed:  # dtype before cardinality
+            raise ValueError(f"{name} must be {label}, got {tensor.dtype}")
+
+    numel = int(state.q_levels.numel())
+    applied, replay = plan.applied_indices, plan.replay_ce_veto_indices
+    if int(plan.applied_directions.numel()) != int(applied.numel()):
+        raise ValueError("applied_directions length must match applied_indices")
+    if int(plan.applied_thresholds.numel()) != int(applied.numel()):
+        raise ValueError("applied_thresholds length must match applied_indices")
+    if int(plan.replay_veto_directions.numel()) != int(replay.numel()):
+        raise ValueError("replay_veto_directions length must match replay_ce_veto_indices")
+    if int(plan.replay_veto_thresholds.numel()) != int(replay.numel()):
+        raise ValueError("replay_veto_thresholds length must match replay_ce_veto_indices")
+    _reject_duplicate_or_oor_indices("applied_indices", applied, numel=numel)
+    _reject_duplicate_or_oor_indices("replay_ce_veto_indices", replay, numel=numel)
+    _reject_pm1_dirs_and_positive_thresholds(
+        directions=plan.applied_directions, thresholds=plan.applied_thresholds,
+        dir_name="applied_directions", thr_name="applied_thresholds",
+    )
+    _reject_pm1_dirs_and_positive_thresholds(
+        directions=plan.replay_veto_directions, thresholds=plan.replay_veto_thresholds,
+        dir_name="replay_veto_directions", thr_name="replay_veto_thresholds",
+    )
+
+
+def _apply_integer_vote_update_from_frozen_plan_trusted(
+    state: VoteUpdateState, plan: VoteUpdatePlan,
+) -> VoteUpdateResult:
+    """Private writeback-only core (trusted planner output or post-validation public path)."""
+    _reject_event_coded_on_dense_vote_path(
+        state, site="_apply_integer_vote_update_from_frozen_plan_trusted"
+    )
+    q_i16 = plan.q_i16.flatten().clone()
+    new_acc_i32 = plan.new_acc_i32.flatten().clone()
+    if plan.applied_indices.numel() > 0:
+        applied = plan.applied_indices.to(q_i16.device)
+        directions = plan.applied_directions.to(q_i16.device)
+        thresholds = plan.applied_thresholds.to(new_acc_i32.device)
+        q_i16[applied] = (q_i16[applied] + directions).clamp(-1, 1)
+        residual = new_acc_i32[applied] - directions.to(torch.int32) * thresholds
+        new_acc_i32[applied] = torch.minimum(torch.maximum(residual, -thresholds + 1), thresholds - 1)
+    _apply_replay_veto_residual_clamp(
+        new_acc_i32,
+        replay_ce_veto_indices=plan.replay_ce_veto_indices,
+        replay_veto_directions=plan.replay_veto_directions,
+        replay_veto_thresholds=plan.replay_veto_thresholds,
+    )
+    q_out = q_i16.view_as(state.q_levels).to(torch.int8).contiguous()
+    acc_out = new_acc_i32.view_as(state.accumulators).to(torch.int16).contiguous()
+    stats = dict(plan.stats)
+    stats.update({
+        "flip_count": int(plan.applied_indices.numel()),
+        "post_veto_applied_flip_count": int(plan.applied_indices.numel()),
+        "acc_abs_max_after": int(acc_out.abs().max().item()) if acc_out.numel() else 0,
+        "q_changed_count": int((q_out != state.q_levels).sum().item()),
+    })
+    return VoteUpdateResult(q_levels=q_out, accumulators=acc_out, plan=plan, stats=stats)
+
+
+def apply_integer_vote_update_from_frozen_plan(
+    state: VoteUpdateState, plan: VoteUpdatePlan,
+) -> VoteUpdateResult:
+    """Public dense from-frozen-plan apply. Always fail-closed; no validation bypass kwargs."""
+    _reject_event_coded_on_dense_vote_path(state, site="apply_integer_vote_update_from_frozen_plan")
+    _validate_ternary_q_levels(state)
+    _validate_frozen_plan_binding(state, plan)
+    return _apply_integer_vote_update_from_frozen_plan_trusted(state, plan)
+
+
 def apply_integer_vote_update_reference(
     state: VoteUpdateState,
     inputs: VoteUpdateInputs,
@@ -1092,7 +1227,7 @@ def apply_integer_vote_update_reference(
             local_selection_ordering_seed=int(local_selection_ordering_seed),
             local_selection_ordering_step=int(local_selection_ordering_step),
         )
-    # === OFF body unchanged below this line ===
+    # === OFF body: plan once, then private trusted writeback (no public revalidation) ===
     plan = plan_integer_vote_update_reference(
         state,
         inputs,
@@ -1102,37 +1237,7 @@ def apply_integer_vote_update_reference(
         local_selection_ordering_seed=int(local_selection_ordering_seed),
         local_selection_ordering_step=int(local_selection_ordering_step),
     )
-    threshold = int(spec.threshold_abs)
-    q_i16 = plan.q_i16.flatten().clone()
-    new_acc_i32 = plan.new_acc_i32.flatten().clone()
-
-    if plan.applied_indices.numel() > 0:
-        applied = plan.applied_indices.to(q_i16.device)
-        directions = plan.applied_directions.to(q_i16.device)
-        thresholds = plan.applied_thresholds.to(new_acc_i32.device)
-        q_i16[applied] = (q_i16[applied] + directions).clamp(-1, 1)
-        residual = new_acc_i32[applied] - directions.to(torch.int32) * thresholds
-        low = -thresholds + 1
-        high = thresholds - 1
-        new_acc_i32[applied] = torch.minimum(torch.maximum(residual, low), high)
-
-    _apply_replay_veto_residual_clamp(
-        new_acc_i32,
-        replay_ce_veto_indices=plan.replay_ce_veto_indices,
-        replay_veto_directions=plan.replay_veto_directions,
-        replay_veto_thresholds=plan.replay_veto_thresholds,
-    )
-
-    q_out = q_i16.view_as(state.q_levels).to(torch.int8).contiguous()
-    acc_out = new_acc_i32.view_as(state.accumulators).to(torch.int16).contiguous()
-    stats = dict(plan.stats)
-    stats.update({
-        "flip_count": int(plan.applied_indices.numel()),
-        "post_veto_applied_flip_count": int(plan.applied_indices.numel()),
-        "acc_abs_max_after": int(acc_out.abs().max().item()) if acc_out.numel() else 0,
-        "q_changed_count": int((q_out != state.q_levels).sum().item()),
-    })
-    return VoteUpdateResult(q_levels=q_out, accumulators=acc_out, plan=plan, stats=stats)
+    return _apply_integer_vote_update_from_frozen_plan_trusted(state, plan)
 
 
 def _coerce_flat_indices(
