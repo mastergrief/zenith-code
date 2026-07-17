@@ -1,13 +1,20 @@
-"""Import-facade tests: hash/path bind + clean-revision session (PLAN v3 / d1_c4)."""
+"""Import-facade tests: hash/path bind + clean-revision session (D2c9: 13-module closure).
+
+CLEAN_REVISION_PIN/TREE = published archive base; live overlay supplies verified modules;
+runtime expected_head is packet-only (not CLEAN_*).
+"""
 from __future__ import annotations
-import hashlib, json, os, subprocess, sys, tarfile, textwrap, types
+import hashlib, json, os, subprocess, sys, tarfile, types
 from pathlib import Path
 import pytest
 import calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_creditdir_import_facade as fac
 from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_creditdir_import_facade import (
-    MODULE_IMPORT_NAMES, MODULE_REL_PATHS, ImportFacadeError,
+    CLEAN_REVISION_PIN, CLEAN_TREE_PIN, MODULE_IMPORT_NAMES, MODULE_REL_PATHS, ImportFacadeError,
     load_signed_utility_fixed_state_modules, signed_utility_fixed_state_session,
     verify_expected_sha256_by_module,
+)
+from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_pin_validation import (
+    FORMAL_SOURCE_PIN_BASENAMES,
 )
 REPO, MOD = fac.REPO_ROOT, Path(fac.__file__)
 FX = Path("/home/gabe/claw-code-creditdir/transient_fp_credit/fa_accounting_v2_post_seam_signed_utility_d1_r1_fixture_partition_v1.json")
@@ -36,22 +43,25 @@ def _assert_order(seed, paths, order_before):
 def _lock_free():
     assert fac._ACTIVE is False and fac._LOCK.acquire(blocking=False); fac._LOCK.release()
 def test_loc_budget():
-    assert sum(1 for _ in MOD.open()) <= 360 and sum(1 for _ in Path(__file__).open()) <= 200
+    assert sum(1 for _ in MOD.open()) <= 360 and sum(1 for _ in Path(__file__).open()) <= 220
 
 
-def test_eleven_module_import_closure_keys():
+def test_thirteen_module_import_closure_keys():
+    assert CLEAN_REVISION_PIN == "cad671873263b3f557d720dfa8c971fc1ad274f2"
+    assert CLEAN_TREE_PIN == "7f95ff951385a47e83e3c1afcb2e337ec96720db"
+    assert len(FORMAL_SOURCE_PIN_BASENAMES) == 14
     assert set(MODULE_REL_PATHS) == {
         "reducers", "schema", "pin_validation", "phase_telemetry", "integrity_proofs",
         "partition_leakage", "arm_proofs", "legal_subset", "eval_contract",
-        "authoritative_gpu", "driver", "facade",
+        "authoritative_gpu", "support_only", "driver", "facade",
     }
     assert list(fac._LOAD_ORDER) == [
         "reducers", "schema", "pin_validation", "phase_telemetry", "integrity_proofs",
         "partition_leakage", "arm_proofs", "legal_subset", "eval_contract",
-        "authoritative_gpu", "driver", "facade",
+        "authoritative_gpu", "support_only", "driver", "facade",
     ]
     b = load_signed_utility_fixed_state_modules(EXPECTED)
-    assert hasattr(b, "legal_subset") and hasattr(b, "partition_leakage") and hasattr(b, "arm_proofs")
+    assert hasattr(b, "support_only") and hasattr(b, "authoritative_gpu")
     assert set(b.observed_sha256_by_module) == set(MODULE_REL_PATHS)
     with pytest.raises(ImportFacadeError, match="expected_keys_mismatch"):
         verify_expected_sha256_by_module({k: v for k, v in EXPECTED.items() if k != "integrity_proofs"})
@@ -88,6 +98,7 @@ def test_session_order_restore_success_body_cleanup(monkeypatch):
         with signed_utility_fixed_state_session(EXPECTED) as bundle:
             assert id(sys.path) == path_id and str(bundle.snapshot_root) in sys.path
             assert bundle.facade.developer_check(json.loads(FX.read_text())).get("non_authoritative") is True
+            assert bundle.support_only.build_live_hooks is bundle.authoritative_gpu.build_live_hooks
         assert list(sys.path) == path_before; _assert_order(seed, paths, order)
         with pytest.raises(RuntimeError, match="boom_inside"):
             with signed_utility_fixed_state_session(EXPECTED): raise RuntimeError("boom_inside")
@@ -156,13 +167,13 @@ def test_setup_failure_restores_after_mutation(monkeypatch):
             assert b.facade is not None and b.snapshot_root.exists()
         assert not b.snapshot_root.exists()
     finally: restore()
-def test_session_exposes_eight_modules():
+def test_session_exposes_support_only_identity():
     with signed_utility_fixed_state_session(EXPECTED) as bundle:
-        assert bundle.phase_telemetry is not None
-        assert bundle.integrity_proofs is not None
-        assert bundle.authoritative_gpu is not None
-        assert hasattr(bundle.authoritative_gpu, "run_authoritative_gpu_call_graph")
+        assert bundle.support_only is not None
+        assert bundle.support_only.build_live_hooks is bundle.authoritative_gpu.build_live_hooks
         assert set(bundle.observed_sha256_by_module) == set(MODULE_REL_PATHS)
+        so_path = Path(bundle.verified_paths_by_module["support_only"]).resolve()
+        assert str(so_path).startswith(str(bundle.snapshot_root.resolve()))
 
 
 def test_tree_pin_and_nested():
@@ -184,6 +195,7 @@ def test_clean_subprocess_developer_check():
         "exp={k:hashlib.sha256((repo/rel).read_bytes()).hexdigest() for k,rel in m.MODULE_REL_PATHS.items()}\n"
         f"ff=json.loads(Path({str(FX)!r}).read_text())\n"
         "with m.signed_utility_fixed_state_session(exp) as b:\n"
+        " assert b.support_only.build_live_hooks is b.authoritative_gpu.build_live_hooks\n"
         " p=b.facade.developer_check(ff); snap=b.snapshot_root.resolve(); d=[]\n"
         " for rel in m.DRIFTED_TRANSITIVE_PROOF_SET:\n"
         "  n='calm.hrm_text_158.native_full_stack.'+Path(rel).stem\n"

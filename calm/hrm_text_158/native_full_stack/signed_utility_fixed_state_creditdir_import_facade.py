@@ -12,8 +12,10 @@ REPO_ROOT = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158")
 # Historical d1_r2 pins (immutable forensic); live D2 session uses post-D1 HEAD + live overlay.
 HISTORICAL_D1_R2_CLEAN_REVISION = "3a85d0e8705325dbb26a3bca28d3d0e1ac7af2e7"
 HISTORICAL_D1_R2_CLEAN_TREE = "00e8f1c6c3538b35ab4b53f6b704acb2e7afb65b"
-CLEAN_REVISION_PIN = "c93b68e9ddc3513866adc3f930a17eb80c6f5459"
-CLEAN_TREE_PIN = "b816b6909f980e406fab268c8e323a17d60670f2"
+# CLEAN_* = published archive base only (git-archive extract). Live overlay supplies verified
+# module closure bytes. Runtime expected_head is packet-supplied (separate from CLEAN_*).
+CLEAN_REVISION_PIN = "cad671873263b3f557d720dfa8c971fc1ad274f2"
+CLEAN_TREE_PIN = "7f95ff951385a47e83e3c1afcb2e337ec96720db"
 MODULE_REL_PATHS = {
     "reducers": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_reducers.py",
     "schema": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_schema.py",
@@ -25,6 +27,7 @@ MODULE_REL_PATHS = {
     "legal_subset": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_legal_subset.py",
     "eval_contract": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_eval_contract.py",
     "authoritative_gpu": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_authoritative_gpu.py",
+    "support_only": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_support_only.py",
     "driver": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_driver.py",
     "facade": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_facade.py",
 }
@@ -39,13 +42,14 @@ MODULE_IMPORT_NAMES = {
     "legal_subset": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_legal_subset",
     "eval_contract": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_eval_contract",
     "authoritative_gpu": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_authoritative_gpu",
+    "support_only": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_support_only",
     "driver": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_driver",
     "facade": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_facade",
 }
 _LOAD_ORDER = (
     "reducers", "schema", "pin_validation", "phase_telemetry", "integrity_proofs",
     "partition_leakage", "arm_proofs", "legal_subset", "eval_contract",
-    "authoritative_gpu", "driver", "facade",
+    "authoritative_gpu", "support_only", "driver", "facade",
 )
 DRIFTED_TRANSITIVE_PROOF_SET = (
     "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
@@ -72,6 +76,7 @@ class ModuleBundle:
     legal_subset: ModuleType
     eval_contract: ModuleType
     authoritative_gpu: ModuleType
+    support_only: ModuleType
     driver: ModuleType
     facade: ModuleType
     observed_sha256_by_module: Mapping[str, str]
@@ -93,7 +98,8 @@ def _bundle_from_mods(mods: Mapping[str, ModuleType], observed: Mapping[str, tup
         phase_telemetry=mods["phase_telemetry"], integrity_proofs=mods["integrity_proofs"],
         partition_leakage=mods["partition_leakage"], arm_proofs=mods["arm_proofs"],
         legal_subset=mods["legal_subset"], eval_contract=mods["eval_contract"],
-        authoritative_gpu=mods["authoritative_gpu"], driver=mods["driver"], facade=mods["facade"],
+        authoritative_gpu=mods["authoritative_gpu"], support_only=mods["support_only"],
+        driver=mods["driver"], facade=mods["facade"],
         observed_sha256_by_module={k: observed[k][0] for k in MODULE_REL_PATHS},
         verified_paths_by_module={k: str(observed[k][1]) for k in MODULE_REL_PATHS},
     )
@@ -185,7 +191,7 @@ def _extract_archive(repo: Path, revision: str, dest: Path) -> None:
 
 
 def _overlay_live_module_closure(dest: Path, *, live_root: Path = REPO_ROOT) -> None:
-    """Pre-land D2: overlay eleven-module closure from live tree onto archived snapshot."""
+    """Overlay verified 13-module closure from live tree onto CLEAN archive base snapshot."""
     import shutil
 
     for rel in MODULE_REL_PATHS.values():

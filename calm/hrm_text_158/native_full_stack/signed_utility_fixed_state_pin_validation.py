@@ -1,4 +1,8 @@
-"""Packet/source pin validation for fixed-state signed-utility diagnostic (PLAN v5)."""
+"""Packet/source pin validation for fixed-state signed-utility diagnostic.
+
+Formal source-pin basenames: 14 (includes support_only.py).
+Verified import-facade module closure is a separate counter (13 modules).
+"""
 from __future__ import annotations
 
 import hashlib
@@ -22,6 +26,7 @@ FORMAL_SOURCE_PIN_BASENAMES = (
     "signed_utility_fixed_state_schema.py",
     "signed_utility_fixed_state_pin_validation.py",
     "signed_utility_fixed_state_reducers.py",
+    "signed_utility_fixed_state_support_only.py",
 )
 
 
@@ -75,7 +80,7 @@ def validate_proof_packet_source_pins(packet: Mapping[str, Any]) -> dict[str, st
 
 
 def require_formal_source_pin_basenames(packet: Mapping[str, Any]) -> list[str]:
-    """Fail closed unless formal packet pins include the twelve formal source-pin basenames."""
+    """Fail closed unless formal packet pins include all fourteen formal source-pin basenames."""
     pins = packet.get("source_pins")
     if not isinstance(pins, Mapping) or not pins:
         raise PinValidationError("source_pins_missing")
