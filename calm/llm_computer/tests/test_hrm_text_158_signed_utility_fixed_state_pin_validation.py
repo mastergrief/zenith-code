@@ -52,3 +52,27 @@ def test_watch_wrap_must_be_hrm158_not_claw_code():
         }
     )
     assert observed["watch_wrap"] == WATCH_WRAP_HRM158_SHA256
+
+
+def test_formal_source_pin_basenames_required(tmp_path: Path):
+    import importlib
+    import calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_pin_validation as pv
+
+    # Import-facade tests may leave tmp-bound modules in sys.modules; reload live file.
+    live = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_pin_validation.py")
+    spec = importlib.util.spec_from_file_location(pv.__name__, live)
+    assert spec and spec.loader
+    live_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(live_mod)
+    root = live.parent
+    pins = {
+        name: {"absolute_path": str(root / name), "sha256": rehash_path(root / name)}
+        for name in live_mod.FORMAL_SOURCE_PIN_BASENAMES
+    }
+    assert live_mod.require_formal_source_pin_basenames({"source_pins": pins}) == list(
+        live_mod.FORMAL_SOURCE_PIN_BASENAMES
+    )
+    with pytest.raises(live_mod.PinValidationError, match="formal_source_pins_missing"):
+        live_mod.require_formal_source_pin_basenames(
+            {"source_pins": {"watch_wrap": {"absolute_path": str(WATCH), "sha256": rehash_path(WATCH)}}}
+        )

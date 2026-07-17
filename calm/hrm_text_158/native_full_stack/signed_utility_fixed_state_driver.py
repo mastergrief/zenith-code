@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -72,10 +71,11 @@ def _votes_map(micro: Mapping[str, Any]):
 
 
 def invert_plans_by_key_directions(plans_by_key: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        key: replace(plan, applied_directions=(-plan.applied_directions).contiguous())
-        for key, plan in plans_by_key.items()
-    }
+    """Delegate canonical inversion to arm_proofs (both direction fields required)."""
+    from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_arm_proofs import (
+        canonical_invert_plans_v4,
+    )
+    return canonical_invert_plans_v4(plans_by_key)
 
 
 def apply_arms_via_public_frozen_plan(base_states: Mapping[str, Any], plans_by_key: Mapping[str, Any]):
@@ -251,7 +251,7 @@ def authoritative_path_must_not_route_to_toy_source_pass(source: str) -> bool:
 
 
 def run_authoritative_fixed_state_signed_utility(packet: Mapping[str, Any]) -> dict[str, Any]:
-    """Module-owned authoritative entry. GPU execution deferred; never routes to toy evaluator."""
+    """Module-owned authoritative entry. Delegates to authoritative_gpu; never routes to toy."""
     if not isinstance(packet, Mapping):
         raise DriverError("packet_not_mapping")
     validate_proof_packet_source_pins(packet)
@@ -261,9 +261,15 @@ def run_authoritative_fixed_state_signed_utility(packet: Mapping[str, Any]) -> d
     if not authoritative_path_must_not_route_to_toy_source_pass(src):
         raise DriverError("authoritative_routes_to_toy")
     # Hard separation: never delegate to the developer/toy evaluator entrypoints.
-    raise AuthoritativeGpuDeferredError(
-        "authoritative_gpu_deferred_until_successor_plan_after_thin_harness_land"
+    from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_authoritative_gpu import (
+        AuthoritativeGpuDeferredError as _GpuDeferred,
+        run_authoritative_gpu_call_graph,
     )
+
+    try:
+        return run_authoritative_gpu_call_graph(packet)
+    except _GpuDeferred as exc:
+        raise AuthoritativeGpuDeferredError(str(exc)) from exc
 
 
 def developer_check_payload(ff: Mapping[str, Any]) -> dict[str, Any]:

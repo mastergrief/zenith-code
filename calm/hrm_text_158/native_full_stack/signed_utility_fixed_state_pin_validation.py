@@ -8,6 +8,21 @@ from typing import Any, Mapping
 
 WATCH_WRAP_HRM158_SHA256 = "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b"
 WATCH_WRAP_CLAW_CODE_FORBIDDEN_SHA256 = "ba54e8dde1c7948d6733c5bcce77d7ae8e6b3c9102935d31fe70f01d784aee4d"
+FORMAL_SOURCE_PIN_BASENAMES = (
+    "signed_utility_fixed_state_phase_telemetry.py",
+    "signed_utility_fixed_state_integrity_proofs.py",
+    "signed_utility_fixed_state_partition_leakage.py",
+    "signed_utility_fixed_state_arm_proofs.py",
+    "signed_utility_fixed_state_legal_subset.py",
+    "signed_utility_fixed_state_eval_contract.py",
+    "signed_utility_fixed_state_authoritative_gpu.py",
+    "signed_utility_fixed_state_creditdir_import_facade.py",
+    "signed_utility_fixed_state_driver.py",
+    "signed_utility_fixed_state_facade.py",
+    "signed_utility_fixed_state_schema.py",
+    "signed_utility_fixed_state_pin_validation.py",
+    "signed_utility_fixed_state_reducers.py",
+)
 
 
 class PinValidationError(RuntimeError):
@@ -59,11 +74,29 @@ def validate_proof_packet_source_pins(packet: Mapping[str, Any]) -> dict[str, st
     return observed
 
 
+def require_formal_source_pin_basenames(packet: Mapping[str, Any]) -> list[str]:
+    """Fail closed unless formal packet pins include the twelve formal source-pin basenames."""
+    pins = packet.get("source_pins")
+    if not isinstance(pins, Mapping) or not pins:
+        raise PinValidationError("source_pins_missing")
+    observed = []
+    for pin in pins.values():
+        if not isinstance(pin, Mapping) or "absolute_path" not in pin:
+            continue
+        observed.append(Path(str(pin["absolute_path"])).name)
+    missing = [b for b in FORMAL_SOURCE_PIN_BASENAMES if b not in observed]
+    if missing:
+        raise PinValidationError(f"formal_source_pins_missing:{missing}")
+    return list(FORMAL_SOURCE_PIN_BASENAMES)
+
+
 __all__ = [
+    "FORMAL_SOURCE_PIN_BASENAMES",
     "PinValidationError",
     "WATCH_WRAP_CLAW_CODE_FORBIDDEN_SHA256",
     "WATCH_WRAP_HRM158_SHA256",
     "rehash_path",
+    "require_formal_source_pin_basenames",
     "require_head_equals_upstream_pin",
     "validate_proof_packet_source_pins",
 ]

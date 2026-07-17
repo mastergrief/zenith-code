@@ -36,7 +36,27 @@ def _assert_order(seed, paths, order_before):
 def _lock_free():
     assert fac._ACTIVE is False and fac._LOCK.acquire(blocking=False); fac._LOCK.release()
 def test_loc_budget():
-    assert sum(1 for _ in MOD.open()) <= 280 and sum(1 for _ in Path(__file__).open()) <= 180
+    assert sum(1 for _ in MOD.open()) <= 360 and sum(1 for _ in Path(__file__).open()) <= 200
+
+
+def test_eleven_module_import_closure_keys():
+    assert set(MODULE_REL_PATHS) == {
+        "reducers", "schema", "pin_validation", "phase_telemetry", "integrity_proofs",
+        "partition_leakage", "arm_proofs", "legal_subset", "eval_contract",
+        "authoritative_gpu", "driver", "facade",
+    }
+    assert list(fac._LOAD_ORDER) == [
+        "reducers", "schema", "pin_validation", "phase_telemetry", "integrity_proofs",
+        "partition_leakage", "arm_proofs", "legal_subset", "eval_contract",
+        "authoritative_gpu", "driver", "facade",
+    ]
+    b = load_signed_utility_fixed_state_modules(EXPECTED)
+    assert hasattr(b, "legal_subset") and hasattr(b, "partition_leakage") and hasattr(b, "arm_proofs")
+    assert set(b.observed_sha256_by_module) == set(MODULE_REL_PATHS)
+    with pytest.raises(ImportFacadeError, match="expected_keys_mismatch"):
+        verify_expected_sha256_by_module({k: v for k, v in EXPECTED.items() if k != "integrity_proofs"})
+
+
 def test_hash_and_path_bind(tmp_path: Path):
     import importlib, shutil
     b = load_signed_utility_fixed_state_modules(EXPECTED)
@@ -136,6 +156,15 @@ def test_setup_failure_restores_after_mutation(monkeypatch):
             assert b.facade is not None and b.snapshot_root.exists()
         assert not b.snapshot_root.exists()
     finally: restore()
+def test_session_exposes_eight_modules():
+    with signed_utility_fixed_state_session(EXPECTED) as bundle:
+        assert bundle.phase_telemetry is not None
+        assert bundle.integrity_proofs is not None
+        assert bundle.authoritative_gpu is not None
+        assert hasattr(bundle.authoritative_gpu, "run_authoritative_gpu_call_graph")
+        assert set(bundle.observed_sha256_by_module) == set(MODULE_REL_PATHS)
+
+
 def test_tree_pin_and_nested():
     before = list(sys.path)
     with pytest.raises(ImportFacadeError, match="tree_pin_mismatch"):

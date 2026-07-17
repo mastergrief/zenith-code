@@ -99,3 +99,30 @@ def test_authoritative_source_excludes_toy_entrypoints():
         "cpu_static_micro",
     ):
         assert banned not in body
+
+
+def test_driver_inversion_delegates_and_requires_both_fields():
+    from dataclasses import dataclass
+    import torch
+    from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_driver import (
+        invert_plans_by_key_directions,
+    )
+    from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_arm_proofs import ArmProofError
+
+    @dataclass
+    class Incomplete:
+        applied_directions: torch.Tensor
+
+    with pytest.raises(ArmProofError):
+        invert_plans_by_key_directions({"k": Incomplete(torch.tensor([1], dtype=torch.int16))})
+
+    @dataclass
+    class Complete:
+        applied_directions: torch.Tensor
+        replay_veto_directions: torch.Tensor
+        marker: int = 3
+
+    plan = Complete(torch.tensor([1, -1], dtype=torch.int16), torch.tensor([1, 1], dtype=torch.int16))
+    inv = invert_plans_by_key_directions({"k": plan})["k"]
+    assert torch.equal(inv.applied_directions, -plan.applied_directions)
+    assert inv.marker == 3

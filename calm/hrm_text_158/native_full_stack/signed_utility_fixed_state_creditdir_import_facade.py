@@ -9,12 +9,22 @@ from types import ModuleType
 from typing import Iterator, Mapping
 
 REPO_ROOT = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158")
-CLEAN_REVISION_PIN = "3a85d0e8705325dbb26a3bca28d3d0e1ac7af2e7"
-CLEAN_TREE_PIN = "00e8f1c6c3538b35ab4b53f6b704acb2e7afb65b"
+# Historical d1_r2 pins (immutable forensic); live D2 session uses post-D1 HEAD + live overlay.
+HISTORICAL_D1_R2_CLEAN_REVISION = "3a85d0e8705325dbb26a3bca28d3d0e1ac7af2e7"
+HISTORICAL_D1_R2_CLEAN_TREE = "00e8f1c6c3538b35ab4b53f6b704acb2e7afb65b"
+CLEAN_REVISION_PIN = "c93b68e9ddc3513866adc3f930a17eb80c6f5459"
+CLEAN_TREE_PIN = "b816b6909f980e406fab268c8e323a17d60670f2"
 MODULE_REL_PATHS = {
     "reducers": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_reducers.py",
     "schema": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_schema.py",
     "pin_validation": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_pin_validation.py",
+    "phase_telemetry": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_phase_telemetry.py",
+    "integrity_proofs": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_integrity_proofs.py",
+    "partition_leakage": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_partition_leakage.py",
+    "arm_proofs": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_arm_proofs.py",
+    "legal_subset": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_legal_subset.py",
+    "eval_contract": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_eval_contract.py",
+    "authoritative_gpu": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_authoritative_gpu.py",
     "driver": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_driver.py",
     "facade": "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_facade.py",
 }
@@ -22,10 +32,21 @@ MODULE_IMPORT_NAMES = {
     "reducers": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_reducers",
     "schema": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_schema",
     "pin_validation": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_pin_validation",
+    "phase_telemetry": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_phase_telemetry",
+    "integrity_proofs": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_integrity_proofs",
+    "partition_leakage": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_partition_leakage",
+    "arm_proofs": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_arm_proofs",
+    "legal_subset": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_legal_subset",
+    "eval_contract": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_eval_contract",
+    "authoritative_gpu": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_authoritative_gpu",
     "driver": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_driver",
     "facade": "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_facade",
 }
-_LOAD_ORDER = ("reducers", "schema", "pin_validation", "driver", "facade")
+_LOAD_ORDER = (
+    "reducers", "schema", "pin_validation", "phase_telemetry", "integrity_proofs",
+    "partition_leakage", "arm_proofs", "legal_subset", "eval_contract",
+    "authoritative_gpu", "driver", "facade",
+)
 DRIFTED_TRANSITIVE_PROOF_SET = (
     "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
     "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
@@ -44,6 +65,13 @@ class ModuleBundle:
     reducers: ModuleType
     schema: ModuleType
     pin_validation: ModuleType
+    phase_telemetry: ModuleType
+    integrity_proofs: ModuleType
+    partition_leakage: ModuleType
+    arm_proofs: ModuleType
+    legal_subset: ModuleType
+    eval_contract: ModuleType
+    authoritative_gpu: ModuleType
     driver: ModuleType
     facade: ModuleType
     observed_sha256_by_module: Mapping[str, str]
@@ -57,6 +85,18 @@ class SessionBundle(ModuleBundle):
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _bundle_from_mods(mods: Mapping[str, ModuleType], observed: Mapping[str, tuple[str, Path]]) -> ModuleBundle:
+    return ModuleBundle(
+        reducers=mods["reducers"], schema=mods["schema"], pin_validation=mods["pin_validation"],
+        phase_telemetry=mods["phase_telemetry"], integrity_proofs=mods["integrity_proofs"],
+        partition_leakage=mods["partition_leakage"], arm_proofs=mods["arm_proofs"],
+        legal_subset=mods["legal_subset"], eval_contract=mods["eval_contract"],
+        authoritative_gpu=mods["authoritative_gpu"], driver=mods["driver"], facade=mods["facade"],
+        observed_sha256_by_module={k: observed[k][0] for k in MODULE_REL_PATHS},
+        verified_paths_by_module={k: str(observed[k][1]) for k in MODULE_REL_PATHS},
+    )
 
 
 def verify_expected_sha256_by_module(
@@ -108,12 +148,7 @@ def load_signed_utility_fixed_state_modules(
     except Exception:
         _purge_names(names)
         raise
-    return ModuleBundle(
-        reducers=mods["reducers"], schema=mods["schema"], pin_validation=mods["pin_validation"],
-        driver=mods["driver"], facade=mods["facade"],
-        observed_sha256_by_module={k: observed[k][0] for k in MODULE_REL_PATHS},
-        verified_paths_by_module={k: str(observed[k][1]) for k in MODULE_REL_PATHS},
-    )
+    return _bundle_from_mods(mods, observed)
 
 
 def _git_tree(repo: Path, revision: str) -> str:
@@ -147,6 +182,19 @@ def _extract_archive(repo: Path, revision: str, dest: Path) -> None:
         for member in tf.getmembers():
             _validate_tar_member(member, dest)
             tf.extract(member, path=dest, set_attrs=False, filter="data")
+
+
+def _overlay_live_module_closure(dest: Path, *, live_root: Path = REPO_ROOT) -> None:
+    """Pre-land D2: overlay eleven-module closure from live tree onto archived snapshot."""
+    import shutil
+
+    for rel in MODULE_REL_PATHS.values():
+        src = (live_root / rel).resolve()
+        if not src.is_file():
+            raise ImportFacadeError(f"live_module_missing:{rel}")
+        out = dest / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, out)
 
 
 def _pkg_paths(items: list[tuple[str, ModuleType]]) -> dict[str, object]:
@@ -242,17 +290,16 @@ def signed_utility_fixed_state_session(
             tmp = tempfile.TemporaryDirectory(prefix="su_fs_snap_")
             snap = Path(tmp.name).resolve()
             _extract_archive(repo, revision, snap)
+            _overlay_live_module_closure(snap, live_root=REPO_ROOT)
             observed = verify_expected_sha256_by_module(expected_sha256_by_module, repo_root=snap)
             path_list[:] = [str(snap), *[p for p in pre_path if Path(p).resolve() != snap]]
             _purge_names({k for k in sys.modules if k == "calm" or k.startswith("calm.")})
             mods: dict[str, ModuleType] = {}
             for key in _LOAD_ORDER:
                 mods[key] = _load_verified(MODULE_IMPORT_NAMES[key], observed[key][1])
+            base = _bundle_from_mods(mods, observed)
             yield SessionBundle(
-                reducers=mods["reducers"], schema=mods["schema"], pin_validation=mods["pin_validation"],
-                driver=mods["driver"], facade=mods["facade"],
-                observed_sha256_by_module={k: observed[k][0] for k in MODULE_REL_PATHS},
-                verified_paths_by_module={k: str(observed[k][1]) for k in MODULE_REL_PATHS},
+                **{f.name: getattr(base, f.name) for f in ModuleBundle.__dataclass_fields__.values()},
                 snapshot_root=snap,
             )
         except BaseException as e:
@@ -271,6 +318,7 @@ def signed_utility_fixed_state_session(
 
 __all__ = [
     "CLEAN_REVISION_PIN", "CLEAN_TREE_PIN", "DRIFTED_TRANSITIVE_PROOF_SET", "FACADE_REASON",
+    "HISTORICAL_D1_R2_CLEAN_REVISION", "HISTORICAL_D1_R2_CLEAN_TREE",
     "ImportFacadeError", "MODULE_IMPORT_NAMES", "MODULE_REL_PATHS", "ModuleBundle", "REPO_ROOT",
     "SessionBundle", "load_signed_utility_fixed_state_modules", "signed_utility_fixed_state_session",
     "verify_expected_sha256_by_module",
