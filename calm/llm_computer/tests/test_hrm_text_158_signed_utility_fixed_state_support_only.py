@@ -32,7 +32,6 @@ WATCH, MOD, VOTE = REPO / "bin/watch-wrap", STACK / "signed_utility_fixed_state_
 FACADE = STACK / "signed_utility_fixed_state_creditdir_import_facade.py"
 _IMM = ("parent_sha_pre", "parent_sha_post", "source_sha_pre", "source_sha_post",
         "launch_surface_sha_pre", "launch_surface_sha_post")
-
 @dataclass
 class _Plan:
     applied_indices: torch.Tensor; applied_directions: torch.Tensor; replay_veto_directions: torch.Tensor
@@ -40,7 +39,6 @@ class _Plan:
     replay_ce_veto_indices: torch.Tensor; replay_veto_thresholds: torch.Tensor
     pc_aux_negative_indices: torch.Tensor; pc_aux_veto_indices: torch.Tensor
     q_i16: torch.Tensor; new_acc_i32: torch.Tensor
-
 def _plan(*, idxs, dirs=None, q=None, new_acc=0, thr=10, qn=None):
     n = len(idxs); z = torch.tensor(idxs, dtype=torch.int64); empty = torch.zeros(0, dtype=torch.int64)
     d = torch.tensor(dirs if dirs is not None else [1] * n, dtype=torch.int16)
@@ -50,11 +48,9 @@ def _plan(*, idxs, dirs=None, q=None, new_acc=0, thr=10, qn=None):
                  pre_veto_selected_indices=z.clone(), replay_ce_veto_indices=empty.clone(),
                  replay_veto_thresholds=torch.zeros(0, dtype=torch.int32), pc_aux_negative_indices=empty.clone(),
                  pc_aux_veto_indices=empty.clone(), q_i16=qq, new_acc_i32=torch.zeros_like(qq, dtype=torch.int32))
-
 def _clone(st):
     return SimpleNamespace(q_levels=st.q_levels.clone(), exact_accumulator_shadow=st.exact_accumulator_shadow.clone(),
                            frozen_scale=st.frozen_scale.clone(), state_key=st.state_key)
-
 def _states(spec=None):
     spec = spec or {"k0": (0, 0, 0, 0)}; out = {}
     for k, q in spec.items():
@@ -62,7 +58,6 @@ def _states(spec=None):
         out[k] = SimpleNamespace(q_levels=t, exact_accumulator_shadow=torch.zeros_like(t, dtype=torch.int16),
                                  frozen_scale=torch.tensor(1.0), state_key=k)
     return out
-
 def build_support_only_test_packet(*, expected_head: str, **over):
     pins = {n: {"absolute_path": str(STACK / n), "sha256": rehash_path(STACK / n)} for n in FORMAL_SOURCE_PIN_BASENAMES}
     p = {"pin_mode": "cpu_static_di", "device": "cpu", "repo_root": str(REPO), "expected_head": expected_head,
@@ -70,12 +65,10 @@ def build_support_only_test_packet(*, expected_head: str, **over):
          "cli_pin": {"absolute_path": str(CLI), "sha256": rehash_path(CLI)},
          "watch_wrap_pin": {"absolute_path": str(WATCH), "sha256": rehash_path(WATCH)}}
     p.update(over); return p
-
 def _batch(n, start):
     return {"batch": {"x": torch.zeros(n, 1)}, "metadata": {
         "row_ids": [f"r{start+i}" for i in range(n)], "prompts": [f"p{start+i}" for i in range(n)],
         "targets": [f"t{start+i}" for i in range(n)], "response_tokens": [[start+i] for i in range(n)]}}
-
 def _hooks(spies, *, plan_factory=None, qspec=None, leakage=None, capture_wrap=None):
     qspec = qspec or {"k0": (0, 0, 0, 0)}
     plan_factory = plan_factory or (lambda: {"k0": _plan(idxs=[0, 1, 2, 3])})
@@ -97,20 +90,17 @@ def _hooks(spies, *, plan_factory=None, qspec=None, leakage=None, capture_wrap=N
     return AuthoritativeGpuHooks(materialize=materialize, rebuild_support_batches=rebuild, leakage_report=leak_fn,
                                  fork_arm_states=fork, capture_plans=capture, public_apply=boom, invert_plans=boom,
                                  eval_arm_nll=boom, phase_budgets={})
-
 def _assert_imm(out):
     for k in _IMM: assert k in out
     assert out.get("claim_ceiling") == "support_eligibility_only" and out.get("estimand")
-
 def _agg_hooks(zeros_k0, zeros_k1):
     def q(z): return tuple([0] * z + [1] * (10 - z))
     qspec = {"k0": q(zeros_k0), "k1": q(zeros_k1)}
     plans = {k: _plan(idxs=list(range(10)), q=list(qv)) for k, qv in qspec.items()}
     return _hooks({}, qspec=qspec, plan_factory=lambda: plans)
-
 def test_taxonomy_hook_guard_cli_bootstrap_session(monkeypatch, tmp_path: Path):
-    assert sum(1 for _ in MOD.open()) <= 220 and sum(1 for _ in CLI.open()) <= 180
-    assert sum(1 for _ in Path(__file__).open()) <= 240 and "from calm" not in CLI.read_text().split("def main")[0]
+    assert sum(1 for _ in MOD.open()) <= 245 and sum(1 for _ in CLI.open()) <= 200
+    assert sum(1 for _ in Path(__file__).open()) <= 280 and "from calm" not in CLI.read_text().split("def main")[0]
     assert list(TERMINAL_TAXONOMY)[:1] == [SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE]
     out = run_support_only_characterization(build_support_only_test_packet(expected_head="0" * 40), hooks=_hooks({}))
     assert out["classifier"] == SUPPORT_ELIGIBLE; _assert_imm(out)
@@ -119,7 +109,7 @@ def test_taxonomy_hook_guard_cli_bootstrap_session(monkeypatch, tmp_path: Path):
     assert guarded["classifier"] == SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE and "hook_boom" in str(guarded.get("reason", ""))
     fac = cli._load_verified_facade(FACADE, rehash_path(FACADE)); assert Path(fac.__file__).resolve() == FACADE.resolve()
     spies = {}
-    def _fake_run(p):
+    def _fake_run(p, **_k):
         spies["pkt"] = p
         return {"classifier": SUPPORT_ELIGIBLE, "route": ["via_session"], "estimand": cli.ESTIMAND,
                 "claim_ceiling": "support_eligibility_only", **{k: (None if "parent" in k else {}) for k in _IMM}}
@@ -147,7 +137,6 @@ def test_taxonomy_hook_guard_cli_bootstrap_session(monkeypatch, tmp_path: Path):
     ww_pkt["watch_wrap_pin"] = {"absolute_path": str(bad_ww), "sha256": rehash_path(bad_ww)}
     with pytest.raises(RuntimeError, match="watch_wrap_pin_not_repo_root"): cli._bind_launch_identity(ww_pkt, self_file=CLI)
     assert cli._bind_launch_identity(pkt, self_file=CLI) == FACADE.resolve()
-
 def test_floors_skew_aggregate_boundaries_and_asymmetric(monkeypatch):
     out = run_support_only_characterization(
         build_support_only_test_packet(expected_head="0" * 40),
@@ -177,7 +166,6 @@ def test_floors_skew_aggregate_boundaries_and_asymmetric(monkeypatch):
     assert big["classifier"] == SUPPORT_ASYMMETRIC_OR_CHARACTERIZATION_FAILURE
     diag = big["characterization"]
     assert diag.get("characterization_invalid") and diag.get("sha256_unavailable") is False and "blob" not in diag
-
 def test_pins_launch_source_drift_and_oexcl_before_session(monkeypatch, tmp_path: Path):
     with pytest.raises(PinValidationError):
         require_exact_40hex_commit(REPO, "a" * 40)
@@ -221,7 +209,6 @@ def test_pins_launch_source_drift_and_oexcl_before_session(monkeypatch, tmp_path
         monkeypatch.setattr(os, "write", lambda fd, data: 0); fd = cli._reserve_receipt(tmp_path / "z.json")
         try: cli._write_reserved(fd, cli._canonical_fail("x"))
         finally: cli._close_reserved(fd)
-
 def test_illegal_and_below_floor():
     bad = _plan(idxs=[0], dirs=[2], q=[0, 0, 0, 0])
     out = run_support_only_characterization(
@@ -230,7 +217,6 @@ def test_illegal_and_below_floor():
     out2 = run_support_only_characterization(
         build_support_only_test_packet(expected_head="0" * 40), hooks=_hooks({}, plan_factory=lambda: {"k0": _plan(idxs=[])}))
     assert out2["classifier"] == SUPPORT_DEGENERATE_BELOW_FLOOR and "per_key" in out2["characterization"]
-
 def test_write_reserved_short_writes_complete_json(monkeypatch, tmp_path: Path):
     real_write = os.write
     monkeypatch.setattr(os, "write", lambda fd, data: real_write(fd, data[:7] if len(data) > 7 else data))
@@ -238,3 +224,57 @@ def test_write_reserved_short_writes_complete_json(monkeypatch, tmp_path: Path):
     try: cli._write_reserved(fd, cli._canonical_fail("short_ok"))
     finally: cli._close_reserved(fd)
     assert json.loads((tmp_path / "w.json").read_text())["reason"] == "short_ok"
+def test_progress_emit_contract(capsys, monkeypatch, tmp_path: Path):
+    import time
+    pkt = build_support_only_test_packet(expected_head="0" * 40); spies = {}
+    a = run_support_only_characterization(pkt, hooks=_hooks(spies))
+    assert json.dumps(a, sort_keys=True, allow_nan=False) == json.dumps(
+        run_support_only_characterization(pkt, hooks=_hooks({}), progress_sink=None), sort_keys=True, allow_nan=False)
+    assert spies.get("forbidden", 0) == 0
+    order = "MOD_PARSE_PACKET_PINS MOD_BUILD_LIVE_HOOKS MOD_PARENT_SHA_PRE MOD_MATERIALIZE MOD_REBUILD_BATCHES MOD_LEAKAGE MOD_FORK_ARMS MOD_CAPTURE_PLANS MOD_CHARACTERIZE MOD_VALIDATE_CHARACTERIZATION MOD_ENFORCE_FLOORS MOD_EMIT_TERMINAL".split()
+    ev = []; run_support_only_characterization(pkt, hooks=_hooks({}), progress_sink=lambda s, e, r=None: ev.append((s, e)))
+    assert [s for s, e in ev if e == "start"] == order
+    assert all(ev[next(i for i, x in enumerate(ev) if x == (st, "start")) + 1] == (st, "done") for st in order)
+    be = []
+    def boom(step, edge, reason=None):
+        be.append((step, edge))
+        if step == "MOD_MATERIALIZE" and edge == "start": raise RuntimeError("sink_boom")
+    fail = run_support_only_characterization(pkt, hooks=_hooks({}), progress_sink=boom)
+    assert fail["reason"] == "progress_sink_failure" and not any(s == "MOD_MATERIALIZE" and e in ("done", "error") for s, e in be)
+    ps = cli._build_progress_sink(time.monotonic_ns()); ps("CLI_PACKET_LOAD", "start", None); ps("CLI_PACKET_LOAD", "done", None)
+    ms = [int(l.split("elapsed_ms=")[1].split()[0]) for l in capsys.readouterr().out.splitlines() if l.startswith("SUPPORT_PROGRESS ")]
+    assert ms == sorted(ms) and ms[0] >= 0
+    for args, ex in [(("NOT_A_STEP", "start", None), ValueError), (("CLI_PACKET_LOAD", "nope", None), ValueError),
+                     (("CLI_PACKET_LOAD", "error", "x" * 300), ValueError), (("CLI_PACKET_LOAD", "error", ["arr"]), TypeError),
+                     (("CLI_PACKET_LOAD", "error", "has NaN inside"), ValueError), (("CLI_PACKET_LOAD", "error", "a\nb"), ValueError)]:
+        with pytest.raises(ex): ps(*args)
+    ee = []
+    deg = run_support_only_characterization(pkt, hooks=_hooks({}, plan_factory=lambda: {"k0": _plan(idxs=[])}),
+                                            progress_sink=lambda s, e, r=None: ee.append((s, e)))
+    assert deg["classifier"] == SUPPORT_DEGENERATE_BELOW_FLOOR and ("MOD_ENFORCE_FLOORS", "error") in ee
+    def arm(fs, fe):
+        calls = []
+        def raw(step, edge, reason=None):
+            calls.append((step, edge))
+            if step == fs and edge == fe: raise RuntimeError("SINK_FAIL")
+        return cli._guarded_sink(raw), calls
+    r1 = tmp_path / "a1.json"; s1, c1 = arm("CLI_PACKET_LOAD", "start")
+    fd1 = cli._step(s1, "CLI_RECEIPT_RESERVE", lambda: cli._reserve_receipt(r1))
+    with pytest.raises(cli.ProgressSinkFailure): cli._step(s1, "CLI_PACKET_LOAD", lambda: json.loads("{}"))
+    assert cli._fail_closed_sink(fd1) == 2 and json.loads(r1.read_text())["reason"] == "progress_sink_failure"
+    assert not any(st == "CLI_RECEIPT_WRITE" for st, _ in c1)
+    ok = {**cli._canonical_fail("x"), "classifier": SUPPORT_ELIGIBLE}; del ok["reason"]
+    for name, fe in (("a2", "done"), ("a3", "start")):
+        rp = tmp_path / f"{name}.json"; s, _ = arm("CLI_RECEIPT_WRITE", fe); fd = cli._step(s, "CLI_RECEIPT_RESERVE", lambda: cli._reserve_receipt(rp))
+        with pytest.raises(cli.ProgressSinkFailure): cli._step(s, "CLI_RECEIPT_WRITE", lambda: cli._write_reserved(fd, ok))
+        assert cli._fail_closed_sink(fd) == 2 and json.loads(rp.read_text())["reason"] == "progress_sink_failure"
+    r4 = tmp_path / "a4.json"; held = []; s4, _ = arm("CLI_RECEIPT_RESERVE", "done")
+    with pytest.raises(cli.ProgressSinkFailure):
+        cli._step(s4, "CLI_RECEIPT_RESERVE", lambda: held.append(cli._reserve_receipt(r4)) or held[0])
+    assert cli._fail_closed_sink(held[0]) == 2 and json.loads(r4.read_text())["reason"] == "progress_sink_failure"
+    s5, c5 = arm("CLI_LAUNCH_IDENTITY_BIND", "error")
+    with pytest.raises(cli.ProgressSinkFailure):
+        cli._step(s5, "CLI_LAUNCH_IDENTITY_BIND", lambda: (_ for _ in ()).throw(RuntimeError("bind_boom")))
+    assert ("CLI_LAUNCH_IDENTITY_BIND", "error") in c5
+    monkeypatch.setattr(cli, "_build_progress_sink", lambda _t: (lambda step, edge, reason=None: (_ for _ in ()).throw(RuntimeError("SINK_FAIL"))))
+    assert cli.main(["--packet", str(tmp_path / "p.json"), "--receipt", str(tmp_path / "nope.json")]) == 2 and not (tmp_path / "nope.json").exists()

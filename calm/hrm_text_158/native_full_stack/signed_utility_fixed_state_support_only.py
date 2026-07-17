@@ -1,8 +1,8 @@
-"""Support-only characterization orchestrator (D2c9). Stops before apply/parity/NLL."""
+"""Support-only characterization orchestrator (D2c9/D2c10). Stops before apply/parity/NLL."""
 from __future__ import annotations
 import hashlib, json, re, subprocess
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_authoritative_gpu import (
     AuthoritativeGpuError, AuthoritativeGpuHooks, build_live_hooks,
 )
@@ -28,7 +28,19 @@ SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE = "SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE
 TERMINAL_TAXONOMY = (
     SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, SUPPORT_ASYMMETRIC_OR_CHARACTERIZATION_FAILURE,
     SUPPORT_DEGENERATE_BELOW_FLOOR, SUPPORT_ELIGIBLE)
+ProgressEmit = Callable[[str, str, str | None], None]
 class SupportOnlyError(RuntimeError): pass
+class _ProgressSinkFailure(Exception): pass
+def _progress(sink: ProgressEmit | None, step: str, edge: str, reason: str | None = None) -> None:
+    if sink is None: return
+    try: sink(step, edge, reason)
+    except Exception as exc: raise _ProgressSinkFailure from exc
+def _traced(sink, step, fn):
+    _progress(sink, step, "start")
+    try: out = fn(); _progress(sink, step, "done"); return out
+    except _ProgressSinkFailure: raise
+    except Exception as exc:
+        _progress(sink, step, "error", f"{type(exc).__name__}:{exc}"); raise
 def require_exact_40hex_commit(repo_root: str | Path, expected_head: str) -> str:
     head = str(expected_head)
     if not _HEAD_RE.fullmatch(head): raise PinValidationError(f"expected_head_not_40hex:{head}")
@@ -120,16 +132,16 @@ def _immutability_ok(parent_pre, parent_post, source_pre, source_post, launch_pr
     if dict(source_post or {}) != dict(source_pre or {}): return "source_sha_drift"
     if dict(launch_post or {}) != dict(launch_pre or {}): return "launch_surface_sha_drift"
     return None
-def run_support_only_characterization(packet: Mapping[str, Any], *, hooks: AuthoritativeGpuHooks | None = None) -> dict[str, Any]:
+def run_support_only_characterization(packet: Mapping[str, Any], *, hooks: AuthoritativeGpuHooks | None = None,
+                                      progress_sink: ProgressEmit | None = None) -> dict[str, Any]:
     if not isinstance(packet, Mapping): raise SupportOnlyError("packet_not_mapping")
-    route: list[str] = []; parent_pre = None; parent_path = None; characterization = None
+    route: list[str] = []; parent_pre = None; parent_path = None; characterization = None; box: dict[str, Any] = {}
     source_pre = _source_sha_map(packet); launch_pre = _launch_sha_map(packet)
     source_post, launch_post = dict(source_pre), dict(launch_pre)
     def term(*, classifier, reason=None, characterization=None, extra=None, parent_post=None):
-        return _terminal(
-            classifier=classifier, route=route, reason=reason, parent_pre=parent_pre, parent_post=parent_post,
-            source_pre=source_pre, source_post=source_post, launch_pre=launch_pre, launch_post=launch_post,
-            characterization=characterization, extra=extra)
+        return _terminal(classifier=classifier, route=route, reason=reason, parent_pre=parent_pre,
+                         parent_post=parent_post, source_pre=source_pre, source_post=source_post,
+                         launch_pre=launch_pre, launch_post=launch_post, characterization=characterization, extra=extra)
     def finish(classifier, *, reason=None, characterization=None, extra=None, revalidate_pins=False):
         nonlocal source_post, launch_post
         parent_post, source_post, launch_post = _rehash_all(packet, parent_path)
@@ -138,78 +150,96 @@ def run_support_only_characterization(packet: Mapping[str, Any], *, hooks: Autho
             return term(classifier=SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason=drift,
                         characterization=characterization, extra=extra, parent_post=parent_post)
         if revalidate_pins:
-            try:
-                validate_proof_packet_source_pins(packet); validate_launch_surface_pins(packet)
+            try: validate_proof_packet_source_pins(packet); validate_launch_surface_pins(packet)
             except PinValidationError as exc:
                 return term(classifier=SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason=str(exc),
                             characterization=characterization, extra=extra, parent_post=parent_post)
-        return term(classifier=classifier, reason=reason, characterization=characterization,
-                    extra=extra, parent_post=parent_post)
+        return term(classifier=classifier, reason=reason, characterization=characterization, extra=extra, parent_post=parent_post)
+    INT = SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE
     try:
-        _validate_packet(packet); route.append("parse_packet_live_rehash_pins")
-        source_pre = _source_sha_map(packet); launch_pre = _launch_sha_map(packet)
-        source_post, launch_post = dict(source_pre), dict(launch_pre)
-    except PinValidationError as exc:
-        source_post, launch_post = _source_sha_map(packet), _launch_sha_map(packet)
-        return term(classifier=SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason=str(exc))
-    mode = str(packet.get("pin_mode") or "formal")
-    if hooks is not None and mode != "cpu_static_di":
-        return finish(SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason="hooks_require_pin_mode_cpu_static_di")
-    try:
-        h = hooks if hooks is not None else build_live_hooks(packet)
+        try:
+            _traced(progress_sink, "MOD_PARSE_PACKET_PINS", lambda: _validate_packet(packet))
+            route.append("parse_packet_live_rehash_pins")
+            source_pre = _source_sha_map(packet); launch_pre = _launch_sha_map(packet)
+            source_post, launch_post = dict(source_pre), dict(launch_pre)
+        except PinValidationError as exc:
+            source_post, launch_post = _source_sha_map(packet), _launch_sha_map(packet)
+            return term(classifier=INT, reason=str(exc))
+        if hooks is not None and str(packet.get("pin_mode") or "formal") != "cpu_static_di":
+            return finish(INT, reason="hooks_require_pin_mode_cpu_static_di")
+        h = _traced(progress_sink, "MOD_BUILD_LIVE_HOOKS", lambda: hooks if hooks is not None else build_live_hooks(packet))
         parent = packet.get("parent_checkpoint") or {}
         if "absolute_path" not in parent or "sha256" not in parent:
-            return finish(SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason="parent_checkpoint_missing")
-        parent_path = parent["absolute_path"]; parent_pre = rehash_path(parent_path)
-        if parent_pre != str(parent["sha256"]):
-            return finish(SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason="parent_sha_mismatch",
-                          extra={"expected": parent["sha256"]})
-        route.append("parent_sha_pre_materialize")
-        bundle = h.materialize(packet); batches = h.rebuild_support_batches(bundle); leak = h.leakage_report(batches)
-        route.append("rebuild_support_batches_bind_leakage")
-        if leak.get("pass") is not True:
-            return finish(SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason="leakage_overlap",
-                          extra={"leakage": leak}, revalidate_pins=True)
-        arms = h.fork_arm_states(bundle)
-        if "capture_disposable" not in arms or "prod" not in arms:
-            return finish(SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason="fork_arms_missing", revalidate_pins=True)
-        route.append("fork_clones_from_materialized_base")
-        plans, _cs, holder_calls = h.capture_plans(bundle, arms)
-        if holder_calls != 1:
-            return finish(SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason="holder_call_count",
-                          extra={"calls": holder_calls}, revalidate_pins=True)
-        route.append("capture_backward_vote")
+            return finish(INT, reason="parent_checkpoint_missing")
+        def _parent():
+            nonlocal parent_path, parent_pre
+            parent_path = parent["absolute_path"]; parent_pre = rehash_path(parent_path)
+            if parent_pre != str(parent["sha256"]): raise SupportOnlyError("parent_sha_mismatch")
+            route.append("parent_sha_pre_materialize")
+        try: _traced(progress_sink, "MOD_PARENT_SHA_PRE", _parent)
+        except SupportOnlyError:
+            return finish(INT, reason="parent_sha_mismatch", extra={"expected": parent["sha256"]})
+        bundle = _traced(progress_sink, "MOD_MATERIALIZE", lambda: h.materialize(packet))
+        batches = _traced(progress_sink, "MOD_REBUILD_BATCHES", lambda: h.rebuild_support_batches(bundle))
+        def _leak():
+            box["leak"] = h.leakage_report(batches); route.append("rebuild_support_batches_bind_leakage")
+            if box["leak"].get("pass") is not True: raise SupportOnlyError("leakage_overlap")
+        try: _traced(progress_sink, "MOD_LEAKAGE", _leak)
+        except SupportOnlyError:
+            return finish(INT, reason="leakage_overlap", extra={"leakage": box.get("leak")}, revalidate_pins=True)
+        def _fork():
+            arms = h.fork_arm_states(bundle)
+            if "capture_disposable" not in arms or "prod" not in arms: raise SupportOnlyError("fork_arms_missing")
+            route.append("fork_clones_from_materialized_base"); return arms
+        try: arms = _traced(progress_sink, "MOD_FORK_ARMS", _fork)
+        except SupportOnlyError:
+            return finish(INT, reason="fork_arms_missing", revalidate_pins=True)
+        def _cap():
+            plans, _cs, hc = h.capture_plans(bundle, arms); box["hc"] = hc
+            if hc != 1: raise SupportOnlyError("holder_call_count")
+            route.append("capture_backward_vote"); return plans
+        try: plans = _traced(progress_sink, "MOD_CAPTURE_PLANS", _cap)
+        except SupportOnlyError:
+            return finish(INT, reason="holder_call_count", extra={"calls": box.get("hc")}, revalidate_pins=True)
         try:
-            _f, characterization = characterize_plans_bidirectional_legal(arms["prod"], plans)
+            def _char():
+                nonlocal characterization
+                _f, characterization = characterize_plans_bidirectional_legal(arms["prod"], plans)
+                route.append("characterize_plans_bidirectional_legal")
+            _traced(progress_sink, "MOD_CHARACTERIZE", _char)
         except LegalSubsetError as exc:
             return finish(SUPPORT_ASYMMETRIC_OR_CHARACTERIZATION_FAILURE, reason=str(exc), revalidate_pins=True)
-        route.append("characterize_plans_bidirectional_legal")
         try:
-            assert_compact_json_nbytes(characterization, limit=MAX_COMPACT_TELEMETRY_BYTES, label="characterization")
-            if payload_has_raw_index_arrays(characterization): raise SupportOnlyError("raw_index_arrays_forbidden")
-            json.dumps(characterization, allow_nan=False, separators=(",", ":"), sort_keys=True)
+            def _val():
+                assert_compact_json_nbytes(characterization, limit=MAX_COMPACT_TELEMETRY_BYTES, label="characterization")
+                if payload_has_raw_index_arrays(characterization): raise SupportOnlyError("raw_index_arrays_forbidden")
+                json.dumps(characterization, allow_nan=False, separators=(",", ":"), sort_keys=True)
+                route.append("emit_complete_compact_characterization")
+            _traced(progress_sink, "MOD_VALIDATE_CHARACTERIZATION", _val)
+        except _ProgressSinkFailure: raise
         except Exception as exc:  # noqa: BLE001
             return finish(SUPPORT_ASYMMETRIC_OR_CHARACTERIZATION_FAILURE,
                           reason=f"characterization_invalid:{type(exc).__name__}:{exc}",
                           characterization=characterization, revalidate_pins=True)
-        route.append("emit_complete_compact_characterization")
-        try: enforce_legal_subset_support_floors(characterization)
+        try:
+            def _floors():
+                enforce_legal_subset_support_floors(characterization); route.append("enforce_legal_subset_support_floors")
+            _traced(progress_sink, "MOD_ENFORCE_FLOORS", _floors)
         except LegalSubsetError as exc:
             route.append("enforce_legal_subset_support_floors")
-            return finish(SUPPORT_DEGENERATE_BELOW_FLOOR, reason=str(exc),
-                          characterization=characterization, revalidate_pins=True)
-        route.append("enforce_legal_subset_support_floors"); route.append("emit_support_only_terminal")
-        return finish(SUPPORT_ELIGIBLE, characterization=characterization, extra={"leakage_pass": True},
-                      revalidate_pins=True)
+            return finish(SUPPORT_DEGENERATE_BELOW_FLOOR, reason=str(exc), characterization=characterization, revalidate_pins=True)
+        def _term_ok():
+            route.append("emit_support_only_terminal")
+            return finish(SUPPORT_ELIGIBLE, characterization=characterization, extra={"leakage_pass": True}, revalidate_pins=True)
+        return _traced(progress_sink, "MOD_EMIT_TERMINAL", _term_ok)
+    except _ProgressSinkFailure:
+        return finish(INT, reason="progress_sink_failure", characterization=characterization, revalidate_pins=False)
     except (PinValidationError, AuthoritativeGpuError, SupportOnlyError) as exc:
-        return finish(SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason=str(exc),
-                      characterization=characterization, revalidate_pins=False)
+        return finish(INT, reason=str(exc), characterization=characterization, revalidate_pins=False)
     except Exception as exc:  # noqa: BLE001
-        return finish(SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE, reason=f"{type(exc).__name__}:{exc}",
-                      characterization=characterization, revalidate_pins=False)
+        return finish(INT, reason=f"{type(exc).__name__}:{exc}", characterization=characterization, revalidate_pins=False)
 __all__ = [
     "SUPPORT_ASYMMETRIC_OR_CHARACTERIZATION_FAILURE", "SUPPORT_DEGENERATE_BELOW_FLOOR", "SUPPORT_ELIGIBLE",
-    "SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE", "SUPPORT_ONLY_CALL_GRAPH", "TERMINAL_TAXONOMY",
-    "SupportOnlyError", "require_exact_40hex_commit", "run_support_only_characterization",
-    "validate_launch_surface_pins",
+    "SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE", "SUPPORT_ONLY_CALL_GRAPH", "TERMINAL_TAXONOMY", "ProgressEmit",
+    "SupportOnlyError", "require_exact_40hex_commit", "run_support_only_characterization", "validate_launch_surface_pins",
 ]

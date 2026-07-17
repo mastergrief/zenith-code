@@ -1,48 +1,37 @@
-"""Thin CLI: stdlib-only bootstrap → verified creditdir import facade session (D2c9)."""
+"""Thin CLI: stdlib-only bootstrap → verified creditdir import facade session (D2c9/D2c10)."""
 from __future__ import annotations
-import argparse, hashlib, importlib.util, json, os, sys
+import argparse, hashlib, importlib.util, json, os, sys, time
 from pathlib import Path
-from typing import Any, Mapping
-
+from typing import Any, Callable, Mapping
 ESTIMAND = "full_state_legal_subset_signed_direction_fixed_state_heldout_utility"
 SUPPORT_ELIGIBLE = "SUPPORT_ELIGIBLE"
 SUPPORT_INTEGRITY = "SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE"
-MAX_RESULT = 256 * 1024
+MAX_RESULT, REASON_MAX_B, LINE_MAX_B = 256 * 1024, 256, 512
 FACADE_BASENAME = "signed_utility_fixed_state_creditdir_import_facade.py"
 FACADE_REL = Path("calm/hrm_text_158/native_full_stack") / FACADE_BASENAME
 WATCH_REL = Path("bin/watch-wrap")
 WATCH_WRAP_HRM158_SHA256 = "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b"
-MODULE_BASENAME_TO_KEY = {
-    "signed_utility_fixed_state_reducers.py": "reducers",
-    "signed_utility_fixed_state_schema.py": "schema",
-    "signed_utility_fixed_state_pin_validation.py": "pin_validation",
-    "signed_utility_fixed_state_phase_telemetry.py": "phase_telemetry",
-    "signed_utility_fixed_state_integrity_proofs.py": "integrity_proofs",
-    "signed_utility_fixed_state_partition_leakage.py": "partition_leakage",
-    "signed_utility_fixed_state_arm_proofs.py": "arm_proofs",
-    "signed_utility_fixed_state_legal_subset.py": "legal_subset",
-    "signed_utility_fixed_state_eval_contract.py": "eval_contract",
-    "signed_utility_fixed_state_authoritative_gpu.py": "authoritative_gpu",
-    "signed_utility_fixed_state_support_only.py": "support_only",
-    "signed_utility_fixed_state_driver.py": "driver",
-    "signed_utility_fixed_state_facade.py": "facade",
-}
-
+PROGRESS_STEPS = frozenset(("CLI_RECEIPT_RESERVE CLI_PACKET_LOAD CLI_LAUNCH_IDENTITY_BIND CLI_FACADE_LOAD "
+    "CLI_VERIFIED_SESSION_ENTER CLI_MODULE_IDENTITY_CHECKS MOD_PARSE_PACKET_PINS MOD_BUILD_LIVE_HOOKS MOD_PARENT_SHA_PRE "
+    "MOD_MATERIALIZE MOD_REBUILD_BATCHES MOD_LEAKAGE MOD_FORK_ARMS MOD_CAPTURE_PLANS MOD_CHARACTERIZE "
+    "MOD_VALIDATE_CHARACTERIZATION MOD_ENFORCE_FLOORS MOD_EMIT_TERMINAL CLI_RECEIPT_WRITE").split())
+PROGRESS_EDGES = frozenset({"start", "done", "error"})
+_MOD_KEYS = ("reducers", "schema", "pin_validation", "phase_telemetry", "integrity_proofs", "partition_leakage",
+            "arm_proofs", "legal_subset", "eval_contract", "authoritative_gpu", "support_only", "driver", "facade")
+MODULE_BASENAME_TO_KEY = {f"signed_utility_fixed_state_{k}.py": k for k in _MOD_KEYS}
+ProgressEmit = Callable[[str, str, str | None], None]
+class ProgressSinkFailure(Exception): pass
 def _canonical_fail(reason: str) -> dict[str, Any]:
-    payload = {
-        "schema": "support_only_terminal_v1", "estimand": ESTIMAND, "classifier": SUPPORT_INTEGRITY,
-        "reason": reason, "route": [], "claim_ceiling": "support_eligibility_only",
-        "parent_sha_pre": None, "parent_sha_post": None, "source_sha_pre": {}, "source_sha_post": {},
-        "launch_surface_sha_pre": {}, "launch_surface_sha_post": {},
-    }
+    payload = {"schema": "support_only_terminal_v1", "estimand": ESTIMAND, "classifier": SUPPORT_INTEGRITY,
+               "reason": reason, "route": [], "claim_ceiling": "support_eligibility_only",
+               "parent_sha_pre": None, "parent_sha_post": None, "source_sha_pre": {}, "source_sha_post": {},
+               "launch_surface_sha_pre": {}, "launch_surface_sha_post": {}}
     blob = json.dumps(payload, allow_nan=False, separators=(",", ":"), sort_keys=True).encode()
     if len(blob) > MAX_RESULT: raise RuntimeError("canonical_fail_oversized")
     return payload
-
 def _reserve_receipt(path: Path) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     return os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-
 def _write_reserved(fd: int, payload: Mapping[str, Any]) -> None:
     blob = json.dumps(dict(payload), indent=2, allow_nan=False, sort_keys=True).encode() + b"\n"
     if len(blob) > MAX_RESULT: raise RuntimeError("result_oversized")
@@ -53,15 +42,14 @@ def _write_reserved(fd: int, payload: Mapping[str, Any]) -> None:
         if n <= 0: raise RuntimeError(f"receipt_write_zero_progress:{n}")
         off += n
     os.fsync(fd)
-
+def _rewrite_progress_sink_failure(fd: int) -> None:
+    os.ftruncate(fd, 0); os.lseek(fd, 0, os.SEEK_SET)
+    _write_reserved(fd, _canonical_fail("progress_sink_failure"))
 def _close_reserved(fd: int | None) -> None:
-    if fd is None: return
-    try: os.close(fd)
-    except OSError: pass
-
-def _sha(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
+    if fd is not None:
+        try: os.close(fd)
+        except OSError: pass
+def _sha(path: Path) -> str: return hashlib.sha256(path.read_bytes()).hexdigest()
 def _require_pin(pin: Any, *, label: str) -> tuple[Path, str]:
     if not isinstance(pin, Mapping) or "absolute_path" not in pin or "sha256" not in pin:
         raise RuntimeError(f"{label}_pin_requires_absolute_path_and_sha256")
@@ -70,7 +58,6 @@ def _require_pin(pin: Any, *, label: str) -> tuple[Path, str]:
     digest = _sha(path)
     if digest != str(pin["sha256"]): raise RuntimeError(f"{label}_pin_sha_mismatch:{digest}!={pin['sha256']}")
     return path, digest
-
 def _bind_launch_identity(packet: Mapping[str, Any], *, self_file: Path) -> Path:
     root = Path(str(packet.get("repo_root") or "")).resolve()
     if not root.is_dir(): raise RuntimeError(f"repo_root_missing:{root}")
@@ -92,7 +79,6 @@ def _bind_launch_identity(packet: Mapping[str, Any], *, self_file: Path) -> Path
     if ww_path != expected_ww: raise RuntimeError(f"watch_wrap_pin_not_repo_root:{ww_path}!={expected_ww}")
     if ww_sha != WATCH_WRAP_HRM158_SHA256: raise RuntimeError(f"watch_wrap_unexpected_sha:{ww_sha}")
     return facade_path
-
 def _load_verified_facade(path: Path, expected_sha: str):
     resolved = Path(path).resolve()
     if _sha(resolved) != expected_sha: raise RuntimeError(f"facade_sha_mismatch:{resolved}")
@@ -110,7 +96,6 @@ def _load_verified_facade(path: Path, expected_sha: str):
         if prev is None: sys.modules.pop(name, None)
         else: sys.modules[name] = prev
         raise
-
 def _expected_module_map(source_pins: Mapping[str, Any]) -> dict[str, str]:
     out: dict[str, str] = {}
     for key, pin in source_pins.items():
@@ -121,52 +106,95 @@ def _expected_module_map(source_pins: Mapping[str, Any]) -> dict[str, str]:
     if set(out) != set(MODULE_BASENAME_TO_KEY.values()):
         raise RuntimeError(f"module_pin_map_incomplete:{sorted(set(MODULE_BASENAME_TO_KEY.values()) - set(out))}")
     return out
-
-def _run_via_verified_session(packet: Mapping[str, Any], *, self_file: Path | None = None) -> dict[str, Any]:
-    self_path = Path(self_file or __file__).resolve()
-    facade_path = _bind_launch_identity(packet, self_file=self_path)
+def _build_progress_sink(t0_ns: int) -> ProgressEmit:
+    def sink(step: str, edge: str, reason: str | None = None) -> None:
+        if type(step) is not str or step not in PROGRESS_STEPS: raise ValueError(f"bad_step:{step!r}")
+        if type(edge) is not str or edge not in PROGRESS_EDGES: raise ValueError(f"bad_edge:{edge!r}")
+        if reason is not None:
+            if type(reason) is not str: raise TypeError("reason_not_str")
+            if "\n" in reason or "\r" in reason: raise ValueError("reason_has_newline")
+            rb = reason.encode("utf-8")
+            if len(rb) > REASON_MAX_B or b"NaN" in rb or b"Infinity" in rb: raise ValueError("reason_invalid")
+        elapsed_ms = (time.monotonic_ns() - t0_ns) // 1_000_000
+        if type(elapsed_ms) is not int or elapsed_ms < 0: raise ValueError("elapsed_ms_invalid")
+        line = f"SUPPORT_PROGRESS step={step} edge={edge} elapsed_ms={elapsed_ms}" + (f" reason={reason}" if reason is not None else "")
+        lb = line.encode("utf-8")
+        if len(lb) > LINE_MAX_B or b"NaN" in lb or b"Infinity" in lb: raise ValueError("line_invalid")
+        print(line, flush=True)
+    return sink
+def _guarded_sink(raw: ProgressEmit) -> ProgressEmit:
+    dead = False
+    def sink(step: str, edge: str, reason: str | None = None) -> None:
+        nonlocal dead
+        if dead: raise ProgressSinkFailure("progress_sink_dead")
+        try: raw(step, edge, reason)
+        except Exception as exc: dead = True; raise ProgressSinkFailure from exc
+    return sink
+def _step(sink: ProgressEmit | None, step: str, fn):
+    if sink is not None: sink(step, "start", None)
+    try: out = fn()
+    except Exception as exc:
+        if sink is not None: sink(step, "error", f"{type(exc).__name__}:{exc}")
+        raise
+    if sink is not None: sink(step, "done", None)
+    return out
+def _run_via_verified_session(packet: Mapping[str, Any], *, self_file: Path | None = None, progress_sink: ProgressEmit | None = None) -> dict[str, Any]:
+    s, self_path = progress_sink, Path(self_file or __file__).resolve()
+    facade_path = _step(s, "CLI_LAUNCH_IDENTITY_BIND", lambda: _bind_launch_identity(packet, self_file=self_path))
     pins = packet["source_pins"]
-    facade_pin = next(pin for pin in pins.values()
-                      if isinstance(pin, Mapping) and Path(str(pin.get("absolute_path", ""))).resolve() == facade_path)
-    facade = _load_verified_facade(facade_path, str(facade_pin["sha256"]))
-    with facade.signed_utility_fixed_state_session(_expected_module_map(pins)) as bundle:
-        so_path = Path(bundle.verified_paths_by_module["support_only"]).resolve()
-        ag_path = Path(bundle.verified_paths_by_module["authoritative_gpu"]).resolve()
-        if Path(bundle.support_only.__file__).resolve() != so_path: raise RuntimeError("support_only_identity_mismatch")
-        if Path(bundle.authoritative_gpu.__file__).resolve() != ag_path: raise RuntimeError("authoritative_gpu_identity_mismatch")
-        return bundle.support_only.run_support_only_characterization(packet)
-
+    facade_pin = next(pin for pin in pins.values() if isinstance(pin, Mapping) and Path(str(pin.get("absolute_path", ""))).resolve() == facade_path)
+    facade = _step(s, "CLI_FACADE_LOAD", lambda: _load_verified_facade(facade_path, str(facade_pin["sha256"])))
+    if s is not None: s("CLI_VERIFIED_SESSION_ENTER", "start", None)
+    try: cm = facade.signed_utility_fixed_state_session(_expected_module_map(pins)); bundle = cm.__enter__()
+    except Exception as exc:
+        if s is not None: s("CLI_VERIFIED_SESSION_ENTER", "error", f"{type(exc).__name__}:{exc}")
+        raise
+    try:
+        if s is not None: s("CLI_VERIFIED_SESSION_ENTER", "done", None)
+        def _ident():
+            so_p = Path(bundle.verified_paths_by_module["support_only"]).resolve(); ag_p = Path(bundle.verified_paths_by_module["authoritative_gpu"]).resolve()
+            if Path(bundle.support_only.__file__).resolve() != so_p: raise RuntimeError("support_only_identity_mismatch")
+            if Path(bundle.authoritative_gpu.__file__).resolve() != ag_p: raise RuntimeError("authoritative_gpu_identity_mismatch")
+        _step(s, "CLI_MODULE_IDENTITY_CHECKS", _ident)
+        return bundle.support_only.run_support_only_characterization(packet, progress_sink=s)
+    finally: cm.__exit__(*sys.exc_info())
+def _fail_closed_sink(fd: int | None) -> int:
+    if fd is not None:
+        try: _rewrite_progress_sink_failure(fd)
+        except Exception: pass  # noqa: BLE001
+        _close_reserved(fd)
+    print("SUPPORT_FAIL progress_sink_failure", file=sys.stderr, flush=True); print(SUPPORT_INTEGRITY, flush=True); return 2
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hrm_text_158_signed_utility_support_only_characterization")
     parser.add_argument("--packet", required=True); parser.add_argument("--receipt", required=True)
-    args = parser.parse_args(argv)
-    receipt = Path(args.receipt); print("SUPPORT_BEGIN", flush=True)
-    fd = None
-    try:
-        fd = _reserve_receipt(receipt)
+    args = parser.parse_args(argv); receipt = Path(args.receipt); print("SUPPORT_BEGIN", flush=True)
+    sink = _guarded_sink(_build_progress_sink(time.monotonic_ns())); fd = None; held: list[int] = []
+    try: fd = _step(sink, "CLI_RECEIPT_RESERVE", lambda: held.append(_reserve_receipt(receipt)) or held[0])
     except FileExistsError:
         print("SUPPORT_FAIL oexcl_collision", file=sys.stderr, flush=True); return 2
+    except ProgressSinkFailure: return _fail_closed_sink(held[0] if held else None)
     except Exception as exc:  # noqa: BLE001
         print(f"SUPPORT_FAIL receipt_reserve:{exc}", file=sys.stderr, flush=True); return 2
     try:
-        try:
-            packet = json.loads(Path(args.packet).read_text(encoding="utf-8"))
+        try: packet = _step(sink, "CLI_PACKET_LOAD", lambda: json.loads(Path(args.packet).read_text(encoding="utf-8")))
+        except ProgressSinkFailure: return _fail_closed_sink(fd)
         except Exception as exc:  # noqa: BLE001
-            print(f"SUPPORT_FAIL packet_load:{exc}", file=sys.stderr, flush=True)
-            result = _canonical_fail(f"packet_load:{exc}")
+            print(f"SUPPORT_FAIL packet_load:{exc}", file=sys.stderr, flush=True); result = _canonical_fail(f"packet_load:{exc}")
         else:
             try:
-                result = _run_via_verified_session(packet, self_file=Path(__file__))
+                result = _run_via_verified_session(packet, self_file=Path(__file__), progress_sink=sink)
                 for step in result.get("route") or []: print(f"SUPPORT_PHASE_{str(step).upper()}", flush=True)
+            except ProgressSinkFailure: return _fail_closed_sink(fd)
             except Exception as exc:  # noqa: BLE001
                 result = _canonical_fail(f"{type(exc).__name__}:{exc}")
-        _write_reserved(fd, result)
+        try: _step(sink, "CLI_RECEIPT_WRITE", lambda: _write_reserved(fd, result))
+        except ProgressSinkFailure: return _fail_closed_sink(fd)
+        except Exception as exc:  # noqa: BLE001
+            print(f"SUPPORT_FAIL receipt_write:{exc}", file=sys.stderr, flush=True); _close_reserved(fd); return 2
+    except ProgressSinkFailure: return _fail_closed_sink(fd)
     except Exception as exc:  # noqa: BLE001
-        print(f"SUPPORT_FAIL receipt_write:{exc}", file=sys.stderr, flush=True)
-        _close_reserved(fd); return 2
-    _close_reserved(fd)
-    cls = str(result.get("classifier") or SUPPORT_INTEGRITY)
+        print(f"SUPPORT_FAIL receipt_write:{exc}", file=sys.stderr, flush=True); _close_reserved(fd); return 2
+    _close_reserved(fd); cls = str(result.get("classifier") or SUPPORT_INTEGRITY)
     print(cls, flush=True); return 0 if cls == SUPPORT_ELIGIBLE else 2
-
 if __name__ == "__main__":
     raise SystemExit(main())
