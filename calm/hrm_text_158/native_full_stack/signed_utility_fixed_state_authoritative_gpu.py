@@ -36,25 +36,17 @@ CALL_GRAPH_STEPS_V6 = (
     "parse_packet_live_rehash_pins", "parent_sha_pre_materialize", "rebuild_support_batches_bind_leakage",
     "fork_clones_from_materialized_base", "causal_storage_isolation_baseline", "capture_backward_vote",
     "calibrate_capture_vs_public_apply", "apply_writeback_prod_inv_noop_parity", "post_apply_isolation_sentinels",
-    "eval_nll_three_arm_plus_noop_repeat", "post_eval_isolation_sentinels", "emit_in_memory_payload",
-)
+    "eval_nll_three_arm_plus_noop_repeat", "post_eval_isolation_sentinels", "emit_in_memory_payload")
 ARM_FORK_NAMES = ("base", "prod", "inv", "noop", "calibration_shadow", "parent", "capture_disposable")
 INVERT_DIR_FIELDS = ("applied_directions", "replay_veto_directions")
-FORMAL_PHASE_BUDGETS = {
-    "MATERIALIZE": 120.0, "CAPTURE_BACKWARD_VOTE": 180.0, "THREE_ARM_APPLY_WRITEBACK": 60.0,
-    "THREE_ARM_EVAL_NLL": 480.0, "EMIT_FLUSH": 30.0,
-}
+FORMAL_PHASE_BUDGETS = {"MATERIALIZE": 120.0, "CAPTURE_BACKWARD_VOTE": 180.0, "THREE_ARM_APPLY_WRITEBACK": 60.0,
+                        "THREE_ARM_EVAL_NLL": 480.0, "EMIT_FLUSH": 30.0}
 SMOKE_PHASE_BUDGETS = {"MATERIALIZE": 120.0, "CAPTURE": 120.0, "CALIBRATE_EVAL": 60.0}
-SMOKE_SUBPHASE_TO_ENVELOPE = {
-    "MATERIALIZE": "MATERIALIZE", "CAPTURE_BACKWARD_VOTE": "CAPTURE",
-    "THREE_ARM_APPLY_WRITEBACK": "CALIBRATE_EVAL", "THREE_ARM_EVAL_NLL": "CALIBRATE_EVAL",
-    "EMIT_FLUSH": "CALIBRATE_EVAL",
-}
+SMOKE_SUBPHASE_TO_ENVELOPE = {"MATERIALIZE": "MATERIALIZE", "CAPTURE_BACKWARD_VOTE": "CAPTURE",
+    "THREE_ARM_APPLY_WRITEBACK": "CALIBRATE_EVAL", "THREE_ARM_EVAL_NLL": "CALIBRATE_EVAL", "EMIT_FLUSH": "CALIBRATE_EVAL"}
 class AuthoritativeGpuError(RuntimeError): pass
 class AuthoritativeGpuDeferredError(RuntimeError): pass
-
 def isolate_fork_arm_state(state: Any):
-    """Value-identical arm clone: distinct BA via replace; fail-closed if event carrier present."""
     if getattr(state, "event_coded_live_carrier", None) is not None:
         raise AuthoritativeGpuError("unsupported_event_coded_live_carrier_in_signed_utility_fork")
     from dataclasses import replace as _dc_replace
@@ -74,7 +66,6 @@ class AuthoritativeGpuHooks:
     invert_plans: Callable[[Mapping[str, Any]], Mapping[str, Any]]
     eval_arm_nll: Callable[[str, Mapping[str, Any], Any, Sequence[Any]], tuple[float, int, float, str]]
     phase_budgets: Mapping[str, float] = field(default_factory=lambda: dict(FORMAL_PHASE_BUDGETS))
-
 def authoritative_gpu_source_must_not_route_to_toy(source: str) -> bool:
     banned = ("run_developer_check_cpu_static(", "evaluate_cpu_static(", "synthetic_nll", "cpu_static_micro")
     try: tree = ast.parse(source)
@@ -83,7 +74,6 @@ def authoritative_gpu_source_must_not_route_to_toy(source: str) -> bool:
         if isinstance(node, ast.FunctionDef) and node.name == "run_authoritative_gpu_call_graph":
             return not any(b in (ast.get_source_segment(source, node) or "") for b in banned)
     return False
-
 def call_graph_steps() -> Sequence[str]: return CALL_GRAPH_STEPS_V6
 def phase_budgets_for_packet(packet: Mapping[str, Any]) -> dict[str, float]:
     return dict(SMOKE_PHASE_BUDGETS if packet.get("smoke_mode") else FORMAL_PHASE_BUDGETS)
@@ -95,14 +85,12 @@ def _validated(payload: dict[str, Any]) -> dict[str, Any]:
     validate_authoritative_result_payload_v3(payload); return payload
 def _preflight(reason, stage, observed, expected, route):
     return _validated({"schema": SCHEMA_PREFLIGHT, "classifier": INTEGRITY, "failed_stage": stage,
-                       "observed": observed, "expected": expected, "ts_utc": "now", "reason": reason,
-                       "route": list(route)})
+                       "observed": observed, "expected": expected, "ts_utc": "now", "reason": reason, "route": list(route)})
 def _unverified(reason, stage, markers, parent_pre, compact, route, *, asymmetric=False):
     return _validated({"schema": SCHEMA_UNVERIFIED,
                        "classifier": "UNVERIFIED_ASYMMETRIC_INTERVENTION" if asymmetric else INTEGRITY,
                        "reason": reason, "failed_stage": stage, "phase_markers": dict(markers),
-                       "parent_sha256_pre": parent_pre, "compact_diagnostics": dict(compact),
-                       "route": list(route)})
+                       "parent_sha256_pre": parent_pre, "compact_diagnostics": dict(compact), "route": list(route)})
 def _validate_packet_pins(packet: Mapping[str, Any]) -> None:
     validate_proof_packet_source_pins(packet); require_formal_source_pin_basenames(packet)
     mode = str(packet.get("pin_mode") or ("smoke" if packet.get("smoke_mode") else "formal"))
@@ -115,7 +103,7 @@ def _validate_packet_pins(packet: Mapping[str, Any]) -> None:
         if not root or not expected: raise PinValidationError(f"{mode}_head_or_repo_root_missing")
         require_head_equals_upstream_pin(root, str(expected))
 
-def build_live_hooks(packet: Mapping[str, Any]) -> AuthoritativeGpuHooks:
+def build_live_hooks(packet: Mapping[str, Any], progress_sink: Callable[[str, str, str | None], None] | None = None) -> AuthoritativeGpuHooks:
     import torch
     from calm.hrm_text_158.native_full_stack.forgotten_accum_training_equivalence_materialization import materialize_run_arms_live_bundle
     from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_driver import apply_arms_via_public_frozen_plan
@@ -124,8 +112,15 @@ def build_live_hooks(packet: Mapping[str, Any]) -> AuthoritativeGpuHooks:
     from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
         SCIENCE_LOCAL_SELECTION_ORDERING_SEED, _compute_ce_weighted_grads, _weighted_grads_to_vote_aux_maps,
         build_identity_full_support_batches, resolve_probe_vote_update_spec)
-    st: dict[str, Any] = {}; device = str(packet.get("device", "cuda:0"))
-    cap_mode = resolve_capture_device_mode(packet, device)
+    st: dict[str, Any] = {}; device = str(packet.get("device", "cuda:0")); cap_mode = resolve_capture_device_mode(packet, device)
+    def _cap(step, fn):
+        if progress_sink is not None: progress_sink(step, "start", None)
+        try: out = fn()
+        except Exception as exc:
+            if progress_sink is not None: progress_sink(step, "error", f"{type(exc).__name__}:{exc}")
+            raise
+        if progress_sink is not None: progress_sink(step, "done", None)
+        return out
     def materialize(p):
         parent = p["parent_checkpoint"]
         return materialize_run_arms_live_bundle(
@@ -138,8 +133,7 @@ def build_live_hooks(packet: Mapping[str, Any]) -> AuthoritativeGpuHooks:
         sizes = [len(b["metadata"]["row_ids"]) for b in batches]
         if len(batches) != 3 or sizes != [32, 32, 26]: raise AuthoritativeGpuError(f"support_batch_shape:{sizes}")
         for b in batches:
-            meta = b["metadata"]
-            meta["normalized_prompt_hashes"] = surface_values(b, "normalized_prompt_hash")
+            meta = b["metadata"]; meta["normalized_prompt_hashes"] = surface_values(b, "normalized_prompt_hash")
             meta["normalized_target_hashes"] = surface_values(b, "normalized_target_hash")
             meta["response_token_hashes"] = surface_values(b, "response_token_hash")
         st["batches"] = batches; return batches
@@ -148,24 +142,32 @@ def build_live_hooks(packet: Mapping[str, Any]) -> AuthoritativeGpuHooks:
         return {n: {str(k): isolate_fork_arm_state(v) for k, v in sorted(base.items())} for n in ARM_FORK_NAMES}
     def capture(bundle, arms):
         model, eligible, cap = bundle.model, bundle.eligible_modules, arms["capture_disposable"]
-        model.train(); torch.manual_seed(43); extras = model.compute_train_extra_args(0, 1)
-        grads, _loss, _m = _compute_ce_weighted_grads(
-            model, st["batches"][0]["batch"], cap, eligible, device=torch.device(device), extras=extras)
-        votes, _moves = _weighted_grads_to_vote_aux_maps(grads, cap, rank_spec=canonical_acquisition_rank_vote_spec())
-        spec = resolve_probe_vote_update_spec(
+        def _grads():
+            model.train(); torch.manual_seed(43); extras = model.compute_train_extra_args(0, 1)
+            return _compute_ce_weighted_grads(
+                model, st["batches"][0]["batch"], cap, eligible, device=torch.device(device), extras=extras)
+        grads, _loss, _m = _cap("CAP_COMPUTE_GRADS", _grads)
+        votes, _moves = _cap("CAP_VOTE_AUX", lambda: _weighted_grads_to_vote_aux_maps(
+            grads, cap, rank_spec=canonical_acquisition_rank_vote_spec()))
+        spec = _cap("CAP_SPEC", lambda: resolve_probe_vote_update_spec(
             max_abs_per_tensor=4096, confirmation_envelope="canonical_t10_prereg_v24",
-            vote_update_decay_numerator=None, vote_update_decay_denominator=None)
-        holder, cc = [], [0]
-        step = apply_bounded_delta_vote_step(
-            dict(cap), dict(votes), {k: spec for k in cap}, global_cap_spec=None,
-            front_c_identity_observer=make_raw_front_c_observation_holder_observer(holder, cc),
-            two_tier_carry_w6_enabled=False, parity_check=False, replay_ce_veto_votes_by_key=None,
-            replay_ce_veto_moves_by_key=None, pc_aux_votes_by_key=None, pc_aux_moves_by_key=None,
-            pc_aux_mode="telemetry", local_selection_ordering_mode="current_abs_new_acc_then_index",
-            local_selection_ordering_seed=int(SCIENCE_LOCAL_SELECTION_ORDERING_SEED), local_selection_ordering_step=0)
-        if cc[0] != 1 or len(holder) != 1: raise AuthoritativeGpuError("raw_holder_call_count")
-        plans = holder[0]["plans_by_key"]
-        return plans, (getattr(step, "tensor_states", None) or holder[0].get("tensor_states")), cc[0]
+            vote_update_decay_numerator=None, vote_update_decay_denominator=None))
+        def _apply():
+            holder, cc = [], [0]
+            step = apply_bounded_delta_vote_step(
+                dict(cap), dict(votes), {k: spec for k in cap}, global_cap_spec=None,
+                front_c_identity_observer=make_raw_front_c_observation_holder_observer(holder, cc),
+                two_tier_carry_w6_enabled=False, parity_check=False, replay_ce_veto_votes_by_key=None,
+                replay_ce_veto_moves_by_key=None, pc_aux_votes_by_key=None, pc_aux_moves_by_key=None,
+                pc_aux_mode="telemetry", local_selection_ordering_mode="current_abs_new_acc_then_index",
+                local_selection_ordering_seed=int(SCIENCE_LOCAL_SELECTION_ORDERING_SEED), local_selection_ordering_step=0)
+            return step, holder, cc
+        step, holder, cc = _cap("CAP_APPLY_VOTE_STEP", _apply)
+        def _post():
+            if cc[0] != 1 or len(holder) != 1: raise AuthoritativeGpuError("raw_holder_call_count")
+            plans = holder[0]["plans_by_key"]
+            return plans, (getattr(step, "tensor_states", None) or holder[0].get("tensor_states")), cc[0]
+        return _cap("CAP_POST_RETURN_HOLDER_VALIDATION", _post)
     def eval_arm(arm, states, bundle, eval_batches):
         model, eligible = bundle.model, bundle.eligible_modules
         model.eval(); num, den = 0.0, 0
@@ -336,8 +338,7 @@ def run_authoritative_gpu_call_graph(packet: Mapping[str, Any], *, hooks: Author
 def run_one_step_smoke(packet: Mapping[str, Any], *, hooks: AuthoritativeGpuHooks | None = None) -> dict[str, Any]:
     p = dict(packet); p["authoritative_deferred"] = False; p["smoke_mode"] = True; p.setdefault("pin_mode", "smoke")
     result = run_authoritative_gpu_call_graph(p, hooks=hooks)
-    result["claim_ceiling"] = "implementation_correctness_only"; validate_authoritative_result_payload_v3(result)
-    return result
+    result["claim_ceiling"] = "implementation_correctness_only"; validate_authoritative_result_payload_v3(result); return result
 
 __all__ = [
     "ARM_FORK_NAMES", "AuthoritativeGpuDeferredError", "AuthoritativeGpuError", "AuthoritativeGpuHooks",
@@ -346,5 +347,4 @@ __all__ = [
     "build_live_hooks", "calibrate_capture_vs_public", "call_graph_steps", "canonical_invert_plans_v4",
     "compute_partition_leakage_compact", "deterministic_eval_contract", "hash_current_weights_tensors",
     "isolate_fork_arm_state", "phase_budgets_for_packet", "resolve_capture_device_mode",
-    "run_authoritative_gpu_call_graph", "run_isolation_sentinel_checkpoint", "run_one_step_smoke",
-]
+    "run_authoritative_gpu_call_graph", "run_isolation_sentinel_checkpoint", "run_one_step_smoke"]

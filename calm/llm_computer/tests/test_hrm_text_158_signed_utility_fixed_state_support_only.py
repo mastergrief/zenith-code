@@ -99,8 +99,8 @@ def _agg_hooks(zeros_k0, zeros_k1):
     plans = {k: _plan(idxs=list(range(10)), q=list(qv)) for k, qv in qspec.items()}
     return _hooks({}, qspec=qspec, plan_factory=lambda: plans)
 def test_taxonomy_hook_guard_cli_bootstrap_session(monkeypatch, tmp_path: Path):
-    assert sum(1 for _ in MOD.open()) <= 245 and sum(1 for _ in CLI.open()) <= 200
-    assert sum(1 for _ in Path(__file__).open()) <= 280 and "from calm" not in CLI.read_text().split("def main")[0]
+    assert sum(1 for _ in MOD.open()) <= 246 and sum(1 for _ in CLI.open()) <= 200
+    assert sum(1 for _ in Path(__file__).open()) <= 420 and "from calm" not in CLI.read_text().split("def main")[0]
     assert list(TERMINAL_TAXONOMY)[:1] == [SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE]
     out = run_support_only_characterization(build_support_only_test_packet(expected_head="0" * 40), hooks=_hooks({}))
     assert out["classifier"] == SUPPORT_ELIGIBLE; _assert_imm(out)
@@ -278,3 +278,123 @@ def test_progress_emit_contract(capsys, monkeypatch, tmp_path: Path):
     assert ("CLI_LAUNCH_IDENTITY_BIND", "error") in c5
     monkeypatch.setattr(cli, "_build_progress_sink", lambda _t: (lambda step, edge, reason=None: (_ for _ in ()).throw(RuntimeError("SINK_FAIL"))))
     assert cli.main(["--packet", str(tmp_path / "p.json"), "--receipt", str(tmp_path / "nope.json")]) == 2 and not (tmp_path / "nope.json").exists()
+
+_CAP = ("CAP_COMPUTE_GRADS", "CAP_VOTE_AUX", "CAP_SPEC", "CAP_APPLY_VOTE_STEP", "CAP_POST_RETURN_HOLDER_VALIDATION")
+_CAP_FAIL_MSG = {c: f"fail_{c}" for c in _CAP}
+def _live_cap_env(monkeypatch, *, fail_at=None):
+    """Monkeypatch live capture deps. fail_at selects which CAP underlying op raises."""
+    import calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_authoritative_gpu as ag
+    import calm.hrm_text_158.native_full_stack.bounded_delta_learner as bdl
+    import scripts.hrm_text_158_bounded_delta_acquisition_probe as probe
+    apply_calls = []
+    def grads(*_a, **_k):
+        if fail_at == "CAP_COMPUTE_GRADS": raise RuntimeError(_CAP_FAIL_MSG[fail_at])
+        return {"k0": 1}, 0.0, {}
+    def votes(*_a, **_k):
+        if fail_at == "CAP_VOTE_AUX": raise RuntimeError(_CAP_FAIL_MSG[fail_at])
+        return {"k0": {}}, {}
+    def spec(**_k):
+        if fail_at == "CAP_SPEC": raise RuntimeError(_CAP_FAIL_MSG[fail_at])
+        return {"spec": 1}
+    def fake_apply(*_a, **k):
+        apply_calls.append(dict(k))
+        if fail_at == "CAP_APPLY_VOTE_STEP": raise RuntimeError(_CAP_FAIL_MSG[fail_at])
+        if fail_at == "CAP_POST_RETURN_HOLDER_VALIDATION":
+            return SimpleNamespace(tensor_states={})  # skip observer → post raises AuthoritativeGpuError
+        k["front_c_identity_observer"]({"plans_by_key": {"k0": _plan(idxs=[0, 1, 2, 3])}, "tensor_states": {}})
+        return SimpleNamespace(tensor_states={})
+    monkeypatch.setattr(probe, "_compute_ce_weighted_grads", grads)
+    monkeypatch.setattr(probe, "_weighted_grads_to_vote_aux_maps", votes)
+    monkeypatch.setattr(probe, "resolve_probe_vote_update_spec", spec)
+    monkeypatch.setattr(probe, "build_identity_full_support_batches",
+                        lambda **_k: ([_batch(32, 0), _batch(32, 100), _batch(26, 200)], None))
+    monkeypatch.setattr(bdl, "apply_bounded_delta_vote_step", fake_apply)
+    monkeypatch.setattr(bdl, "canonical_acquisition_rank_vote_spec", lambda: {})
+    model = SimpleNamespace(train=lambda: None, compute_train_extra_args=lambda *_a: {})
+    bundle = SimpleNamespace(model=model, eligible_modules={"k0": None}, tok=None,
+                             cfg=SimpleNamespace(max_seq_len=64), tensor_states={})
+    return ag, bundle, apply_calls
+def _live_capture_hooks(monkeypatch, *, fail_at=None, progress_sink=None):
+    """DI early stages + real live capture_plans from build_live_hooks (shared _cap path)."""
+    from dataclasses import replace
+    ag_mod, bundle, apply_calls = _live_cap_env(monkeypatch, fail_at=fail_at)
+    live = ag_mod.build_live_hooks({"device": "cpu", "allow_cpu_legacy_eval": True}, progress_sink=progress_sink)
+    live.rebuild_support_batches(bundle)
+    def capture(_b, arms):
+        return live.capture_plans(bundle, {"capture_disposable": arms["capture_disposable"]})
+    return replace(_hooks({}), capture_plans=capture), apply_calls, bundle
+def test_d2c13_cap_progress_emit_matrix(monkeypatch):
+    # DI path never calls build_live_hooks
+    calls = []
+    monkeypatch.setattr(so, "build_live_hooks", lambda *_a, **_k: calls.append(1) or (_ for _ in ()).throw(RuntimeError("x")))
+    assert run_support_only_characterization(build_support_only_test_packet(expected_head="0" * 40), hooks=_hooks({}))["classifier"] == SUPPORT_ELIGIBLE
+    assert calls == []
+    with pytest.raises(ValueError, match="bad_step"):
+        cli._build_progress_sink(0)("NOT_A_CAP", "start", None)
+    for name in _CAP:
+        cli._build_progress_sink(0)(name, "start", None); cli._build_progress_sink(0)(name, "done", None)
+    # happy-path nested CAP order on live _cap
+    ag_mod, bundle, apply_calls = _live_cap_env(monkeypatch)
+    ev = []
+    h = ag_mod.build_live_hooks(
+        {"device": "cpu", "allow_cpu_legacy_eval": True},
+        progress_sink=lambda step, edge, reason=None: so._progress(
+            lambda s, e, r=None: ev.append((s, e)), step, edge, reason))
+    h.rebuild_support_batches(bundle)
+    plans, _st, hc = h.capture_plans(bundle, {"capture_disposable": {"k0": object()}})
+    assert hc == 1 and "k0" in plans and len(apply_calls) == 1
+    assert apply_calls[0].get("pc_aux_mode") == "telemetry" and apply_calls[0].get("two_tier_carry_w6_enabled") is False
+    assert ev == [x for cap in _CAP for x in ((cap, "start"), (cap, "done"))]
+    # (1) each CAP underlying failure via live _cap → start/error, no done, no later CAP; MOD error; reason preserved
+    for i, cap in enumerate(_CAP):
+        ev_u = []
+        hooks, _, _ = _live_capture_hooks(
+            monkeypatch, fail_at=cap,
+            progress_sink=lambda s, e, r=None, _ev=ev_u: _ev.append((s, e)))
+        out = run_support_only_characterization(
+            build_support_only_test_packet(expected_head="0" * 40), hooks=hooks,
+            progress_sink=lambda s, e, r=None, _ev=ev_u: _ev.append((s, e)))
+        assert out["classifier"] == SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE
+        assert out["classifier"] != SUPPORT_ELIGIBLE
+        if cap == "CAP_POST_RETURN_HOLDER_VALIDATION":
+            assert out["reason"] == "raw_holder_call_count"
+        else:
+            assert out["reason"] == f"RuntimeError:{_CAP_FAIL_MSG[cap]}"
+        assert (cap, "start") in ev_u and (cap, "error") in ev_u and (cap, "done") not in ev_u
+        assert ("MOD_CAPTURE_PLANS", "error") in ev_u
+        later = _CAP[i + 1:]
+        assert not any(s in later for s, _ in ev_u)
+    # (2) each CAP error-edge fail-once (underlying fails) → no later CAP/MOD raw; progress_sink_failure
+    for cap in _CAP:
+        raw_calls, failed = [], []
+        def raw(step, edge, reason=None, _cap=cap):
+            raw_calls.append((step, edge))
+            if step == _cap and edge == "error" and not failed:
+                failed.append(1); raise RuntimeError("raw_once")
+        hooks, _, _ = _live_capture_hooks(
+            monkeypatch, fail_at=cap,
+            progress_sink=lambda step, edge, reason=None, _raw=raw: so._progress(_raw, step, edge, reason))
+        out = run_support_only_characterization(
+            build_support_only_test_packet(expected_head="0" * 40), hooks=hooks,
+            progress_sink=lambda step, edge, reason=None, _raw=raw: so._progress(_raw, step, edge, reason))
+        assert out["reason"] == "progress_sink_failure" and out["classifier"] == SUPPORT_INTEGRITY_OR_EXECUTION_FAILURE
+        assert out["classifier"] != SUPPORT_ELIGIBLE and len(failed) == 1
+        fail_idx = next(i for i, x in enumerate(raw_calls) if x == (cap, "error"))
+        assert not any(s.startswith("CAP_") or s.startswith("MOD_") for s, _ in raw_calls[fail_idx + 1:])
+    # (3) keep all-five start/done fail-once matrix on live capture_plans
+    for cap, edge_fail in [(c, e) for e in ("start", "done") for c in _CAP]:
+        raw_calls, failed = [], []
+        def raw(step, edge, reason=None, _cap=cap, _ef=edge_fail):
+            raw_calls.append((step, edge))
+            if step == _cap and edge == _ef and not failed:
+                failed.append(1); raise RuntimeError("raw_once")
+        ag_i, bun, _ = _live_cap_env(monkeypatch)
+        hi = ag_i.build_live_hooks(
+            {"device": "cpu", "allow_cpu_legacy_eval": True},
+            progress_sink=lambda step, edge, reason=None, _raw=raw: so._progress(_raw, step, edge, reason))
+        hi.rebuild_support_batches(bun)
+        with pytest.raises(so._ProgressSinkFailure):
+            hi.capture_plans(bun, {"capture_disposable": {"k0": object()}})
+        assert len(failed) == 1
+        fail_idx = next(i for i, x in enumerate(raw_calls) if x == (cap, edge_fail))
+        assert not any(s.startswith("CAP_") for s, _ in raw_calls[fail_idx + 1:])

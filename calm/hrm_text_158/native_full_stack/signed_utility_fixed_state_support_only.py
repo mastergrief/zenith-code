@@ -167,7 +167,8 @@ def run_support_only_characterization(packet: Mapping[str, Any], *, hooks: Autho
             return term(classifier=INT, reason=str(exc))
         if hooks is not None and str(packet.get("pin_mode") or "formal") != "cpu_static_di":
             return finish(INT, reason="hooks_require_pin_mode_cpu_static_di")
-        h = _traced(progress_sink, "MOD_BUILD_LIVE_HOOKS", lambda: hooks if hooks is not None else build_live_hooks(packet))
+        br = None if progress_sink is None else (lambda step, edge, reason=None: _progress(progress_sink, step, edge, reason))
+        h = _traced(progress_sink, "MOD_BUILD_LIVE_HOOKS", lambda: hooks if hooks is not None else build_live_hooks(packet, progress_sink=br))
         parent = packet.get("parent_checkpoint") or {}
         if "absolute_path" not in parent or "sha256" not in parent:
             return finish(INT, reason="parent_checkpoint_missing")
