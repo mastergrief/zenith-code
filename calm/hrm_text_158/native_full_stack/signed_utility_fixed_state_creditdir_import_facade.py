@@ -56,6 +56,8 @@ DRIFTED_TRANSITIVE_PROOF_SET = (
     "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
 )
 FACADE_REASON = "creditdir loads signed-utility only via clean-revision session + path/sha binding"
+RECEIPT_COMPARE_REL_PATH = "calm/hrm_text_158/native_full_stack/signed_utility_receipt_pre_post_compare.py"
+RECEIPT_COMPARE_IMPORT_NAME = "calm.hrm_text_158.native_full_stack.signed_utility_receipt_pre_post_compare"
 _LOCK = threading.Lock()
 _ACTIVE = False
 
@@ -139,6 +141,31 @@ def _load_verified(name: str, path: Path) -> ModuleType:
     if loaded != path.resolve():
         raise ImportFacadeError(f"path_not_bound:{name}:{loaded}!={path.resolve()}")
     return mod
+
+
+def load_receipt_pre_post_compare(expected_sha256: str, *, repo_root: Path = REPO_ROOT) -> ModuleType:
+    """Dedicated hash-bound loader; never touches MODULE_REL_PATHS / science session."""
+    name = RECEIPT_COMPARE_IMPORT_NAME
+    sys.modules.pop(name, None)
+    try:
+        path = (Path(repo_root).resolve() / RECEIPT_COMPARE_REL_PATH).resolve()
+        if not path.is_file():
+            raise ImportFacadeError(f"module_path_missing:{path}")
+        digest = _sha(path)
+        if digest != str(expected_sha256):
+            raise ImportFacadeError(f"module_sha_mismatch:{digest}!={expected_sha256}")
+        cache = importlib.util.cache_from_source(str(path))
+        if cache:
+            Path(cache).unlink(missing_ok=True)
+        mod = _load_verified(name, path)
+        if not callable(getattr(mod, "pre_post_compare_hash", None)) or not callable(
+            getattr(mod, "pre_post_compare_git", None)
+        ):
+            raise ImportFacadeError("missing_public_api")
+        return mod
+    except Exception:
+        sys.modules.pop(name, None)
+        raise
 
 
 def load_signed_utility_fixed_state_modules(
@@ -325,7 +352,8 @@ def signed_utility_fixed_state_session(
 __all__ = [
     "CLEAN_REVISION_PIN", "CLEAN_TREE_PIN", "DRIFTED_TRANSITIVE_PROOF_SET", "FACADE_REASON",
     "HISTORICAL_D1_R2_CLEAN_REVISION", "HISTORICAL_D1_R2_CLEAN_TREE",
-    "ImportFacadeError", "MODULE_IMPORT_NAMES", "MODULE_REL_PATHS", "ModuleBundle", "REPO_ROOT",
-    "SessionBundle", "load_signed_utility_fixed_state_modules", "signed_utility_fixed_state_session",
-    "verify_expected_sha256_by_module",
+    "ImportFacadeError", "MODULE_IMPORT_NAMES", "MODULE_REL_PATHS", "ModuleBundle",
+    "RECEIPT_COMPARE_IMPORT_NAME", "RECEIPT_COMPARE_REL_PATH", "REPO_ROOT", "SessionBundle",
+    "load_receipt_pre_post_compare", "load_signed_utility_fixed_state_modules",
+    "signed_utility_fixed_state_session", "verify_expected_sha256_by_module",
 ]
