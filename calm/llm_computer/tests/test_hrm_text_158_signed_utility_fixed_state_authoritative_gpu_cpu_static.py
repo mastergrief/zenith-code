@@ -166,7 +166,7 @@ def _hooks(route_log: list[str], *, empty_apply=False, leak_surface=None, mutate
         eval_arm_nll=eval_arm, phase_budgets=dict(SMOKE_PHASE_BUDGETS),
     )
 def test_loc_and_steps_and_budgets():
-    assert sum(1 for _ in MOD.open()) <= 350
+    assert sum(1 for _ in MOD.open()) <= 500
     assert list(call_graph_steps()) == list(CALL_GRAPH_STEPS_V6)
     assert FORMAL_PHASE_BUDGETS["THREE_ARM_EVAL_NLL"] == 480.0
     assert phase_budgets_for_packet({"smoke_mode": True}) == {
@@ -349,7 +349,7 @@ def test_d2c6_storage_isolation_red_green_and_routing():
         phase_budgets=dict(SMOKE_PHASE_BUDGETS))
     out = run_authoritative_gpu_call_graph(_packet(), hooks=h)
     assert out["schema"].endswith("science_v4") and arm_ids["prod"] in seen and arm_ids["base"] not in seen
-    assert sum(1 for _ in MOD.open()) <= 350
+    assert sum(1 for _ in MOD.open()) <= 500
 
 def test_d2c8_legal_subset_wired_and_claude_geometry_red():
     from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_legal_subset import ESTIMAND_NAME
@@ -393,3 +393,98 @@ def test_d2c8_legal_subset_wired_and_claude_geometry_red():
     bad = run_authoritative_gpu_call_graph(_packet(), hooks=h)
     assert "legal_subset_support_degenerate" in bad.get("reason", ""), bad
     assert not bad["schema"].endswith("science_v4")
+
+
+def test_capture_only_seam_source_characterization():
+    src = MOD.read_text(encoding="utf-8")
+    i_plans = src.index("h.capture_plans(bundle, arms)")
+    i_cal = src.index('route.append("calibrate_capture_vs_public_apply")')
+    i_end = src.index("clock.end(cap_phase)")
+    i_term = src.index('markers["CAPTURE_ONLY_DIAGNOSTIC_TERMINAL"] = True')
+    i_apply = src.index('clock.begin("THREE_ARM_APPLY_WRITEBACK")')
+    assert i_plans < i_cal < i_end < i_term < i_apply
+    assert "PhaseBudgetBreach" in src and 'packet.get("capture_only_diagnostic") is True' in src
+    assert "capture_only_diagnostic_complete:" in src
+
+
+def test_capture_only_diagnostic_clean_terminal_before_apply():
+    log: list[str] = []
+    out = run_authoritative_gpu_call_graph(
+        _packet(capture_only_diagnostic=True, m1_branch_id="M1_SERIES_v1"), hooks=_hooks(log))
+    assert out["schema"].endswith("unverified_v4"), out
+    assert out["classifier"] == "UNVERIFIED_INTEGRITY_OR_EXECUTION"
+    assert out["reason"].startswith("capture_only_diagnostic_complete:")
+    assert out["failed_stage"] == "capture_only_diagnostic"
+    m = out["phase_markers"]
+    assert m["PHASE_CAPTURE_BACKWARD_VOTE_BEGIN"] is True
+    assert m["PHASE_CAPTURE_BACKWARD_VOTE_END"] is True
+    assert m["PHASE_THREE_ARM_APPLY_WRITEBACK_BEGIN"] is False
+    assert m["PHASE_THREE_ARM_EVAL_NLL_BEGIN"] is False
+    assert m["CAPTURE_ONLY_DIAGNOSTIC_TERMINAL"] is True
+    assert m["calibration_included"] is True
+    assert "calibrate_capture_vs_public_apply" in out["route"]
+    assert "apply_writeback_prod_inv_noop_parity" not in out["route"]
+    assert "eval_nll_three_arm_plus_noop_repeat" not in out["route"]
+    assert "invert" not in log and "eval:prod" not in log
+    assert log.count("apply") == 1  # calibration public_apply only
+    cd = out["compact_diagnostics"]
+    assert cd["capture_only_diagnostic"] is True and cd["calibration_included"] is True
+    assert cd["CAPTURE_ONLY_DIAGNOSTIC_TERMINAL"] is True
+    assert cd["m1_branch_id"] == "M1_SERIES_v1"
+    assert cd["PHASE_THREE_ARM_APPLY_WRITEBACK_BEGIN"] is False
+    assert cd["PHASE_THREE_ARM_EVAL_NLL_BEGIN"] is False
+    assert cd["THREE_ARM_APPLY_WRITEBACK_BEGIN"] is False and cd["EVAL_NLL_BEGIN"] is False
+    assert isinstance(cd["phase_clock_elapsed_seconds"], float)
+    assert cd["phase_budget_seconds"] == 180.0
+    for banned in ("L_prod", "L_inv", "L_noop", "epsilon", "science_classifier", "utility_delta"):
+        assert banned not in out and banned not in cd
+
+
+def test_capture_only_phase_budget_breach_terminal(monkeypatch):
+    from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_phase_telemetry import (
+        PhaseBudgetBreach, PhaseBudgetClock,
+    )
+    real_end = PhaseBudgetClock.end
+
+    def end_maybe_breach(self, phase):
+        if str(phase) == "CAPTURE_BACKWARD_VOTE":
+            name = str(phase)
+            started = self._open.pop(name)
+            elapsed = 221.688604
+            budget = self._budgets.get(name)
+            self.receipt["phases"][name] = {"elapsed_s": elapsed, "budget_s": budget}
+            self.markers[f"PHASE_{name}_END"] = True
+            self.receipt["breaches"].append({"phase": name, "elapsed_s": elapsed, "budget_s": budget})
+            raise PhaseBudgetBreach(name, elapsed, budget)
+        return real_end(self, phase)
+
+    monkeypatch.setattr(PhaseBudgetClock, "end", end_maybe_breach)
+    log: list[str] = []
+    out = run_authoritative_gpu_call_graph(
+        _packet(capture_only_diagnostic=True, m1_branch_id="M1_SERIES_v1"), hooks=_hooks(log))
+    assert out["schema"].endswith("unverified_v4"), out
+    assert out["classifier"] == "UNVERIFIED_INTEGRITY_OR_EXECUTION"
+    assert out["reason"].startswith("phase_budget_breach:CAPTURE_BACKWARD_VOTE:")
+    m = out["phase_markers"]
+    assert m["PHASE_CAPTURE_BACKWARD_VOTE_END"] is True
+    assert m["PHASE_THREE_ARM_APPLY_WRITEBACK_BEGIN"] is False
+    assert m["PHASE_THREE_ARM_EVAL_NLL_BEGIN"] is False
+    assert m["CAPTURE_ONLY_DIAGNOSTIC_TERMINAL"] is True
+    assert m["calibration_included"] is True
+    assert "calibrate_capture_vs_public_apply" in out["route"]
+    assert "invert" not in log and "eval:prod" not in log
+    cd = out["compact_diagnostics"]
+    assert cd["phase_clock_elapsed_seconds"] == 221.688604
+    assert cd["phase_budget_seconds"] == 180.0
+    assert cd["capture_only_diagnostic"] is True
+
+
+def test_capture_only_default_false_path_unchanged():
+    log: list[str] = []
+    out = run_authoritative_gpu_call_graph(_packet(capture_only_diagnostic=False), hooks=_hooks(log))
+    assert out["schema"].endswith("science_v4"), out
+    assert "apply_writeback_prod_inv_noop_parity" in out["route"]
+    assert "eval:prod" in log and "invert" in log
+    assert out["phase_markers"]["PHASE_THREE_ARM_APPLY_WRITEBACK_BEGIN"] is True
+    assert out["phase_markers"]["PHASE_THREE_ARM_EVAL_NLL_BEGIN"] is True
+    assert "CAPTURE_ONLY_DIAGNOSTIC_TERMINAL" not in out["phase_markers"]

@@ -19,7 +19,9 @@ from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_legal_subset
 from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_partition_leakage import (
     PartitionLeakageError, compute_partition_leakage_compact, surface_values,
 )
-from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_phase_telemetry import PhaseBudgetClock
+from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_phase_telemetry import (
+    PhaseBudgetBreach, PhaseBudgetClock,
+)
 from calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_pin_validation import (
     PinValidationError, rehash_path, require_formal_source_pin_basenames,
     require_head_equals_upstream_pin, validate_proof_packet_source_pins,
@@ -247,7 +249,46 @@ def run_authoritative_gpu_call_graph(packet: Mapping[str, Any], *, hooks: Author
         if agg <= 0:
             markers["PHASE_CAPTURE_BACKWARD_VOTE_END"] = True
             return _unverified("aggregate_applied_count_zero", "capture", markers, parent_pre, {"agg": agg}, route)
-        clock.end("CAPTURE" if smoke else "CAPTURE_BACKWARD_VOTE"); markers["PHASE_CAPTURE_BACKWARD_VOTE_END"] = True
+        capture_only = packet.get("capture_only_diagnostic") is True
+        cap_phase = "CAPTURE" if smoke else "CAPTURE_BACKWARD_VOTE"
+        try:
+            clock.end(cap_phase)
+        except PhaseBudgetBreach as exc:
+            if not capture_only:
+                raise
+            markers["PHASE_CAPTURE_BACKWARD_VOTE_END"] = True
+            markers["CAPTURE_ONLY_DIAGNOSTIC_TERMINAL"] = True
+            markers["calibration_included"] = True
+            return _unverified(
+                str(exc), "capture_only_diagnostic", markers, parent_pre,
+                {"capture_only_diagnostic": True, "calibration_included": True,
+                 "CAPTURE_ONLY_DIAGNOSTIC_TERMINAL": True,
+                 "phase_clock_elapsed_seconds": float(exc.elapsed_s),
+                 "phase_budget_seconds": float(exc.budget_s),
+                 "cap_progress_envelope_seconds_localization_only": None,
+                 "cap_steps_seconds_localization_only": None,
+                 "m1_branch_id": packet.get("m1_branch_id"),
+                 "PHASE_THREE_ARM_APPLY_WRITEBACK_BEGIN": False,
+                 "PHASE_THREE_ARM_EVAL_NLL_BEGIN": False,
+                 "THREE_ARM_APPLY_WRITEBACK_BEGIN": False, "EVAL_NLL_BEGIN": False}, route)
+        markers["PHASE_CAPTURE_BACKWARD_VOTE_END"] = True
+        if capture_only:
+            markers["CAPTURE_ONLY_DIAGNOSTIC_TERMINAL"] = True
+            markers["calibration_included"] = True
+            pe = clock.receipt["phases"].get(cap_phase) or {}
+            return _unverified(
+                f"capture_only_diagnostic_complete:{cap_phase}:{float(pe.get('elapsed_s', 0.0)):.6f}",
+                "capture_only_diagnostic", markers, parent_pre,
+                {"capture_only_diagnostic": True, "calibration_included": True,
+                 "CAPTURE_ONLY_DIAGNOSTIC_TERMINAL": True,
+                 "phase_clock_elapsed_seconds": pe.get("elapsed_s"),
+                 "phase_budget_seconds": pe.get("budget_s"),
+                 "cap_progress_envelope_seconds_localization_only": None,
+                 "cap_steps_seconds_localization_only": None,
+                 "m1_branch_id": packet.get("m1_branch_id"),
+                 "PHASE_THREE_ARM_APPLY_WRITEBACK_BEGIN": False,
+                 "PHASE_THREE_ARM_EVAL_NLL_BEGIN": False,
+                 "THREE_ARM_APPLY_WRITEBACK_BEGIN": False, "EVAL_NLL_BEGIN": False}, route)
         if smoke: clock.begin("CALIBRATE_EVAL")
         else: clock.begin("THREE_ARM_APPLY_WRITEBACK")
         markers["PHASE_THREE_ARM_APPLY_WRITEBACK_BEGIN"] = True
