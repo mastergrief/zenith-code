@@ -58,6 +58,8 @@ DRIFTED_TRANSITIVE_PROOF_SET = (
 FACADE_REASON = "creditdir loads signed-utility only via clean-revision session + path/sha binding"
 RECEIPT_COMPARE_REL_PATH = "calm/hrm_text_158/native_full_stack/signed_utility_receipt_pre_post_compare.py"
 RECEIPT_COMPARE_IMPORT_NAME = "calm.hrm_text_158.native_full_stack.signed_utility_receipt_pre_post_compare"
+TERMINAL_CONSUMER_REL_PATH = "calm/hrm_text_158/native_full_stack/signed_utility_fixed_state_terminal_consumer.py"
+TERMINAL_CONSUMER_IMPORT_NAME = "calm.hrm_text_158.native_full_stack.signed_utility_fixed_state_terminal_consumer"
 _LOCK = threading.Lock()
 _ACTIVE = False
 
@@ -160,6 +162,31 @@ def load_receipt_pre_post_compare(expected_sha256: str, *, repo_root: Path = REP
         mod = _load_verified(name, path)
         if not callable(getattr(mod, "pre_post_compare_hash", None)) or not callable(
             getattr(mod, "pre_post_compare_git", None)
+        ):
+            raise ImportFacadeError("missing_public_api")
+        return mod
+    except Exception:
+        sys.modules.pop(name, None)
+        raise
+
+
+def load_terminal_receipt_consumer(expected_sha256: str, *, repo_root: Path = REPO_ROOT) -> ModuleType:
+    """Dedicated hash-bound terminal-consumer loader; never touches MODULE_REL_PATHS / science session."""
+    name = TERMINAL_CONSUMER_IMPORT_NAME
+    sys.modules.pop(name, None)
+    try:
+        path = (Path(repo_root).resolve() / TERMINAL_CONSUMER_REL_PATH).resolve()
+        if not path.is_file():
+            raise ImportFacadeError(f"module_path_missing:{path}")
+        digest = _sha(path)
+        if digest != str(expected_sha256):
+            raise ImportFacadeError(f"module_sha_mismatch:{digest}!={expected_sha256}")
+        cache = importlib.util.cache_from_source(str(path))
+        if cache:
+            Path(cache).unlink(missing_ok=True)
+        mod = _load_verified(name, path)
+        if not callable(getattr(mod, "support_trichotomy_from_bytes", None)) or not callable(
+            getattr(mod, "cross_check_pair_receipt", None)
         ):
             raise ImportFacadeError("missing_public_api")
         return mod
@@ -354,6 +381,8 @@ __all__ = [
     "HISTORICAL_D1_R2_CLEAN_REVISION", "HISTORICAL_D1_R2_CLEAN_TREE",
     "ImportFacadeError", "MODULE_IMPORT_NAMES", "MODULE_REL_PATHS", "ModuleBundle",
     "RECEIPT_COMPARE_IMPORT_NAME", "RECEIPT_COMPARE_REL_PATH", "REPO_ROOT", "SessionBundle",
+    "TERMINAL_CONSUMER_IMPORT_NAME", "TERMINAL_CONSUMER_REL_PATH",
     "load_receipt_pre_post_compare", "load_signed_utility_fixed_state_modules",
+    "load_terminal_receipt_consumer",
     "signed_utility_fixed_state_session", "verify_expected_sha256_by_module",
 ]
