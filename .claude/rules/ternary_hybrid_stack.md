@@ -61,6 +61,16 @@ Always report FP-free claims as three separate ledgers; never collapse them.
   activation/KV buffers are a *separate* `full_sub2_runtime` surface — see
   below — not this drain).
 - **3-ledger = weight-persistent train-state accounting; activations/KV are full-sub2-runtime target surfaces with separate levers.** Activations/residuals, attention-KV buffers, and backward-saved tensors are FP today under the D2.1 BitLinear contract (weights ternarized, activations not), and remain required `full_sub2_runtime` surfaces currently blocking main science. Their path is forward/runtime activation-KV quantization or recompute/compression (separately scoped), NOT the weight vote-accumulator: activations are transient, KV has no trainable optimizer state, no persistent votes to accumulate. Do not conflate the persistent-weight drain (the dense vote-acc, now int8/W8) with total-runtime memory (activations/KV scale with batch×seqlen, distinct levers).
+- **Ternary-rotor lane** (separately-scoped; plan + screen receipts:
+  `.claude/MEMORY/ternary-rotor.md`) covers those runtime surfaces via rotated
+  scalar quantization + remat. Two standing invariants from it: (1) NEVER
+  quantize SDPA-saved q/k/v behind the fused attention kernel — its backward
+  recomputes scores against the exact forward logsumexp, so perturbed saves
+  blow up as exp(Δ); attention precision goes through a quantize-then-compute
+  kernel (the KV surface), never a saved-tensor swap. (2) 4-level (2-bit)
+  codes are 2.0 bpw before scales — NO scale packing clears the strict <2.0
+  bar; a sub-2 KV/runtime claim requires 3-level (ternary) codes + base-3
+  packing, scale-inclusive.
 - **Two bit-width axes stay separate.** Persistent train-state WIDTH (q / vote-acc carrier, int16→int8/W8 → the sub-2 weight target) is distinct from decision/eligibility QUANTIZATION (ranking discrimination). A decision/receipt-family collapse or null is a representation limit, NOT evidence against persistent-width reduction; decision-family discrimination is a separate axis and B5b/H1 nulls do not close the persistent-width lane.
 
 ## Training dynamics + the stability problem
