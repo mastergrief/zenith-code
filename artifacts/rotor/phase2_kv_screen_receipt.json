@@ -1,0 +1,1901 @@
+{
+  "screen": "rotor_runtime_surface_tolerance/kv_v1",
+  "surface": "kv",
+  "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add50s_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add120k5to8_step01000_final_step00750.pt",
+  "ckpt_step": 750,
+  "device": "cuda",
+  "sample": {
+    "rows_per_rung": 6,
+    "seed": 17,
+    "n_rows": 67
+  },
+  "prereg": {
+    "strict_exact_drop_max_rows": 2,
+    "ce_delta_max_nats": 0.1,
+    "branches": [
+      "kv_at_2bit",
+      "kv_at_3bit_packing_mandatory_for_sub2",
+      "kv_representation_not_viable_park_null"
+    ]
+  },
+  "bits_ledger": {
+    "turbo2": {
+      "surface": "attention_kv_attention_buffers",
+      "n_values": 128,
+      "n_groups": 1,
+      "code_bits_per_value": 2,
+      "sign_plane_bits_per_value": 0,
+      "scale_dtype": "fp16",
+      "scale_bits_per_group": 16,
+      "payload_bits": 256,
+      "scale_bits": 16,
+      "total_bits": 272,
+      "bpw_scale_inclusive": 2.125,
+      "sub2_scale_inclusive": false
+    },
+    "turbo3": {
+      "surface": "attention_kv_attention_buffers",
+      "n_values": 128,
+      "n_groups": 1,
+      "code_bits_per_value": 2,
+      "sign_plane_bits_per_value": 1,
+      "scale_dtype": "fp16",
+      "scale_bits_per_group": 16,
+      "payload_bits": 384,
+      "scale_bits": 16,
+      "total_bits": 400,
+      "bpw_scale_inclusive": 3.125,
+      "sub2_scale_inclusive": false
+    }
+  },
+  "conditions": {
+    "baseline": {
+      "strict_exact": 66,
+      "parsed": 66,
+      "n": 67,
+      "too_long": 0,
+      "nonfinite": 0,
+      "mean_answer_ce_nats": 0.26293009170245973,
+      "seam_fire_count": 0,
+      "elapsed_s": 62.2
+    },
+    "t3_kv": {
+      "strict_exact": 66,
+      "parsed": 66,
+      "n": 67,
+      "too_long": 0,
+      "nonfinite": 0,
+      "mean_answer_ce_nats": 0.2481001639245321,
+      "seam_fire_count": 16896,
+      "elapsed_s": 552.4
+    },
+    "t2_kv": {
+      "strict_exact": 66,
+      "parsed": 66,
+      "n": 67,
+      "too_long": 0,
+      "nonfinite": 0,
+      "mean_answer_ce_nats": 0.2720359157766949,
+      "seam_fire_count": 16896,
+      "elapsed_s": 517.1
+    }
+  },
+  "row_details": {
+    "baseline": [
+      {
+        "rung": "R0",
+        "question": "what is 66?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.980223371196189e-06
+      },
+      {
+        "rung": "R0",
+        "question": "what is 53?",
+        "expected": 53,
+        "decoded": "53",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920928244535389e-07
+      },
+      {
+        "rung": "R0",
+        "question": "what is 38?",
+        "expected": 38,
+        "decoded": "38",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R0",
+        "question": "what is 46?",
+        "expected": 46,
+        "decoded": "46",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R0",
+        "question": "what is 37?",
+        "expected": 37,
+        "decoded": "37",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R0",
+        "question": "what is 22?",
+        "expected": 22,
+        "decoded": "22",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1",
+        "question": "what is 92 plus 0?",
+        "expected": 92,
+        "decoded": "92",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.072882469088654e-06
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 47?",
+        "expected": 47,
+        "decoded": "47",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1",
+        "question": "what is 18 minus 0?",
+        "expected": 18,
+        "decoded": "18",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.251696744475339e-06
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 4?",
+        "expected": 4,
+        "decoded": "4",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3841855067985307e-07
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 42?",
+        "expected": 42,
+        "decoded": "42",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 65?",
+        "expected": 65,
+        "decoded": "65",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 96 plus 1?",
+        "expected": 97,
+        "decoded": "97",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 54 plus 1?",
+        "expected": 55,
+        "decoded": "55",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 33 plus 1?",
+        "expected": 34,
+        "decoded": "34",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 65 plus 1?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 41 plus 1?",
+        "expected": 42,
+        "decoded": "42",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.5762775496550603e-07
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 82 plus 1?",
+        "expected": 83,
+        "decoded": "83",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.6954771189812163e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 88 minus 1?",
+        "expected": 87,
+        "decoded": "87",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.925194362684124e-05
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 93 minus 1?",
+        "expected": 92,
+        "decoded": "92",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920928244535389e-07
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 52 minus 1?",
+        "expected": 51,
+        "decoded": "51",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.9802313861182483e-07
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 18 minus 1?",
+        "expected": 17,
+        "decoded": "17",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.248349449336274e-05
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 71 minus 1?",
+        "expected": 70,
+        "decoded": "70",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.2053681334455177e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 8 minus 1?",
+        "expected": 7,
+        "decoded": "7",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.960462772236497e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 18 plus 2?",
+        "expected": 20,
+        "decoded": "20",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881391656260348e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 26 plus 2?",
+        "expected": 28,
+        "decoded": "28",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 20 plus 2?",
+        "expected": 22,
+        "decoded": "22",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 91 plus 2?",
+        "expected": 93,
+        "decoded": "93",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.384185471271394e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 69 plus 2?",
+        "expected": 71,
+        "decoded": "71",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 72 plus 2?",
+        "expected": 74,
+        "decoded": "74",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.8610156448394264e-06
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 88 plus 3?",
+        "expected": 91,
+        "decoded": "91",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.7683698412015474e-07
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 27 plus 3?",
+        "expected": 30,
+        "decoded": "30",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.529932990493535e-06
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 43 plus 3?",
+        "expected": 46,
+        "decoded": "46",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 70 plus 3?",
+        "expected": 73,
+        "decoded": "73",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 16 plus 3?",
+        "expected": 19,
+        "decoded": "19",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1801591199400718e-05
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 92 plus 3?",
+        "expected": 95,
+        "decoded": "95",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 82 plus 4?",
+        "expected": 86,
+        "decoded": "86",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881390590446244e-07
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 9 plus 4?",
+        "expected": 13,
+        "decoded": "13",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 40 plus 4?",
+        "expected": 44,
+        "decoded": "44",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 53 plus 4?",
+        "expected": 57,
+        "decoded": "57",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 11 plus 4?",
+        "expected": 15,
+        "decoded": "15",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.3378533998984494e-06
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 65 plus 4?",
+        "expected": 69,
+        "decoded": "69",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.0994328596989362e-06
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 61 plus 5?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881390590446244e-07
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 82 plus 5?",
+        "expected": 87,
+        "decoded": "87",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.4662527973996475e-05
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 77 plus 5?",
+        "expected": 82,
+        "decoded": "82",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.7418068242468507e-06
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 19 plus 5?",
+        "expected": 24,
+        "decoded": "24",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.2319182966821245e-06
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 88 plus 5?",
+        "expected": 93,
+        "decoded": "93",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.98023181244389e-07
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 53 plus 5?",
+        "expected": 58,
+        "decoded": "58",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 65 plus 6?",
+        "expected": 71,
+        "decoded": "71",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0001166923465518721
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 44 plus 6?",
+        "expected": 50,
+        "decoded": "50",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.980231634808206e-07
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 3 plus 6?",
+        "expected": 9,
+        "decoded": "9",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 56 plus 6?",
+        "expected": 62,
+        "decoded": "62",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3841852225814364e-07
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 48 plus 6?",
+        "expected": 54,
+        "decoded": "54",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 74 plus 6?",
+        "expected": 80,
+        "decoded": "80",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.9802313861182483e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 7 plus 7?",
+        "expected": 14,
+        "decoded": "14",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.037110087054316e-05
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 46 plus 7?",
+        "expected": 53,
+        "decoded": "53",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.576278118089249e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 62 plus 7?",
+        "expected": 69,
+        "decoded": "69",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.9802313861182483e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 48 plus 7?",
+        "expected": 55,
+        "decoded": "55",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 75 plus 7?",
+        "expected": 82,
+        "decoded": "82",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.172323428974778e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 1 plus 7?",
+        "expected": 8,
+        "decoded": "8",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 52 plus 8?",
+        "expected": 60,
+        "decoded": "60",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.1723241395175137e-07
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 31 plus 8?",
+        "expected": 39,
+        "decoded": "39",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.291516685128727e-06
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 15 plus 8?",
+        "expected": 23,
+        "decoded": "23",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7285328226535057e-06
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 72 plus 8?",
+        "expected": 80,
+        "decoded": "80",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.9802313861182483e-07
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 28 plus 8?",
+        "expected": 36,
+        "decoded": "36",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.5497188030622056e-06
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 32 plus 8?",
+        "expected": 40,
+        "decoded": "40",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.9802313861182483e-07
+      },
+      {
+        "rung": "canonical",
+        "question": "what is 17 times 23?",
+        "expected": 391,
+        "decoded": "20",
+        "exact_ok": false,
+        "parsed_ok": false,
+        "ce": 17.61606438954671
+      }
+    ],
+    "t3_kv": [
+      {
+        "rung": "R0",
+        "question": "what is 66?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.980223371196189e-06
+      },
+      {
+        "rung": "R0",
+        "question": "what is 53?",
+        "expected": 53,
+        "decoded": "53",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881391656260348e-07
+      },
+      {
+        "rung": "R0",
+        "question": "what is 38?",
+        "expected": 38,
+        "decoded": "38",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R0",
+        "question": "what is 46?",
+        "expected": 46,
+        "decoded": "46",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R0",
+        "question": "what is 37?",
+        "expected": 37,
+        "decoded": "37",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R0",
+        "question": "what is 22?",
+        "expected": 22,
+        "decoded": "22",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1",
+        "question": "what is 92 plus 0?",
+        "expected": 92,
+        "decoded": "92",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 8.940689859571194e-07
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 47?",
+        "expected": 47,
+        "decoded": "47",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1",
+        "question": "what is 18 minus 0?",
+        "expected": 18,
+        "decoded": "18",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 9.536736627069331e-07
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 4?",
+        "expected": 4,
+        "decoded": "4",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.4570634852570947e-06
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 42?",
+        "expected": 42,
+        "decoded": "42",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 65?",
+        "expected": 65,
+        "decoded": "65",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 96 plus 1?",
+        "expected": 97,
+        "decoded": "97",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 54 plus 1?",
+        "expected": 55,
+        "decoded": "55",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 33 plus 1?",
+        "expected": 34,
+        "decoded": "34",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3841852225814364e-07
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 65 plus 1?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 41 plus 1?",
+        "expected": 42,
+        "decoded": "42",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.364415720521265e-07
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 82 plus 1?",
+        "expected": 83,
+        "decoded": "83",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 7.86776081440621e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 88 minus 1?",
+        "expected": 87,
+        "decoded": "87",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 7.867753964774238e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 93 minus 1?",
+        "expected": 92,
+        "decoded": "92",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.980231634808206e-07
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 52 minus 1?",
+        "expected": 51,
+        "decoded": "51",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.5762775496550603e-07
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 18 minus 1?",
+        "expected": 17,
+        "decoded": "17",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.4239970950220595e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 71 minus 1?",
+        "expected": 70,
+        "decoded": "70",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.4570603020256385e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 8 minus 1?",
+        "expected": 7,
+        "decoded": "7",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.311301275563892e-06
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 18 plus 2?",
+        "expected": 20,
+        "decoded": "20",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.364415720521265e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 26 plus 2?",
+        "expected": 28,
+        "decoded": "28",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 20 plus 2?",
+        "expected": 22,
+        "decoded": "22",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 91 plus 2?",
+        "expected": 93,
+        "decoded": "93",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3841855067985307e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 69 plus 2?",
+        "expected": 71,
+        "decoded": "71",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 72 plus 2?",
+        "expected": 74,
+        "decoded": "74",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 9.536735170456723e-07
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 88 plus 3?",
+        "expected": 91,
+        "decoded": "91",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3841852225814364e-07
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 27 plus 3?",
+        "expected": 30,
+        "decoded": "30",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 8.344582052899341e-06
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 43 plus 3?",
+        "expected": 46,
+        "decoded": "46",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 70 plus 3?",
+        "expected": 73,
+        "decoded": "73",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 16 plus 3?",
+        "expected": 19,
+        "decoded": "19",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.063588485474611e-05
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 92 plus 3?",
+        "expected": 95,
+        "decoded": "95",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 82 plus 4?",
+        "expected": 86,
+        "decoded": "86",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.172323428974778e-07
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 9 plus 4?",
+        "expected": 13,
+        "decoded": "13",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 40 plus 4?",
+        "expected": 44,
+        "decoded": "44",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 53 plus 4?",
+        "expected": 57,
+        "decoded": "57",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 11 plus 4?",
+        "expected": 15,
+        "decoded": "15",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.695478085319337e-06
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 65 plus 4?",
+        "expected": 69,
+        "decoded": "69",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.443784747896416e-06
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 61 plus 5?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 82 plus 5?",
+        "expected": 87,
+        "decoded": "87",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3722086552879773e-05
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 77 plus 5?",
+        "expected": 82,
+        "decoded": "82",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3841803304947007e-06
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 19 plus 5?",
+        "expected": 24,
+        "decoded": "24",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.031151117558693e-05
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 88 plus 5?",
+        "expected": 93,
+        "decoded": "93",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.1723241395175137e-07
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 53 plus 5?",
+        "expected": 58,
+        "decoded": "58",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 65 plus 6?",
+        "expected": 71,
+        "decoded": "71",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.936270826722989e-05
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 44 plus 6?",
+        "expected": 50,
+        "decoded": "50",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881390590446244e-07
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 3 plus 6?",
+        "expected": 9,
+        "decoded": "9",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 56 plus 6?",
+        "expected": 62,
+        "decoded": "62",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 48 plus 6?",
+        "expected": 54,
+        "decoded": "54",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 74 plus 6?",
+        "expected": 80,
+        "decoded": "80",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3841852225814364e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 7 plus 7?",
+        "expected": 14,
+        "decoded": "14",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 7.748543794150464e-06
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 46 plus 7?",
+        "expected": 53,
+        "decoded": "53",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881391656260348e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 62 plus 7?",
+        "expected": 69,
+        "decoded": "69",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.172323428974778e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 48 plus 7?",
+        "expected": 55,
+        "decoded": "55",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 75 plus 7?",
+        "expected": 82,
+        "decoded": "82",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.7683693082944956e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 1 plus 7?",
+        "expected": 8,
+        "decoded": "8",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 52 plus 8?",
+        "expected": 60,
+        "decoded": "60",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.384185471271394e-07
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 31 plus 8?",
+        "expected": 39,
+        "decoded": "39",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.9802235950171507e-06
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 15 plus 8?",
+        "expected": 23,
+        "decoded": "23",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.00012086374016462287
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 72 plus 8?",
+        "expected": 80,
+        "decoded": "80",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 28 plus 8?",
+        "expected": 36,
+        "decoded": "36",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.2053681334455177e-06
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 32 plus 8?",
+        "expected": 40,
+        "decoded": "40",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920915312657598e-06
+      },
+      {
+        "rung": "canonical",
+        "question": "what is 17 times 23?",
+        "expected": 391,
+        "decoded": "20",
+        "exact_ok": false,
+        "parsed_ok": false,
+        "ce": 16.62239360809326
+      }
+    ],
+    "t2_kv": [
+      {
+        "rung": "R0",
+        "question": "what is 66?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.351119969214778e-06
+      },
+      {
+        "rung": "R0",
+        "question": "what is 53?",
+        "expected": 53,
+        "decoded": "53",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R0",
+        "question": "what is 38?",
+        "expected": 38,
+        "decoded": "38",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R0",
+        "question": "what is 46?",
+        "expected": 46,
+        "decoded": "46",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R0",
+        "question": "what is 37?",
+        "expected": 37,
+        "decoded": "37",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R0",
+        "question": "what is 22?",
+        "expected": 22,
+        "decoded": "22",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1",
+        "question": "what is 92 plus 0?",
+        "expected": 92,
+        "decoded": "92",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.470335170481121e-06
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 47?",
+        "expected": 47,
+        "decoded": "47",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920928244535389e-07
+      },
+      {
+        "rung": "R1",
+        "question": "what is 18 minus 0?",
+        "expected": 18,
+        "decoded": "18",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881361600302625e-06
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 4?",
+        "expected": 4,
+        "decoded": "4",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 8.344646857949556e-07
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 42?",
+        "expected": 42,
+        "decoded": "42",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1",
+        "question": "what is 0 plus 65?",
+        "expected": 65,
+        "decoded": "65",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 96 plus 1?",
+        "expected": 97,
+        "decoded": "97",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 54 plus 1?",
+        "expected": 55,
+        "decoded": "55",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 33 plus 1?",
+        "expected": 34,
+        "decoded": "34",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 65 plus 1?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 41 plus 1?",
+        "expected": 42,
+        "decoded": "42",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 8.344643447344424e-07
+      },
+      {
+        "rung": "R1b1",
+        "question": "what is 82 plus 1?",
+        "expected": 83,
+        "decoded": "83",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 8.344646289515367e-07
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 88 minus 1?",
+        "expected": 87,
+        "decoded": "87",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.960462488019402e-07
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 93 minus 1?",
+        "expected": 92,
+        "decoded": "92",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881391656260348e-07
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 52 minus 1?",
+        "expected": 51,
+        "decoded": "51",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7285326521232491e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 18 minus 1?",
+        "expected": 17,
+        "decoded": "17",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.576269477889582e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 71 minus 1?",
+        "expected": 70,
+        "decoded": "70",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.0861599523414043e-06
+      },
+      {
+        "rung": "R1b2",
+        "question": "what is 8 minus 1?",
+        "expected": 7,
+        "decoded": "7",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.960462772236497e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 18 plus 2?",
+        "expected": 20,
+        "decoded": "20",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.4318105712239912e-05
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 26 plus 2?",
+        "expected": 28,
+        "decoded": "28",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 20 plus 2?",
+        "expected": 22,
+        "decoded": "22",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 91 plus 2?",
+        "expected": 93,
+        "decoded": "93",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881391656260348e-07
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 69 plus 2?",
+        "expected": 71,
+        "decoded": "71",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b3",
+        "question": "what is 72 plus 2?",
+        "expected": 74,
+        "decoded": "74",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.3709051209787049e-06
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 88 plus 3?",
+        "expected": 91,
+        "decoded": "91",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.980231634808206e-07
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 27 plus 3?",
+        "expected": 30,
+        "decoded": "30",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.317245278187329e-05
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 43 plus 3?",
+        "expected": 46,
+        "decoded": "46",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 4.172323428974778e-07
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 70 plus 3?",
+        "expected": 73,
+        "decoded": "73",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 16 plus 3?",
+        "expected": 19,
+        "decoded": "19",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.027205552905712693
+      },
+      {
+        "rung": "R1b4v2",
+        "question": "what is 92 plus 3?",
+        "expected": 95,
+        "decoded": "95",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881390590446244e-07
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 82 plus 4?",
+        "expected": 86,
+        "decoded": "86",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 9 plus 4?",
+        "expected": 13,
+        "decoded": "13",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881390590446244e-07
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 40 plus 4?",
+        "expected": 44,
+        "decoded": "44",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 53 plus 4?",
+        "expected": 57,
+        "decoded": "57",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 11 plus 4?",
+        "expected": 15,
+        "decoded": "15",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.278247106663912e-06
+      },
+      {
+        "rung": "R1b5",
+        "question": "what is 65 plus 4?",
+        "expected": 69,
+        "decoded": "69",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.347048208799606e-05
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 61 plus 5?",
+        "expected": 66,
+        "decoded": "66",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 82 plus 5?",
+        "expected": 87,
+        "decoded": "87",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 9.000221321997515e-06
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 77 plus 5?",
+        "expected": 82,
+        "decoded": "82",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.9669498527719043e-06
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 19 plus 5?",
+        "expected": 24,
+        "decoded": "24",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 6.854490862906459e-06
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 88 plus 5?",
+        "expected": 93,
+        "decoded": "93",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.576277975980702e-07
+      },
+      {
+        "rung": "R1b6",
+        "question": "what is 53 plus 5?",
+        "expected": 58,
+        "decoded": "58",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 65 plus 6?",
+        "expected": 71,
+        "decoded": "71",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.3343319446952364e-05
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 44 plus 6?",
+        "expected": 50,
+        "decoded": "50",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 3 plus 6?",
+        "expected": 9,
+        "decoded": "9",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 56 plus 6?",
+        "expected": 62,
+        "decoded": "62",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.5762775496550603e-07
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 48 plus 6?",
+        "expected": 54,
+        "decoded": "54",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b7",
+        "question": "what is 74 plus 6?",
+        "expected": 80,
+        "decoded": "80",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 7 plus 7?",
+        "expected": 14,
+        "decoded": "14",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.97418337140698e-05
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 46 plus 7?",
+        "expected": 53,
+        "decoded": "53",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 7.152553820333196e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 62 plus 7?",
+        "expected": 69,
+        "decoded": "69",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.3841852225814364e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 48 plus 7?",
+        "expected": 55,
+        "decoded": "55",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.1920927533992653e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 75 plus 7?",
+        "expected": 82,
+        "decoded": "82",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 7.152552257139178e-07
+      },
+      {
+        "rung": "R1b8",
+        "question": "what is 1 plus 7?",
+        "expected": 8,
+        "decoded": "8",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 0.0
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 52 plus 8?",
+        "expected": 60,
+        "decoded": "60",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.7881391656260348e-07
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 31 plus 8?",
+        "expected": 39,
+        "decoded": "39",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.1457628882615154e-06
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 15 plus 8?",
+        "expected": 23,
+        "decoded": "23",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 2.8014126201014733e-06
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 72 plus 8?",
+        "expected": 80,
+        "decoded": "80",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 5.9604641222676946e-08
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 28 plus 8?",
+        "expected": 36,
+        "decoded": "36",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 1.5497190020141716e-06
+      },
+      {
+        "rung": "R1b9",
+        "question": "what is 32 plus 8?",
+        "expected": 40,
+        "decoded": "40",
+        "exact_ok": true,
+        "parsed_ok": true,
+        "ce": 3.993495734988528e-06
+      },
+      {
+        "rung": "canonical",
+        "question": "what is 17 times 23?",
+        "expected": 391,
+        "decoded": "27",
+        "exact_ok": false,
+        "parsed_ok": false,
+        "ce": 18.199007034301758
+      }
+    ]
+  },
+  "branch_verdict": "kv_at_2bit"
+}

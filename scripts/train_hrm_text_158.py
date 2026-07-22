@@ -693,6 +693,14 @@ def train(
     # forwards. Requires use_ternary_bulk=True. Default False preserves
     # current path bit-exact. Codex msg 1779538337913-2d79fa93.
     use_native_ternary_train: bool = False,
+    # Ternary-rotor Phase 3b (zenith-code MEMORY/ternary-rotor.md):
+    # "rotor3b" = quantize-narrow + remat-wide backward-saved codec —
+    # SwiGLUs checkpoint-wrapped (wide intermediates recomputed, not
+    # stored) + 512-wide dim-3 saves rotor-quantized at 3-bit via a
+    # process-wide saved_tensors_hooks context. Forward math unchanged;
+    # only backward-saved precision is the variable. Default "none"
+    # preserves the current path bit-exact.
+    backward_saved_codec: str = "none",
     # Phase 3 Step 1 (codex msg 1779462307554-b57d8288):
     # Curriculum-mode replaces GSM8k corpus with synthetic per-rung
     # data. ALL fields optional; defaults preserve legacy GSM8k behavior.
@@ -2529,6 +2537,27 @@ def train(
             print(f"[hrm158] TTrain-B native-ternary-train: enabled {n_enabled} "
                   f"BitLinear modules (Triton fused-quantize + STE-correct backward)",
                   flush=True)
+
+    # Ternary-rotor Phase 3b backward-saved codec (screen-gated: remat_only
+    # lossless, 3-bit narrow med_cos 0.995 / min_cos 0.979 vs FP control).
+    # Wrap ONLY the child m (parent_m runs no_grad — nothing is saved).
+    # The hooks context stays entered for the whole training run; probe /
+    # eval decodes run under no_grad so pack never fires there.
+    rotor_codec = None
+    if backward_saved_codec not in ("none", "rotor3b"):
+        raise ValueError(
+            f"unknown backward_saved_codec: {backward_saved_codec!r}")
+    if backward_saved_codec == "rotor3b":
+        from calm.hrm_text_158.native_full_stack.rotor_runtime_quant import (
+            SavedTensorRotorCodec,
+            wrap_swiglu_with_checkpoint,
+        )
+        n_wrapped = wrap_swiglu_with_checkpoint(m)
+        rotor_codec = SavedTensorRotorCodec(3, narrow_only=True)
+        rotor_codec.hooks().__enter__()
+        print(f"[hrm158] rotor3b backward-saved codec ENABLED: "
+              f"{n_wrapped} SwiGLU modules checkpoint-wrapped (remat-wide), "
+              f"512-wide saves rotor-3bit (quantize-narrow)", flush=True)
     step = 0
     # Reset CUDA peak-memory stats so the logged peak reflects the training
     # loop (post model+parent load), giving a clean F.2e-comparable peak.
@@ -2835,6 +2864,13 @@ if __name__ == "__main__":
                          "to default path; STE-correct backward via custom "
                          "autograd.Function. Inference path unchanged. Requires "
                          "--use-ternary-bulk (no-op otherwise).")
+    ap.add_argument("--backward-saved-codec", type=str, default="none",
+                    choices=("none", "rotor3b"),
+                    help="Ternary-rotor Phase 3b: 'rotor3b' enables the "
+                         "quantize-narrow (512-wide saves at rotor-3bit) + "
+                         "remat-wide (SwiGLU checkpoint) backward-saved "
+                         "codec. Forward math unchanged. Default 'none' is "
+                         "bit-exact current behavior.")
     # Phase 3 Step 1 curriculum flags (codex msg 1779462307554 +1 implement Phase A)
     ap.add_argument("--curriculum-rung", type=str, default=None,
                     choices=["R0", "R1", "R1b1", "R1b2a", "R1b2", "R1b3", "R1b4", "R1b4v2", "R1b5", "R1b6", "R1b7", "R1b8", "R1b9", "R1b10", "L0a", "L0b", "L0c1", "L0c2", "L0c2-K1", "L0c2-K2", "L0c2-K2-addition-full", "L0c2-K2-addition-120", "L0c2-K2-addition-120-k5to8", "L0c2-K2-addition-50s", "L0c2-K2-addition-60s-transfer", "L0c2-K2-addition-60s-trace", "L0c2-K2-addition-60to89-trace", "L0c2-K3", "L0c2-K1-edge", "L0c2-K1-identity-2digit", "L0c2-K1-identity-2digit-full", "L0c", "L0c_exhaustive", "L0c_exhaustive_2digit", "R1b", "R2a", "R2", "R3", "R4", "R5", "R6"],
@@ -3096,6 +3132,7 @@ if __name__ == "__main__":
         n_val_cap=args.n_val_cap,
         use_ternary_bulk=args.use_ternary_bulk,
         use_native_ternary_train=args.use_native_ternary_train,
+        backward_saved_codec=args.backward_saved_codec,
         curriculum_rung=args.curriculum_rung,
         curriculum_seed=args.curriculum_seed,
         curriculum_n_train=args.curriculum_n_train,
