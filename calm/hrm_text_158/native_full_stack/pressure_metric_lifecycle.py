@@ -98,6 +98,7 @@ class PressureTelemetryStore:
         now_step: int,
         reason: str,
     ) -> None:
+        """Scalar reference close (elif precedence). Hot paths use `_close_events_masked`."""
         steps = int(self.steps)
         H = int(self.follow_up_horizon)
         if first_step > steps - H:
@@ -146,6 +147,94 @@ class PressureTelemetryStore:
                         self.aggregates.N_events_evaluable_late -= 1
                     self.aggregates.N_events_censored_insufficient_followup += 1
 
+    def _close_events_masked(
+        self,
+        *,
+        first: torch.Tensor,
+        after: torch.Tensor,
+        close_mask: torch.Tensor,
+        now_step: int,
+        reason: str,
+    ) -> None:
+        """Vectorized close under `close_mask`; bit-exact with `_close_event` elif chain.
+
+        Class masks are mutually exclusive in scalar precedence (andnot-chained):
+        censor_insufficient → window_end short-censor (inner guard only; outer-true/
+        inner-false falls through) → evaluable → survived → never_a → never_b →
+        residual never_c / early-censor decrement.
+        """
+        if not bool(close_mask.any()):
+            return
+        steps = int(self.steps)
+        H = int(self.follow_up_horizon)
+        t = int(now_step)
+        m = close_mask.bool()
+        fs = first
+        aa = after
+
+        # 1) censor when first_step > steps - H
+        censor_insuff = m & (fs > (steps - H))
+        rem = m & ~censor_insuff
+
+        # 2) window_end short-follow-up censor with INNER guard only
+        if reason == "window_end":
+            outer_short = rem & (aa == 0) & ((t - fs) < H)
+            censor_window = outer_short & (t >= steps) & ((fs + H) > steps)
+            # outer-true / inner-false FALL THROUGH to evaluable path
+            rem = rem & ~censor_window
+        else:
+            censor_window = torch.zeros_like(m)
+
+        evaluable = rem
+        mid = steps // 2
+        early = evaluable & (fs >= 1) & (fs <= mid)
+        late = evaluable & (fs > mid) & (fs <= (steps - H))
+
+        survived = evaluable & (aa > 0) & ((aa - fs) > 0) & ((aa - fs) <= H)
+        not_surv = evaluable & ~survived
+
+        never_a = not_surv & (aa == 0) & ((t - fs) >= H)
+        rem_ns = not_surv & ~never_a
+
+        never_b = rem_ns & (aa > 0) & ((aa - fs) > H)
+        rem_ns2 = rem_ns & ~never_b
+
+        if reason in ("horizon_expired", "residual_clear", "residual_restart"):
+            residual_arm = rem_ns2 & (aa == 0)
+            never_c = residual_arm & ((t - fs) >= H)
+            early_censor_dec = residual_arm & ~never_c
+        else:
+            never_c = torch.zeros_like(m)
+            early_censor_dec = torch.zeros_like(m)
+
+        never = never_a | never_b | never_c
+
+        agg = self.aggregates
+        n_censor = (
+            int(censor_insuff.sum().item())
+            + int(censor_window.sum().item())
+            + int(early_censor_dec.sum().item())
+        )
+        n_eval = int(evaluable.sum().item()) - int(early_censor_dec.sum().item())
+        n_eval_early = int(early.sum().item()) - int((early_censor_dec & early).sum().item())
+        n_eval_late = int(late.sum().item()) - int((early_censor_dec & late).sum().item())
+        n_surv = int(survived.sum().item())
+        n_never = int(never.sum().item())
+        n_never_early = int((never & early).sum().item())
+        n_never_late = int((never & late).sum().item())
+
+        agg.N_events_censored_insufficient_followup += n_censor
+        agg.N_events_evaluable += n_eval
+        agg.N_events_evaluable_early += n_eval_early
+        agg.N_events_evaluable_late += n_eval_late
+        agg.N_survived_applied_within_H += n_surv
+        agg.N_never_applied_within_H += n_never
+        agg.N_never_applied_within_H_early += n_never_early
+        agg.N_never_applied_within_H_late += n_never_late
+
+        first[m] = 0
+        after[m] = 0
+
     def process_pre_writeback(
         self,
         *,
@@ -179,25 +268,21 @@ class PressureTelemetryStore:
             if not bool(open_ev.any()):
                 continue
             just_survived = open_ev & (after == t) & ((after - first) <= H) & ((after - first) > 0)
-            if bool(just_survived.any()):
-                idxs = just_survived.nonzero(as_tuple=False)
-                for idx in idxs:
-                    idx_t = tuple(int(x) for x in idx.tolist())
-                    fs = int(first[idx_t].item())
-                    aa = int(after[idx_t].item())
-                    self._close_event(first_step=fs, applied_after=aa, now_step=t, reason="survived")
-                    first[idx_t] = 0
-                    after[idx_t] = 0
-
+            self._close_events_masked(
+                first=first,
+                after=after,
+                close_mask=just_survived,
+                now_step=t,
+                reason="survived",
+            )
             expired = (first > 0) & (after == 0) & ((t - first) >= H)
-            if bool(expired.any()):
-                idxs = expired.nonzero(as_tuple=False)
-                for idx in idxs:
-                    idx_t = tuple(int(x) for x in idx.tolist())
-                    fs = int(first[idx_t].item())
-                    self._close_event(first_step=fs, applied_after=0, now_step=t, reason="horizon_expired")
-                    first[idx_t] = 0
-                    after[idx_t] = 0
+            self._close_events_masked(
+                first=first,
+                after=after,
+                close_mask=expired,
+                now_step=t,
+                reason="horizon_expired",
+            )
 
         ratio = float(n_candidates) / float(max(1, n_applied))
         self.per_step_ratios.append(
@@ -218,6 +303,7 @@ class PressureTelemetryStore:
         residual_zero: Mapping[str, torch.Tensor] | None = None,
         residual_restart: Mapping[str, torch.Tensor] | None = None,
     ) -> None:
+        del residual_restart  # API retained; reason split uses residual_zero only
         t = int(step)
         for n, applied in applied_masks.items():
             first = self.first_deferral_step[n]
@@ -225,19 +311,26 @@ class PressureTelemetryStore:
             open_applied = applied & (first > 0)
             if not bool(open_applied.any()):
                 continue
-            idxs = open_applied.nonzero(as_tuple=False)
-            for idx in idxs:
-                idx_t = tuple(int(x) for x in idx.tolist())
-                fs = int(first[idx_t].item())
-                aa = int(after[idx_t].item())
-                if fs == 0:
-                    continue
-                reason = "residual_restart"
-                if residual_zero is not None and bool(residual_zero[n][idx_t]):
-                    reason = "residual_clear"
-                self._close_event(first_step=fs, applied_after=aa, now_step=t, reason=reason)
-                first[idx_t] = 0
-                after[idx_t] = 0
+            if residual_zero is not None:
+                zero_m = open_applied & residual_zero[n].bool()
+                restart_m = open_applied & ~residual_zero[n].bool()
+            else:
+                zero_m = torch.zeros_like(open_applied)
+                restart_m = open_applied
+            self._close_events_masked(
+                first=first,
+                after=after,
+                close_mask=zero_m,
+                now_step=t,
+                reason="residual_clear",
+            )
+            self._close_events_masked(
+                first=first,
+                after=after,
+                close_mask=restart_m,
+                now_step=t,
+                reason="residual_restart",
+            )
 
     def roll_tracker_after_writeback(
         self,
@@ -247,6 +340,7 @@ class PressureTelemetryStore:
         episode_start_after: Mapping[str, torch.Tensor],
         step: int,
     ) -> None:
+        del step  # retained for call-site symmetry
         for n, applied in applied_masks.items():
             if not bool(applied.any()):
                 continue
@@ -265,16 +359,13 @@ class PressureTelemetryStore:
             first = self.first_deferral_step[n]
             after = self.applied_after_deferral_step[n]
             open_ev = first > 0
-            if not bool(open_ev.any()):
-                continue
-            idxs = open_ev.nonzero(as_tuple=False)
-            for idx in idxs:
-                idx_t = tuple(int(x) for x in idx.tolist())
-                fs = int(first[idx_t].item())
-                aa = int(after[idx_t].item())
-                self._close_event(first_step=fs, applied_after=aa, now_step=t, reason="window_end")
-                first[idx_t] = 0
-                after[idx_t] = 0
+            self._close_events_masked(
+                first=first,
+                after=after,
+                close_mask=open_ev,
+                now_step=t,
+                reason="window_end",
+            )
 
     def survival_summary(self) -> dict[str, Any]:
         agg = self.aggregates
