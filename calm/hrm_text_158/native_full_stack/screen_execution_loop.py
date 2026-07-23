@@ -54,26 +54,13 @@ TOPK_PER_STEP = 1024
 def _arm_topk_masks(
     arms_acc: dict[str, torch.Tensor], *, topk: int
 ) -> dict[str, torch.Tensor]:
-    flat_abs = []
-    shapes = []
-    for n, a in arms_acc.items():
-        flat_abs.append(a.abs().flatten())
-        shapes.append((n, a.numel(), a.shape))
-    allabs = torch.cat(flat_abs)
-    crosser_idx = torch.nonzero(
-        allabs >= CROSSING_THRESHOLD_ABS, as_tuple=False
-    ).flatten()
-    sel = torch.zeros_like(allabs, dtype=torch.bool)
-    if crosser_idx.numel():
-        k = min(int(topk), int(crosser_idx.numel()))
-        top = crosser_idx[allabs[crosser_idx].argsort(descending=True)[:k]]
-        sel[top] = True
-    masks: dict[str, torch.Tensor] = {}
-    off = 0
-    for n, nn, shape in shapes:
-        masks[n] = sel[off : off + nn].view(shape)
-        off += nn
-    return masks
+    """Applied topK masks — selection bit-identical to pressure_metric_telemetry helper."""
+    from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
+        compute_topk_masks_and_counts,
+    )
+
+    _cand, applied, _nc, _na = compute_topk_masks_and_counts(arms_acc, topk=int(topk))
+    return applied
 
 
 def run_train_loop(
@@ -91,8 +78,14 @@ def run_train_loop(
     max_seq_len: int,
     device: str,
     correctness_smoke: bool = False,
+    pressure_telemetry: Any | None = None,
 ) -> dict[str, Any]:
-    """Mutate q/acc/episode for `steps`; return telemetry + final state tensors."""
+    """Mutate q/acc/episode for `steps`; return telemetry + final state tensors.
+
+    If `pressure_telemetry` is set (PressureTelemetryStore), run PLAN_v6 event
+    lifecycle stages 1-6 around pre-writeback masks. Uninstrumented path
+    (pressure_telemetry is None) is unchanged aside from shared mask helper.
+    """
     acc = {n: torch.zeros_like(q, dtype=torch.int16) for n, q in q_levels.items()}
     episode_start = {
         n: torch.zeros_like(q, dtype=torch.int32) for n, q in q_levels.items()
@@ -108,6 +101,8 @@ def run_train_loop(
     n_applied_drains = 0
     excluded_hit_count = 0
     H_trajectory: list[dict[str, Any]] = []
+    margin_traj: list[dict[str, Any]] = []
+    episode_traj: list[dict[str, Any]] = []
 
     t0 = time.time()
     last_store = None
@@ -162,10 +157,89 @@ def run_train_loop(
         elif arm != ARM0:
             raise SystemExit(f"unknown --arm {arm}")
 
-        masks = _arm_topk_masks(acc, topk=int(topk))
+        # Stage 1: pre-writeback candidate + applied masks
+        if pressure_telemetry is not None:
+            from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
+                active_episode_stats,
+                assert_two_tier_threshold_pass,
+                compute_topk_masks_and_counts,
+                global_margin_quantiles,
+            )
+
+            cand_masks, masks, n_cand, n_app = compute_topk_masks_and_counts(
+                acc, topk=int(topk)
+            )
+            pressure_telemetry.two_tier_threshold_assert_pass = assert_two_tier_threshold_pass(
+                effective=CROSSING_THRESHOLD_ABS,
+                canonical=CROSSING_THRESHOLD_ABS,
+            )
+            # Stages 2-4
+            pressure_telemetry.process_pre_writeback(
+                candidate_masks=cand_masks,
+                applied_masks=masks,
+                step=step,
+                n_candidates=n_cand,
+                n_applied=n_app,
+            )
+            if step % 25 == 0 or step == int(steps):
+                # Dual-population GLOBAL margins on CPU acc (PLAN_v6; never n_parts)
+                margin_traj.append(
+                    {
+                        "step": int(step),
+                        "residual_margin_pre_cap_crossers": global_margin_quantiles(
+                            acc, cand_masks, threshold=CROSSING_THRESHOLD_ABS
+                        ),
+                        "residual_margin_applied_topk": global_margin_quantiles(
+                            acc, masks, threshold=CROSSING_THRESHOLD_ABS
+                        ),
+                        "n_candidates": int(n_cand),
+                        "n_applied": int(n_app),
+                    }
+                )
+                # Episode telemetry from existing CPU acc/episode_start seam
+                ep_stats = active_episode_stats(acc, episode_start, step=step)
+                episode_traj.append({"step": int(step), **ep_stats})
+        else:
+            masks = _arm_topk_masks(acc, topk=int(topk))
+
+        # Snapshot episode_start before writeback for stage-6 rollover detect
+        ep_before = (
+            {n: episode_start[n].clone() for n in episode_start}
+            if pressure_telemetry is not None
+            else None
+        )
+
+        # Close open events on applied indices BEFORE writeback mutates episodes
+        if pressure_telemetry is not None:
+            # Predict residual-zero from current acc + applied (same law as writeback)
+            from calm.hrm_text_158.native_full_stack.forgetting_laws import (
+                threshold_residual_writeback,
+            )
+
+            residual_zero = {}
+            for n in masks:
+                if not bool(masks[n].any()):
+                    residual_zero[n] = torch.zeros_like(masks[n], dtype=torch.bool)
+                    continue
+                dir_ = torch.where(
+                    acc[n] >= 0, torch.ones_like(acc[n]), -torch.ones_like(acc[n])
+                ).to(torch.int8)
+                res = threshold_residual_writeback(
+                    acc[n][masks[n]], dir_[masks[n]], threshold=CROSSING_THRESHOLD_ABS
+                )
+                rz = torch.zeros_like(masks[n], dtype=torch.bool)
+                rz[masks[n]] = res == 0
+                residual_zero[n] = rz
+            pressure_telemetry.close_before_writeback_resets(
+                applied_masks=masks,
+                step=step,
+                residual_zero=residual_zero,
+            )
+
         for n in list(acc.keys()):
             drained = int(masks[n].sum().item())
             n_applied_drains += drained
+            # Stage 5: writeback (may restart/clear episodes)
             new_acc, new_ep, new_q, lt, n_q = apply_live_flip_writeback(
                 acc[n], episode_start[n], q_levels[n], masks[n], step=step
             )
@@ -178,6 +252,15 @@ def run_train_loop(
             acc[n] = new_acc
             episode_start[n] = new_ep
             q_levels[n] = new_q
+
+        # Stage 6: roll tracker after writeback episode changes
+        if pressure_telemetry is not None and ep_before is not None:
+            pressure_telemetry.roll_tracker_after_writeback(
+                applied_masks=masks,
+                episode_start_before=ep_before,
+                episode_start_after=episode_start,
+                step=step,
+            )
 
         if should_record_h_trajectory(step, int(steps)):
             H_now = entropy_bits(torch.cat([a.flatten() for a in acc.values()]))
@@ -199,6 +282,9 @@ def run_train_loop(
                 flush=True,
             )
 
+    if pressure_telemetry is not None:
+        pressure_telemetry.finalize_window(final_step=int(steps))
+
     # Snapshot credit-step route counters BEFORE final probes (probes call
     # begin_credit_step and would overwrite the module-global store).
     if last_store is None:
@@ -212,7 +298,7 @@ def run_train_loop(
         train_route_counters = snapshot_route_counters(last_store)
         train_route_counters["n_eligible_keys"] = len(eligible)
 
-    return {
+    out = {
         "acc": acc,
         "episode_start": episode_start,
         "flip_count": flip_count,
@@ -226,3 +312,8 @@ def run_train_loop(
         "H_trajectory": H_trajectory,
         "train_route_counters": train_route_counters,
     }
+    if pressure_telemetry is not None:
+        out["pressure_telemetry"] = pressure_telemetry
+        out["margin_trajectory"] = margin_traj
+        out["episode_trajectory"] = episode_traj
+    return out

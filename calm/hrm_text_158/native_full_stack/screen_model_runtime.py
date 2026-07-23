@@ -109,6 +109,32 @@ def _install_fixed_qscale_forwards(
     return originals
 
 
+def rebind_fixed_qscale_forwards(
+    modules: dict[str, BitLinear],
+    q_levels: dict[str, torch.Tensor],
+    frozen_scales: dict[str, torch.Tensor],
+) -> None:
+    """Re-install FixedQScale closures bound to the PROVIDED q_levels dict.
+
+    Call after any q_levels dict replacement so model.forward mutates/reads the
+    same object the train loop updates. Prefer mutating the original dict in
+    place; use this when a fresh dict is unavoidable.
+    """
+    _install_fixed_qscale_forwards(modules, q_levels, frozen_scales)
+
+
+def assert_q_levels_coupled(
+    rt: dict[str, Any],
+    q_levels: dict[str, torch.Tensor],
+) -> None:
+    """Fail-closed: train-loop q_levels must be the EXACT object captured by forwards."""
+    if q_levels is not rt.get("q_levels"):
+        raise RuntimeError(
+            "q-forward decoupling: train q_levels is not rt['q_levels'] "
+            "(clone disconnected from installed FixedQScale closures)"
+        )
+
+
 def _loss_and_credit(m, tok, rows, *, max_seq_len: int, device: str, eligible: list[str]):
     from calm.hrm_text_158.lm_head import IGNORE_LABEL_ID
 
