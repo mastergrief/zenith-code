@@ -122,6 +122,30 @@ Read-only handles that mutate = safety failure. Plan gate = refinement loop
 Match risk + user impact. Receipts: commands, outputs, artifacts, cites, msg
 ids, caveats. Cited gate ids must resolve as authored records.
 
+## Gate-2 convergence + review-risk tier
+
+**Exhaustive-first review.** The FIRST gate-2 on an implementation runs a
+plan-derived conformance checklist in ONE pass — provenance/authority,
+input-contract validation, fixed geometry, phase/step order, state-compat,
+fail-closed defaults, route/credit integrity. Every re-review still rechecks
+prior blockers AND re-runs the full hazard sweep — **substantiated evidence is
+never suppressed and PASS is never forced**. Convergence comes from batching:
+surface ALL substantiated blockers in one verdict, not one axis per bounce.
+When a plan-derived axis surfaces late, the verdict names why it was missed
+(process retrospective), and the checklist gains that axis.
+
+**Review-risk tier — by control-plane blast radius, not file extension.**
+HIGH — mints a science verdict, touches a banked/`.pt` artifact, makes an
+acquisition/sub-2 claim, **or alters cross-session control-plane behavior**
+(gates, authorization hooks, staging/index semantics, review rules) → full
+dual-gate + per-round freeze/DIFF_DIGEST. LOW — local, reversible,
+non-control-plane surfaces (docs, local tooling, tests) → claude gate-1 + one
+co_lead pass expected. In BOTH tiers, any post-review correction changes the
+diff and therefore requires a fresh frozen DIFF_DIGEST + matching PASS (the
+commit hook enforces this); LOW lowers expected review rounds, never the
+digest/PASS requirement. Bank-gate discipline (`hrm-158.md`,
+`ternary_hybrid_stack.md`) is never LOW.
+
 ## Commit and push gates
 
 Never commit on plan alone. Push only after `+1 push` or persisted `+1

@@ -159,6 +159,12 @@ co_lead review). **REVIEW_ORDER** = gate sequencing. Freeze discipline: immutabl
 filename per version; on-disk sha self-verify before any frozen claim; no
 in-flight artifact review. **Passive-wait-don't-poll** at gates.
 
+**Gate-2 convergence:** the first gate-2 runs the full plan-derived checklist in
+one pass; re-reviews recheck prior blockers + re-run the full sweep, batching
+ALL substantiated blockers per verdict — evidence is never suppressed, PASS
+never forced. Ceremony tiers by control-plane blast radius. Full semantics:
+`CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
+
 ## Fast Training Launch Contract
 
 Compress gates, not safety: (1) `plan-dev` drafts launch packet; (2) claude

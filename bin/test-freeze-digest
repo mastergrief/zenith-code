@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# test-freeze-digest — isolated-temp-repo fixture tests for bin/freeze-digest.
+#
+# Proves (co_lead gate-2 requirements):
+#   1. Unrelated pre-staged index state is REJECTED (exit 4) and PRESERVED —
+#      the helper never broad-resets or clobbers a parallel freeze.
+#   2. Clean staging of exactly the requested set; digest matches manual
+#      `git diff --cached | sha256sum`.
+#   3. Re-freeze with pre-staged paths WITHIN the requested set is allowed.
+#   4. Staged deletion of a listed tracked path is handled.
+# Run: bin/test-freeze-digest
+set -uo pipefail
+
+HELPER="$(cd "$(dirname "$0")" && pwd)/freeze-digest"
+fails=0
+
+check() { # name expected_rc actual_rc
+  if [[ "$2" == "$3" ]]; then echo "[PASS] $1"; else echo "[FAIL] $1: rc=$3 want $2"; fails=$((fails+1)); fi
+}
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+git -C "$tmp" init -q
+git -C "$tmp" config user.email t@t && git -C "$tmp" config user.name t
+echo base1 > "$tmp/a.txt"; echo base2 > "$tmp/b.txt"; echo base3 > "$tmp/c.txt"
+git -C "$tmp" add -A && git -C "$tmp" commit -qm base
+
+# --- 1. unrelated pre-staged path -> exit 4, index preserved ---
+echo editA > "$tmp/a.txt"; echo editB > "$tmp/b.txt"
+git -C "$tmp" add a.txt                      # unrelated parallel staging
+"$HELPER" --repo "$tmp" b.txt >/dev/null 2>&1
+check "reject_unrelated_prestaged" 4 "$?"
+staged="$(git -C "$tmp" diff --cached --name-only)"
+[[ "$staged" == "a.txt" ]] && echo "[PASS] index_preserved (a.txt still staged, b.txt not)" \
+  || { echo "[FAIL] index_preserved: staged='$staged'"; fails=$((fails+1)); }
+
+# --- 2. clean staging + digest parity ---
+git -C "$tmp" reset -q
+out="$("$HELPER" --repo "$tmp" a.txt b.txt 2>&1)"; rc=$?
+check "clean_stage" 0 "$rc"
+digest_helper="$(grep -oE '^DIFF_DIGEST: [0-9a-f]{64}$' <<<"$out" | awk '{print $2}')"
+digest_manual="$(git -C "$tmp" diff --cached | sha256sum | awk '{print $1}')"
+[[ -n "$digest_helper" && "$digest_helper" == "$digest_manual" ]] && echo "[PASS] digest_parity" \
+  || { echo "[FAIL] digest_parity: helper=$digest_helper manual=$digest_manual"; fails=$((fails+1)); }
+
+# --- 3. re-freeze: pre-staged within requested set -> allowed ---
+"$HELPER" --repo "$tmp" a.txt b.txt >/dev/null 2>&1
+check "refreeze_same_surface" 0 "$?"
+
+# --- 4. staged deletion of a listed path ---
+git -C "$tmp" reset -q
+rm "$tmp/c.txt"
+"$HELPER" --repo "$tmp" c.txt >/dev/null 2>&1
+check "deletion_staged" 0 "$?"
+staged="$(git -C "$tmp" diff --cached --name-only)"
+[[ "$staged" == "c.txt" ]] && echo "[PASS] deletion_in_index" \
+  || { echo "[FAIL] deletion_in_index: staged='$staged'"; fails=$((fails+1)); }
+
+echo
+if [[ $fails -eq 0 ]]; then echo "ALL PASS"; exit 0; else echo "$fails FAILED"; exit 1; fi

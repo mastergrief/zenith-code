@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# freeze-digest — stage an exact commit surface and emit the strict DIFF_DIGEST
+# line the commit_precondition_colead_gate hook matches, plus per-file sha256.
+#
+# This removes the recompute / format-fight friction of a re-freeze WITHOUT
+# loosening the gate: the hook requires `^DIFF_DIGEST: <64-hex>$` on its own
+# line (colon-joined, no backticks) — this prints exactly that, so a copy into
+# the freeze post is always hook-valid. It does not alter the hook or weaken
+# any check; it only computes what you would compute by hand.
+#
+# Usage:  bin/freeze-digest --repo <path> <file> [<file> ...]
+# Example:
+#   bin/freeze-digest --repo /path/to/repo scripts/a.py calm/b.py tests/c.py
+#
+# Behavior:
+#   - FAILS CLOSED (exit 4) if the index already holds staged paths OUTSIDE the
+#     requested set — it never broad-resets or clobbers unrelated staged state
+#     (e.g. a parallel freeze in the same repo). Unstage or commit those first.
+#   - Stages EXACTLY the listed files (git add; deletions of listed tracked
+#     paths are staged as deletions).
+#   - Verifies the staged set equals the requested set (fails loudly on drift).
+#   - Prints the staged name list, per-file sha256, and the DIFF_DIGEST line.
+# Non-mutating to history; only ADDS the requested paths to the index.
+set -euo pipefail
+
+repo=""
+files=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo) repo="${2:-}"; shift 2 ;;
+    --repo=*) repo="${1#--repo=}"; shift ;;
+    -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+
+if [[ -z "$repo" ]]; then repo="$(pwd)"; fi
+if [[ ${#files[@]} -eq 0 ]]; then
+  echo "freeze-digest: no commit-surface files given" >&2
+  echo "usage: bin/freeze-digest --repo <path> <file> [<file> ...]" >&2
+  exit 2
+fi
+if [[ ! -d "$repo/.git" ]] && ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "freeze-digest: not a git repo: $repo" >&2
+  exit 2
+fi
+
+mapfile -t want < <(printf '%s\n' "${files[@]}" | sort -u)
+
+# Fail closed if the index holds staged paths outside the requested set —
+# NEVER broad-reset: that would silently destroy unrelated staged/frozen
+# index state (e.g. a parallel freeze). Pre-staged paths WITHIN the set are
+# fine (re-freeze of the same surface).
+mapfile -t pre < <(git -C "$repo" diff --cached --name-only | sort)
+for p in "${pre[@]}"; do
+  [[ -z "$p" ]] && continue
+  found=0
+  for w in "${want[@]}"; do
+    [[ "$p" == "$w" ]] && { found=1; break; }
+  done
+  if [[ $found -eq 0 ]]; then
+    echo "freeze-digest: index holds unrelated staged path: $p" >&2
+    echo "  refusing to touch it — unstage (git restore --staged) or commit it first" >&2
+    exit 4
+  fi
+done
+
+# Stage exactly the requested surface (add only; no reset).
+git -C "$repo" add -- "${files[@]}"
+
+# Verify staged set == requested set (drift is a freeze error, not a warning).
+mapfile -t staged < <(git -C "$repo" diff --cached --name-only | sort)
+if [[ "$(printf '%s\n' "${staged[@]}")" != "$(printf '%s\n' "${want[@]}")" ]]; then
+  echo "freeze-digest: staged set != requested set (unrelated drift?)" >&2
+  echo "  requested: ${want[*]}" >&2
+  echo "  staged:    ${staged[*]}" >&2
+  exit 3
+fi
+
+echo "=== commit surface (staged) ==="
+printf '  %s\n' "${staged[@]}"
+echo "=== per-file sha256 ==="
+for f in "${want[@]}"; do
+  if [[ -f "$repo/$f" ]]; then
+    sha="$(sha256sum "$repo/$f" | awk '{print $1}')"
+  else
+    sha="(deleted)                                                       "
+  fi
+  printf '  %s  %s\n' "$sha" "$f"
+done
+digest="$(git -C "$repo" diff --cached | sha256sum | awk '{print $1}')"
+echo "=== freeze line (copy verbatim into the gate-1 freeze post) ==="
+echo "DIFF_DIGEST: ${digest}"

@@ -82,6 +82,39 @@ RELAY_SOURCE_RE = re.compile("|".join(RELAY_SOURCE_PATTERNS), re.IGNORECASE)
 # Match a literal @gabe mention as a word (not @gabe-something).
 AT_GABE_RE = re.compile(r"(?<![A-Za-z0-9_])@gabe\b", re.IGNORECASE)
 
+# Negated / definitional mention of @gabe — a rule statement PROHIBITING the
+# act of addressing gabe, NOT a fresh ask. Two shapes strip, per gate-2 review:
+#   1. Unambiguous imperatives: "do not @gabe", "don't @gabe", "never @gabe",
+#      "avoid @gabe", "refrain from @gabe" — these cannot be questions with
+#      @gabe as subject.
+#   2. Actor + modal prohibitions: "workers cannot @gabe", "codex must not
+#      @gabe" — the explicit actor before the modal proves a rule statement.
+# Bare modal+@gabe ("Shouldn't @gabe choose...?", "Won't @gabe decide...?",
+# "Why cannot @gabe decide?") does NOT strip — there @gabe is the grammatical
+# SUBJECT of a negated question, i.e. a genuine ask, and it still trips the
+# matcher. Same for generic same-clause uncertainty ("I cannot decide @gabe
+# please pick A"). This only makes the textual matcher fire LESS; the
+# structural `to == "gabe"` path is untouched, so real decision asks still gate.
+_NEG_IMPERATIVE = r"(?:do\s+not|don['’]t|never|avoid|refrain\s+from)"
+_NEG_ACTOR = (
+    r"(?:workers?|agents?|handles?|roles?|peers?|codex(?:_\w+)?|co[_-]?lead|"
+    r"plan-dev|test-operator|claude|we|they|it|nobody|no\s+one|everyone|anyone)"
+)
+_NEG_MODAL = (
+    r"(?:can\s*not|cannot|must\s+not|mustn['’]t|should\s+not|shouldn['’]t|"
+    r"shall\s+not|will\s+not|won['’]t|may\s+not|do(?:es)?\s+not|don['’]t|never)"
+)
+NEGATED_AT_GABE_RE = re.compile(
+    r"(?i)(?:\b" + _NEG_IMPERATIVE + r"\s+@gabe\b"
+    r"|\b" + _NEG_ACTOR + r"\s+" + _NEG_MODAL + r"\s+@gabe\b)"
+)
+
+
+def strip_negated_at_gabe(body: str) -> str:
+    """Blank out @gabe mentions in a negation/definitional context so a rule
+    statement about NOT addressing gabe does not trip the textual matcher."""
+    return NEGATED_AT_GABE_RE.sub(" ", body)
+
 
 def strip_quoted_segments(body: str) -> str:
     """Remove markdown blockquote lines, fenced code blocks, and inline
@@ -354,7 +387,7 @@ def main() -> None:
             if isinstance(replyto_sender, str) and replyto_sender.strip().lower() == "gabe":
                 replyto_addresses_gabe = True
 
-        cleaned_body = strip_quoted_segments(body)
+        cleaned_body = strip_negated_at_gabe(strip_quoted_segments(body))
         textual_ask = bool(AT_GABE_RE.search(cleaned_body))
 
         if not (structural_ask or replyto_addresses_gabe or textual_ask):
