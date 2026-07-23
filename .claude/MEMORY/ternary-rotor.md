@@ -94,6 +94,123 @@ delta ≤0.10 nats; grad screens: median cos ≥0.99, min cos ≥0.95).
   (`--surface residual|kv|kv_ternary`),
   `scripts/hrm_text_158_rotor_backward_saved_screen.py`
   (`--mode blanket|3b`).
+- **Formal-run launch-attempt classification chain** (WSL / 8 GB 4070; all
+  attempts bit-identical replicas through their last common step — losses
+  match exactly, so kills lose nothing but wall time):
+  - **A1 `fragmentation`**: default allocator; 2.9 GB resv-alloc gap, pace
+    collapsed 5→45.6 s/step by step ~75. Lever: `max_split_size_mb:128`.
+  - **A2 `vmm_crash`**: `expandable_segments:True` → hard crash T+880s
+    "CUDA driver error: device not ready" inside pack hook (CUDA VMM
+    unstable on WSL). Ruled out; back to `max_split_size_mb:128`.
+  - **A3 `h2d_churn`**: healthy 5.2 s/step to step 150 (resv 7.62 GB),
+    then permanent stall in the 150→175 window (≥14 min, GPU 100%,
+    VRAM pegged). Interrupt stack: `_signed_fwht` rebuilding S1/S2 sign
+    tensors from Python lists per pack call (H2D per save). Fix: per
+    (device,dtype) constant cache. Result: ~30% faster (3.4 s/step) but
+    same stall → churn was real, not root cause.
+  - **A4 `pack_transient_spike`**: hypothesis = whole-save fake-quant
+    allocates ~10× fp32 transients (~1.3 GB/call). Fix: chunked pack
+    (`_CHUNK_VALUES` = 2M, bit-identical via `torch.equal`). Same stall at
+    the same window, resv again exactly 7.62 GB → size not the poison.
+  - **A5 `alloc_count_cliff`** (current classification): py-spy dump mid-
+    stall shows the process ACTIVE inside the FWHT butterfly during a
+    checkpointed-forward pack — stuck-slow, not deadlocked. Mechanism:
+    FWHT allocates ~14 intermediates/call × thousands of calls/step;
+    fine below ~7.5 GB resv, but once reservation crosses the WDDM
+    commit region every tiny alloc triggers eviction (~ms each) →
+    minutes/step. Allocation COUNT under near-full reservation is the
+    poison. Lever A6/A7: `garbage_collection_threshold:0.8` (keep resv
+    below the cliff). Fallback if insufficient: allocation-free FWHT
+    (preallocated per-shape workspace + `out=` ops).
+  - A6 died untested with an overnight host reboot (/tmp wiped —
+    lesson: launch scripts + run logs now live in
+    `claw-code-hrm-text-158/artifacts/rotor/runs/`, not /tmp). A7 =
+    relaunch of the A6 config → same stall (gc_threshold null).
+  - A8 `alloc-free workspace pack` (bit-exact, +1 unit test): stalled one
+    window EARLIER; peak_alloc unchanged (5.16 vs 5.11) → alloc-count null.
+    py-spy mid-stall: grinding in PLAIN forward, not pack.
+  - A9 `--empty-cache-every 10`: same stall → resv-gap null. All
+    allocator-side levers exhausted (5 nulls).
+  - **RECLASSIFICATION (the actual failure): per-step CUDA memory LEAK in
+    the codec bundle, ~15-25 MB/step monotonic.** Decisive smokes:
+    (a) forced `--bp-min-steps 5 --bp-max-steps 5` WITH codec: 4.9 s/step,
+    peak_alloc only 2.9 GB — bp_steps was never the driver; (b) base recipe
+    codec-off: FLAT 2.21 GB steps 50→100 — no leak without codec. The
+    "stall window" is just where the cumulative leak crosses the 8 GB wall
+    (explains why it moved between attempts). The A3-A7 "cliff" story was
+    the leak's SYMPTOM (thrash once near-full), not the cause. Leak bisect
+    (trainer diag values `rotor3b_remat_only` / `rotor3b_quant_only` /
+    `rotor3b_hooks_noop`, non-science arms): wrap clean; quant-only leaks;
+    hooks-NOOP leaks identically → mechanism, not content. gc.collect()
+    null → reachable, not Python cycles. Referrer forensics
+    (`HRM158_LEAK_DIAG`): ~8.7 retained (3064,260) LOGITS roots/step, each
+    still carrying grad_fn.
+  - **ROOT CAUSE (fixed, unit-tested): pack passthrough returned saved
+    tensors AS-IS.** A packed PyObject still carrying grad_fn forms a
+    C++<->Python cycle (graph Node -> packed tensor -> grad_fn -> Node)
+    invisible to refcounting AND gc — the documented saved_tensors_hooks
+    footgun; the torch docs' own pack example detaches. FIX: passthrough
+    returns `t.detach()` (storage-shared view; saved-tensor semantics
+    unchanged for single-backward). Validation (co_lead-corrected receipt):
+    the (3064,260) logits-cycle is GONE; the honest flatness receipt is
+    ATTEMPT-10's own cur_alloc 0.67->0.68 GB flat through step 50 at
+    3.4 s/step (vs +26 MB/step before). The hooks_noop validation arm
+    retains a RESIDUAL slow growth of a different shape ((8,383,260),
+    ~6.4 MB/10 steps, grad_fn-roots creep) — named separately, watch under
+    real rotor3b; do NOT cite that arm as "flat". FP control never affected
+    (no hooks). A10 = formal relaunch, fixed codec. Ops note: /mnt/c drvfs
+    READ-CACHE staleness produced two false stall alarms — run logs go on
+    the Linux FS next time; drop_caches before pace reads.
+- **Gate-2 audit (co_lead, post-hoc, msg `1784793102933-64c5698f`): REVISE
+  on receipt hygiene; science cleared.** Ledger math independently replayed
+  (turbo2 2.125 non-sub2; ternary 1.75/1.6875 sub2); Phase-4a prereg
+  confirmed; refute attempts on both rules invariants failed on mechanism.
+  Actions taken: (a) phase4a receipt `bits_ledger` keys were mislabeled
+  turbo2/turbo3 for ternary values → screen emitter fixed
+  (`ternary_fp16_scale`/`ternary_int8_scale`) + ERRATA sidecar next to the
+  frozen receipt; (b) SDPA invariant softened to "screen-excluded, bisect
+  receipt pending" in both rules mirrors — **OPEN ITEM: mint a frozen
+  dim4-vs-dim3 bisect receipt (GPU, after attempt-10 frees the card)**;
+  (c) 4-level invariant scoped to the additive scale-inclusive flat-code
+  ledger contract (not a universal info-theory claim).
+- **Acc-entropy claim boundaries (audit-sharpened, keep load-bearing):**
+  frozen-law projection only (coupled live-q retest before locking mechanism
+  design); proven bound is marginal/iid H >> 0.4 (joint/spatial coding open
+  but needs ~10x — implausible, not impossible); armC topk=1024 is the cap
+  MAX while the live formula starts at 512, so early live can sit above
+  armC — armB bounds the favorable side, bracket does not prove the exact
+  live schedule.
+- **A/B read discipline (attempt 7+):** score as `rotor3b` BUNDLE
+  (remat-wide + 3-bit-narrow) vs `none` — not "quant alone"; fake-quant
+  pack materializes no packed storage, so VRAM deltas are remat, not codec;
+  wall-clock compares vs FP control require identical
+  PYTORCH_CUDA_ALLOC_CONF (FP control predates the gc_threshold env —
+  numeric A/B unaffected, wall-clock NOT comparable as-is).
+- **ATTEMPT-10 TERMINAL (committed HRM `729ac94`; co_lead combined gate-2
+  PASS; dual-accepted):** first rotor3b formal run to reach terminal (1513
+  steps), `cur_alloc` flat 0.67->0.68 GB end-to-end — detach fix held. A/B
+  vs FP control (frozen manifest `rotor3b_attempt10_ab_manifest.json` sha
+  `7f4cd62e`, 12 ckpt + 108 audit shas, deterministic aggregator + 2 hashed
+  box runners; 1070 audit lane). **BEHAVIORAL finding only (bounded, no
+  equivalence margin):** retention NEAR-MATCHED on all audited priors
+  (`|count delta|<=2` every save; both clear numeric retained gates at saves
+  500-1500) EXCEPT the named single-save exception — step250 `l0c1`
+  rotor3b 108/121=0.8926 (<0.90) vs FP 109/121=0.9008; acquisition NOT
+  equivalent — rotor3b trails FP 30/120 on the trace target at step1500
+  (47 vs 77); NEITHER arm banks (both <90% acquire; procedure slice,
+  `trace_held`~0 both — supervision-shape gap, not rotor). **Do NOT restate
+  as "retention-equivalent" or "rotor3b==FP".** Gradient-magnitude mechanism
+  ("transparent at minima / noise where large") is HYPOTHESIS-only — needs a
+  direct per-arm gradient comparison. Observed `pc_kl` max 0.164825.
+- **Vote-lifetime screen (persistent q/acc pivot classify-before-build;
+  committed `729ac94`; co_lead PASS):** F4_underspecified via censor_guard —
+  `lifetime_censored_frac` 0.9951 (>=0.50) + p50 lifetime 79 (>=32); the
+  rider-bound guard refused a forgetting-family pick on 99.5%-censored data.
+  Raw directional signal (NOT a verdict): `never_convert_frac` 0.9947
+  (99.5% of vote mass never flips) — consistent with F3 sparse-hot/
+  forgettable-cold, withheld until censoring clears. F4 NEXT (prereg): longer
+  window and/or coupled-q motion — a SEPARATE future plan, not authorized by
+  this null.
 
 ## 1. What this path is
 
