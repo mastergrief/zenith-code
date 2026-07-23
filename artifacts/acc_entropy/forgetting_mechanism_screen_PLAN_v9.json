@@ -1,0 +1,624 @@
+{
+  "kind": "PLAN_REQUEST",
+  "plan_id": "forgetting_mechanism_screen_PLAN_v9",
+  "task_id": "1784809634527-2c088463",
+  "dispatch_msg_id": "1784809702504-308357f9",
+  "created_at": "2026-07-23T13:15:32.610099+00:00",
+  "role": "plan-dev",
+  "cwd_target": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "lane": "persistent_q_acc_sub2_forgetting_classify_before_build",
+  "context_health": "self-measured ~40%; V35 HOLD orthogonal (deferred +1 mint on 1784730361840)",
+  "approval_status": "awaiting_claude_gate1_then_co_lead_gate2_then_plus1_implement",
+  "prior_science_anchors": {
+    "acc_entropy_receipt": "artifacts/acc_entropy/int8_acc_entropy_screen_receipt.json",
+    "acc_entropy_verdict_all_arms": "mechanism_must_forget_more",
+    "best_arm_H_bpw": 4.11,
+    "sub2_acc_budget_bpw": 0.4,
+    "vote_lifetime_plan_sha": "3b3848c8b6ff818ccecce4a8ea5aac9c13a3d8b2ebc00becdd5dea81bc91fae0",
+    "vote_lifetime_receipt": "artifacts/acc_entropy/vote_lifetime_screen_receipt.json",
+    "vote_lifetime_classifier": {
+      "family": "F4_underspecified_need_longer_or_coupled_q_motion",
+      "stop_reason": "censor_guard",
+      "lifetime_censored_frac": 0.9951,
+      "p50_lifetime": 79.0,
+      "never_convert_frac": 0.9947,
+      "n_flips": 144384,
+      "steps": 150,
+      "frozen_q": true
+    },
+    "co_lead_route": "1784809596042-befa8bd9"
+  },
+  "decision_contract": {
+    "question": "After reducing right-censoring enough to observe completed accumulator episodes under a LIVE micro-training screen, which single forgetting-mechanism family (decay_leak / ttl_age_drain / sparse_hot_forgettable_cold) clears the prereg guard on BOTH H(acc)<=0.4 b/w progress AND acquisition/retention survival — or is the verdict design-family null?",
+    "classify_before_build": true,
+    "no_verdict_outside_prereg": true,
+    "no_forgetting_law_ship": true,
+    "named_overforget_risk": "functional_veto_freeze (votes never cross → ternary stops training)",
+    "explicit_non_claims": [
+      "Does not authorize shipping any forgetting law into the training stack",
+      "Does not bank sub-2 achievability",
+      "Does not contradict entropy mechanism_must_forget_more — only chooses WHICH forget family (or null) to design next",
+      "Directional never_convert≈0.995 under frozen-q is NOT an F3 verdict",
+      "Does not authorize BitLinear master-weight rematerialization as coupled-q",
+      "q_sha_before/after are integrity hashes only — G0b uses cumulative q_changed_count",
+      "This JSON decision_contract is not board authority",
+      "1-step GPU correctness smoke is not Phase-0 science",
+      "No new FP trainable state — credit is reconstructed dW, not an STE Parameter"
+    ]
+  },
+  "censor_reduction_choice": {
+    "primary": "coupled_live_q_motion_with_live_threshold_residual_writeback",
+    "secondary_fallback": "prereg_longer_window_once",
+    "why_primary_coupled_q": [
+      "F4 at steps=150 already had p50=79 with lifetime_censored_frac=0.9951 under FROZEN q — window length alone fights the wrong limit",
+      "Frozen-q + zero-drain is instrumentation, not the live q/acc law; live kernel keeps threshold residual",
+      "Coupled live-q ON via FIXED qscale bridge + live residual write-back (in-memory only); banked immutable",
+      "Fair compare: steps=150 / topK=1024 / same parent / same A0 pool; Phase-0 variable = coupled-q+live-residual via qscale bridge (no forgetting law)"
+    ],
+    "why_not_longer_window_first": [
+      "Longer frozen-q window can raise n_flips but does not fix sticky q; never_convert≈0.995 suggests most mass still never completes",
+      "Longer window is reserved as ONE prereg fallback if Phase-0 coupled-q still fails the censor guard"
+    ],
+    "banked_immutability": "banked .pt sha256 before+after MUST match; all q/w/acc live state is process-local / artifacts/acc_entropy only"
+  },
+  "phased_screen_design": {
+    "phase_0_preterminal_censor_probe": {
+      "purpose": "cheapest measurement proving censor-reduction works BEFORE any forgetting-arm sweep",
+      "what": "Reuse vote-lifetime instrumentation PATH SHAPE with live-law write-back + FIXED qscale forward seam: coupled live-q + threshold-residual acc (NO forgetting law; NO zero-drain; NO BitLinear absmean rematerialization).",
+      "steps": 150,
+      "batch": 8,
+      "topk": 1024,
+      "device": "cuda (trainer-loop; queued when 4070 free)",
+      "success_guard_exact": "lifetime_censored_frac < 0.50  (rider-3 field; same formula as vote-lifetime)",
+      "also_report": [
+        "n_flips",
+        "p50_flip_lifetime",
+        "never_convert_frac (SEPARATE; not the censor field)",
+        "q_changed_count (CUMULATIVE transition events; same field as G0b)",
+        "q_sha_before / q_sha_after (INTEGRITY only — not the G0b numerator)",
+        "frozen_scale_sha_before_after (must match)",
+        "banked sha match"
+      ],
+      "on_fail_once": {
+        "action": "ONE secondary run at steps=600 with coupled-q still on (single-variable: window only)",
+        "success_guard_exact": "lifetime_censored_frac < 0.50",
+        "on_fail": "STOP → verdict design_null_censor_unreducible; do NOT enter Phase-1; do NOT force F1/F2/F3"
+      },
+      "on_pass": "enter Phase-1 arm sweep under the cleared censor regime"
+    },
+    "phase_1_family_arm_sweep": {
+      "gate": "Phase-0 (or 0b) censor guard cleared",
+      "control": "arm0_coupled_q_no_forget",
+      "arms_one_variable_each": [
+        {
+          "id": "arm1_decay_leak",
+          "family": "F1_decay_leak",
+          "law_screen_local": "each step after credit, before drain: acc := trunc_toward_zero(acc * (1 - lambda)); lambda prereg=1/32",
+          "forbidden": "no new FP trainable params; lambda constant"
+        },
+        {
+          "id": "arm2_ttl_age_drain",
+          "family": "F2_ttl_age_drain",
+          "law_screen_local": "force-zero any active episode with age > T; T prereg=32 (matches prior R1 old-bin edge)",
+          "forbidden": "no soft decay mixed in"
+        },
+        {
+          "id": "arm3_sparse_hot_forgettable_cold",
+          "family": "F3_sparse_hot_forgettable_cold",
+          "law_screen_local": "retain only global top-H |acc| hot set each step; zero cold; H prereg=8192",
+          "forbidden": "no TTL/decay mixed in"
+        }
+      ],
+      "shared_held_fixed": [
+        "coupled live-q ON",
+        "from-clean-parent empty acc",
+        "steps = Phase-0 winning window (150 or 600)",
+        "batch=8 topK=1024",
+        "same banked parent",
+        "same A0 exhaustive pool + seed=1000+step"
+      ],
+      "measurements_per_arm_compact": {
+        "H_acc": {
+          "estimator": "pooled empirical Shannon entropy over discrete acc values: vals,counts=unique(acc); p=counts/numel; H=-(p*log2(p)).sum()",
+          "units": "bits_per_weight",
+          "support": "all named parameter tensors concatenated flatten (same as scripts/hrm_text_158_acc_entropy_screen.py::_entropy_bits)",
+          "denominator": "acc.numel() across pooled weights",
+          "trajectory": "every 25 steps + final",
+          "compare_to": "sub2_acc_budget_bpw=0.4"
+        },
+        "lifetime_censor": "lifetime_censored_frac must remain < 0.50 else arm → invalid_for_family_pick (rider-3 field)",
+        "flip_survival": "n_flips, p50_lifetime, never_convert_frac (SEPARATE from censor)",
+        "q_motion_nonvacuity": {
+          "fields": [
+            "q_changed_count",
+            "q_sha_before",
+            "q_sha_after",
+            "n_applied_drains"
+          ],
+          "q_changed_count_definition": "CUMULATIVE transition event count: sum over steps of count(q_after_step != q_before_step on applied indices). A flip then flip-back = TWO events even if final q == initial q.",
+          "q_sha_role": "INTEGRITY only (before/after snapshot); NOT the G0b numerator",
+          "floor": "q_changed_count >= max(1, int(0.01 * n_applied_drains))",
+          "on_fail": "arm_invalid via G0b (functional_veto_freeze / ineffective ternary motion)",
+          "phase0_spelling": "Phase-0 also_report uses the SAME field name q_changed_count (not q_change_count)"
+        },
+        "acquisition_probe": {
+          "metric": "exact_match_count (integer 0..N), NOT rate",
+          "N": 64,
+          "registry": "math_a0 via train_hrm_text_158._retained_support('math_a0', seed=17)",
+          "parent_support_hash": "56e64266357b793d",
+          "selection": "Random(7).shuffle(indices); take first 64 in shuffle order",
+          "selection_sha256": "b73f532bc17facfba93426b6c9cdff7e1e0cfc244eb2b0c5a57c2a8c1489237b",
+          "train_exclusion": "EVERY training batch row whose (q,e,bucket) is in the acquisition set is REJECTED and resampled; receipt emits excluded_hit_count",
+          "delta": "acq_delta_count := final_count - step0_count (integer)",
+          "units": "counts"
+        },
+        "retention_probe": {
+          "metric": "exact_match_count (integer 0..64)",
+          "N": 64,
+          "composition": [
+            {
+              "n": 32,
+              "registry": "math_a0",
+              "parent_support_hash": "56e64266357b793d",
+              "selection_seed": 11,
+              "disjoint_from_acquisition": true,
+              "selection_rule": "Random(11) shuffle math_a0; take first 32 rows NOT in acquisition set"
+            },
+            {
+              "n": 32,
+              "registry": "L0c2-K1-identity-2digit-full",
+              "parent_support_hash": "bf43ff7354b64c4e",
+              "selection_seed": 11,
+              "selection_sha256": "3a137eb6e99784e1b0d5e26deb174f816d816607c38e00262dbeebde96b743f2",
+              "note": "binds former vague 'id-like' to this exact registry surface"
+            }
+          ],
+          "retention_ok": "final_count >= step0_count - 2  (COUNT slop=2, units=absolute exact-match counts; NOT rate)",
+          "units": "counts"
+        },
+        "hashes": "in-memory q_sha / acc_hist_sha only; no raw arrays"
+      }
+    }
+  },
+  "branch_classifier_prereg": {
+    "families": [
+      "F1_decay_leak",
+      "F2_ttl_age_drain",
+      "F3_sparse_hot_forgettable_cold",
+      "F4_design_family_null"
+    ],
+    "constants": {
+      "eps": 1e-09,
+      "sub2_acc_budget_bpw": 0.4,
+      "censor_clear_max": 0.5,
+      "H_progress_min_frac_of_control_gap": 0.5,
+      "acq_delta_floor": 0,
+      "retention_slop": 2,
+      "winner_pool": "valid_and_surviving_only",
+      "q_motion_min_frac_of_drains": 0.01,
+      "control_budget_bpw": 0.4,
+      "retention_slop_counts": 2,
+      "acq_delta_floor_counts": 0,
+      "tie_tolerance_bpw": 0.02
+    },
+    "per_arm_validity_guard": {
+      "id": "G0",
+      "if": "lifetime_censored_frac >= 0.50 OR n_flips < 1000",
+      "then": "arm_invalid — excluded from E"
+    },
+    "per_arm_survival_guard": {
+      "id": "G1",
+      "if": "NOT retention_ok OR acq_delta_count < 0",
+      "then": "arm_fails_survival — cannot win",
+      "note": "acq_delta_floor=0 is a coarse survival check ONLY — not proof of acquisition learning"
+    },
+    "H_progress_def": "H_progress(arm) := max(0, H_control_final - H_arm_final); gap_to_budget := max(eps, H_control_final - 0.4); only evaluated when H_control_final > 0.4",
+    "selection_rules_exact": [
+      {
+        "id": "R_control_budget",
+        "if": "H_control_final <= 0.4",
+        "then": "F4_design_family_null",
+        "why": "control already at budget — no forgetting family needed"
+      },
+      {
+        "id": "R0_null_guard",
+        "if": "Phase-0/0b censor never cleared OR E empty OR no arm in E achieves H_progress >= 0.50 * gap_to_budget",
+        "then": "F4_design_family_null",
+        "why": "refuse forced family when censoring fails or no eligible arm clears H progress"
+      },
+      {
+        "id": "R1_F3",
+        "if": "arm3 in E AND H_progress(arm3) >= 0.50*gap AND arm3 in S",
+        "then": "F3_sparse_hot_forgettable_cold",
+        "why": "gentlest forget in bar-clearing near-tie top-set S"
+      },
+      {
+        "id": "R2_F1",
+        "if": "arm1 in E AND H_progress(arm1) >= 0.50*gap AND arm1 in S AND arm3 not in S",
+        "then": "F1_decay_leak",
+        "why": "decay/leak in S after F3 eliminated; sub-bar F3 cannot block"
+      },
+      {
+        "id": "R3_F2",
+        "if": "arm2 in E AND H_progress(arm2) >= 0.50*gap AND S == {arm2}",
+        "then": "F2_ttl_age_drain",
+        "why": "hard age drain ONLY when UNIQUE member of bar-clearing within-tau top-set S"
+      },
+      {
+        "id": "R4_ambiguous_null",
+        "if": "no R1/R2/R3 match after guards",
+        "then": "F4_design_family_null",
+        "why": "no exclusive gentlest-priority winner within near-tie top-set"
+      }
+    ],
+    "evaluation_order": [
+      "Phase-0/0b censor gate",
+      "Per-arm G0 censor/vacuous",
+      "Per-arm G0b q-motion non-vacuity",
+      "Per-arm G1 survival (count units)",
+      "Build E = G0∧G0b∧G1",
+      "R_control_budget (H_control_final <= 0.4 → F4)",
+      "R0 null guard",
+      "Build S = bar-clearing within-tau top-set of E (H>=0.50*gap AND H>=max_E-tau; tau=0.02)",
+      "R1_F3 if arm3 in S",
+      "R2_F1 if arm1 in S and arm3 not in S",
+      "R3_F2 if S == {arm2}",
+      "R4 ambiguous → null"
+    ],
+    "tie_priority_explicit": {
+      "order": [
+        "F3",
+        "F1",
+        "F2"
+      ],
+      "tie_tolerance_bpw": 0.02,
+      "rationale": "gentlest-forget-on-NEAR-tie among bar-clearing E members only; sub-bar near-ties cannot block; F2 wins only when unique in S",
+      "bar_clear_in_S": true
+    },
+    "winner_pool": {
+      "valid_and_surviving_only": true,
+      "definition": "E := {arm : G0 ∧ G0b ∧ G1}",
+      "rule": "H_progress comparisons in R1/R2/R3 over E only; dead arms cannot block"
+    },
+    "per_arm_q_motion_guard": {
+      "id": "G0b",
+      "if": "q_changed_count < max(1, int(0.01 * n_applied_drains))",
+      "then": "arm_invalid — functional_veto_freeze / ineffective ternary motion; excluded from E",
+      "q_changed_count": "cumulative applied-index transition events (see measurements_per_arm_compact.q_motion_nonvacuity)"
+    },
+    "eligible_set": "E := {arm in {arm1,arm2,arm3} : passes G0 AND G0b AND G1}",
+    "control_at_budget_rule": {
+      "id": "R_control_budget",
+      "if": "H_control_final <= 0.4",
+      "then": "F4_design_family_null",
+      "family_label": "control_already_at_budget_no_forgetting_family",
+      "why": "coupled-q control already meets sub-2 acc budget; noise-sized arm deltas must not select F1/F2/F3",
+      "evaluation": "BEFORE R0/R1/R2/R3"
+    },
+    "near_tie_definition": {
+      "tau": 0.02,
+      "units": "bits_per_weight (H_progress difference)",
+      "tied": "|H_progress(a) - H_progress(b)| <= tie_tolerance_bpw",
+      "top_set": "S := {a in E : H_progress(a) >= 0.50*gap_to_budget AND H_progress(a) >= max_E - tie_tolerance_bpw} where max_E = max({H_progress(a) for a in E})",
+      "bar_clear_conjunct": true,
+      "winner_rule": "if |S|>1: pick by priority F3≥F1≥F2 among S; if |S|==1: that unique arm wins (F2 only when unique in S); sub-bar arms never enter S and cannot block",
+      "consistency_note": "R0 guarantees ≥1 arm clears bar when R0 does not fire → max arm in S → S non-empty; per-rule >=0.50*gap checks remain redundant-but-harmless"
+    }
+  },
+  "scope": {
+    "in": [
+      "PLAN artifact only this turn",
+      "After +1 implement: screen script + pure reducers + CPU-static tests for classifier/episode/coupled-q bookkeeping",
+      "Phase-0 coupled-q preterminal + optional one longer-window fallback",
+      "Phase-1 four-arm sweep only if censor guard cleared",
+      "Compact receipts under artifacts/acc_entropy/",
+      "Banked sha fail-closed protocol"
+    ],
+    "out": [
+      "No shipping forgetting law into trainer/default update path",
+      "No banked .pt mutation / no .pt commit",
+      "No new FP trainable state / q-teacher / unregistered scale/residual/rotation rescue",
+      "No V35 PACKET mint (orthogonal HOLD)",
+      "No raw per-proposal arrays in receipts",
+      "plan-dev does NOT launch formal GPU science runs — claude/test-operator after dual-accept (same executor split as vote-lifetime rider-2)",
+      "No raw qscale_linear_triton on Phase-0/1",
+      "No treating plan JSON as board authority"
+    ]
+  },
+  "edit_strategy_after_plus1": {
+    "files_expected": [
+      "scripts/hrm_text_158_forgetting_mechanism_screen.py (new)",
+      "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py (new; live residual + classifier; do NOT mutate vote_lifetime_screen_reducers.py)",
+      "calm/hrm_text_158/tests/test_forgetting_mechanism_screen_reducers.py (new CPU-static)",
+      "artifacts/acc_entropy/forgetting_mechanism_screen_PLAN_v9.json (this file)",
+      "artifacts/acc_entropy/forgetting_mechanism_phase0_receipt.json (runtime)",
+      "artifacts/acc_entropy/forgetting_mechanism_phase1_receipt.json (runtime; only if Phase-0 clears)",
+      "artifacts/acc_entropy/forgetting_mechanism_1step_gpu_correctness.json (runtime; claude/test-operator)"
+    ],
+    "reuse": [
+      "scripts/hrm_text_158_vote_lifetime_screen.py device assert + instrumentation skeleton (but swap zero-drain for live residual)",
+      "vote_lifetime_screen_reducers episode helpers for credit-phase only; keep apply_drain_resets untouched",
+      "project_s1_gradient_to_moves + CROSSING_THRESHOLD_ABS=10",
+      "two_tier_step_orchestrator._post_flip_residual_signed / _ternary_q_after_flip semantics",
+      "scripts/hrm_text_158_acc_entropy_screen.py::_entropy_bits estimator",
+      "train_hrm_text_158._retained_support for probe registries",
+      "calm/hrm_text_158/native_full_stack/qscale_linear.py QScaleWeightState + qscale_linear_reference/triton (FIXED scale bridge)"
+    ],
+    "developer_checks_exact": [
+      {
+        "id": "py_compile",
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "cmd": "python3 -m py_compile scripts/hrm_text_158_forgetting_mechanism_screen.py calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py calm/hrm_text_158/tests/test_forgetting_mechanism_screen_reducers.py"
+      },
+      {
+        "id": "pytest_cpu_static",
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "cmd": "python3 -m pytest -q calm/hrm_text_158/tests/test_forgetting_mechanism_screen_reducers.py"
+      },
+      {
+        "id": "schema_smoke",
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "cmd": "python3 scripts/hrm_text_158_forgetting_mechanism_screen.py --schema-only --steps 5 --device cpu --output-json /tmp/forgetting_mech_schema_smoke.json"
+      },
+      {
+        "id": "vote_lifetime_nonregression",
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "cmd": "python3 -m pytest -q calm/hrm_text_158/tests/test_vote_lifetime_screen_reducers.py",
+        "why": "prove old zero-drain frozen-q contract untouched"
+      },
+      {
+        "id": "note_gpu_correctness_not_plan_dev",
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "cmd": "N/A — plan-dev does NOT run the 1-step GPU correctness smoke; see pre_freeze_one_step_gpu_correctness (claude/test-operator after impl receipt)"
+      }
+    ],
+    "cpu_static_test_cases_required": [
+      "threshold residual write-back equals clamp(acc-dir*T,-(T-1),T-1) for T=10; never zeros unless residual lands 0",
+      "residual-aware episode restart: nonzero residual → episode_start=flip_step; zero residual → clear",
+      "metric units: retention_ok uses counts with slop=2; rate-style final>=step0-2 must NOT be accepted by helper",
+      "acquisition set hash matches prereg sha; train exclusion rejects those rows",
+      "disjoint: acquisition ∩ retention_math_a0 == empty",
+      "control-at-budget: H_control_final<=0.4 → F4 before R0",
+      "G0b q-motion freeze: many drains + q_changed_count=0 → arm not in E",
+      "E/tie edges: sole eligible F2 with higher dead arm → F2; F1↔F2 tie → F1; three-way → F3",
+      "old zero-drain apply_drain_resets behavior unchanged (import+call parity smoke)",
+      "near-tie within tau: H_progress F2=0.20, F3=0.19, F1=0.185 (tau=0.02) → S contains F2+F3 → F3 wins",
+      "near-tie F1↔F2 within tau, F3 out: F2=0.20, F1=0.19, F3=0.10 → S={F1,F2} → F1 wins",
+      "F2 unique-outside-tau: F2=0.20, F1=0.17, F3=0.16 (gaps >0.02) → S={F2} → F2 wins",
+      "exact-float equality still covered as special case of within-tau",
+      "sub-bar near-tie cannot block: F1=0.50*gap (clears), F3 within tau below F1 but <0.50*gap → F3 not in S → F1 wins (NOT null)",
+      "fixed-scale actual-forward parity: after q flip with nonzero_frac<1, bridge output/weight == q.float()*frozen_scale AND scale bit-stable; BitLinear-absmean path MUST diverge/fail assertion if used",
+      "cumulative-q reversal: q flips +1 then -1 on same index across two steps → q_changed_count += 2 even if final q == initial; G0b uses cumulative not final Hamming",
+      "known-matrix gradient parity: FixedQScaleLinearWithCredit dW matches autograd through temporary W=q*s",
+      "route-completeness counters fail-closed when a BitLinear.quantize_weight call is injected",
+      "mechanical negative fixture: sparse q → BitLinear absmean path weight/output differ from fixed q*s by construction",
+      "two-step credit lifecycle non-carry: distinct step-1 and step-2 grads; after begin_credit_step on step-2, credit equals standalone step-2 reference (NOT step1+step2); multiple invocations within one step still accumulate",
+      "flattened ND dW: act shape (B,T,in) / grad_out (B,T,out) → dW = grad_out.reshape(-1,out).T @ act.reshape(-1,in) matches reference",
+      "begin_credit_step clears route counters; skipped begin_credit_step → fail-closed"
+    ]
+  },
+  "validation_plan": {
+    "pre_implement": "plan review (this artifact) + board authority 1784812148229; await +1 implement",
+    "post_implement_dev": "exact developer_checks_exact CPU cmds only (incl. two-step credit lifecycle)",
+    "pre_freeze_gpu_correctness": "claude/test-operator runs 1-step --correctness-smoke AFTER impl receipt and BEFORE gate-1 impl-freeze; freeze conditional on PASS",
+    "formal_phase0_gpu": "claude as test-operator after impl dual-accept; packet declares pre_full_stack_diagnostic",
+    "formal_phase1_gpu": "only if Phase-0/0b censor guard cleared"
+  },
+  "stop_conditions": [
+    "Phase-0 and one Phase-0b longer-window attempt both fail lifetime_censored_frac < 0.50 → design_null_censor_unreducible",
+    "H_control_final <= 0.4 → F4 control_already_at_budget_no_forgetting_family (not a forced family)",
+    "banked-sha mismatch",
+    "any need to mutate banked state",
+    "classifier would require raw arrays",
+    "pressure to skip classifier / force F1–F3 → bubble AUQ via claude",
+    "scope expansion into shipping forgetting law",
+    "formal packet missing pre_full_stack_diagnostic justification or phase budgets",
+    "implementation reuses zero-drain for coupled-q applied flips",
+    "implementation routes coupled-q through BitLinear absmean without proven frozen-scale equality",
+    "G0b uses final Hamming/q_sha delta instead of cumulative transition events",
+    "credit path relies on BitLinear.weight.grad for eligible keys",
+    "Phase-0/1 uses raw qscale_linear_triton without autograd wrapper",
+    "route-completeness fails (any eligible BitLinear dynamic forward or missing credit_grad)",
+    "board authority dispatch missing at +1 implement time",
+    "1-step GPU correctness smoke missing or failing before impl dual-accept",
+    "credit_grads carries across screen steps / begin_credit_step skipped",
+    "dW uses non-flattened matmul that is wrong for ND activations"
+  ],
+  "risks": [
+    "fixed qscale bridge is the screen-local forward seam (parity-asserted); NOT BitLinear absmean rematerialization — that would introduce q-sparsity as a second variable",
+    "acquisition/retention micro-probes are N=64/64 COUNT gates — coarse survival only; later curriculum required before any ship",
+    "arm hyperparams (lambda=1/32, T=32, H=8192) are prereg constants for THIS screen only — not recipe claims",
+    "over-forget → functional_veto_freeze: G0b + G1 + control-at-budget + gentlest-forget among within-tau top-set S (F3≥F1≥F2; tie_tolerance_bpw=0.02; F2 unique-in-S only)",
+    "hot-loop CPU q/grad transfers remain diagnostic debt at screen scale; flag in run receipt",
+    "worst-case 3150 GPU steps if Phase-0b+Phase-1@600 — packet must bind budget; prefer 750 default path",
+    "FixedQScaleLinearWithCredit adds hook/autograd surface area — parity + route-completeness + 1-step GPU smoke are load-bearing to catch silent BitLinear fallback",
+    "Cross-step credit accumulation silently corrupts 150-step science while 1-step smoke passes — two-step non-carry fixture is load-bearing"
+  ],
+  "retain_override_context": {
+    "v35_task": "1784730361840-f48ea756",
+    "v35_status": "HOLD dual-accepted impl r3; deferred +1 mint — not in conflict",
+    "prior_vote_lifetime_task": "1784801887625-f9c182c6"
+  },
+  "supersedes": {
+    "plan_id": "forgetting_mechanism_screen_PLAN_v8",
+    "sha256": "c07581e546ad3945ddf84f6bc6726835f86a1b2a8b3c3667941df7346a7354a2",
+    "gate2_revise_msg_id": "1784812470544-da5c92d5",
+    "claude_concede_task_update": "1784812493175-e9308fc4",
+    "freeze_discipline": "v8 c07581e5 left immutable on disk; v9 is a NEW file/sha"
+  },
+  "gate1_revise_response": {
+    "msg_id": "1784811182745-898894b8",
+    "fix": "S := {a in E : H_progress(a) >= 0.50*gap_to_budget AND H_progress(a) >= max_E - tau}"
+  },
+  "gate2_revise_response": {
+    "msg_id": "1784812470544-da5c92d5",
+    "claude_concede": "1784812493175-e9308fc4",
+    "disposition": "credit_grads_step_scoped_lifecycle_and_ND_dW_bound"
+  },
+  "live_q_acc_writeback_law": {
+    "source_anchors": [
+      "calm/hrm_text_158/native_full_stack/qacc_apply_triton_kernel.py:54-99",
+      "calm/hrm_text_158/native_full_stack/two_tier_step_orchestrator.py:_post_flip_residual_signed / apply_two_tier_write_backs",
+      "calm/hrm_text_158/native_full_stack/vote_update.py:_apply_threshold_residual_in_place",
+      "CROSSING_THRESHOLD_ABS=10 (two_tier_threshold_semantics.py)"
+    ],
+    "NOT_zero_drain": "vote_lifetime apply_drain_resets (zero acc) is FROZEN-Q INSTRUMENTATION ONLY — preserved unchanged for vote-lifetime contract/tests; Phase-0/1 coupled-q screen MUST NOT call it for applied flips",
+    "common_step_order_exact_every_arm": [
+      "1. credit/project: begin_credit_step() once; run whole-batch loss under FixedQScaleLinearWithCredit; accumulate flattened-ND dW into credit_grads; after backward, clone credit_grads to CPU and project_s1_gradient_to_moves; acc := clamp(acc + move, -CLIP, CLIP). FORBIDDEN: BitLinear.weight.grad; FORBIDDEN: cross-step credit carry; FORBIDDEN: qscale_linear_triton without autograd wrapper",
+      "2. episode/sign update on post-credit acc (update_episode_starts; zero-return / zero→nonzero / sign-reversal)",
+      "3. arm-local forgetting transform (arm0=identity; arm1 decay; arm2 ttl force-zero; arm3 sparse-hot zero-cold) — BEFORE crossing selection",
+      "4. crossing/topK selection on |acc| (topK=1024) among |acc|>=CROSSING_THRESHOLD_ABS",
+      "5. live threshold-residual write-back on applied set: acc' := clamp(acc - dir*T, -(T-1), T-1); T=CROSSING_THRESHOLD_ABS=10 — never FORCE-zero; natural zero residual allowed when acc==dir*T",
+      "6. q flip: q := clamp(q + dir, -1, 1)",
+      "7. forward rematerialization via FIXED qscale credit seam ONLY: eligible projections use FixedQScaleLinearWithCredit(q_levels, frozen_scale). FORBIDDEN: BitLinear.weight write + BitLinear.forward/absmean; FORBIDDEN: raw qscale_linear_triton on Phase-0/1",
+      "8. residual-aware episode restart: if acc' != 0 → episode_start := flip_step (new episode under residual sign); if acc' == 0 → episode_start := 0"
+    ],
+    "nonzero_post_flip_residual_begins_new_episode": true,
+    "episode_lifetime_on_flip": "lifetime_steps = flip_step - episode_start_pre_flip (inclusive-exclusive), recorded BEFORE residual restart",
+    "preserve_frozen_q_zero_drain": {
+      "file": "calm/hrm_text_158/native_full_stack/vote_lifetime_screen_reducers.py::apply_drain_resets",
+      "tests": "calm/hrm_text_158/tests/test_vote_lifetime_screen_reducers.py",
+      "rule": "do not rewrite; add SEPARATE live_threshold_residual_writeback + residual_aware_episode_restart reducers for this screen"
+    },
+    "forward_seam": "fixed_qscale_forward_seam (PREFERRED); see top-level key",
+    "bitlinear_absmean_forbidden": true,
+    "credit_seam": "fixed_qscale_credit_seam"
+  },
+  "launch_classification": {
+    "class": "pre_full_stack_diagnostic",
+    "rule_anchor": ".codex/rules/ternary_hybrid_stack.md §Sub-2-first launch gate",
+    "justification": [
+      "Purpose is classify-before-build family selection for accumulator forgetting — not a main sub-2 achievement run and not a banking curriculum slice",
+      "Cheaper/informative before full_sub2_runtime_ready_for_science: answers whether ANY single-variable forget family can jointly compress H(acc) and survive under live residual+coupled-q, or returns design-null",
+      "Never counts as sub-2; never banks a .pt; never ships a forgetting law",
+      "Must be named in the formal GPU packet before launch; checker fail-closed remains for main science"
+    ],
+    "phase_budgets": {
+      "phase0_steps": 150,
+      "phase0b_steps_fallback_once": 600,
+      "phase1_steps": "equals Phase-0 winning window (150 or 600)",
+      "phase1_arms": 4,
+      "batch": 8,
+      "topk": 1024,
+      "max_formal_gpu_steps_total_worst_case": "150 + 600 + 4*600 = 3150 step-forwards (if Phase-0 fails once then Phase-0b clears and Phase-1 uses 600) — MUST be packet-bound; default expected path = 150 + 4*150 = 750",
+      "default_expected_path_steps": 750,
+      "abort_if": "wall estimate exceeds packet bound OR VRAM OOM — do not silently stretch"
+    },
+    "cpu_q_grad_transfer_debt": {
+      "status": "accepted_diagnostic_debt",
+      "note": "instrumentation keeps q/grad projection on CPU (device assert); acceptable at screen scale but MUST be flagged in every run receipt; not a training hot-loop claim"
+    }
+  },
+  "explicit_non_claims": [
+    "Does not authorize shipping any forgetting law into the training stack",
+    "Does not bank sub-2 achievability",
+    "Does not contradict entropy mechanism_must_forget_more — only chooses WHICH forget family (or null) to design next",
+    "Directional never_convert≈0.995 under frozen-q is NOT an F3 verdict",
+    "acq_delta_floor=0 / retention slop=2 are survival gates only — not acquisition/retention proof",
+    "pre_full_stack_diagnostic does not count toward sub-2 readiness"
+  ],
+  "fixed_qscale_forward_seam": {
+    "problem": "BitLinear.quantize_weight recomputes scale=weight.abs().mean() every forward (bit_linear.py:92-105,123-128). Writing p:=q*s_frozen into master weight makes next forward scale=s_frozen*mean(|q|), drifting when q has zeros — second variable.",
+    "chosen": "PREFERRED_qscale_linear_bridge",
+    "NOT_chosen": "master-param rematerialization through BitLinear absmean (forbidden unless proven equal)",
+    "executable_seam": {
+      "module": "calm/hrm_text_158/native_full_stack/qscale_linear.py",
+      "anchors": "qscale_linear.py:1-6,38-63,140-177,210-221",
+      "state": "QScaleWeightState(q_levels:int8, scale:fp32 frozen per-tensor scalar)",
+      "forward": "FixedQScaleLinearWithCredit / qscale_linear_reference algebra: F.linear(x, q.float()*frozen_scale, bias) + explicit dW reconstruction for credit",
+      "screen_rule": "Eligible BitLinear projections in the screen MUST be routed through this q:int8 + frozen fp32 scale bridge for BOTH forward and the intended-weight reference. Do NOT write q*s_frozen into BitLinear.weight and call BitLinear.forward."
+    },
+    "parity_assertion": {
+      "cpu_static_algebraic": "after q changes with nonzero_frac<1: actual_forward_weight_or_output == reference q.float()*frozen_scale; reported scale_before == scale_after (bit-stable)",
+      "gpu_smoke_schema": "same equality under --schema-only/--steps 5 path when device=cuda available; else CPU algebraic suffices for +1-implement receipt",
+      "forbidden_silent_accept": "do NOT silently accept dynamic BitLinear absmean as 'coupled q' — that is a two-variable bracket"
+    },
+    "frozen_scale_contract": "per-tensor scale snapshotted at screen start from parent; never updated by q flips or absmean",
+    "phase01_forward": "FixedQScaleLinearWithCredit (== qscale_linear_reference algebra); NOT qscale_linear_triton",
+    "qscale_linear_triton": "FORBIDDEN for Phase-0/1 until a tested autograd wrapper exists (not in this slice)",
+    "credit_seam": "fixed_qscale_credit_seam"
+  },
+  "fixed_qscale_credit_seam": {
+    "problem": "qscale_linear_reference builds weight=q.float()*frozen_scale with no Parameter leaf; qscale_linear_triton has no autograd wrapper. vote-lifetime credit path reads named_parameters().grad (rotor_backward_saved_screen._loss_and_grads). Bypassing BitLinear.weight removes eligible grads.",
+    "chosen": "fixed_qscale_forward_plus_explicit_local_linear_weight_grad_reconstruction",
+    "NOT_chosen": [
+      "raw qscale_linear_triton for Phase-0/1 (FORBIDDEN — no tested backward wrapper)",
+      "STE proxy through a new FP trainable leaf (would be transient_fp_debt; avoid)"
+    ],
+    "forward_path_exact": "For every eligible BitLinear projection invocation: out = F.linear(act, q_levels.to(float32) * frozen_scale, bias) via a screen-local FixedQScaleLinearWithCredit autograd.Function (algebraically identical to qscale_linear_reference). Do NOT call BitLinear.quantize_weight / BitLinear.forward / native_ternary_train_linear.",
+    "credit_reconstruction_exact": "In FixedQScaleLinearWithCredit.backward: compute dW_inv via the flattened ND formula; ADD into process-local credit_grads[name] for the CURRENT STEP ONLY. After the whole batch backward completes, read/detach/clone each buffer once for project_s1_gradient_to_moves; then the next begin_credit_step() clears them. No Parameter; no new FP trainable state.",
+    "grad_input": "standard F.linear input grad so the rest of the graph still trains/backward-completes",
+    "parity_test_required": "CPU-static known-matrix: FixedQScaleLinearWithCredit forward matches qscale_linear_reference; reconstructed dW matches autograd through a temporary requires_grad effective weight W=q*s (finite, nonzero, shape-correct) within atol/rtol prereg 1e-5/1e-5",
+    "step1_credit_binding": "common_step_order step 1 uses credit_grads from this seam — NOT BitLinear.weight.grad for eligible keys",
+    "dW_formula_exact": "For each eligible backward invocation in the current step: dW_inv = grad_output.reshape(-1, out_features).T @ act.reshape(-1, in_features); credit_grads[name] += dW_inv. NOT the literal 2D-only grad_output.T @ act when act has leading batch/seq dims.",
+    "step_scoped_lifecycle": {
+      "begin_credit_step": "Call begin_credit_step() EXACTLY ONCE before the whole batch loss/forward/backward for screen step N. Clears credit_grads for all eligible keys AND all per-step route counters (n_fixed_qscale_forwards, n_bitlinear_dynamic_forwards, n_eligible_keys, n_credit_grads_present).",
+      "intra_step": "Accumulate across all rows and all recurrent eligible invocations within step N (multiple forwards in one batch → multiple += into the same buffer).",
+      "end_of_step_read": "After whole-batch backward: for each eligible name, g = credit_grads[name].detach().clone(); project_s1_gradient_to_moves(g.cpu(), q.cpu()). Do not leave residual buffer contents for step N+1.",
+      "non_carry_invariant": "credit_grads MUST NOT carry into the next screen step. If begin_credit_step is skipped, fail-closed.",
+      "why": "Without clear-per-step, step N projects sum(grads_1..N) instead of current-step grads used by _loss_and_grads — 1-step smoke cannot detect this."
+    }
+  },
+  "route_completeness_assertion": {
+    "eligible_keys": "all named modules/parameters ending with BULK_SUFFIXES (same as vote-lifetime)",
+    "must_hold_every_step": [
+      "every eligible projection forward fires FixedQScaleLinearWithCredit exactly once per invocation",
+      "zero eligible calls reach BitLinear.quantize_weight / native dynamic-scale forward / BitLinear.forward training path",
+      "credit_grads[name] exists for every eligible key after backward",
+      "credit_grads[name] is finite, nonzero (at least one nonzero element across the step batch), and shape-matches q_levels[name]"
+    ],
+    "instrumentation": "per-step counters: n_fixed_qscale_forwards, n_bitlinear_dynamic_forwards (must be 0), n_eligible_keys, n_credit_grads_present",
+    "on_fail": "fail-closed abort step / void receipt — do not continue Phase-0/1"
+  },
+  "dynamic_scale_negative_fixture": {
+    "mechanical": true,
+    "construction": "Craft sparse q with 0 < nonzero_frac < 1 (deterministic pattern); frozen_scale s>0; deterministic non-null input x; optional bias=None",
+    "prove": "Let W_fixed = q.float()*s. BitLinear path: write master:=W_fixed then call quantize_weight → scale_dyn = master.abs().mean(); W_dyn = round(master/scale_dyn).clamp(-1,1)*scale_dyn. ASSERT scale_dyn != s (bit-unequal) AND NOT torch.allclose(W_dyn, W_fixed) AND NOT torch.allclose(F.linear(x,W_dyn), F.linear(x,W_fixed)). Degenerate output-equality alone is insufficient — weight AND output must differ by construction.",
+    "cpu_static_required": true
+  },
+  "pre_freeze_one_step_gpu_correctness": {
+    "role": "CORRECTNESS SMOKE executed by claude/test-operator AFTER plan-dev implementation receipt and BEFORE Claude gate-1 impl-freeze (freeze CONDITIONAL on smoke PASS), then co_lead impl gate-2 on the frozen diff. NOT the 150-step formal Phase-0 science run. plan-dev does NOT run this.",
+    "plan_dev_does_not_run_this": true,
+    "exact_command": {
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "cmd": "python3 scripts/hrm_text_158_forgetting_mechanism_screen.py --ckpt-path <BANKED_PARENT_PT> --device cuda --steps 1 --batch 8 --topk 1024 --arm arm0_coupled_q_no_forget --correctness-smoke --output-json artifacts/acc_entropy/forgetting_mechanism_1step_gpu_correctness.json",
+      "notes": "--correctness-smoke fails closed unless all asserts below pass; banked parent path bound at launch from the same parent as vote-lifetime/Phase-0"
+    },
+    "must_prove": [
+      "frozen_scale_sha stable across the step",
+      "banked parent sha256 before==after",
+      "route-completeness counters: all eligible keys covered; n_bitlinear_dynamic_forwards==0",
+      "backward completes without error",
+      "every eligible credit_grad finite, nonzero, shape-correct",
+      "dynamic BitLinear path unused",
+      "q_changed_count semantics intact on any applied flips (incl. reversal accounting codepath exercised in unit tests; 1-step may have 0 flips — counter field present and type-correct)"
+    ],
+    "ordering_pinned_by_claude": "impl receipt → 1-step GPU correctness smoke → gate-1 impl-freeze CONDITIONAL on PASS → co_lead impl gate-2 (claude pin on freeze handoff 1784812383188)",
+    "not_a_substitute_for": "two-step CPU-static credit lifecycle non-carry fixture"
+  },
+  "board_authority_contract": {
+    "status": "PERSISTED",
+    "authority_msg_id": "1784812148229-f466bc29",
+    "wake_paired": "1784812085876-b9373403",
+    "decision_contract_summary": {
+      "provenance_gabe": "q and vote-acc easier win + standing auto-research (no gate-wait incl GPU/push; claude=test-operator; plan-dev=codex)",
+      "scope": "implement forgetting_mechanism_screen per dual-accepted PLAN_v8; no law ship/.pt/banked/V35/forced family/sub-2",
+      "executor": "plan-dev (codex)",
+      "validation_owner": "claude gate-1 → co_lead gate-2",
+      "formal_gpu": "claude/test-operator after implementation dual-accept",
+      "escalation": "AUQ via claude",
+      "receipt_sink": "claude gate-1 ONLY"
+    },
+    "plan_dev_rule": "Board authority is msg 1784812148229-f466bc29. Still wait for persisted +1 implement before code edits. This JSON remains not authority.",
+    "prior_draft_sha_before_citation": "5be0820bfc8ac96792dbb9fd991d1584fb8aaa27d0d216a4e6b69b5d42159cf7",
+    "note_on_v9": "Authority dispatch 1784812148229 remains the board authority source. Claude must re-bind the frozen PLAN sha to this v9 sha on gate-1 freeze (prior binding was to v8 c07581e5)."
+  },
+  "authority_dispatch_citation": {
+    "msg_id": "1784812148229-f466bc29",
+    "kind": "task_dispatch",
+    "wake_paired": "1784812085876-b9373403",
+    "co_lead_revise": "1784812038556-b013649d",
+    "role": "persisted_board_authority_for_implementation_lane",
+    "note": "This room task_dispatch IS board authority; plan JSON is not."
+  }
+}
