@@ -155,8 +155,77 @@ def _assert_store_equiv(vec: _PTS, ora: _PTS, *, label: str) -> None:
         )
 
 
+def _oracle_process_pre_writeback(
+    self: _PTS,
+    *,
+    candidate_masks,
+    applied_masks,
+    step: int,
+    n_candidates: int,
+    n_applied: int,
+) -> None:
+    """R5: INDEPENDENT FROZEN COPY of eccab77 process_pre_writeback three-loop body.
+
+    Taken pre-2A from pressure_metric_lifecycle.py:247-296. Must NOT call production
+    process_pre_writeback or any 2A short-circuit helper — only self._close_events_masked
+    (bound to the scalar close oracle on oracle stores).
+    """
+    t = int(step)
+    H = int(self.follow_up_horizon)
+    for n, cand in candidate_masks.items():
+        applied = applied_masks[n]
+        deferred = cand & ~applied
+        first = self.first_deferral_step[n]
+        new_def = deferred & (first == 0)
+        if bool(new_def.any()):
+            first[new_def] = t
+
+    for n, applied in applied_masks.items():
+        first = self.first_deferral_step[n]
+        after = self.applied_after_deferral_step[n]
+        hit = applied & (first > 0) & (after == 0) & (first < t)
+        if bool(hit.any()):
+            after[hit] = t
+
+    for n in list(self.first_deferral_step.keys()):
+        first = self.first_deferral_step[n]
+        after = self.applied_after_deferral_step[n]
+        open_ev = first > 0
+        if not bool(open_ev.any()):
+            continue
+        just_survived = open_ev & (after == t) & ((after - first) <= H) & ((after - first) > 0)
+        self._close_events_masked(
+            first=first,
+            after=after,
+            close_mask=just_survived,
+            now_step=t,
+            reason="survived",
+        )
+        expired = (first > 0) & (after == 0) & ((t - first) >= H)
+        self._close_events_masked(
+            first=first,
+            after=after,
+            close_mask=expired,
+            now_step=t,
+            reason="horizon_expired",
+        )
+
+    ratio = float(n_candidates) / float(max(1, n_applied))
+    self.per_step_ratios.append(
+        {
+            "step": t,
+            "candidate_crossers_before_cap": int(n_candidates),
+            "applied_count": int(n_applied),
+            "demand_applied_ratio": ratio,
+            "deferred_count": max(0, int(n_candidates) - int(n_applied)),
+        }
+    )
+
+
 def _bind_oracle(store: _PTS) -> _PTS:
+    """Bind BOTH frozen phase oracle and scalar close oracle (R5)."""
     store._close_events_masked = MethodType(_scalar_close_events_masked, store)  # type: ignore[method-assign]
+    store.process_pre_writeback = MethodType(_oracle_process_pre_writeback, store)  # type: ignore[method-assign]
     return store
 
 
@@ -507,3 +576,157 @@ def test_finalize_window_19m_micro_perf_cpu():
         ),
         "does_not_waive_paired_0_15": True,
     }
+
+
+def test_phase_oracle_is_independent_frozen_copy():
+    """R5: phase oracle must not call production process_pre or 2A short-circuit helpers."""
+    import inspect
+
+    src = inspect.getsource(_oracle_process_pre_writeback)
+    body = src.split('"""', 2)[-1]
+    assert "hits_by_arm" not in body
+    assert "had_hit" not in body
+    assert "t <= H" not in body and "t<=H" not in body
+    names = set(_oracle_process_pre_writeback.__code__.co_names)
+    # May call _close_events_masked on self (oracle-bound); must not name production short-circuit locals
+    assert "hits_by_arm" not in names
+
+
+def test_R1_hit_mask_retained_before_after_mutation():
+    """R1: pre-mutation hit is the close_mask input; mutating first would self-reference."""
+    # Defer at step 2, apply at step 5 within H → survived via retained hit
+    st = _seeded_store({"w": (2,)}, steps=150, H=32)
+    none = _torch.zeros(2, dtype=_torch.bool)
+    st.process_pre_writeback(
+        candidate_masks={"w": _torch.tensor([True, False])},
+        applied_masks={"w": none},
+        step=2,
+        n_candidates=1,
+        n_applied=0,
+    )
+    assert int(st.first_deferral_step["w"][0].item()) == 2
+    assert int(st.applied_after_deferral_step["w"][0].item()) == 0
+    st.process_pre_writeback(
+        candidate_masks={"w": _torch.tensor([True, False])},
+        applied_masks={"w": _torch.tensor([True, False])},
+        step=5,
+        n_candidates=1,
+        n_applied=1,
+    )
+    # closed as survived; trackers zeroed
+    assert int(st.first_deferral_step["w"][0].item()) == 0
+    assert int(st.applied_after_deferral_step["w"][0].item()) == 0
+    assert st.aggregates.N_survived_applied_within_H >= 1
+
+
+def test_R2_sentinel_deferral_at_step_1_sets_first_eq_1():
+    """R2: live deferral at step 1 sets first==1; sentinel first==0 never collides."""
+    st = _seeded_store({"w": (2,)}, steps=150, H=32)
+    assert int(st.first_deferral_step["w"][0].item()) == 0  # sentinel
+    st.process_pre_writeback(
+        candidate_masks={"w": _torch.tensor([True, False])},
+        applied_masks={"w": _torch.zeros(2, dtype=_torch.bool)},
+        step=1,
+        n_candidates=1,
+        n_applied=0,
+    )
+    assert int(st.first_deferral_step["w"][0].item()) == 1
+    assert int(st.first_deferral_step["w"][1].item()) == 0
+
+
+def test_R4_step_eq_H_expiry_structurally_empty():
+    """R4: at step==H, expired path is structurally empty (no horizon closes)."""
+    H = 32
+    steps = 150
+    vec = _seeded_store({"w": (4,)}, steps=steps, H=H)
+    ora = _bind_oracle(_clone_store(vec))
+    none = _torch.zeros(4, dtype=_torch.bool)
+    # defer all at step 1; never apply → at step H still open, not yet expired
+    for st in (vec, ora):
+        st.process_pre_writeback(
+            candidate_masks={"w": _torch.ones(4, dtype=_torch.bool)},
+            applied_masks={"w": none},
+            step=1,
+            n_candidates=4,
+            n_applied=0,
+        )
+    before_censor = vec.aggregates.N_events_censored_insufficient_followup
+    before_never = vec.aggregates.N_never_applied_within_H
+    before_eval = vec.aggregates.N_events_evaluable
+    for st in (vec, ora):
+        st.process_pre_writeback(
+            candidate_masks={"w": none},
+            applied_masks={"w": none},
+            step=H,
+            n_candidates=0,
+            n_applied=0,
+        )
+    _assert_store_equiv(vec, ora, label="R4_step_eq_H")
+    # no horizon_expired closes at t==H (t-first = H-1 < H)
+    assert int(vec.first_deferral_step["w"].sum().item()) == 4  # still open
+    assert vec.aggregates.N_never_applied_within_H == before_never
+    assert vec.aggregates.N_events_evaluable == before_eval
+    assert vec.aggregates.N_events_censored_insufficient_followup == before_censor
+
+
+def test_R4_step_eq_H_plus_1_expiry_can_fire():
+    """R4: at step==H+1, deferred-at-1 never-applied events expire."""
+    H = 32
+    steps = 150
+    vec = _seeded_store({"w": (4,)}, steps=steps, H=H)
+    ora = _bind_oracle(_clone_store(vec))
+    none = _torch.zeros(4, dtype=_torch.bool)
+    for st in (vec, ora):
+        st.process_pre_writeback(
+            candidate_masks={"w": _torch.ones(4, dtype=_torch.bool)},
+            applied_masks={"w": none},
+            step=1,
+            n_candidates=4,
+            n_applied=0,
+        )
+        st.process_pre_writeback(
+            candidate_masks={"w": none},
+            applied_masks={"w": none},
+            step=H + 1,
+            n_candidates=0,
+            n_applied=0,
+        )
+    _assert_store_equiv(vec, ora, label="R4_step_eq_H_plus_1")
+    assert int(vec.first_deferral_step["w"].sum().item()) == 0  # closed
+    assert vec.aggregates.N_never_applied_within_H >= 4
+
+
+def test_late_apply_aa_fs_H_plus_1_persists_through_no_hit_step():
+    """R5 late-apply persistence: aa-fs==H+1 stays open through next no-hit step."""
+    H = 32
+    steps = 150
+    vec = _seeded_store({"w": (2,)}, steps=steps, H=H)
+    ora = _bind_oracle(_clone_store(vec))
+    none = _torch.zeros(2, dtype=_torch.bool)
+    # defer at step 1
+    for st in (vec, ora):
+        st.process_pre_writeback(
+            candidate_masks={"w": _torch.tensor([True, False])},
+            applied_masks={"w": none},
+            step=1,
+            n_candidates=1,
+            n_applied=0,
+        )
+    # Manually set a late-apply marker aa = 1+(H+1) without closing (simulates
+    # applied_after recorded but not yet closed by just_survived because aa-fs > H).
+    # Production hit path only sets after when after==0; just_survived requires
+    # 0 < aa-fs <= H. So late-apply with aa-fs==H+1 stays open until finalize/residual.
+    for st in (vec, ora):
+        st.applied_after_deferral_step["w"][0] = 1 + (H + 1)  # aa-fs == H+1
+    # next no-hit step must NOT clear/skip the late event
+    for st in (vec, ora):
+        st.process_pre_writeback(
+            candidate_masks={"w": none},
+            applied_masks={"w": none},
+            step=1 + (H + 1) + 1,
+            n_candidates=0,
+            n_applied=0,
+        )
+    _assert_store_equiv(vec, ora, label="late_apply_persist")
+    assert int(vec.first_deferral_step["w"][0].item()) == 1  # still open
+    assert int(vec.applied_after_deferral_step["w"][0].item()) == 1 + (H + 1)

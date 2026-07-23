@@ -254,35 +254,49 @@ class PressureTelemetryStore:
             if bool(new_def.any()):
                 first[new_def] = t
 
+        # R1: retain per-arm hit BEFORE after[hit]=t mutation
+        hits_by_arm: dict[str, torch.Tensor] = {}
         for n, applied in applied_masks.items():
             first = self.first_deferral_step[n]
             after = self.applied_after_deferral_step[n]
             hit = applied & (first > 0) & (after == 0) & (first < t)
+            hits_by_arm[n] = hit
             if bool(hit.any()):
                 after[hit] = t
 
         for n in list(self.first_deferral_step.keys()):
             first = self.first_deferral_step[n]
             after = self.applied_after_deferral_step[n]
-            open_ev = first > 0
-            if not bool(open_ev.any()):
+            hit = hits_by_arm.get(n)
+            if hit is None:
+                hit = torch.zeros_like(first, dtype=torch.bool)
+            had_hit = bool(hit.any())
+
+            # R3: no-hit ∧ t<=H → skip entire arm loop-3 body (incl. open_ev/.any())
+            if (not had_hit) and t <= H:
                 continue
-            just_survived = open_ev & (after == t) & ((after - first) <= H) & ((after - first) > 0)
-            self._close_events_masked(
-                first=first,
-                after=after,
-                close_mask=just_survived,
-                now_step=t,
-                reason="survived",
-            )
-            expired = (first > 0) & (after == 0) & ((t - first) >= H)
-            self._close_events_masked(
-                first=first,
-                after=after,
-                close_mask=expired,
-                now_step=t,
-                reason="horizon_expired",
-            )
+
+            # Hit-gated just_survived (set-identical to after==t form; uses pre-mutation hit)
+            if had_hit:
+                just_survived = hit & ((t - first) > 0) & ((t - first) <= H)
+                self._close_events_masked(
+                    first=first,
+                    after=after,
+                    close_mask=just_survived,
+                    now_step=t,
+                    reason="survived",
+                )
+
+            # Skip expired when t<=H (provably empty)
+            if t > H:
+                expired = (first > 0) & (after == 0) & ((t - first) >= H)
+                self._close_events_masked(
+                    first=first,
+                    after=after,
+                    close_mask=expired,
+                    now_step=t,
+                    reason="horizon_expired",
+                )
 
         ratio = float(n_candidates) / float(max(1, n_applied))
         self.per_step_ratios.append(
