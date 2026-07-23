@@ -122,6 +122,28 @@ def _load_probe_module():
     return mod
 
 
+def ledger_key_specs(surface: str) -> dict[str, dict]:
+    """Pure map: screen surface -> {ledger_key: {family, kwargs}}.
+
+    Gate-2 audit fix: `kv_ternary` must emit ternary-named keys
+    (`ternary_fp16_scale` / `ternary_int8_scale`), NOT the fixed
+    `turbo2`/`turbo3` keys — emitting turbo keys for ternary values
+    mislabels the receipt (true turbo2 is 2.125 bpw / non-sub2). Non-ternary
+    surfaces keep `turbo2`/`turbo3`. Extracted as a pure helper so the
+    key/family contract has a CPU-static regression (no GPU/probe loop).
+    """
+    if surface == "kv_ternary":
+        return {
+            "ternary_fp16_scale": {"family": "ternary", "kwargs": {}},
+            "ternary_int8_scale": {"family": "ternary",
+                                   "kwargs": {"scale_dtype": "int8"}},
+        }
+    return {
+        "turbo2": {"family": 2, "kwargs": {}},
+        "turbo3": {"family": 3, "kwargs": {}},
+    }
+
+
 def _make_seam(bits: int, families: tuple[str, ...]):
     fam = set(families)
     fired = {"count": 0}
@@ -253,15 +275,11 @@ def main() -> int:
         ledger_surface, ledger_n = "attention_kv_attention_buffers", 128
     else:
         ledger_surface, ledger_n = "activations_residuals", 512
-    if args.surface == "kv_ternary":
-        ledger2 = rotor_bits_ledger(ledger_n, "ternary",
-                                    surface=ledger_surface)
-        ledger3 = rotor_bits_ledger(ledger_n, "ternary",
-                                    surface=ledger_surface,
-                                    scale_dtype="int8")
-    else:
-        ledger2 = rotor_bits_ledger(ledger_n, 2, surface=ledger_surface)
-        ledger3 = rotor_bits_ledger(ledger_n, 3, surface=ledger_surface)
+    ledgers = {
+        key: rotor_bits_ledger(ledger_n, spec["family"],
+                               surface=ledger_surface, **spec["kwargs"])
+        for key, spec in ledger_key_specs(args.surface).items()
+    }
 
     results: dict[str, dict] = {}
     for cond, spec in conditions.items():
@@ -350,8 +368,7 @@ def main() -> int:
             "ce_delta_max_nats": CE_DELTA_MAX_NATS,
             "branches": [b for _c, b in branch_ladder],
         },
-        "bits_ledger": {"turbo2": ledger2.as_dict(),
-                        "turbo3": ledger3.as_dict()},
+        "bits_ledger": {k: v.as_dict() for k, v in ledgers.items()},
         "conditions": {k: {kk: vv for kk, vv in v.items() if kk != "rows"}
                        for k, v in results.items()},
         "row_details": {k: v["rows"] for k, v in results.items()},

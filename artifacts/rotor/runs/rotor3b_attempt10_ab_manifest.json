@@ -1,0 +1,1364 @@
+{
+  "schema": "rotor3b_attempt10_ab_manifest/v1",
+  "run": "rotor3b attempt-10 (leak-fixed detach); L0c2-K2-addition-60to89-trace slice",
+  "treatment": "rotor3b BUNDLE (SwiGLU remat + 512-wide dim-3 saved-tensor 3-bit rotor fake-quant) vs FP control (none)",
+  "ab_discipline": "90/90 bank semantics; wall-clock excluded (allocator env differs); scored bundle-vs-none",
+  "code_currency_preflight": "/home/gabe/claw-code-creditdir/transient_fp_credit/rotor3b_attempt10_audit/box_code_currency_preflight.json (code_currency_pass=true, head 52de311)",
+  "audit_runner_scripts": {
+    "mathA0": {
+      "path": "artifacts/rotor/runs/box_audit_mathA0_runner.sh",
+      "sha256": "c96cf5534f12539a7319d99f3f2e49dafc2930603644d5a2fe80fc20d042e321"
+    },
+    "per_surface": {
+      "path": "artifacts/rotor/runs/box_audit_persurface_runner.sh",
+      "sha256": "493a00eda523c5f6f17b49c78b0e5bd7c572654d5ab617d79c873029da67bb0f"
+    },
+    "note": "The two frozen scripts reproduce all 108 outputs deterministically on the box (GTX 1070). Each iterates the 12 checkpoints and invokes the exact per-invocation command below."
+  },
+  "audit_command_template": "PYTHONPATH=. python -u scripts/probe_hrm_text_158.py --ckpt-path <CKPT> <SURFACE_FLAG> [--max-gen 160 for trace surfaces] --audit-output-json <OUT> --use-cached-ternary-infer --use-kv-cache-decode --use-batched-probe-eval --probe-batch-size 32",
+  "surface_flag_expansion": {
+    "mathA0": "--exhaustive-finite-supports",
+    "trace_train": "--l0c2k2-addition-60to89-trace-train-audit --max-gen 160",
+    "trace_held": "--l0c2k2-addition-60to89-trace-held-audit --max-gen 160",
+    "add50s": "--l0c2k2-addition-50s-audit",
+    "add120": "--l0c2k2-addition-120-audit",
+    "add120k5to8": "--l0c2k2-addition-120-k5to8-audit",
+    "idfull": "--l0c2k1-identity-full-audit",
+    "l0c1": "--l0c1-audit",
+    "language": "--language-supports"
+  },
+  "aggregation_script": {
+    "path": "scripts/build_rotor3b_ab_manifest.py",
+    "note": "deterministic re-run reproduces this manifest from the frozen audit JSONs"
+  },
+  "gate_semantics": {
+    "acquire_target": "trace_train",
+    "retained_priors": [
+      "mathA0",
+      "add50s",
+      "add120",
+      "add120k5to8",
+      "idfull",
+      "l0c1",
+      "language"
+    ],
+    "close_sibling": "l0c1",
+    "held_diagnostic": "trace_held"
+  },
+  "checkpoints": {
+    "fp_control_step250": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89Trace_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step00250.pt",
+      "sha256": "7baeb20e2d87f55ee738d509a8ba549bf7cec711d53f26051d77422201328d99"
+    },
+    "fp_control_step500": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89Trace_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step00500.pt",
+      "sha256": "141909e77d7b1b8ef9b14aa92602791a2beb61b3ab25d4088c836e299ccfcc98"
+    },
+    "fp_control_step750": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89Trace_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step00750.pt",
+      "sha256": "05a8f23fb9c5af861753a3fccc9ff38a793b82ed07e728b30ebfa14a3ef7380e"
+    },
+    "fp_control_step1000": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89Trace_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step01000.pt",
+      "sha256": "a54a4fe920b988f75d2376753be18042bd0c8091fa6c49f22c13a9904c32afc7"
+    },
+    "fp_control_step1250": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89Trace_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step01250.pt",
+      "sha256": "8bf376fc1bca4a4dbcb391d20c92a6c53e4600223c369aa9a00b5f78445c20e5"
+    },
+    "fp_control_step1500": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89Trace_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step01500.pt",
+      "sha256": "d3f9d9b85562ef1dbbc0e348324ff872a1b758c9c45be34a1847e0c94727ea08"
+    },
+    "rotor3b_step250": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89TraceRotor3b_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step00250.pt",
+      "sha256": "2aa65842d9a5c717a563d3d643d13d86233f7c8e1dec30c9227466084dae871a"
+    },
+    "rotor3b_step500": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89TraceRotor3b_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step00500.pt",
+      "sha256": "6e1dd08d04d8c4a30e31a1437c6158b454cc247601edf934a70d9e1c1dc5342e"
+    },
+    "rotor3b_step750": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89TraceRotor3b_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step00750.pt",
+      "sha256": "67894146aeecbbcb6416b35e8da3cbf7d169d445ebae8d4b69b04f98e55e76a4"
+    },
+    "rotor3b_step1000": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89TraceRotor3b_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step01000.pt",
+      "sha256": "6e07876c9c11470249e797ee49affc39a5c758d1a76eaffc83593895a27b5c23"
+    },
+    "rotor3b_step1250": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89TraceRotor3b_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step01250.pt",
+      "sha256": "6e0cdc8805dfc4552b48803a8a7f47555cda7fc8e7a72d9309921e3f1c950074"
+    },
+    "rotor3b_step1500": {
+      "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add60to89TraceRotor3b_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1add50spin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add50s_step00750_final_step01500.pt",
+      "sha256": "8b77f77cf49b1a900d165e6e52a730f7c8928d4237215a44910757cb72b25767"
+    }
+  },
+  "audit_files_sha256": {
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_audit.json": "baf8521769857e8e6df4b9f4e149bbe1582274713bb6faaba4ec8a361150db0c",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_audit.json": "0e3da1edf7eaf09fe3906fad677871381b17bacf6128fd77714332491cae0a31",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_audit.json": "5e1d0e066af6c275b619099f74bda69dd8200a301f722ff622e98b5b5e8ede6f",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_audit.json": "6973ec60d1511ec5324c030e7dc40935330ee03082f59578d298867888acfe7e",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_audit.json": "3fc933079d3da3104ed73b3464a1268cae283e5761681ff376534f5cb02e58d4",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_audit.json": "f8e17d3d493a7e79c660e0910bac8abd78609f15ad2a7ab565422f2688cbdec9",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_audit.json": "1428934041c884bd304207ed624997bb33777ec2ab437d1f6bd1d4864b3be923",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_audit.json": "9db5b90fb8c326372621068ce8bfe4f9fb75f165be327da57add52c8cf4ae82a",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_audit.json": "bfff28f23a0eedc1f65cbcbfedbb50b62db82e7e1d2f27404a1b929d8f0a957f",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_audit.json": "1983178c5082709f8ec0f238e4658a6755ce11d4aa017dfd4693e2995c1d2d8f",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_audit.json": "d2871e0812957b69fee7c6ee737082895a9aef68e68638397ef5c2cdb14ffe0f",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_audit.json": "1b2907bc12384b676cb35665a5598beb43bc3d97a706a17f374c5673f34cb4d9",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_trace_train_audit.json": "83bfb3e9bd78a6707663f5a22e3afaa5f78a12d3fe2328f6e247a0041432a00b",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_trace_train_audit.json": "1dd199ba0b3439da03f614cc82c4ae2a3d53a5cff8a01b97331bfa18726f9618",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_trace_train_audit.json": "6a91073e5d3348dbbfc8a84412fc31136f1e358839c0210fc2317e1bf3988523",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_trace_train_audit.json": "2cf00be97c5e65df89e703ce6af9f83f4852b787384347544df62a83be4761fa",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_trace_train_audit.json": "42cae9f0f47232b7e62fd86c29a20408509eee841673786b44b8afdeb38e3e8c",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_trace_train_audit.json": "d350f3c3cb51d09cb7a1fc8c0cfd279b79eadc33594470da0a56eedafeb9d9fb",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_trace_train_audit.json": "13e5fa655a52694791426d7c3610bc86b487dcbf345a1e0926558ae2f4985782",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_trace_train_audit.json": "4c7960cd0a11225d9c5cab8faf3273a7bb61975aa6164a9e26c793a9de4c249a",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_trace_train_audit.json": "a92584e72794411d1e44aee59be811f54464feeec13f0c00602010c4e1af2bdb",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_trace_train_audit.json": "3f0d294aec7b2fda8ff72acd0148317e6604a0c07789443a7aca797b3ffcce82",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_trace_train_audit.json": "59c368124a341ddbf981fcf1fb53d6565b77e0bc07cfe81f4e087ae50d48de31",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_trace_train_audit.json": "0094e5da6d455a4a1e3e904ea226d3ea0d012d76fa56c0c31dc82d0997de7545",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_trace_held_audit.json": "41b5575b7c782bbe2cc5395c321641cefac37aeae95015fe15ab53c2fbc23d51",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_trace_held_audit.json": "db50059a7aa8c59f5ff8d832b8344c95ef2896b53578e3d873d2c572ad849a8d",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_trace_held_audit.json": "70f93a05e4fd08924db4bde7f661544a716b8e59783d64c9ec8b01ffb30d41a6",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_trace_held_audit.json": "5ded912ece413171715920277d9e511dbfa4a1f20434a3283e8b72cb474d8326",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_trace_held_audit.json": "9b9cfd3f80715afe680814a3fa34e33ac5d5f7b6af704fa6d5a754c6c2f4b49e",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_trace_held_audit.json": "12f68901135f580238e019ae4a282f542ed05334f23bfbfd85921ba6be969bb3",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_trace_held_audit.json": "0e93aaeae18fb8341147f2e7ffc0d419019f1b1916c17a59c19094617d46a6b9",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_trace_held_audit.json": "9e4e19616e3a0f7acaa3f9a0bfdd20ae4b86ec5c93970bd461a2277d24a62eb7",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_trace_held_audit.json": "aa9fdb7f285e9c8dfff3f43ef41fc6b6eaf03fad0653587e67cee2daec26aa05",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_trace_held_audit.json": "3c00646c11ac4a6da711d147d09b0c4f8dfd346f23072e11343d72c2db802d01",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_trace_held_audit.json": "2a0f953c84531bc85a54d0c09c9321eff41d6dc4de9276de6f6f246d7a0c46a3",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_trace_held_audit.json": "071782d5ecac6b4c4f39bdd36e30b243d5694708af731c0ceb270ae0144ad5bb",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_add50s_audit.json": "2b3e9a0c199491f696704ed4d08e7c0a081416123a5e0c0fc4a02d0ae931c646",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_add50s_audit.json": "9cb380f36cc75460268ec4bc5213710c2e205cf52e9cdffd02678670c069ca53",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_add50s_audit.json": "df6e3e3a9c148d841bdc4a9608cd1240475edabca07dd0c475cdb8e55c45df8e",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_add50s_audit.json": "c25f2fc48f33b53765084ecf1906094c700e08c6daf2e524417b4ab735726bfe",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_add50s_audit.json": "81a6b2adb4a97fb9274f4978326363bdff1683bf0bc602feb3fc38e44bc450a1",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_add50s_audit.json": "97d72b300ae533c25261a20018c004790c3cc662ebf72be218ec897d5654a4b1",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_add50s_audit.json": "81f4adeef1b86277afb94a55d46825ffbc9a93c06dec98b4dbd1e943db1ee1fd",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_add50s_audit.json": "83d5b693af511e9940213550db38140f83bfbc117c88a007240a69b3b61729ea",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_add50s_audit.json": "8c5b6d2b2ec10da0435a00b527c4baebd28bb18a9005d1378a997213d7fbb264",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_add50s_audit.json": "c5b1c62c3dde25da8d4f9f3dfd6b2f58a6e53f2bf7dd0aac55669b1b0891ba19",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_add50s_audit.json": "8ec2b3405983397222c8b4110be6812678752b320485de2bd3889033ef5bf6d5",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_add50s_audit.json": "a407081dd93230e1e13f06172e584fdd833076de2b453bcddbc18b787534a086",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_add120_audit.json": "8065182e1f19adbf6e8b454d43b1aa2f1b45c9a7e9ed2475f7eeedfd5986244c",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_add120_audit.json": "acea82b207686a3ed67a084f11ec6a5a96764b64f2351c491519b8a416d1bb9d",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_add120_audit.json": "3880e893a7e3d1c8ecdbb0f3ff22d2764648bdf7c72e047e222c9b26bb085445",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_add120_audit.json": "bb874afc0a9af770be132a9e98949ca3336bb3fb04697327b24b46f945bf61a7",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_add120_audit.json": "15ac110fc26f9588e07a07e46d26b4783e5cba21f2751f4d0bc004ae0da18239",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_add120_audit.json": "620d09df253ddf619774c1f1275b3b77fbaa52b30fdb3eb7627967425092453c",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_add120_audit.json": "0cbad696ea25745b501d8e4504da6cc4d7c432526c88e6709bcfd4ef3b840719",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_add120_audit.json": "d2f21da512ac9da4128774c7adca233ff23308cd59661bd273016e61b4710815",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_add120_audit.json": "7f0ee4bfc342930726acdb6e22f3ed63b71d67ec3ca203e44abb32b5fa528004",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_add120_audit.json": "f53186c1142fa2c2d90f34525f18d029487d5fc75294cae63158d405f40f5fae",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_add120_audit.json": "d33afb7e68f55d4aabec6896af3fce0c2877f9e9685f24d032aafc650d1eb0eb",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_add120_audit.json": "b66316f6850b99ebb16532eff7e65bf75af7880413be1b135ef1e0e7d883e964",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_add120k5to8_audit.json": "ceff9814836b741a400c96f8bb5effdc87962ff2656f428d874cac80926ed9ca",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_add120k5to8_audit.json": "ef6ead504e00fdcbcb50ce9289787111313d03025b1cc87c1fd34ab03aefdba1",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_add120k5to8_audit.json": "03c69f906169d825ca0e5647354f160ca75bde0b7eeaf9b5c0ca4e95ea2736aa",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_add120k5to8_audit.json": "238fe91a08cddaac97b40a8a85528125a023f48ff5a60773b0522f49fdc3cdcd",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_add120k5to8_audit.json": "bf470431912b8d1cdf2ee7c82e7a08411cf864f4f39ae9db6255f18b64c54a9d",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_add120k5to8_audit.json": "049f35bbe5fee3dd1c34ef24883423ef976755c736da5f964431ce43aa8be260",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_add120k5to8_audit.json": "28762cf63a7649f88ccada617199d66e023bd47326ee370da2121313da7a8746",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_add120k5to8_audit.json": "9e19c7f92c6cabe30b42c3d82412f4d52512c2b92bf91d8487cf6ac16b572647",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_add120k5to8_audit.json": "b37203b8824e83b75d6d8adca51dad4a813e2abbc6d13d363cf3a1f17853639d",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_add120k5to8_audit.json": "81d5fb88fcac1e79808b2bf769199924858a03de0a8f757560d3e9d5d61539a1",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_add120k5to8_audit.json": "5c7c39a3ca40b472c5703b6fb35d5c330bd78b5d41027b9b43ff935ae7d7d4bb",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_add120k5to8_audit.json": "c28c7d26ded8ec62fe76af37bba1228de40b38c46eed8df426abf8512a9e645d",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_idfull_audit.json": "de4dfefab581c2b4c4dbf0d841ea29616dcf3b1b6e223fbc1a6bf7c412ce15ad",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_idfull_audit.json": "0ac150648fdb17bcce020031ad8b9ed4b0f60b94db9a038b0462bb97e19f1c77",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_idfull_audit.json": "d5b6b2310a5d5180f3f2c7d566116d34ff883845c23a1a8a711815e81609c6f3",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_idfull_audit.json": "acc7dc09c32567f19795bcb87a9d96f28ca4bc3a7c26821327929b3b12c371f0",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_idfull_audit.json": "534f8d452ac99a7f96682590c4dff6ccd78b29293fc3bc36b7401e6c1d396ced",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_idfull_audit.json": "1e678cdaad2899df4e39a2d2501b2059465eca6936aaf8d6538f12489d944b10",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_idfull_audit.json": "623c8792abae3307be8f82f623555e42305a55de8cfae93e8f047c24e655f2fc",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_idfull_audit.json": "fd42ef9233cb580bbebdce15d4fff15c94b72df563ff3491173e6037595401b5",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_idfull_audit.json": "387ed1d2569d54911df731032fcb98f30bea37efec28d03de09387a04a8d8f82",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_idfull_audit.json": "e0127b7284e944604f80135334fa5a20dc783242b89604838a29ec10c66f3940",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_idfull_audit.json": "f91a98fb18479cf0c3d5ae5bf3983f90e81c59c1c0d28bd9cbe977c0a4223ca1",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_idfull_audit.json": "5ffc293852138849c8d6a73eeea8952083a86df8499b9a8d415e40ff1f93e134",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_l0c1_audit.json": "49adb8db0993962c4cda556e2595db2cdea42bc1b59649c8c108e3eb6655c4a4",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_l0c1_audit.json": "a884a6f9f403689678f769c94a4a92a98529d95f091cafdbf4b4678403299830",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_l0c1_audit.json": "b87d2f89cf5fb58d55b10ebd588814d882aa035d95d0aadb9de3373378219e17",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_l0c1_audit.json": "56ddbe28ef20ee453b9ca4171e95eea011c88aeae6e48bb481cb0fa551b66a49",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_l0c1_audit.json": "6b1c33273a81672608daa878715ca3c4ab924828bb8797002a0de0b318e9ed81",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_l0c1_audit.json": "c72c1ac09e52fa0a64ca99a26a59a67750a86717030b8b00beb13544e66ea6d6",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_l0c1_audit.json": "ebc542602fe920cda70052a44c1192285559e4522998447e7c578a0508fa87c5",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_l0c1_audit.json": "8196d8d2252e366590a4066a0db80d6ac63191039cf4531512ed4992e006b320",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_l0c1_audit.json": "416ec06ebe0772b5e76eb33ddc6bb5693af59cbabc55c985883a23d3474124f4",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_l0c1_audit.json": "973681de53c48c10bbf001c5e581ed7dba78d90d6c10359872ddb48b73b2e3d2",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_l0c1_audit.json": "e26768dc41ce5bd7501411a8b4cd643f10764a407ee32ef9fb460b8434e6b426",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_l0c1_audit.json": "7fc4166449afc2d774e98ad91694e6c9fda4cc6ec9e51ed363dbe7e0a83de279",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00250_language_audit.json": "ab3a25214121f935a3bbe7894c6cd793bdf8baed027025f35dde6755b15a7c21",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00250_language_audit.json": "d5a0b78972fcc2306d8d5b5a18afe6bca6c6648c443e8d499359ca4b0da66331",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00500_language_audit.json": "055777da73e71058599d8f1da1c5aaec826c840b897d4b6f042ce9188c9765a3",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00500_language_audit.json": "638b5d28361be5a615e22c9d59558a8555357cffe80a7507140dd52ac9c1182d",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step00750_language_audit.json": "16a5bdfe6584a63f50bc7c8e1bd3d09bb1a89a8ef29580ce55c9bba115e7eb66",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step00750_language_audit.json": "657cde4cb068807bbba4295ed9250628f1ece35d339289c5c8f3a94c721c756c",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01000_language_audit.json": "084406aa2c5c5043773f8fc760e6f24bd8521ae6f6485b37a57d3d68b2a9172d",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01000_language_audit.json": "b909cd1183c99b3952b175cacb4ab403771da711ca942a45afce7bbd00c8d1ad",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01250_language_audit.json": "77714395acdf61c2f75adcd879a65d48f6c7d7de5394f955f061770923a8b389",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01250_language_audit.json": "1570e2a13ac3f4c136dc6c036023255db0556959e0df13482b5012208b63cf28",
+    "artifacts/rotor/runs/attempt10_ab_audits/rotor3b_step01500_language_audit.json": "54c919d5b487e472bcf9cba9e8d86200934743267d94d07cab87118d290811e1",
+    "artifacts/rotor/runs/attempt10_ab_audits/fp_control_step01500_language_audit.json": "740b0c0e73833183d3d168c4baa2e7edab3942a72117a5ff3357206b98f532d8"
+  },
+  "per_surface_table": {
+    "mathA0": {
+      "250": {
+        "rotor3b": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "fp_control": {
+          "exact": 1252,
+          "total": 1255,
+          "frac": 0.9976
+        },
+        "delta": 2
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "fp_control": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "delta": 0
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "fp_control": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "delta": 0
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "fp_control": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "delta": 0
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "fp_control": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "delta": 0
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "fp_control": {
+          "exact": 1254,
+          "total": 1255,
+          "frac": 0.9992
+        },
+        "delta": 0
+      }
+    },
+    "trace_train": {
+      "250": {
+        "rotor3b": {
+          "exact": 0,
+          "total": 120,
+          "frac": 0.0
+        },
+        "fp_control": {
+          "exact": 0,
+          "total": 120,
+          "frac": 0.0
+        },
+        "delta": 0
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 0,
+          "total": 120,
+          "frac": 0.0
+        },
+        "fp_control": {
+          "exact": 0,
+          "total": 120,
+          "frac": 0.0
+        },
+        "delta": 0
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 1,
+          "total": 120,
+          "frac": 0.0083
+        },
+        "fp_control": {
+          "exact": 0,
+          "total": 120,
+          "frac": 0.0
+        },
+        "delta": 1
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 4,
+          "total": 120,
+          "frac": 0.0333
+        },
+        "fp_control": {
+          "exact": 13,
+          "total": 120,
+          "frac": 0.1083
+        },
+        "delta": -9
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 31,
+          "total": 120,
+          "frac": 0.2583
+        },
+        "fp_control": {
+          "exact": 44,
+          "total": 120,
+          "frac": 0.3667
+        },
+        "delta": -13
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 47,
+          "total": 120,
+          "frac": 0.3917
+        },
+        "fp_control": {
+          "exact": 77,
+          "total": 120,
+          "frac": 0.6417
+        },
+        "delta": -30
+      }
+    },
+    "trace_held": {
+      "250": {
+        "rotor3b": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "fp_control": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "delta": 0
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "fp_control": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "delta": 0
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "fp_control": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "delta": 0
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "fp_control": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "delta": 0
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "fp_control": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "delta": 0
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 0,
+          "total": 40,
+          "frac": 0.0
+        },
+        "fp_control": {
+          "exact": 1,
+          "total": 40,
+          "frac": 0.025
+        },
+        "delta": -1
+      }
+    },
+    "add50s": {
+      "250": {
+        "rotor3b": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 79,
+          "total": 80,
+          "frac": 0.9875
+        },
+        "delta": 1
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 80,
+          "total": 80,
+          "frac": 1.0
+        },
+        "delta": 0
+      }
+    },
+    "add120": {
+      "250": {
+        "rotor3b": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 118,
+          "total": 120,
+          "frac": 0.9833
+        },
+        "delta": 2
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "delta": 1
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 120,
+          "total": 120,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "delta": 1
+      }
+    },
+    "add120k5to8": {
+      "250": {
+        "rotor3b": {
+          "exact": 118,
+          "total": 120,
+          "frac": 0.9833
+        },
+        "fp_control": {
+          "exact": 118,
+          "total": 120,
+          "frac": 0.9833
+        },
+        "delta": 0
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "fp_control": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "delta": 0
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 118,
+          "total": 120,
+          "frac": 0.9833
+        },
+        "fp_control": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "delta": -1
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "fp_control": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "delta": 0
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "fp_control": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "delta": 0
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 118,
+          "total": 120,
+          "frac": 0.9833
+        },
+        "fp_control": {
+          "exact": 119,
+          "total": 120,
+          "frac": 0.9917
+        },
+        "delta": -1
+      }
+    },
+    "idfull": {
+      "250": {
+        "rotor3b": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "delta": 0
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "fp_control": {
+          "exact": 90,
+          "total": 90,
+          "frac": 1.0
+        },
+        "delta": 0
+      }
+    },
+    "l0c1": {
+      "250": {
+        "rotor3b": {
+          "exact": 108,
+          "total": 121,
+          "frac": 0.8926
+        },
+        "fp_control": {
+          "exact": 109,
+          "total": 121,
+          "frac": 0.9008
+        },
+        "delta": -1
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 111,
+          "total": 121,
+          "frac": 0.9174
+        },
+        "fp_control": {
+          "exact": 111,
+          "total": 121,
+          "frac": 0.9174
+        },
+        "delta": 0
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 110,
+          "total": 121,
+          "frac": 0.9091
+        },
+        "fp_control": {
+          "exact": 110,
+          "total": 121,
+          "frac": 0.9091
+        },
+        "delta": 0
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 111,
+          "total": 121,
+          "frac": 0.9174
+        },
+        "fp_control": {
+          "exact": 110,
+          "total": 121,
+          "frac": 0.9091
+        },
+        "delta": 1
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 110,
+          "total": 121,
+          "frac": 0.9091
+        },
+        "fp_control": {
+          "exact": 111,
+          "total": 121,
+          "frac": 0.9174
+        },
+        "delta": -1
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 110,
+          "total": 121,
+          "frac": 0.9091
+        },
+        "fp_control": {
+          "exact": 110,
+          "total": 121,
+          "frac": 0.9091
+        },
+        "delta": 0
+      }
+    },
+    "language": {
+      "250": {
+        "rotor3b": {
+          "exact": 623,
+          "total": 690,
+          "frac": 0.9029
+        },
+        "fp_control": {
+          "exact": 622,
+          "total": 690,
+          "frac": 0.9014
+        },
+        "delta": 1
+      },
+      "500": {
+        "rotor3b": {
+          "exact": 628,
+          "total": 690,
+          "frac": 0.9101
+        },
+        "fp_control": {
+          "exact": 627,
+          "total": 690,
+          "frac": 0.9087
+        },
+        "delta": 1
+      },
+      "750": {
+        "rotor3b": {
+          "exact": 627,
+          "total": 690,
+          "frac": 0.9087
+        },
+        "fp_control": {
+          "exact": 627,
+          "total": 690,
+          "frac": 0.9087
+        },
+        "delta": 0
+      },
+      "1000": {
+        "rotor3b": {
+          "exact": 627,
+          "total": 690,
+          "frac": 0.9087
+        },
+        "fp_control": {
+          "exact": 626,
+          "total": 690,
+          "frac": 0.9072
+        },
+        "delta": 1
+      },
+      "1250": {
+        "rotor3b": {
+          "exact": 629,
+          "total": 690,
+          "frac": 0.9116
+        },
+        "fp_control": {
+          "exact": 627,
+          "total": 690,
+          "frac": 0.9087
+        },
+        "delta": 2
+      },
+      "1500": {
+        "rotor3b": {
+          "exact": 627,
+          "total": 690,
+          "frac": 0.9087
+        },
+        "fp_control": {
+          "exact": 626,
+          "total": 690,
+          "frac": 0.9072
+        },
+        "delta": 1
+      }
+    }
+  },
+  "bank_decision": {
+    "rotor3b": {
+      "per_save": {
+        "250": {
+          "acquire_ge90": false,
+          "retain_all_ge90": false,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9833,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.8926,
+              "ge90": false
+            },
+            "language": {
+              "frac": 0.9029,
+              "ge90": true
+            }
+          }
+        },
+        "500": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9174,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9101,
+              "ge90": true
+            }
+          }
+        },
+        "750": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9833,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9091,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9087,
+              "ge90": true
+            }
+          }
+        },
+        "1000": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9174,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9087,
+              "ge90": true
+            }
+          }
+        },
+        "1250": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9091,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9116,
+              "ge90": true
+            }
+          }
+        },
+        "1500": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9833,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9091,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9087,
+              "ge90": true
+            }
+          }
+        }
+      },
+      "earliest_banked_save": null
+    },
+    "fp_control": {
+      "per_save": {
+        "250": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9976,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 0.9875,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 0.9833,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9833,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9008,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9014,
+              "ge90": true
+            }
+          }
+        },
+        "500": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9174,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9087,
+              "ge90": true
+            }
+          }
+        },
+        "750": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9091,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9087,
+              "ge90": true
+            }
+          }
+        },
+        "1000": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9091,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9072,
+              "ge90": true
+            }
+          }
+        },
+        "1250": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9174,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9087,
+              "ge90": true
+            }
+          }
+        },
+        "1500": {
+          "acquire_ge90": false,
+          "retain_all_ge90": true,
+          "banks": false,
+          "retain_detail": {
+            "mathA0": {
+              "frac": 0.9992,
+              "ge90": true
+            },
+            "add50s": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "add120": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "add120k5to8": {
+              "frac": 0.9917,
+              "ge90": true
+            },
+            "idfull": {
+              "frac": 1.0,
+              "ge90": true
+            },
+            "l0c1": {
+              "frac": 0.9091,
+              "ge90": true
+            },
+            "language": {
+              "frac": 0.9072,
+              "ge90": true
+            }
+          }
+        }
+      },
+      "earliest_banked_save": null
+    }
+  },
+  "observed_pc_kl_max": 0.164825,
+  "claim_boundary": "BEHAVIORAL A/B ONLY, bounded to observed counts (no preregistered equivalence margin). Supported: on audited RETAINED surfaces the two arms are near-matched \u2014 |count delta|<=2 at every save \u2014 and both arms clear all numeric retained-surface gates at saves 500-1500. NOT gate-outcome-equivalent at EVERY save: at step250 rotor3b l0c1=108/121=0.8926 (<0.90) while FP=109/121=0.9008 (>=0.90) \u2014 a single-save one-row numeric divergence during early acquisition. On the ACQUISITION target the arms are NOT acquisition-equivalent: rotor3b trails FP by 30/120 at step1500 (47 vs 77). Neither arm banks (both <90% acquire; procedure slice, trace_held~0 both). NOT proven here (HYPOTHESIS only): any gradient-magnitude mechanism ('gradient-transparent at minima' / 'noise where gradients large') \u2014 needs a direct per-arm gradient comparison. Do NOT restate as 'retention-equivalent' or 'rotor3b==FP'."
+}

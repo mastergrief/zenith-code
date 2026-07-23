@@ -1,0 +1,207 @@
+{
+  "screen": "vote_lifetime_screen/v1",
+  "plan_sha256": "3b3848c8b6ff818ccecce4a8ea5aac9c13a3d8b2ebc00becdd5dea81bc91fae0",
+  "binding_riders": [
+    "1784802561699-5dc9da8f",
+    "1784802776203-87cc3967",
+    "1784802863548-ded13e80"
+  ],
+  "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add50s_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add120k5to8_step01000_final_step00750.pt",
+  "device": "cuda",
+  "steps": 150,
+  "batch": 8,
+  "topk_per_step": 1024,
+  "law": {
+    "projection": "project_s1_gradient_to_moves (imported)",
+    "vote_quantum": 1,
+    "crossing_threshold_abs": 10,
+    "clip": 127,
+    "episode_semantics": "zero->nonzero start; reset on zero-return / sign-reversal / applied drain; lifetime=flip_step-episode_start (excl)"
+  },
+  "banked_sha": {
+    "before": "2d9b9f6746e66cec9e7e39d65e8171151e836daca99df6b56fb488d8a6f2403b",
+    "after": "2d9b9f6746e66cec9e7e39d65e8171151e836daca99df6b56fb488d8a6f2403b",
+    "expected": "2d9b9f6746e66cec9e7e39d65e8171151e836daca99df6b56fb488d8a6f2403b",
+    "match": true
+  },
+  "measurements": {
+    "a_flip_lifetime": {
+      "n_flips": 144384,
+      "histogram": {
+        "1": 0,
+        "2": 0,
+        "3-4": 0,
+        "5-8": 0,
+        "9-16": 8192,
+        "17-32": 16384,
+        "33-64": 32768,
+        "65-128": 65614,
+        "129-150": 21426
+      },
+      "quantiles": {
+        "p10": 23.0,
+        "p25": 44.0,
+        "p50": 79.0,
+        "p75": 114.0,
+        "p90": 135.0,
+        "p99": 148.0
+      }
+    },
+    "b_never_convert": {
+      "never_convert_frac": 0.9947051817808429,
+      "never_flipped_final_abs_mass": 1815553329.0,
+      "final_abs_mass": 1825217524.0,
+      "never_flipped_weight_frac": 0.9950862526893616
+    },
+    "c_age_hazard": {
+      "bins": {
+        "0-1": {
+          "flips": 0,
+          "exposure": 119990931,
+          "rate": 0.0
+        },
+        "2": {
+          "flips": 0,
+          "exposure": 47081168,
+          "rate": 0.0
+        },
+        "3-4": {
+          "flips": 0,
+          "exposure": 82061987,
+          "rate": 0.0
+        },
+        "5-8": {
+          "flips": 0,
+          "exposure": 148933454,
+          "rate": 0.0
+        },
+        "9-16": {
+          "flips": 8192,
+          "exposure": 271762997,
+          "rate": 3.014391249151554e-05
+        },
+        "17-32": {
+          "flips": 16384,
+          "exposure": 500667868,
+          "rate": 3.272428898912283e-05
+        },
+        "33-64": {
+          "flips": 32768,
+          "exposure": 934299531,
+          "rate": 3.507226420731233e-05
+        },
+        "65+": {
+          "flips": 87040,
+          "exposure": 2222783381,
+          "rate": 3.915811173684495e-05
+        }
+      },
+      "age_rate_old_gt32": 3.7948955836608705e-05,
+      "age_rate_young_le8": 0.0
+    },
+    "d_acc_survival": {
+      "0-1": {
+        "1": 1.0,
+        "2": 0.3054855870732431,
+        "5": 0.0,
+        "10": 0.0,
+        "20": 0.0,
+        "40": 0.0,
+        "80": 0.0
+      },
+      "2": {
+        "1": 1.0,
+        "2": 0.6126833344491368,
+        "5": 0.0,
+        "10": 0.0,
+        "20": 0.0,
+        "40": 0.0,
+        "80": 0.0
+      },
+      "3-4": {
+        "1": 1.0,
+        "2": 0.8617864931786261,
+        "5": 0.07742506892990539,
+        "10": 0.0,
+        "20": 0.0,
+        "40": 0.0,
+        "80": 0.0
+      },
+      "5-8": {
+        "1": 1.0,
+        "2": 0.9395187195483964,
+        "5": 0.38527642016547875,
+        "10": 0.0,
+        "20": 0.0,
+        "40": 0.0,
+        "80": 0.0
+      },
+      "9-16": {
+        "1": 1.0,
+        "2": 0.9749524435808309,
+        "5": 0.7386292696794184,
+        "10": 0.16559831359233942,
+        "20": 0.0,
+        "40": 0.0,
+        "80": 0.0
+      },
+      "17-32": {
+        "1": 1.0,
+        "2": 0.989762320836615,
+        "5": 0.9095563368568322,
+        "10": 0.6364697883907341,
+        "20": 0.08658531687517841,
+        "40": 0.0,
+        "80": 0.0
+      },
+      "33-64": {
+        "1": 1.0,
+        "2": 0.9964545395881185,
+        "5": 0.9692012464469492,
+        "10": 0.8833558356993332,
+        "20": 0.5889105835374758,
+        "40": 0.05777834431985817,
+        "80": 0.0
+      },
+      "65+": {
+        "1": 1.0,
+        "2": 0.9992509369044991,
+        "5": 0.9932629332538635,
+        "10": 0.9727650384119909,
+        "20": 0.9033551618946534,
+        "40": 0.6465461539277183,
+        "80": 0.09967508750237503
+      }
+    },
+    "right_censor": {
+      "n_censored_active_episodes": 29141870,
+      "lifetime_censored_frac": 0.9950699054921808,
+      "note": "includes post-flip active episodes; distinct from never_convert_frac",
+      "optional_censored_abs_mass": 1825217524.0
+    },
+    "credited_mass": 2902705647
+  },
+  "classifier": {
+    "eps": 1e-09,
+    "eval_order": [
+      "R4_vacuous",
+      "censor_guard",
+      "R1_R2_R3_independent",
+      "R5_priority_or_F4"
+    ],
+    "predicates": {
+      "R4_vacuous": false,
+      "censor_guard": true
+    },
+    "family": "F4_underspecified_need_longer_or_coupled_q_motion",
+    "multi_match": false,
+    "stop_reason": "censor_guard"
+  },
+  "limits": [
+    "frozen weights / frozen q (no coupled weight motion)",
+    "armC topK=1024 is bracket analog of global applied-rate cap",
+    "selects DESIGN family only \u2014 no forgetting law / no sub-2 claim",
+    "instrumentation path forces CPU q+grad transfers each step (acceptable for 150-step screen; not a training hot loop)"
+  ],
+  "elapsed_s": 820.81
+}

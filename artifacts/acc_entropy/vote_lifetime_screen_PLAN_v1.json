@@ -1,0 +1,179 @@
+{
+  "kind": "PLAN_REQUEST",
+  "plan_id": "vote_lifetime_screen_PLAN_v1",
+  "task_id": "1784801887625-f9c182c6",
+  "dispatch_msg_id": "1784802176483-02ee1be9",
+  "created_at": "2026-07-23T10:27:23.378153+00:00",
+  "role": "plan-dev",
+  "cwd_target": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "lane": "persistent_q_acc_sub2_forgetting_classify_before_build",
+  "context_health": "self-measured ~35%; V35 HOLD orthogonal (deferred +1 mint)",
+  "approval_status": "awaiting_claude_gate1_then_co_lead_gate2_then_plus1_implement",
+  "prior_science_anchor": {
+    "receipt": "artifacts/acc_entropy/int8_acc_entropy_screen_receipt.json",
+    "verdicts_all_arms": "mechanism_must_forget_more",
+    "best_arm_H_bpw": 4.107383402373413,
+    "sub2_budget_bpw": 0.4,
+    "gap_factor_approx": 10.3,
+    "script_pattern": "scripts/hrm_text_158_acc_entropy_screen.py"
+  },
+  "decision_contract": {
+    "question": "Under the real vote/credit law on a from-clean-parent contiguous replay, how long do votes that eventually cause an applied flip live, what fraction of vote mass never converts, does old mass still convert, and how do |acc| magnitudes survive \u2014 enough to select a forgetting-mechanism family without building it yet?",
+    "classify_before_build": true,
+    "no_verdict_outside_prereg": true,
+    "named_overforget_risk": "functional_veto_freeze (votes never cross \u2192 ternary stops training)"
+  },
+  "scope": {
+    "in": [
+      "New screen script sibling to hrm_text_158_acc_entropy_screen.py (CPU; compact histograms/quantiles/survival only)",
+      "Read-only load of banked parent weights; derive q via BitLinear law; start acc/backlog empty (from-clean-parent contiguous)",
+      "Replay vote/credit stream via imported project_s1_gradient_to_moves + same grad path as entropy screen",
+      "Pre-registered branch classifier binding measurement outcomes \u2192 forgetting-mechanism family",
+      "Banked .pt sha256 before+after; runtime artifacts only under artifacts/acc_entropy/",
+      "Focused CPU validation of screen CLI dry-shape after +1 implement (no science claim until receipt)"
+    ],
+    "out": [
+      "No mutation of banked .pt / model_state",
+      "No forgetting-mechanism implementation (decay/TTL/sparse) in this slice",
+      "No GPU / lane / Monitor / VCS / .pt commit",
+      "No V35 PACKET_v3 mint (orthogonal HOLD)",
+      "No raw per-proposal / per-weight lifetime arrays in receipt"
+    ]
+  },
+  "banked_parent": {
+    "path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add50s_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add120k5to8_step01000_final_step00750.pt",
+    "sha256_pre": "2d9b9f6746e66cec9e7e39d65e8171151e836daca99df6b56fb488d8a6f2403b",
+    "ckpt_top_keys": [
+      "model_state",
+      "config",
+      "step",
+      "epoch",
+      "source_pin"
+    ],
+    "note": "No persistent integer q/acc in this banked ckpt; q derived; acc starts zero (matches entropy screen + resume-empty backlog invariant)"
+  },
+  "vote_stream_replay_path": {
+    "status": "specified",
+    "from_clean_parent": true,
+    "resume_forbidden": true,
+    "backlog_start": "empty",
+    "weights": "FROZEN (no q updates) \u2014 same honest limit as entropy screen",
+    "projection": "project_s1_gradient_to_moves (imported, not reimplemented)",
+    "crossing_threshold_abs": 10,
+    "clip": 127,
+    "vote_quantum": 1,
+    "grad_path": "hrm_text_158_rotor_backward_saved_screen._loss_and_grads over exhaustive A0 supports, batch=8, seed=1000+step",
+    "eligible_bulk_suffixes": [
+      "gqkv_proj.weight",
+      "o_proj.weight",
+      "gate_up_proj.weight",
+      "down_proj.weight"
+    ],
+    "primary_drain_arm_for_lifetime": "armC_topk (K=1024) \u2014 closest live applied-rate-cap analog; armB_drain_all as uncapped comparison; armA_backlog reports mass-only (zero applied flips by construction)",
+    "default_steps": 150
+  },
+  "measurements": {
+    "a_flip_lifetime_distribution": {
+      "def": "For each applied flip (drain that resets a crossed weight), lifetime_steps = flip_step - first_nonzero_credit_step_on_that_weight_since_last_reset (or window start if never zeroed).",
+      "emit": "histogram counts over fixed bins [1,2,3-4,5-8,9-16,17-32,33-64,65-128,129-150] + quantiles p10/p25/p50/p75/p90/p99 + n_flips"
+    },
+    "b_drainable_mass_fraction": {
+      "def": "drainable_mass = sum |acc| over weights with zero applied flips in window; credited_mass = sum |move| over all steps; never_convert_frac = drainable_mass_at_end / max(1, sum_end_|acc|); also mass_never_flipped_frac of final |acc| mass.",
+      "emit": "scalars only"
+    },
+    "c_age_conditioned_flip_probability": {
+      "def": "Partition active (nonzero acc) weights into age bins; per bin: flips_in_bin / active_weight_steps_in_bin (hazard-like rate).",
+      "emit": "per-bin rates + exposure counts; no per-weight dumps"
+    },
+    "d_acc_magnitude_survival": {
+      "def": "For thresholds M in {1,2,5,10,20,40,80}, Kaplan-Meier-style survival S(age)=P(|acc|>=M still holds at age) using compact at-risk/event counts per age bin.",
+      "emit": "survival table age_bin \u00d7 M"
+    },
+    "working_memory_ok_not_in_receipt": "optional per-weight first_credit_step uint16 maps (~O(numel)) allowed in process RAM only; never serialized to receipt"
+  },
+  "branch_classifier_prereg": {
+    "families": [
+      "F1_decay_leak",
+      "F2_ttl_age_drain",
+      "F3_sparse_hot_forgettable_cold",
+      "F4_underspecified_need_longer_or_coupled_q_motion"
+    ],
+    "selection_rules_exact": [
+      {
+        "id": "R1",
+        "if": "armC p50_flip_lifetime <= 8 AND age_bin_rate(age>32) / max(eps, age_bin_rate(age<=8)) <= 0.25 AND never_convert_frac >= 0.50",
+        "then": "F2_ttl_age_drain",
+        "why": "conversion is recent-dominated; old mass mostly dead \u2192 hard age drain is informative"
+      },
+      {
+        "id": "R2",
+        "if": "armC p50_flip_lifetime >= 32 AND age_bin_rate(age>32) / max(eps, age_bin_rate(age<=8)) >= 0.60",
+        "then": "F1_decay_leak",
+        "why": "old mass still converts; need gradual forget not hard TTL that would kill converters"
+      },
+      {
+        "id": "R3",
+        "if": "never_convert_frac >= 0.70 AND armC p50_flip_lifetime <= 16 AND (R1 not exclusive)",
+        "then": "F3_sparse_hot_forgettable_cold",
+        "why": "most mass never contributes; keep hot converters, forget cold bulk"
+      },
+      {
+        "id": "R4",
+        "if": "armC n_flips < 1000 OR final zero_frac > 0.95 on drain arm with near-zero credited mass",
+        "then": "F4_underspecified_need_longer_or_coupled_q_motion",
+        "why": "vacuous screen \u2014 do not pick a forgetting family"
+      },
+      {
+        "id": "R5_priority",
+        "if": "multiple of R1/R2/R3 match",
+        "then": "prefer F3 over F2 over F1; emit multi_match=true",
+        "why": "over-forget risk: protect converter tier before uniform decay"
+      }
+    ],
+    "explicit_non_claims": [
+      "Does not authorize implementing any forgetting law",
+      "Does not bank sub-2 achievability",
+      "Does not contradict entropy screen mechanism_must_forget_more \u2014 it only chooses WHICH forget family to design next"
+    ]
+  },
+  "edit_strategy_after_plus1": {
+    "files_expected": [
+      "scripts/hrm_text_158_vote_lifetime_screen.py (new)",
+      "artifacts/acc_entropy/vote_lifetime_screen_receipt.json (runtime output)",
+      "optional tiny CPU unit for histogram/survival reducers if extracted"
+    ],
+    "reuse": [
+      "scripts/hrm_text_158_acc_entropy_screen.py structure",
+      "bounded_delta_learner.project_s1_gradient_to_moves",
+      "two_tier_threshold_semantics.CROSSING_THRESHOLD_ABS",
+      "probe_hrm_text_158 + hrm_text_158_rotor_backward_saved_screen._loss_and_grads"
+    ],
+    "banked_sha_protocol": "sha256sum parent before load and after screen; fail-closed if mismatch"
+  },
+  "validation_plan": {
+    "pre_implement": "plan review only",
+    "post_implement_cpu": [
+      "timeout 120 python -m py_compile scripts/hrm_text_158_vote_lifetime_screen.py",
+      "timeout 600 python scripts/hrm_text_158_vote_lifetime_screen.py --ckpt-path <banked> --steps 5 --batch 2 --output-json /tmp/vote_life_smoke.json (shape smoke)",
+      "full 150-step screen may run CPU-only after dual-accept of impl; GPU not required"
+    ],
+    "gpu": "queued behind rotor3b attempt-10; not required for this screen"
+  },
+  "stop_conditions": [
+    "underspecified vote-stream replay path (this plan closes it via entropy-screen twin path)",
+    "banked-sha mismatch before/after",
+    "any need to mutate banked state",
+    "receipt would require raw per-proposal arrays to answer classifier",
+    "scope expansion into implementing forgetting law"
+  ],
+  "risks": [
+    "frozen-q limit understates lifetime under coupled weight motion",
+    "armC topK=1024 is bracket analog not exact global-cap schedule",
+    "uint16 age maps in RAM are large (~O(numel)); must stay out of receipt",
+    "over-forget mis-selection \u2192 functional_veto_freeze in a later build slice"
+  ],
+  "retain_override_context": {
+    "v35_task": "1784730361840-f48ea756",
+    "v35_status": "HOLD dual-accepted impl r3; deferred +1 mint \u2014 not in conflict"
+  }
+}

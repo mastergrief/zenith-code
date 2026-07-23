@@ -86,6 +86,35 @@ _CENTROIDS_TERNARY = [-0.108188, 0.0, 0.108188]
 _CENTROIDS_BY_BITS = {2: _CENTROIDS_2BIT, 3: _CENTROIDS_3BIT,
                       "ternary": _CENTROIDS_TERNARY}
 
+# Constant tensors cached per (device, dtype[, bits]). The pack hook fires
+# per saved tensor per forward — rebuilding these from Python lists there
+# means a host->device copy + fresh tiny allocation each call, which is the
+# allocator-churn/H2D hot-spot that collapsed trainer pace near-full VRAM.
+_SIGN_CACHE: dict = {}
+_CENTROID_CACHE: dict = {}
+
+
+def _sign_consts(dtype: torch.dtype, device: torch.device):
+    key = (str(device), dtype)
+    hit = _SIGN_CACHE.get(key)
+    if hit is None:
+        hit = (torch.tensor(_S1, dtype=dtype, device=device),
+               torch.tensor(_S2, dtype=dtype, device=device))
+        _SIGN_CACHE[key] = hit
+    return hit
+
+
+def _centroid_consts(bits, dtype: torch.dtype, device: torch.device):
+    key = (str(device), dtype, bits)
+    hit = _CENTROID_CACHE.get(key)
+    if hit is None:
+        centroids = torch.tensor(
+            _CENTROIDS_BY_BITS[bits], dtype=dtype, device=device)
+        boundaries = (centroids[:-1] + centroids[1:]) / 2
+        hit = (centroids, boundaries)
+        _CENTROID_CACHE[key] = hit
+    return hit
+
 
 def _signed_fwht(x: torch.Tensor) -> torch.Tensor:
     """Forward signed WHT over the last dim (must be ROTOR_GROUP).
@@ -93,8 +122,7 @@ def _signed_fwht(x: torch.Tensor) -> torch.Tensor:
     y = D2 * (1/sqrt(128)) * H * D1 * x, matching turbo_cpu_fwht.
     Orthonormal: preserves L2 norm exactly (up to float error).
     """
-    s1 = torch.tensor(_S1, dtype=x.dtype, device=x.device)
-    s2 = torch.tensor(_S2, dtype=x.dtype, device=x.device)
+    s1, s2 = _sign_consts(x.dtype, x.device)
     y = x * s1
     h = 1
     n = x.shape[-1]
@@ -109,8 +137,7 @@ def _signed_fwht(x: torch.Tensor) -> torch.Tensor:
 
 def _signed_fwht_inverse(y: torch.Tensor) -> torch.Tensor:
     """Inverse of `_signed_fwht`: x = D1 * (1/sqrt(128)) * H * D2 * y."""
-    s1 = torch.tensor(_S1, dtype=y.dtype, device=y.device)
-    s2 = torch.tensor(_S2, dtype=y.dtype, device=y.device)
+    s1, s2 = _sign_consts(y.dtype, y.device)
     x = y * s2
     h = 1
     n = y.shape[-1]
@@ -147,13 +174,10 @@ def rotor_fake_quant(x: torch.Tensor, bits: int | str) -> torch.Tensor:
     )
     rot = _signed_fwht(xf * inv_norm)
 
-    centroids = torch.tensor(
-        _CENTROIDS_BY_BITS[bits], dtype=rot.dtype, device=rot.device
-    )
     # Nearest centroid via bucketize on midpoint boundaries — identical to
     # argmin over |x - c| for sorted centroids, without materializing the
     # (..., levels) intermediate (allocator-churn fix for the trainer hook).
-    boundaries = (centroids[:-1] + centroids[1:]) / 2
+    centroids, boundaries = _centroid_consts(bits, rot.dtype, rot.device)
     idx = torch.bucketize(rot, boundaries)
     quant = centroids[idx]
 
@@ -164,6 +188,127 @@ def rotor_fake_quant(x: torch.Tensor, bits: int | str) -> torch.Tensor:
 
     out = _signed_fwht_inverse(quant) * corrected
     return out.reshape(x.shape).to(orig_dtype)
+
+
+# ---------------------------------------------------------------------------
+# Allocation-free pack path (attempt-7 classification: at backward-peak the
+# pack hook's ~25 transient allocations per call trigger a WDDM eviction
+# storm on a near-full WSL card — FP control at identical recipe never
+# stalls; gc_threshold / chunk-size / constant-cache levers all nulled).
+# Every intermediate below lives in a cached per-shape workspace and all ops
+# are `out=`/in-place; the ONLY allocation per call is the returned saved
+# tensor itself. Bit-exact vs rotor_fake_quant (unit-tested via torch.equal).
+# ---------------------------------------------------------------------------
+
+_SCALED_SIGN_CACHE: dict = {}
+
+
+def _scaled_sign_consts(dtype: torch.dtype, device: torch.device):
+    """(inv_sqrt*s2, inv_sqrt*s1) — the post-butterfly multipliers, cached so
+    the scalar*vector product is not re-materialized per call (reference
+    computes the identical product inline)."""
+    key = (str(device), dtype)
+    hit = _SCALED_SIGN_CACHE.get(key)
+    if hit is None:
+        s1, s2 = _sign_consts(dtype, device)
+        hit = (_INV_SQRT_128 * s2, _INV_SQRT_128 * s1)
+        _SCALED_SIGN_CACHE[key] = hit
+    return hit
+
+
+def _fwht_inplace(y: torch.Tensor, tmp: torch.Tensor,
+                  s_pre: torch.Tensor, s_post_scaled: torch.Tensor) -> None:
+    """In-place signed FWHT over the last dim using a half-size temp buffer.
+
+    Elementwise-identical to `_signed_fwht`/`_signed_fwht_inverse` (same
+    a+b / a-b pairs in the same positions), zero allocations.
+    """
+    y.mul_(s_pre)
+    n = y.shape[-1]
+    h = 1
+    while h < n:
+        v = y.view(*y.shape[:-1], n // (2 * h), 2, h)
+        a = v[..., 0, :]
+        b = v[..., 1, :]
+        t = tmp.view(a.shape)
+        torch.sub(a, b, out=t)
+        a.add_(b)
+        b.copy_(t)
+        h *= 2
+    y.mul_(s_post_scaled)
+
+
+class _PackWorkspace:
+    """Preallocated intermediates for one (max_rows, last_dim) chunk shape."""
+
+    def __init__(self, rows: int, last: int,
+                 device: torch.device):
+        ng = last // ROTOR_GROUP
+        f32 = torch.float32
+        self.rows = rows
+        self.xf = torch.empty(rows, ng, ROTOR_GROUP, dtype=f32, device=device)
+        self.tmp = torch.empty(rows, ng, ROTOR_GROUP // 2, dtype=f32,
+                               device=device)
+        self.grp = torch.empty(rows, ng, 1, dtype=f32, device=device)
+        self.inv = torch.empty(rows, ng, 1, dtype=f32, device=device)
+        self.maskb = torch.empty(rows, ng, 1, dtype=torch.bool, device=device)
+        self.recon = torch.empty(rows, ng, 1, dtype=f32, device=device)
+        self.corr = torch.empty(rows, ng, 1, dtype=f32, device=device)
+        self.corr_h = torch.empty(rows, ng, 1, dtype=torch.float16,
+                                  device=device)
+        self.idx = torch.empty(rows, ng, ROTOR_GROUP, dtype=torch.int64,
+                               device=device)
+
+
+def _fake_quant_ws_chunk(x2d: torch.Tensor, bits, ws: _PackWorkspace,
+                         out2d: torch.Tensor) -> None:
+    """Workspace fake-quant of a contiguous (rows, last) chunk into out2d.
+
+    Reproduces rotor_fake_quant exactly: same op sequence, same rounding.
+    """
+    r = x2d.shape[0]
+    xf = ws.xf[:r]
+    xf.view(r, -1).copy_(x2d)
+
+    grp = ws.grp[:r]
+    torch.linalg.vector_norm(xf, 2, dim=-1, keepdim=True, out=grp)
+
+    # inv = where(grp > 1e-10, 1/clamp(grp, 1e-30), 0)
+    inv = ws.inv[:r]
+    inv.copy_(grp).clamp_(min=1e-30).reciprocal_()
+    maskb = ws.maskb[:r]
+    torch.gt(grp, 1e-10, out=maskb)
+    inv.mul_(maskb)
+
+    s1, s2 = _sign_consts(torch.float32, x2d.device)
+    s2_scaled, s1_scaled = _scaled_sign_consts(torch.float32, x2d.device)
+
+    xf.mul_(inv)
+    _fwht_inplace(xf, ws.tmp[:r], s1, s2_scaled)
+
+    centroids, boundaries = _centroid_consts(bits, torch.float32, x2d.device)
+    idx = ws.idx[:r]
+    torch.bucketize(xf, boundaries, out=idx)
+    quant = xf  # reuse: overwrite rotated values with their centroids
+    torch.index_select(centroids, 0, idx.view(-1),
+                       out=quant.view(-1))
+
+    recon = ws.recon[:r]
+    torch.linalg.vector_norm(quant, 2, dim=-1, keepdim=True, out=recon)
+    # corrected = where(recon > 1e-10, grp/clamp(recon, 1e-30), grp)
+    corr = ws.corr[:r]
+    corr.copy_(recon).clamp_(min=1e-30)
+    torch.div(grp, corr, out=corr)
+    torch.gt(recon, 1e-10, out=maskb)
+    torch.where(maskb, corr, grp, out=corr)
+    # fp16 round-trip of the stored scale
+    corr_h = ws.corr_h[:r]
+    corr_h.copy_(corr)
+    corr.copy_(corr_h)
+
+    _fwht_inplace(quant, ws.tmp[:r], s2, s1_scaled)
+    quant.mul_(corr)
+    out2d.copy_(quant.view(r, -1))
 
 
 # ---------------------------------------------------------------------------
@@ -209,16 +354,47 @@ class SavedTensorRotorCodec:
             return False
         return True
 
+    # Bound the fake-quant transient working set: the FWHT pipeline
+    # allocates roughly an order of magnitude of float32 intermediates per
+    # call, so quantizing a whole (batch, seq, 512) save in one shot spikes
+    # ~GB-scale on a near-full card (the trainer bp_steps>=4 stall class).
+    # Chunking over rows is exact — quantization is per-128-group.
+    _CHUNK_VALUES = 2_097_152
+
+    def _fake_quant_bounded(self, t: torch.Tensor) -> torch.Tensor:
+        flat = t.reshape(-1, t.shape[-1]).contiguous()
+        rows = max(1, self._CHUNK_VALUES // t.shape[-1])
+        # Workspace path: per-(last_dim, device) preallocated intermediates;
+        # the returned `out` is the single allocation of this call.
+        if not hasattr(self, "_ws_cache"):
+            self._ws_cache = {}
+        key = (t.shape[-1], str(t.device))
+        ws = self._ws_cache.get(key)
+        if ws is None or ws.rows < min(rows, flat.shape[0]):
+            ws = _PackWorkspace(rows, t.shape[-1], t.device)
+            self._ws_cache[key] = ws
+        out = torch.empty_like(flat)
+        for i in range(0, flat.shape[0], rows):
+            chunk = flat[i:i + rows]
+            _fake_quant_ws_chunk(chunk, self.bits, ws, out[i:i + rows])
+        return out.reshape(t.shape).to(t.dtype)
+
     def pack(self, t: torch.Tensor):
         with torch.no_grad():
             if self.bits is not None and self._eligible(t):
                 self.quantized += 1
                 self.quantized_values += t.numel()
-                return rotor_fake_quant(t.detach(), bits=self.bits)
+                return self._fake_quant_bounded(t.detach())
             self.passed += 1
             if torch.is_floating_point(t):
                 self.passed_values += t.numel()
-            return t
+            # LOAD-BEARING .detach(): returning a saved tensor that still
+            # carries grad_fn from pack creates a C++<->Python reference
+            # cycle (graph Node -> packed PyObject -> grad_fn -> Node) that
+            # neither refcounting nor gc can break -> ~27MB/step CUDA leak
+            # (leak-diag receipt: retained (3064,260) logits roots). The
+            # detached view shares storage; saved-tensor semantics unchanged.
+            return t.detach() if torch.is_tensor(t) else t
 
     def unpack(self, t: torch.Tensor) -> torch.Tensor:
         return t

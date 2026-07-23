@@ -12,6 +12,7 @@ import torch
 from calm.hrm_text_158.native_full_stack.rotor_runtime_quant import (
     ROTOR_GROUP,
     ROTOR_TARGET_SURFACES,
+    SavedTensorRotorCodec,
     _signed_fwht,
     _signed_fwht_inverse,
     rotor_bits_ledger,
@@ -153,3 +154,34 @@ class TestBitsLedger:
             rotor_bits_ledger(128, 2, surface="x", scale_dtype="fp8")
         with pytest.raises(ValueError):
             rotor_bits_ledger(256, "ternary", surface="x", group_size=256)
+
+
+def test_workspace_pack_bit_exact_vs_reference():
+    """The allocation-free workspace pack path must equal rotor_fake_quant
+    bit-for-bit (torch.equal) across widths, chunk tails, and zero groups."""
+    torch.manual_seed(0)
+    for bits in (2, 3, "ternary"):
+        for shape in [(7, 33, 512), (1, 5, 512), (300, 512), (3, 130, 128)]:
+            codec = SavedTensorRotorCodec(bits, narrow_only=False)
+            codec._CHUNK_VALUES = 4096  # force chunking + a ragged tail
+            t = torch.randn(*shape) * 3
+            t[0].fill_(0)  # zero-group guard path
+            assert torch.equal(codec._fake_quant_bounded(t),
+                               rotor_fake_quant(t, bits=bits)), (bits, shape)
+
+
+def test_pack_passthrough_detaches_grad_fn():
+    """LOAD-BEARING leak-fix contract: pack() must return a grad_fn-free,
+    value+storage-preserving tensor on the passthrough path (bits=None or
+    ineligible). A returned tensor still carrying grad_fn recreates the
+    saved_tensors_hooks C++<->Python reference cycle (the ~27MB/step CUDA
+    leak). Guards the one-line `.detach()` against silent regression."""
+    codec = SavedTensorRotorCodec(bits=None, narrow_only=False)
+    base = torch.randn(4, 8, requires_grad=True)
+    nonleaf = base * 2.0          # carries grad_fn
+    assert nonleaf.grad_fn is not None
+    packed = codec.pack(nonleaf)
+    assert packed.grad_fn is None                       # cycle broken
+    assert packed.data_ptr() == nonleaf.data_ptr()      # storage shared
+    assert torch.equal(packed, nonleaf.detach())        # value preserved
+    assert torch.equal(codec.unpack(packed), packed)    # round-trip identity
