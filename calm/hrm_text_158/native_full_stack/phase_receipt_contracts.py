@@ -4,6 +4,7 @@ Extracted behavior-preservingly from forgetting_mechanism_screen_reducers.
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Mapping
 
 from calm.hrm_text_158.native_full_stack.family_classifier import (
@@ -40,12 +41,44 @@ DEFAULT_PARENT_SHA256 = (
 CENSOR_CLEAR_MAX = 0.50
 
 
+def optional_json_float(value: Any) -> float | None:
+    """Finite float, or None for missing/NaN/Inf (strict-JSON safe)."""
+    if value is None:
+        return None
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(x) or math.isinf(x):
+        return None
+    return x
+
+
+def sanitize_receipt_for_strict_json(obj: Any) -> Any:
+    """Replace NaN/Inf floats with None so json.dump(..., allow_nan=False) succeeds."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: sanitize_receipt_for_strict_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize_receipt_for_strict_json(v) for v in obj]
+    if isinstance(obj, tuple):
+        return [sanitize_receipt_for_strict_json(v) for v in obj]
+    return obj
+
+
 def arm_metrics_for_classifier(arm_receipt: Mapping[str, Any]) -> dict[str, Any]:
-    """Extract G0/G0b/G1 + H_final fields from a per-arm screen receipt."""
+    """Extract G0/G0b/G1 + H_final fields from a per-arm screen receipt.
+
+    Missing/non-finite H → JSON-native null (never IEEE NaN).
+    """
     m = arm_receipt.get("measurements") or {}
     probes = arm_receipt.get("probes") or {}
+    h_raw = m.get("H_bits_per_weight", m.get("H_final"))
     return {
-        "H_final": float(m.get("H_bits_per_weight", m.get("H_final", float("nan")))),
+        "H_final": optional_json_float(h_raw),
         "n_flips": int(m.get("n_flips", 0)),
         "q_changed_count": int(m.get("q_changed_count", 0)),
         "n_applied_drains": int(m.get("n_applied_drains", 0)),
@@ -516,10 +549,9 @@ def build_phase1_terminal_receipt(
             "multi_match": False,
             "arms_classified": False,
         }
-        H_control = float(
-            (control_receipt.get("measurements") or {}).get(
-                "H_bits_per_weight", float("nan")
-            )
+        # No-arm / null terminals: unavailable scalars → JSON null, never NaN.
+        H_control = optional_json_float(
+            (control_receipt.get("measurements") or {}).get("H_bits_per_weight")
         )
         metrics = {
             ARM1: arm_metrics_for_classifier(arm_receipts.get(ARM1, {})),
@@ -527,16 +559,23 @@ def build_phase1_terminal_receipt(
             ARM3: arm_metrics_for_classifier(arm_receipts.get(ARM3, {})),
         }
     else:
-        H_control = float(
-            (control_receipt.get("measurements") or {}).get(
-                "H_bits_per_weight", float("nan")
-            )
+        H_control = optional_json_float(
+            (control_receipt.get("measurements") or {}).get("H_bits_per_weight")
         )
+        if H_control is None:
+            raise ValueError(
+                "classified Phase-1 path requires finite control H_bits_per_weight"
+            )
         metrics = {
             ARM1: arm_metrics_for_classifier(arm_receipts[ARM1]),
             ARM2: arm_metrics_for_classifier(arm_receipts[ARM2]),
             ARM3: arm_metrics_for_classifier(arm_receipts[ARM3]),
         }
+        for arm_id, m in metrics.items():
+            if m.get("H_final") is None:
+                raise ValueError(
+                    f"classified Phase-1 path requires finite H_final for {arm_id}"
+                )
         verdict = classify_forgetting_family_screen(
             phase0_censor_cleared=bool(phase0_censor_cleared),
             H_control_final=H_control,

@@ -106,13 +106,18 @@ def _receipt_schema_skeleton() -> dict:
 
 
 def emit_receipt_json(receipt: dict, output_json: str | None) -> None:
+    from calm.hrm_text_158.native_full_stack.phase_receipt_contracts import (
+        sanitize_receipt_for_strict_json,
+    )
+
+    payload = sanitize_receipt_for_strict_json(receipt)
     if output_json:
         os.makedirs(os.path.dirname(output_json) or ".", exist_ok=True)
         with open(output_json, "w", encoding="utf-8") as f:
-            json.dump(receipt, f, indent=2)
+            json.dump(payload, f, indent=2, allow_nan=False)
         print(f"[forget-mech] wrote {output_json}", flush=True)
     else:
-        print(json.dumps(receipt, indent=2))
+        print(json.dumps(payload, indent=2, allow_nan=False))
 
 
 def run_schema_only(args: argparse.Namespace) -> int:
@@ -139,13 +144,7 @@ def run_schema_only(args: argparse.Namespace) -> int:
             "disjoint_acq_ret_math": True,
         }
     )
-    if args.output_json:
-        os.makedirs(os.path.dirname(args.output_json) or ".", exist_ok=True)
-        with open(args.output_json, "w", encoding="utf-8") as f:
-            json.dump(receipt, f, indent=2)
-        print(f"[forget-mech] schema-only -> {args.output_json}", flush=True)
-    else:
-        print(json.dumps(receipt, indent=2))
+    emit_receipt_json(receipt, args.output_json)
     return 0
 
 

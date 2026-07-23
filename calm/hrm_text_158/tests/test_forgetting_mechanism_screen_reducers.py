@@ -1379,3 +1379,56 @@ def test_run_aggregate_phase1_e2e_wiring(tmp_path):
     assert rec_ok["authoritative"] is True
     assert rec_ok["arms_classified"] is True
     assert rec_ok["family"] == FAMILY_F3
+
+
+def test_failed_600_f4_aggregate_strict_json_no_nan():
+    """No-arm authoritative F4 must be strict-JSON (null, never IEEE NaN)."""
+    import json
+    import math
+
+    from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (
+        FAMILY_F4,
+        build_phase1_terminal_receipt,
+        decide_phase0_aggregate_transition,
+        sanitize_receipt_for_strict_json,
+        validate_phase0_receipt_for_aggregate,
+    )
+
+    pred = _valid_phase0_receipt(lcf=0.55, steps=150)
+    p0 = validate_phase0_receipt_for_aggregate(
+        _valid_phase0_receipt(lcf=0.55, steps=600),
+        phase0_predecessor_receipt=pred,
+    )
+    d = decide_phase0_aggregate_transition(p0)
+    assert d["action"] == "design_null_censor_unreducible"
+    assert d["authoritative"] is True
+    receipt = build_phase1_terminal_receipt(
+        phase0_censor_cleared=False,
+        control_receipt={},
+        arm_receipts={},
+        plan_sha256="07a02aff",
+        authority_dispatch="1784812148229-f466bc29",
+        authoritative=True,
+        force_null_reason=d["stop_reason"],
+        null_family=FAMILY_F4,
+        transition="design_null_censor_unreducible",
+        arms_classified=False,
+    )
+    assert receipt["arms_classified"] is False
+    assert receipt["H_control_final"] is None
+    for arm_m in receipt["arm_metrics"].values():
+        assert arm_m["H_final"] is None
+        assert not isinstance(arm_m["H_final"], float) or not math.isnan(arm_m["H_final"])
+
+    payload = sanitize_receipt_for_strict_json(receipt)
+    dumped = json.dumps(payload, allow_nan=False)
+    assert "NaN" not in dumped
+    assert "Infinity" not in dumped
+
+    def _reject_constant(c):
+        raise ValueError(f"non-standard JSON constant: {c}")
+
+    roundtrip = json.loads(dumped, parse_constant=_reject_constant)
+    assert roundtrip["H_control_final"] is None
+    assert roundtrip["family"] == FAMILY_F4
+    assert roundtrip["stop_reason"] == "design_null_censor_unreducible"

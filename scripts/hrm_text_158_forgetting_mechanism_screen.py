@@ -36,6 +36,7 @@ from calm.hrm_text_158.native_full_stack.phase_receipt_contracts import (  # noq
     ArmReceiptContractError,
     build_phase1_terminal_receipt,
     decide_phase0_aggregate_transition,
+    sanitize_receipt_for_strict_json,
     validate_phase0_receipt_for_aggregate,
     validate_shared_held_fixed_arm_receipts,
 )
@@ -298,8 +299,9 @@ def _write_phase1(args: argparse.Namespace, receipt: dict, paths: list[str]) -> 
         "artifacts/acc_entropy/forgetting_mechanism_phase1_receipt.json"
     )
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    payload = sanitize_receipt_for_strict_json(receipt)
     with open(out, "w", encoding="utf-8") as f:
-        json.dump(receipt, f, indent=2)
+        json.dump(payload, f, indent=2, allow_nan=False)
     print(
         f"[forget-mech] phase1 aggregate -> {out} family={receipt['family']} "
         f"reason={receipt['stop_reason']} authoritative={receipt.get('authoritative')}",
