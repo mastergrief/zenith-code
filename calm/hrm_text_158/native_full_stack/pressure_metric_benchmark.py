@@ -1,11 +1,11 @@
-"""Paired AB/BA orchestration only (PLAN_v6 rev4).
+"""Paired AB/BA orchestration only (PLAN_v6 rev4 + fork-2 per-index).
 
 Owns: run_paired_benchmark (median-of-N both orders, AND warmup/threshold over
 EVERY replicate, per-rep purity rows, emit three named receipts). Proof
 validation/formal live in pressure_metric_proof.py; runtime/warmup in
 pressure_metric_warmup_runtime.py.
-Dependency: benchmark → warmup_runtime + proof helpers + telemetry.
-Bound by PLAN_v6 sha 346b67d8…; rev4 re-scope 1784829182373.
+Dependency: benchmark → warmup_runtime + proof helpers + telemetry + proof_contract.
+Bound by PLAN_v6 sha 346b67d8…; fork-2 PLAN_v2.
 """
 from __future__ import annotations
 
@@ -17,6 +17,13 @@ from calm.hrm_text_158.native_full_stack.pressure_metric_proof import (
     require_cuda_proof_device,
     sha256_file,
     source_file_hashes,
+)
+from calm.hrm_text_158.native_full_stack.pressure_metric_proof_contract import (
+    compare_per_index,
+    load_live_amendment,
+    bind_amendment_into_summary,
+    per_index_all_equal,
+    per_index_fields_from_loop_out,
 )
 from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
     AUTHORITY_DISPATCH,
@@ -76,7 +83,18 @@ def _rep_record(
     batch: int,
     topk: int,
     device: str,
+    peer_per_index: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    per_index = per_index_fields_from_loop_out(result["loop_out"])
+    flags = (
+        compare_per_index(per_index, peer_per_index)
+        if peer_per_index is not None
+        else {
+            "flip_count_equal": True,
+            "q_final_equal": True,
+            "applied_identity_equal": True,
+        }
+    )
     return {
         "rep_index": int(rep_index),
         "order": order,
@@ -105,6 +123,8 @@ def _rep_record(
             if result.get("store") is not None
             else False
         ),
+        **per_index,
+        **flags,
     }
 
 
@@ -198,6 +218,8 @@ def run_paired_benchmark(
                     "credited_mass": b["measurements"]["credited_mass"],
                 }
             )
+            a_pi = per_index_fields_from_loop_out(a["loop_out"])
+            b_pi = per_index_fields_from_loop_out(b["loop_out"])
             a_reps.append(
                 _rep_record(
                     result=a,
@@ -209,6 +231,7 @@ def run_paired_benchmark(
                     batch=batch,
                     topk=topk,
                     device=device,
+                    peer_per_index=b_pi,
                 )
             )
             b_reps.append(
@@ -222,6 +245,7 @@ def run_paired_benchmark(
                     batch=batch,
                     topk=topk,
                     device=device,
+                    peer_per_index=a_pi,
                 )
             )
             a_last, b_last = a, b
@@ -230,12 +254,17 @@ def run_paired_benchmark(
         med_b = _median(b_walls)
         overhead = (med_b - med_a) / max(med_a, 1e-9)
         prefix_ok = all(a_counters[i] == b_counters[i] for i in range(n))
+        per_index_ok = all(
+            per_index_all_equal(compare_per_index(a_reps[i], b_reps[i]))
+            for i in range(n)
+        )
         return {
             "order": order,
             "median_wall_ms_per_step_A": med_a,
             "median_wall_ms_per_step_B": med_b,
             "overhead_frac": float(overhead),
             "determinism_prefix_match": bool(prefix_ok),
+            "determinism_per_index_match": bool(per_index_ok),
             "a_counters": a_counters,
             "b_counters": b_counters,
             "a_last": a_last,
@@ -326,11 +355,15 @@ def run_paired_benchmark(
     overhead_ab = float(ab["overhead_frac"])
     overhead_ba = float(ba["overhead_frac"])
     det_ok = bool(ab["determinism_prefix_match"] and ba["determinism_prefix_match"])
+    per_index_ok = bool(
+        ab["determinism_per_index_match"] and ba["determinism_per_index_match"]
+    )
     warmup_ok = bool(ab["warmup_ok_all"] and ba["warmup_ok_all"])
     threshold_ok = bool(ab["threshold_ok_all"] and ba["threshold_ok_all"])
     accepted = (
         is_proof
         and det_ok
+        and per_index_ok
         and warmup_ok
         and threshold_ok
         and overhead_ab <= OVERHEAD_BOUND
@@ -352,6 +385,7 @@ def run_paired_benchmark(
         "overhead_frac_AB": overhead_ab,
         "overhead_frac_BA": overhead_ba,
         "determinism_prefix_match": det_ok,
+        "determinism_per_index_match": per_index_ok,
         "two_tier_threshold_assert_pass": threshold_ok,
         "warmup_ok_all_replicates": warmup_ok,
         "accepted": bool(accepted),
@@ -369,6 +403,7 @@ def run_paired_benchmark(
             "median_wall_ms_per_step_B": ab["median_wall_ms_per_step_B"],
             "overhead_frac": overhead_ab,
             "determinism_prefix_match": ab["determinism_prefix_match"],
+            "determinism_per_index_match": ab["determinism_per_index_match"],
             "a_counters": ab["a_counters"],
             "b_counters": ab["b_counters"],
         },
@@ -377,6 +412,7 @@ def run_paired_benchmark(
             "median_wall_ms_per_step_B": ba["median_wall_ms_per_step_B"],
             "overhead_frac": overhead_ba,
             "determinism_prefix_match": ba["determinism_prefix_match"],
+            "determinism_per_index_match": ba["determinism_per_index_match"],
             "a_counters": ba["a_counters"],
             "b_counters": ba["b_counters"],
         },
@@ -387,13 +423,18 @@ def run_paired_benchmark(
         },
         # No embedded self-hash — external/final sha is sha256_file(timing_path)
     }
+    amendment, amendment_sha = load_live_amendment(repo_root)
+    bind_amendment_into_summary(
+        timing, amendment_sha256=amendment_sha, amendment=amendment
+    )
     emit_json(timing, timing_path)
     if output_json:
         emit_json(timing, output_json)
     print(
         f"[pressure-metric] paired-benchmark accepted={accepted} is_proof={is_proof} "
         f"overhead_AB={overhead_ab:.4f} overhead_BA={overhead_ba:.4f} "
-        f"det={det_ok} warmup_all={warmup_ok} thr_all={threshold_ok}",
+        f"det={det_ok} per_index={per_index_ok} warmup_all={warmup_ok} "
+        f"thr_all={threshold_ok}",
         flush=True,
     )
     return 0 if accepted else 2

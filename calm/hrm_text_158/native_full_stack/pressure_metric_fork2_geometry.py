@@ -1,4 +1,4 @@
-"""Fork-2 de-risk geometry constants (smoke-only).
+"""Fork-2 geometry constants (production-load path for shared A/B GPU baseline).
 
 R5: real multi-arm geometry from run-3 ckpt (32 eligible BitLinear weights).
 Plan flag N=18158319 was run-3 N_censored (events), NOT tensor numel.

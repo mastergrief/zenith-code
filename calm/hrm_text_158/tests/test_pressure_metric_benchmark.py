@@ -269,6 +269,10 @@ def _minimal_rep_row(**overrides):
         PAIRED_STEPS,
     )
 
+    # Matching A/B per-index hashes (identical synthetic identity).
+    flip_h = "11" * 32
+    q_h = "22" * 32
+    app_h = "33" * 32
     row = {
         "rep_index": 0,
         "order": "AB",
@@ -288,6 +292,12 @@ def _minimal_rep_row(**overrides):
         "measurements": {"n_flips": 1, "q_changed_count": 1, "credited_mass": 1},
         "wall_ms_per_step": 1.0,
         "two_tier_threshold_assert_pass": True,
+        "flip_count_sha256": flip_h,
+        "q_final_sha256": q_h,
+        "applied_identity_sha256": app_h,
+        "flip_count_equal": True,
+        "q_final_equal": True,
+        "applied_identity_equal": True,
     }
     row.update(overrides)
     return row
@@ -347,6 +357,11 @@ def test_tampered_ab_artifact_detected(tmp_path, monkeypatch):
     for rows in reps.values():
         for row in rows:
             row["source_hashes"] = dict(live)
+    from calm.hrm_text_158.native_full_stack.pressure_metric_proof_contract import (
+        bind_amendment_into_summary,
+        load_live_amendment,
+    )
+
     proof = {
         "plan_sha256": PLAN_SHA256,
         "authority_dispatch": AUTHORITY_DISPATCH,
@@ -364,6 +379,7 @@ def test_tampered_ab_artifact_detected(tmp_path, monkeypatch):
         "overhead_frac_AB": 0.0,
         "overhead_frac_BA": 0.0,
         "determinism_prefix_match": True,
+        "determinism_per_index_match": True,
         "warmup_ok_all_replicates": True,
         "replicates": reps,
         "artifact_paths": {
@@ -374,6 +390,10 @@ def test_tampered_ab_artifact_detected(tmp_path, monkeypatch):
         "instrumented_sha256s": {"instrumented_25": sha256_file(str(inst))},
         "source_hashes": live,
     }
+    amendment, amendment_sha = load_live_amendment(str(REPO))
+    bind_amendment_into_summary(
+        proof, amendment_sha256=amendment_sha, amendment=amendment
+    )
     p = tmp_path / "proof.json"
     blob = json.dumps(proof)
     p.write_text(blob)
@@ -565,6 +585,10 @@ def _forged_summary_proof(tmp_path, reps, **top_overrides):
     from calm.hrm_text_158.native_full_stack.pressure_metric_proof import (
         source_file_hashes,
     )
+    from calm.hrm_text_158.native_full_stack.pressure_metric_proof_contract import (
+        bind_amendment_into_summary,
+        load_live_amendment,
+    )
 
     live = source_file_hashes(str(REPO))
     for rows in reps.values():
@@ -585,6 +609,7 @@ def _forged_summary_proof(tmp_path, reps, **top_overrides):
         "overhead_frac_AB": 0.0,
         "overhead_frac_BA": 0.0,
         "determinism_prefix_match": True,
+        "determinism_per_index_match": True,
         "warmup_ok_all_replicates": True,
         "replicates": reps,
         "artifact_paths": {
@@ -595,6 +620,10 @@ def _forged_summary_proof(tmp_path, reps, **top_overrides):
         "instrumented_sha256s": {},
         "source_hashes": live,
     }
+    amendment, amendment_sha = load_live_amendment(str(REPO))
+    bind_amendment_into_summary(
+        proof, amendment_sha256=amendment_sha, amendment=amendment
+    )
     proof.update(top_overrides)
     p = tmp_path / "proof.json"
     blob = json.dumps(proof)

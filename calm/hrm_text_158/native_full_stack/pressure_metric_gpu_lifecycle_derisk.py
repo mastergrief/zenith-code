@@ -1,18 +1,23 @@
-"""Fork-2 de-risk device lifecycle reducer (smoke-only).
+"""Device-resident pressure/metric lifecycle store (production-load path).
 
-Tensor-resident trackers + int64 aggregate carrier. One-way imports only:
-geometry/production lifecycle oracles may be imported; selection/writeback must
-NOT import this module's inverse (selection may import lifecycle).
+Tensor-resident trackers + int64 aggregate carrier with the full
+`build_diagnostic_receipt` consumer-facing protocol (`per_step_ratios`,
+`survival_summary`, `two_tier_threshold_assert_pass`, `steps`).
+One-way imports only: geometry/production lifecycle oracles may be imported;
+selection/writeback must NOT import this module's inverse (selection may import lifecycle).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Any, Mapping
 
 import torch
 
 from calm.hrm_text_158.native_full_stack.pressure_metric_lifecycle import (
     FOLLOW_UP_HORIZON_STEPS,
+    GROWING_DEFERRED_SURVIVAL_DELTA,
+    MIN_COHORT_N,
+    STABLE_HIGH_DEFERRED_NEVER_APPLY_FLOOR,
     PressureTelemetryStore,
 )
 
@@ -30,7 +35,7 @@ AGG_KEYS = (
 
 @dataclass
 class DeviceLifecycleStore:
-    """Smoke-only tensor-resident lifecycle (trackers + int64 aggregate carrier)."""
+    """Tensor-resident lifecycle with full receipt-facing projection."""
 
     steps: int
     follow_up_horizon: int = FOLLOW_UP_HORIZON_STEPS
@@ -38,11 +43,18 @@ class DeviceLifecycleStore:
     first_deferral_step: dict[str, torch.Tensor] = field(default_factory=dict)
     applied_after_deferral_step: dict[str, torch.Tensor] = field(default_factory=dict)
     episode_generation: dict[str, torch.Tensor] = field(default_factory=dict)
+    per_step_ratios: list[dict[str, Any]] = field(default_factory=list)
+    two_tier_threshold_assert_pass: bool = True
     aggregates_t: torch.Tensor = field(init=False)
     hot_scalar_publishes: int = 0
 
     def __post_init__(self) -> None:
         self.aggregates_t = torch.zeros(8, dtype=torch.int64, device=self.device)
+
+    @property
+    def per_step_demand(self) -> list[dict[str, Any]]:
+        """Internal alias only — receipt consumers must use `per_step_ratios`."""
+        return self.per_step_ratios
 
     @classmethod
     def from_arm_shapes(
@@ -143,7 +155,6 @@ class DeviceLifecycleStore:
         n_candidates: int,
         n_applied: int,
     ) -> None:
-        del n_candidates, n_applied
         t = int(step)
         H = int(self.follow_up_horizon)
         for n, cand in candidate_masks.items():
@@ -182,6 +193,18 @@ class DeviceLifecycleStore:
                     now_step=t,
                     reason="horizon_expired",
                 )
+        nc = int(n_candidates)
+        na = int(n_applied)
+        ratio = float(nc) / float(max(1, na))
+        self.per_step_ratios.append(
+            {
+                "step": t,
+                "candidate_crossers_before_cap": nc,
+                "applied_count": na,
+                "demand_applied_ratio": ratio,
+                "deferred_count": max(0, nc - na),
+            }
+        )
 
     def close_before_writeback_resets(
         self,
@@ -248,6 +271,59 @@ class DeviceLifecycleStore:
                 now_step=t,
                 reason="window_end",
             )
+
+    def survival_summary(self) -> dict[str, Any]:
+        """Receipt-facing survival projection — parity with PressureTelemetryStore."""
+        agg = self.aggregates_as_dict()
+        n_eval = int(agg["N_events_evaluable"])
+        n_surv = int(agg["N_survived_applied_within_H"])
+        n_never = int(agg["N_never_applied_within_H"])
+        frac_surv = n_surv / max(1, n_eval)
+        frac_never = n_never / max(1, n_eval)
+        early_n = int(agg["N_events_evaluable_early"])
+        late_n = int(agg["N_events_evaluable_late"])
+        early_never_frac = (
+            float(agg["N_never_applied_within_H_early"]) / float(early_n)
+            if early_n
+            else None
+        )
+        late_never_frac = (
+            float(agg["N_never_applied_within_H_late"]) / float(late_n)
+            if late_n
+            else None
+        )
+        delta = None
+        if early_never_frac is not None and late_never_frac is not None:
+            delta = float(late_never_frac) - float(early_never_frac)
+
+        klass = "other"
+        if n_eval == 0:
+            klass = "vacuous"
+        elif early_n < MIN_COHORT_N or late_n < MIN_COHORT_N:
+            klass = "other"
+            if early_n == 0 and late_n == 0:
+                klass = "vacuous"
+        elif delta is not None:
+            if delta >= GROWING_DEFERRED_SURVIVAL_DELTA:
+                klass = "growing"
+            elif (
+                abs(delta) < GROWING_DEFERRED_SURVIVAL_DELTA
+                and frac_never >= STABLE_HIGH_DEFERRED_NEVER_APPLY_FLOOR
+                and n_eval >= MIN_COHORT_N
+            ):
+                klass = "stable_high"
+            elif delta <= -GROWING_DEFERRED_SURVIVAL_DELTA:
+                klass = "collapsing"
+
+        return {
+            **agg,
+            "deferred_survival_frac": float(frac_surv),
+            "deferred_never_apply_within_H_frac": float(frac_never),
+            "deferred_never_apply_within_H_frac_early": early_never_frac,
+            "deferred_never_apply_within_H_frac_late": late_never_frac,
+            "delta_never_apply": delta,
+            "deferred_survival_class": klass,
+        }
 
 
 def cpu_store_from_shapes(

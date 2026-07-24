@@ -154,18 +154,21 @@ def build_diagnostic_receipt(
         "stop_reason": verdict["stop_reason"],
         "seam_map": {
             "selection_margins": "pressure_metric_telemetry",
-            "lifecycle_store": "pressure_metric_lifecycle",
+            "lifecycle_store": "pressure_metric_gpu_lifecycle_derisk",
+            "gpu_loop_bridge": "pressure_metric_gpu_loop_bridge",
             "classifier": "pressure_metric_classifier",
             "readiness": "pressure_metric_readiness",
             "receipt_assembly": "pressure_metric_receipt",
             "warmup_runtime": "pressure_metric_warmup_runtime",
             "proof": "pressure_metric_proof",
+            "proof_contract": "pressure_metric_proof_contract",
             "benchmark": "pressure_metric_benchmark",
             "dependency_direction": (
                 "telemetry→∅; lifecycle→two_tier; classifier→telemetry; "
                 "readiness→telemetry; receipt→readiness+classifier; "
                 "warmup_runtime→loop+model_runtime+lifecycle+telemetry; "
-                "proof→warmup+receipt; benchmark→warmup+proof; "
+                "gpu_loop_bridge→selection_derisk; "
+                "proof→warmup+receipt+proof_contract; benchmark→warmup+proof; "
                 "model_runtime→fixed_qscale (assert/rebind); CLI→all thin"
             ),
         },

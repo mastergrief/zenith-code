@@ -1,10 +1,15 @@
-"""Authoritative per-step q/acc/episode train loop (r6c).
+"""Authoritative per-step q/acc/episode train loop (r6c + fork-2 shared GPU path).
 
 ONLY owner of train-state mutation for the forgetting-mechanism screen.
 Calls into fixed_qscale_credit / forgetting_laws / phase_probe_sets via
 model-runtime loss/credit primitives. Does NOT import JSON-IO / receipt assembly.
 
-Bound by PLAN_v9 sha 07a02aff… + authority 1784812148229.
+Shared A/B path: deterministic GPU (or CPU) selection + update + writeback via
+pressure_metric_gpu_loop_bridge. B-only: DeviceLifecycleStore after selection.
+Bound by PLAN_v9 + fork-2 PLAN_v2.
+
+Selection identity reuses writeback's host idx payload (no separate idx D2H).
+Drained/lifetime/credit host publishes are batched in the bridge helpers.
 """
 from __future__ import annotations
 
@@ -14,9 +19,6 @@ from typing import Any
 
 import torch
 
-from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
-    project_s1_gradient_to_moves,
-)
 from calm.hrm_text_158.native_full_stack.family_classifier import (
     ARM0,
     ARM1,
@@ -25,7 +27,6 @@ from calm.hrm_text_158.native_full_stack.family_classifier import (
 )
 from calm.hrm_text_158.native_full_stack.forgetting_laws import (
     apply_decay_leak,
-    apply_live_flip_writeback,
     apply_sparse_hot,
     apply_ttl_age_drain,
     entropy_bits,
@@ -37,30 +38,26 @@ from calm.hrm_text_158.native_full_stack.fixed_qscale_credit import (
 from calm.hrm_text_158.native_full_stack.phase_probe_sets import (
     sample_batch_excluding_acquisition,
 )
+from calm.hrm_text_158.native_full_stack.pressure_metric_gpu_loop_bridge import (
+    apply_drained_flip_counts,
+    hotpath_sync_inventory_from_writeback,
+    init_gpu_loop_residency,
+    lifetimes_before_writeback,
+    ordered_selection_frame,
+    predict_residual_zero,
+    project_credit_shared,
+    select_shared,
+    writeback_shared,
+)
 from calm.hrm_text_158.native_full_stack.screen_model_runtime import (
     _loss_and_credit,
 )
 from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
     CROSSING_THRESHOLD_ABS,
 )
-from calm.hrm_text_158.native_full_stack.vote_lifetime_screen_reducers import (
-    update_episode_starts,
-)
 
 CLIP = 127
 TOPK_PER_STEP = 1024
-
-
-def _arm_topk_masks(
-    arms_acc: dict[str, torch.Tensor], *, topk: int
-) -> dict[str, torch.Tensor]:
-    """Applied topK masks — selection bit-identical to pressure_metric_telemetry helper."""
-    from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
-        compute_topk_masks_and_counts,
-    )
-
-    _cand, applied, _nc, _na = compute_topk_masks_and_counts(arms_acc, topk=int(topk))
-    return applied
 
 
 def run_train_loop(
@@ -82,17 +79,10 @@ def run_train_loop(
 ) -> dict[str, Any]:
     """Mutate q/acc/episode for `steps`; return telemetry + final state tensors.
 
-    If `pressure_telemetry` is set (PressureTelemetryStore), run PLAN_v6 event
-    lifecycle stages 1-6 around pre-writeback masks. Uninstrumented path
-    (pressure_telemetry is None) is unchanged aside from shared mask helper.
+    Shared A/B: residency + deterministic selection/update/writeback.
+    If `pressure_telemetry` is set, run event lifecycle around pre-writeback masks.
     """
-    acc = {n: torch.zeros_like(q, dtype=torch.int16) for n, q in q_levels.items()}
-    episode_start = {
-        n: torch.zeros_like(q, dtype=torch.int32) for n, q in q_levels.items()
-    }
-    flip_count = {
-        n: torch.zeros_like(q, dtype=torch.int32) for n, q in q_levels.items()
-    }
+    residency = init_gpu_loop_residency(q_levels, device=device)
 
     lifetimes: list[int] = []
     credited_mass = 0
@@ -103,6 +93,8 @@ def run_train_loop(
     H_trajectory: list[dict[str, Any]] = []
     margin_traj: list[dict[str, Any]] = []
     episode_traj: list[dict[str, Any]] = []
+    selection_frames: list[bytes] = []
+    sync_inventory_steps: list[dict[str, Any]] = []
 
     t0 = time.time()
     last_store = None
@@ -123,57 +115,43 @@ def run_train_loop(
         )
         last_store = store
 
-        moves = {}
-        for n in eligible:
-            g_cpu = credit_grads[n].detach().cpu()
-            q_cpu = q_levels[n]
-            if g_cpu.shape != q_cpu.shape:
-                raise RuntimeError(
-                    f"credit/q shape mismatch for {n}: {tuple(g_cpu.shape)} vs "
-                    f"{tuple(q_cpu.shape)}"
-                )
-            moves[n] = project_s1_gradient_to_moves(g_cpu, q_cpu)
-        credited_mass += int(sum(int(mv.abs().sum().item()) for mv in moves.values()))
-
-        for n, mv in moves.items():
-            prev = acc[n]
-            new = (
-                (prev.to(torch.int32) + mv.to(torch.int32))
-                .clamp(-CLIP, CLIP)
-                .to(torch.int16)
-            )
-            episode_start[n] = update_episode_starts(prev, new, episode_start[n], step)
-            acc[n] = new
+        _moves, credited = project_credit_shared(
+            residency,
+            credit_grads=credit_grads,
+            eligible=eligible,
+            step=step,
+        )
+        credited_mass += int(credited)
 
         if arm == ARM1:
-            acc = {n: apply_decay_leak(a) for n, a in acc.items()}
+            residency.acc = {n: apply_decay_leak(a) for n, a in residency.acc.items()}
         elif arm == ARM2:
-            for n in list(acc.keys()):
-                acc[n], episode_start[n] = apply_ttl_age_drain(
-                    acc[n], episode_start[n], step=step, ttl=32
+            for n in list(residency.acc.keys()):
+                residency.acc[n], residency.episode_start[n] = apply_ttl_age_drain(
+                    residency.acc[n], residency.episode_start[n], step=step, ttl=32
                 )
         elif arm == ARM3:
-            acc = apply_sparse_hot(acc, hot_h=8192)
+            residency.acc = apply_sparse_hot(residency.acc, hot_h=8192)
         elif arm != ARM0:
             raise SystemExit(f"unknown --arm {arm}")
 
-        # Stage 1: pre-writeback candidate + applied masks
+        cand_masks, masks, n_cand, n_app, ordered = select_shared(
+            residency, topk=int(topk), threshold=CROSSING_THRESHOLD_ABS
+        )
+
         if pressure_telemetry is not None:
             from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
                 active_episode_stats,
                 assert_two_tier_threshold_pass,
-                compute_topk_masks_and_counts,
                 global_margin_quantiles,
             )
 
-            cand_masks, masks, n_cand, n_app = compute_topk_masks_and_counts(
-                acc, topk=int(topk)
+            pressure_telemetry.two_tier_threshold_assert_pass = (
+                assert_two_tier_threshold_pass(
+                    effective=CROSSING_THRESHOLD_ABS,
+                    canonical=CROSSING_THRESHOLD_ABS,
+                )
             )
-            pressure_telemetry.two_tier_threshold_assert_pass = assert_two_tier_threshold_pass(
-                effective=CROSSING_THRESHOLD_ABS,
-                canonical=CROSSING_THRESHOLD_ABS,
-            )
-            # Stages 2-4
             pressure_telemetry.process_pre_writeback(
                 candidate_masks=cand_masks,
                 applied_masks=masks,
@@ -182,88 +160,87 @@ def run_train_loop(
                 n_applied=n_app,
             )
             if step % 25 == 0 or step == int(steps):
-                # Dual-population GLOBAL margins on CPU acc (PLAN_v6; never n_parts)
                 margin_traj.append(
                     {
                         "step": int(step),
                         "residual_margin_pre_cap_crossers": global_margin_quantiles(
-                            acc, cand_masks, threshold=CROSSING_THRESHOLD_ABS
+                            residency.acc,
+                            cand_masks,
+                            threshold=CROSSING_THRESHOLD_ABS,
                         ),
                         "residual_margin_applied_topk": global_margin_quantiles(
-                            acc, masks, threshold=CROSSING_THRESHOLD_ABS
+                            residency.acc,
+                            masks,
+                            threshold=CROSSING_THRESHOLD_ABS,
                         ),
                         "n_candidates": int(n_cand),
                         "n_applied": int(n_app),
                     }
                 )
-                # Episode telemetry from existing CPU acc/episode_start seam
-                ep_stats = active_episode_stats(acc, episode_start, step=step)
+                ep_stats = active_episode_stats(
+                    residency.acc, residency.episode_start, step=step
+                )
                 episode_traj.append({"step": int(step), **ep_stats})
-        else:
-            masks = _arm_topk_masks(acc, topk=int(topk))
 
-        # Snapshot episode_start before writeback for stage-6 rollover detect
+        # B-only: full episode_start clone before writeback mutation.
         ep_before = (
-            {n: episode_start[n].clone() for n in episode_start}
+            {n: residency.episode_start[n].clone() for n in residency.episode_start}
             if pressure_telemetry is not None
             else None
         )
 
-        # Close open events on applied indices BEFORE writeback mutates episodes
         if pressure_telemetry is not None:
-            # Predict residual-zero from current acc + applied (same law as writeback)
-            from calm.hrm_text_158.native_full_stack.forgetting_laws import (
-                threshold_residual_writeback,
+            residual_zero = predict_residual_zero(
+                residency, masks, threshold=CROSSING_THRESHOLD_ABS
             )
-
-            residual_zero = {}
-            for n in masks:
-                if not bool(masks[n].any()):
-                    residual_zero[n] = torch.zeros_like(masks[n], dtype=torch.bool)
-                    continue
-                dir_ = torch.where(
-                    acc[n] >= 0, torch.ones_like(acc[n]), -torch.ones_like(acc[n])
-                ).to(torch.int8)
-                res = threshold_residual_writeback(
-                    acc[n][masks[n]], dir_[masks[n]], threshold=CROSSING_THRESHOLD_ABS
-                )
-                rz = torch.zeros_like(masks[n], dtype=torch.bool)
-                rz[masks[n]] = res == 0
-                residual_zero[n] = rz
             pressure_telemetry.close_before_writeback_resets(
                 applied_masks=masks,
                 step=step,
                 residual_zero=residual_zero,
             )
 
-        for n in list(acc.keys()):
-            drained = int(masks[n].sum().item())
-            n_applied_drains += drained
-            # Stage 5: writeback (may restart/clear episodes)
-            new_acc, new_ep, new_q, lt, n_q = apply_live_flip_writeback(
-                acc[n], episode_start[n], q_levels[n], masks[n], step=step
-            )
-            if drained:
-                flip_count[n] = flip_count[n] + masks[n].to(torch.int32)
-                n_flips += drained
-            q_changed_count += int(n_q)
-            if lt:
-                lifetimes.extend(lt)
-            acc[n] = new_acc
-            episode_start[n] = new_ep
-            q_levels[n] = new_q
+        step_lifetimes = lifetimes_before_writeback(
+            residency, masks, step=step
+        )
+        lifetimes.extend(step_lifetimes)
 
-        # Stage 6: roll tracker after writeback episode changes
+        drained = apply_drained_flip_counts(residency, masks)
+        n_applied_drains += drained
+        n_flips += drained
+
+        # Writeback owns the sole idx D2H; identity frames reuse selection_idx_host.
+        wb = writeback_shared(
+            residency,
+            masks,
+            step=step,
+            threshold=CROSSING_THRESHOLD_ABS,
+            ordered_flat_idx=ordered,
+        )
+        q_changed_count += int(wb.get("n_q_transitions_total", 0) or 0)
+        selection_frames.append(
+            ordered_selection_frame(
+                step=step,
+                ordered_flat_idx=wb.get(
+                    "selection_idx_host", torch.empty(0, dtype=torch.int64)
+                ),
+            )
+        )
+        sync_inventory_steps.append(
+            {"step": int(step), **hotpath_sync_inventory_from_writeback(wb)}
+        )
+
         if pressure_telemetry is not None and ep_before is not None:
             pressure_telemetry.roll_tracker_after_writeback(
                 applied_masks=masks,
                 episode_start_before=ep_before,
-                episode_start_after=episode_start,
+                episode_start_after=residency.episode_start,
                 step=step,
             )
 
         if should_record_h_trajectory(step, int(steps)):
-            H_now = entropy_bits(torch.cat([a.flatten() for a in acc.values()]))
+            H_now = entropy_bits(
+                torch.cat([a.flatten() for a in residency.acc.values()])
+            )
             H_trajectory.append(
                 {
                     "step": int(step),
@@ -285,8 +262,6 @@ def run_train_loop(
     if pressure_telemetry is not None:
         pressure_telemetry.finalize_window(final_step=int(steps))
 
-    # Snapshot credit-step route counters BEFORE final probes (probes call
-    # begin_credit_step and would overwrite the module-global store).
     if last_store is None:
         train_route_counters = {
             "n_fixed_qscale_forwards": 0,
@@ -299,10 +274,10 @@ def run_train_loop(
         train_route_counters["n_eligible_keys"] = len(eligible)
 
     out = {
-        "acc": acc,
-        "episode_start": episode_start,
-        "flip_count": flip_count,
-        "q_levels": q_levels,
+        "acc": residency.acc,
+        "episode_start": residency.episode_start,
+        "flip_count": residency.flip_count,
+        "q_levels": residency.q_auth_cpu,
         "lifetimes": lifetimes,
         "credited_mass": credited_mass,
         "n_flips": n_flips,
@@ -311,6 +286,8 @@ def run_train_loop(
         "excluded_hit_count": excluded_hit_count,
         "H_trajectory": H_trajectory,
         "train_route_counters": train_route_counters,
+        "selection_frames": selection_frames,
+        "sync_inventory_steps": sync_inventory_steps,
     }
     if pressure_telemetry is not None:
         out["pressure_telemetry"] = pressure_telemetry

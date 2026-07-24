@@ -1,0 +1,189 @@
+{
+  "schema": "pressure_metric_fork2_integration_additive_costs/v2",
+  "status": "MEASURED",
+  "device": "cuda:0",
+  "geometry": {
+    "n_arms": 32,
+    "total_numel": 29360128
+  },
+  "lines": [
+    {
+      "name": "wiring_shell",
+      "status": "MEASURED",
+      "median_ms": 326.47724700018443,
+      "window_ms": 8161.931175004611
+    },
+    {
+      "name": "wiring_shell_A_uninstrumented",
+      "status": "MEASURED",
+      "median_ms": 101.06292999989819,
+      "window_ms": 2526.5732499974547
+    },
+    {
+      "name": "wiring_shell_B_instrumented",
+      "status": "MEASURED",
+      "median_ms": 326.47724700018443,
+      "window_ms": 8161.931175004611
+    },
+    {
+      "name": "episode_start_clone_B_only",
+      "status": "MEASURED",
+      "median_ms": 1.0934199999610428,
+      "window_ms": 27.33549999902607
+    },
+    {
+      "name": "publish_cadence",
+      "status": "MEASURED",
+      "median_ms": 20.019771999614022,
+      "window_ms": 20.019771999614022
+    },
+    {
+      "name": "receipt_hotpath",
+      "status": "MEASURED",
+      "median_ms": 0.07965600070747314,
+      "window_ms": 0.2081560060105403,
+      "includes_demand_scalar_window_ms": 0.12850000530306716
+    },
+    {
+      "name": "receipt_hotpath_demand_scalar_pub",
+      "status": "MEASURED",
+      "median_ms": 0.005140000212122686,
+      "window_ms": 0.12850000530306716
+    }
+  ],
+  "verdict": "PRICED",
+  "representative": true,
+  "sync_inventory": {
+    "A": {
+      "flavor": "A_uninstrumented",
+      "n_candidates": 2048,
+      "n_applied": 1024,
+      "phases": [
+        "project_credit_shared",
+        "select_shared",
+        "ordered_selection_frame_via_writeback_host_idx",
+        "lifetimes_before_writeback",
+        "apply_drained_flip_counts",
+        "writeback_shared"
+      ],
+      "writeback": {
+        "idx_d2h_count": 1,
+        "dir_d2h_count": 1,
+        "batched_global_d2h": true,
+        "duplicate_idx_d2h_for_identity": false,
+        "scalar_item_publishes": 1,
+        "applied_nonzero_d2h_bytes": 8192,
+        "dir_d2h_bytes": 1024,
+        "n_applied_total": 1024,
+        "n_arms_with_applied": 25
+      },
+      "selection_frame_bytes": 8196,
+      "lifetimes_len": 1024,
+      "drained": 1024,
+      "duplicate_idx_d2h_for_identity": false
+    },
+    "B": {
+      "flavor": "B_instrumented",
+      "n_candidates": 2048,
+      "n_applied": 1024,
+      "phases": [
+        "project_credit_shared",
+        "select_shared",
+        "ordered_selection_frame_via_writeback_host_idx",
+        "lifetimes_before_writeback",
+        "apply_drained_flip_counts",
+        "writeback_shared",
+        "episode_start_clone",
+        "predict_residual_zero",
+        "close_before_writeback_resets",
+        "roll_tracker_after_writeback"
+      ],
+      "writeback": {
+        "idx_d2h_count": 1,
+        "dir_d2h_count": 1,
+        "batched_global_d2h": true,
+        "duplicate_idx_d2h_for_identity": false,
+        "scalar_item_publishes": 1,
+        "applied_nonzero_d2h_bytes": 8192,
+        "dir_d2h_bytes": 1024,
+        "n_applied_total": 1024,
+        "n_arms_with_applied": 25
+      },
+      "selection_frame_bytes": 8196,
+      "lifetimes_len": 1024,
+      "drained": 1024,
+      "duplicate_idx_d2h_for_identity": false
+    }
+  },
+  "raw": {
+    "wiring_shell_A": {
+      "samples_ms": [
+        118.34165299933375,
+        83.65168399996037,
+        83.62368200050696,
+        139.51570100016397,
+        101.06292999989819
+      ],
+      "median_ms": 101.06292999989819,
+      "n": 5
+    },
+    "wiring_shell_B": {
+      "samples_ms": [
+        338.14234100009344,
+        326.47724700018443,
+        311.2954420003007,
+        323.690866999641,
+        356.9201439995595
+      ],
+      "median_ms": 326.47724700018443,
+      "n": 5
+    },
+    "episode_start_clone_B_only": {
+      "samples_ms": [
+        1.094332000320719,
+        1.0859359999813023,
+        1.0952930006169481,
+        1.070086999789055,
+        1.0934199999610428
+      ],
+      "median_ms": 1.0934199999610428,
+      "n": 5
+    },
+    "publish_cadence": {
+      "samples_ms": [
+        20.72124900041672,
+        20.019771999614022,
+        19.22236399968824,
+        19.841312000608013,
+        22.676563000459282
+      ],
+      "median_ms": 20.019771999614022,
+      "n": 5
+    },
+    "receipt_hotpath": {
+      "samples_ms": [
+        0.07965600070747314,
+        0.06975799988140352,
+        0.10635499984346097,
+        0.10970200037263567,
+        0.07611999990331242
+      ],
+      "median_ms": 0.07965600070747314,
+      "n": 5
+    },
+    "receipt_hotpath_demand_scalar_pub": {
+      "samples_ms": [
+        0.0054300007832353,
+        0.005140000212122686,
+        0.004978999641025439,
+        0.00483900021208683,
+        0.005309999323799275
+      ],
+      "median_ms": 0.005140000212122686,
+      "n": 5
+    }
+  },
+  "peak_cuda_bytes": 1499532800,
+  "additive_window_ms_total": 8182.159103010235,
+  "wiring_shell_uses": "max(A_uninstrumented, B_instrumented)"
+}

@@ -18,8 +18,8 @@ import torch
 from calm.hrm_text_158.native_full_stack.family_classifier import ARM0
 from calm.hrm_text_158.native_full_stack.forgetting_laws import entropy_bits
 from calm.hrm_text_158.native_full_stack.phase_probe_sets import build_phase1_probe_sets
-from calm.hrm_text_158.native_full_stack.pressure_metric_lifecycle import (
-    PressureTelemetryStore,
+from calm.hrm_text_158.native_full_stack.pressure_metric_gpu_lifecycle_derisk import (
+    DeviceLifecycleStore,
 )
 from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
     hash_q_dict,
@@ -98,7 +98,11 @@ def run_hotpath_warmup_throwaway(
     pool = build_pool()
     probe_sets = build_phase1_probe_sets()
     acq_set = set(probe_sets["acquisition"])
-    store = PressureTelemetryStore.from_q_levels(q_levels, steps=int(n_steps))
+    store = DeviceLifecycleStore.from_arm_shapes(
+        {n: tuple(q.shape) for n, q in q_levels.items()},
+        steps=int(n_steps),
+        device=device if str(device).startswith("cuda") else "cpu",
+    )
 
     cuda_sync(device)
     loop_out = run_train_loop(
@@ -239,7 +243,11 @@ def run_one_diagnostic_loop(
 
     store = None
     if telemetry:
-        store = PressureTelemetryStore.from_q_levels(q_levels, steps=int(steps))
+        store = DeviceLifecycleStore.from_arm_shapes(
+            {n: tuple(q.shape) for n, q in q_levels.items()},
+            steps=int(steps),
+            device=device if str(device).startswith("cuda") else "cpu",
+        )
 
     cuda_sync(device)
     t0 = time.perf_counter()

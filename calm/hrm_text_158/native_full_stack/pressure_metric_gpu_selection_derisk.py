@@ -1,9 +1,9 @@
-"""Fork-2 de-risk helpers: device-invariant topK + q-shadow update + writeback bridge.
+"""Device-invariant topK + q-shadow update + writeback bridge (production path).
 
-Smoke-only surface — NOT wired into screen_execution_loop.
 Registered tiebreak: abs_acc desc, flat index asc (composite int64 key with inversion).
+Shared A/B entrypoint used by screen_execution_loop via pressure_metric_gpu_loop_bridge.
 
-Lifecycle reducer + geometry live in sibling smoke-only modules (one-way imports):
+Lifecycle reducer + geometry live in sibling modules (one-way imports):
   pressure_metric_fork2_geometry.py
   pressure_metric_gpu_lifecycle_derisk.py
 """
@@ -195,8 +195,14 @@ def _batched_cuda_writeback(
     step: int,
     threshold: int,
     refresh_shadow_index_only: bool,
+    ordered_flat_idx: torch.Tensor | None = None,
 ) -> dict[str, Any]:
-    """ONE global idx D2H + ONE global dir D2H for all selected rows across arms."""
+    """ONE global idx D2H + ONE global dir D2H for all selected rows across arms.
+
+    When ``ordered_flat_idx`` is provided (composite-key ordered selection from
+    select_topk), that tensor is the sole idx source: the host copy is reused for
+    identity framing so the production loop does not perform a second idx D2H.
+    """
     from calm.hrm_text_158.native_full_stack.forgetting_laws import (
         threshold_residual_writeback,
     )
@@ -204,7 +210,10 @@ def _batched_cuda_writeback(
     names = list(applied_masks.keys())
     flat_masks = [applied_masks[n].reshape(-1) for n in names]
     flat_applied = torch.cat(flat_masks) if flat_masks else torch.empty(0, dtype=torch.bool)
-    global_idx = torch.nonzero(flat_applied, as_tuple=False).flatten()
+    if ordered_flat_idx is not None:
+        global_idx = ordered_flat_idx.reshape(-1).to(dtype=torch.int64)
+    else:
+        global_idx = torch.nonzero(flat_applied, as_tuple=False).flatten()
     stats: dict[str, Any] = {
         "applied_nonzero_d2h_bytes": 0,
         "dir_d2h_bytes": 0,
@@ -215,17 +224,21 @@ def _batched_cuda_writeback(
         "idx_d2h_count": 0,
         "dir_d2h_count": 0,
         "batched_global_d2h": True,
+        "selection_idx_host": torch.empty(0, dtype=torch.int64),
+        "duplicate_idx_d2h_for_identity": False,
     }
     if global_idx.numel() == 0:
         return stats
     if int(global_idx.numel()) > 1024:
         raise RuntimeError(f"applied count {int(global_idx.numel())} exceeds topk bridge")
 
-    # ONE idx D2H for the entire selected set (all arms).
+    # ONE idx D2H for the entire selected set (all arms); host payload also
+    # feeds ordered selection identity (no separate per-step identity D2H).
     idx_cpu = global_idx.detach().cpu()
     stats["applied_nonzero_d2h_bytes"] = int(idx_cpu.numel()) * 8
     stats["idx_d2h_count"] = 1
     stats["n_applied_total"] = int(idx_cpu.numel())
+    stats["selection_idx_host"] = idx_cpu.to(dtype=torch.int64).contiguous()
 
     offsets: list[tuple[str, int, int]] = []
     off = 0
@@ -307,11 +320,14 @@ def writeback_bridge_cpu_q(
     step: int,
     refresh_shadow_index_only: bool = True,
     threshold: int = CROSSING_THRESHOLD_ABS,
+    ordered_flat_idx: torch.Tensor | None = None,
 ) -> dict[str, Any]:
     """Device acc/ep writeback + ≤1024-index CPU q bridge.
 
     CUDA path: ONE global idx D2H + ONE global dir D2H for all selected rows
     (kills per-arm transfer multiplier). n_q_transitions: at most ONE .item().
+    Pass ``ordered_flat_idx`` from select_topk so the same host idx payload
+    feeds ordered identity framing (no duplicate per-step identity D2H).
     """
     sample = next(iter(acc.values()))
     if sample.device.type == "cuda":
@@ -327,6 +343,7 @@ def writeback_bridge_cpu_q(
                 step=step,
                 threshold=int(threshold),
                 refresh_shadow_index_only=refresh_shadow_index_only,
+                ordered_flat_idx=ordered_flat_idx,
             )
 
     stats: dict[str, Any] = {
@@ -339,7 +356,18 @@ def writeback_bridge_cpu_q(
         "idx_d2h_count": 0,
         "dir_d2h_count": 0,
         "batched_global_d2h": False,
+        "n_q_transitions_total": 0,
+        "selection_idx_host": torch.empty(0, dtype=torch.int64),
+        "duplicate_idx_d2h_for_identity": False,
     }
+    if ordered_flat_idx is not None:
+        host = ordered_flat_idx.detach()
+        if host.device.type != "cpu":
+            host = host.cpu()
+            stats["idx_d2h_count"] = 1
+            stats["applied_nonzero_d2h_bytes"] = int(host.numel()) * 8
+        stats["selection_idx_host"] = host.to(dtype=torch.int64).contiguous()
+        stats["n_applied_total"] = int(stats["selection_idx_host"].numel())
     for n, mask in applied_masks.items():
         a = acc[n]
         ep = episode_start[n]
@@ -352,13 +380,14 @@ def writeback_bridge_cpu_q(
         episode_start[n] = new_ep
         q_auth_cpu[n] = new_q
         n_app = int(m.to(torch.int64).sum().item())
-        stats["n_applied_total"] += n_app
+        if ordered_flat_idx is None:
+            stats["n_applied_total"] += n_app
+        stats["n_q_transitions_total"] += int(n_q)
         stats["scalar_item_publishes"] += 1
         if n_app > 0:
             stats["n_arms_with_applied"] += 1
         if q_shadow is not None:
             q_shadow[n].copy_(new_q.to(device=q_shadow[n].device))
-        del n_q
     return stats
 
 

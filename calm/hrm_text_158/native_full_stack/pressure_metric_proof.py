@@ -2,12 +2,11 @@
 
 Owns: finalize_paired_timing_summary, load_and_validate_paired_proof (exact
 replicate key set, row VALUES, artifact file re-hash), run_formal_diagnostic.
-Dependency: proof → warmup_runtime + receipt + telemetry.
-Bound by PLAN_v6 sha 346b67d8…; rev4 re-scope 1784829182373.
+Dependency: proof → warmup_runtime + receipt + telemetry + proof_contract.
+Bound by PLAN_v6 sha 346b67d8…; fork-2 PLAN_v2 LIVE amendment.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import os
@@ -16,6 +15,14 @@ from typing import Any, Mapping
 import torch
 
 from calm.hrm_text_158.native_full_stack.family_classifier import ARM0
+from calm.hrm_text_158.native_full_stack.pressure_metric_proof_contract import (
+    SOURCE_FILES,
+    ContractError,
+    recompute_per_index_determinism,
+    sha256_file,
+    validate_proof_against_live_amendment,
+    validate_replicate_per_index_fields,
+)
 from calm.hrm_text_158.native_full_stack.pressure_metric_receipt import (
     build_diagnostic_receipt,
 )
@@ -35,29 +42,11 @@ from calm.hrm_text_158.native_full_stack.pressure_metric_warmup_runtime import (
     run_one_diagnostic_loop,
 )
 
-SOURCE_FILES = (
-    "calm/hrm_text_158/native_full_stack/pressure_metric_telemetry.py",
-    "calm/hrm_text_158/native_full_stack/pressure_metric_lifecycle.py",
-    "calm/hrm_text_158/native_full_stack/pressure_metric_classifier.py",
-    "calm/hrm_text_158/native_full_stack/pressure_metric_readiness.py",
-    "calm/hrm_text_158/native_full_stack/pressure_metric_receipt.py",
-    "calm/hrm_text_158/native_full_stack/pressure_metric_warmup_runtime.py",
-    "calm/hrm_text_158/native_full_stack/pressure_metric_proof.py",
-    "calm/hrm_text_158/native_full_stack/pressure_metric_benchmark.py",
-    "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
-    "calm/hrm_text_158/native_full_stack/screen_model_runtime.py",
-    "scripts/hrm_text_158_censor_null_pressure_metric_diagnostic.py",
-)
-
 REQUIRED_REPLICATE_KEYS = ("AB_A", "AB_B", "BA_A", "BA_B")
 
 
-def sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+class ProofValidationError(ContractError):
+    pass
 
 
 def emit_json(receipt: dict, output_json: str | None) -> None:
@@ -92,11 +81,6 @@ def require_cuda_proof_device(device: str, *, diagnostic_override: bool) -> bool
         "proof-eligible paired/formal require CUDA device + availability; "
         "pass --diagnostic-override for CPU NON-PROOF"
     )
-
-
-class ProofValidationError(SystemExit):
-    pass
-
 
 def _validate_replicate_rows(
     *,
@@ -268,6 +252,9 @@ def recompute_summary_from_replicates(
     out["determinism_prefix_match"] = bool(det_all)
     out["two_tier_threshold_assert_pass"] = bool(thr_all)
     out["warmup_ok_all_replicates"] = bool(warm_all)
+    out["determinism_per_index_match"] = bool(
+        recompute_per_index_determinism(replicates)
+    )
     return out
 
 
@@ -334,6 +321,11 @@ def load_and_validate_paired_proof(
         topk=FORMAL_TOPK,
         device=str(formal_device),
     )
+    try:
+        validate_proof_against_live_amendment(proof, repo_root=repo_root)
+        validate_replicate_per_index_fields(replicates)
+    except ContractError as exc:
+        raise ProofValidationError(str(exc)) from exc
 
     # rev5: NEVER trust the summary's top-level acceptance fields — recompute
     # every one of them from the bound replicate rows and reject disagreement.
@@ -358,6 +350,10 @@ def load_and_validate_paired_proof(
             "paired-proof replicate counters disagree A/B — recomputed "
             "determinism_prefix_match=false (summary field untrusted)"
         )
+    if recomputed.get("determinism_per_index_match") is not True:
+        raise ProofValidationError(
+            "paired-proof per-index determinism fail (flip/q/applied identity)"
+        )
     if proof.get("determinism_prefix_match") is not True:
         raise ProofValidationError("paired-proof determinism_prefix_match!=true")
     if recomputed["two_tier_threshold_assert_pass"] is not True:
@@ -371,6 +367,7 @@ def load_and_validate_paired_proof(
     recomputed_accepted = (
         proof.get("is_proof") is True
         and recomputed["determinism_prefix_match"] is True
+        and recomputed.get("determinism_per_index_match") is True
         and recomputed["warmup_ok_all_replicates"] is True
         and recomputed["two_tier_threshold_assert_pass"] is True
         and recomputed["overhead_frac_AB"] <= OVERHEAD_BOUND
