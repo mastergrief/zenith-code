@@ -35,6 +35,9 @@ from calm.hrm_text_158.native_full_stack.forgetting_laws import (
 from calm.hrm_text_158.native_full_stack.fixed_qscale_credit import (
     snapshot_route_counters,
 )
+from calm.hrm_text_158.native_full_stack.forgetting_screen_pre_post_telemetry import (
+    PrePostTransformAccumulator,
+)
 from calm.hrm_text_158.native_full_stack.phase_probe_sets import (
     sample_batch_excluding_acquisition,
 )
@@ -84,12 +87,14 @@ def run_train_loop(
     correctness_smoke: bool = False,
     pressure_telemetry: Any | None = None,
     phase_timer: Any | None = None,
+    pre_post_telemetry: bool = True,
 ) -> dict[str, Any]:
     """Mutate q/acc/episode for `steps`; return telemetry + final state tensors.
 
     Shared A/B: residency + deterministic selection/update/writeback.
     If `pressure_telemetry` is set, run event lifecycle around pre-writeback masks.
     `phase_timer` is diagnostic-only (default None/OFF = true no-op seams).
+    `pre_post_telemetry` gates ARM1 PrePostTransformAccumulator (default ON).
     """
     residency = init_gpu_loop_residency(q_levels, device=device)
     _timer = phase_timer
@@ -105,6 +110,12 @@ def run_train_loop(
     episode_traj: list[dict[str, Any]] = []
     selection_frames: list[bytes] = []
     sync_inventory_steps: list[dict[str, Any]] = []
+    pre_post_on = bool(pre_post_telemetry)
+    pre_post_acc: PrePostTransformAccumulator | None = (
+        PrePostTransformAccumulator(device=device)
+        if arm == ARM1 and pre_post_on
+        else None
+    )
 
     t0 = time.time()
     last_store = None
@@ -133,6 +144,11 @@ def run_train_loop(
         )
         credited_mass += int(credited)
 
+        acc_pre_decay = None
+        if arm == ARM1 and pre_post_acc is not None:
+            # Shallow name→tensor map of post-projection / pre-decay state (no cat).
+            acc_pre_decay = residency.acc
+
         if arm == ARM1:
             residency.acc = {n: apply_decay_leak(a) for n, a in residency.acc.items()}
         elif arm == ARM2:
@@ -148,6 +164,14 @@ def run_train_loop(
         cand_masks, masks, n_cand, n_app, ordered = select_shared(
             residency, topk=int(topk), threshold=CROSSING_THRESHOLD_ABS
         )
+
+        if arm == ARM1 and pre_post_acc is not None and acc_pre_decay is not None:
+            pre_post_acc.accumulate_step(
+                moves=_moves,
+                acc_pre_decay=acc_pre_decay,
+                acc_post_decay=residency.acc,
+                n_cand_after_decay=int(n_cand),
+            )
 
         if pressure_telemetry is not None:
             from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
@@ -324,6 +348,8 @@ def run_train_loop(
         "selection_frames": selection_frames,
         "sync_inventory_steps": sync_inventory_steps,
     }
+    if pre_post_acc is not None:
+        out["pre_post_transform"] = pre_post_acc.finalize()
     if pressure_telemetry is not None:
         out["pressure_telemetry"] = pressure_telemetry
         out["margin_trajectory"] = margin_traj

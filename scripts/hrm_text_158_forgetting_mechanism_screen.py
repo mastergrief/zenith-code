@@ -219,6 +219,16 @@ def main() -> int:
         ),
     )
     ap.add_argument(
+        "--pre-post-telemetry",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "ARM1 pre/post-transform accumulator (default ON). "
+            "--no-pre-post-telemetry is for paired cost/nonperturbation; OFF receipts "
+            "carry pre_post_telemetry=false and cannot pass formal suppression G0."
+        ),
+    )
+    ap.add_argument(
         "--aggregate-phase1",
         action="store_true",
         help="Aggregate 3 mechanism receipts under pinned formal-150 control (PLAN_v10).",

@@ -41,6 +41,12 @@ HOTPATH_SYNC_ALLOWLIST = {
         ".tolist(": 0,
         ".any(": 0,
     },
+    # PLAN_v10.1r8: packed hist accumulate; end-of-run publish via single .cpu() only.
+    "forgetting_screen_pre_post_telemetry.py": {
+        ".item(": 0,
+        ".tolist(": 0,
+        ".any(": 0,
+    },
 }
 
 
@@ -57,6 +63,98 @@ def count_hotpath_sync_patterns(source: str) -> dict[str, int]:
             if key is not None:
                 counts[key] += 1
     return counts
+
+
+def _ast_is_cpu_device_arg(node: Any) -> bool:
+    """True if AST node denotes CPU device target for .to(...)."""
+    import ast
+
+    if isinstance(node, ast.Constant) and node.value in ("cpu",):
+        return True
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        # torch.device("cpu")
+        if node.func.attr == "device" and node.args:
+            return _ast_is_cpu_device_arg(node.args[0])
+    return False
+
+
+def count_d2h_transfer_patterns(source: str) -> dict[str, int]:
+    """Count D2H APIs: .cpu( / .numpy( / .to(\"cpu\") / .to(torch.device(\"cpu\"))."""
+    import ast
+
+    counts = {".cpu(": 0, ".numpy(": 0, ".to(cpu)": 0}
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        attr = node.func.attr
+        if attr == "cpu":
+            counts[".cpu("] += 1
+        elif attr == "numpy":
+            counts[".numpy("] += 1
+        elif attr == "to":
+            args = list(node.args) + [
+                kw.value for kw in node.keywords if kw.arg in (None, "device")
+            ]
+            if any(_ast_is_cpu_device_arg(a) for a in args):
+                counts[".to(cpu)"] += 1
+    return counts
+
+
+def assert_pre_post_telemetry_single_d2h() -> dict[str, Any]:
+    """Prove exactly one .cpu() D2H in finalize(); zero D2H in accumulate_step."""
+    import ast
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parent / "forgetting_screen_pre_post_telemetry.py"
+    text = path.read_text(encoding="utf-8")
+    totals = count_d2h_transfer_patterns(text)
+    tree = ast.parse(text)
+
+    def _count_in_fn(fn: ast.AST) -> dict[str, int]:
+        counts = {".cpu(": 0, ".numpy(": 0, ".to(cpu)": 0}
+        for node in ast.walk(fn):
+            if node is fn:
+                continue
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            attr = node.func.attr
+            if attr == "cpu":
+                counts[".cpu("] += 1
+            elif attr == "numpy":
+                counts[".numpy("] += 1
+            elif attr == "to":
+                args = list(node.args) + [
+                    kw.value for kw in node.keywords if kw.arg in (None, "device")
+                ]
+                if any(_ast_is_cpu_device_arg(a) for a in args):
+                    counts[".to(cpu)"] += 1
+        return counts
+
+    finalize_cpu = 0
+    accumulate_d2h = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        counts = _count_in_fn(node)
+        d2h_n = counts[".cpu("] + counts[".to(cpu)"]
+        if node.name == "finalize":
+            finalize_cpu = d2h_n
+        elif node.name == "accumulate_step":
+            accumulate_d2h = d2h_n + counts[".numpy("]
+    if totals[".cpu("] + totals[".to(cpu)"] != 1:
+        raise AssertionError(
+            f"helper D2H .cpu/.to(cpu) total={totals} expected exactly one .cpu()"
+        )
+    if finalize_cpu != 1:
+        raise AssertionError(f"finalize D2H count={finalize_cpu} expected 1")
+    if accumulate_d2h != 0:
+        raise AssertionError(f"accumulate_step D2H count={accumulate_d2h} expected 0")
+    return {
+        "module_totals": totals,
+        "finalize_cpu": finalize_cpu,
+        "accumulate_d2h": accumulate_d2h,
+    }
 
 
 def assert_hotpath_sync_allowlist() -> dict[str, dict[str, int]]:

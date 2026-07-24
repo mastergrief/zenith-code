@@ -94,6 +94,7 @@ def run_arm_screen(args: argparse.Namespace) -> int:
     # R1 observer attach: default ON (formal arm mint). OFF exposes existing
     # run_train_loop(pressure_telemetry=None) capability for observer-cost pairing.
     telemetry_on = bool(getattr(args, "telemetry", True))
+    pre_post_on = bool(getattr(args, "pre_post_telemetry", True))
     pressure_store = None
     if telemetry_on:
         from calm.hrm_text_158.native_full_stack.pressure_metric_gpu_lifecycle_derisk import (
@@ -120,6 +121,7 @@ def run_arm_screen(args: argparse.Namespace) -> int:
         device=device,
         correctness_smoke=bool(args.correctness_smoke),
         pressure_telemetry=pressure_store,
+        pre_post_telemetry=pre_post_on,
     )
 
     acq_final = ret_final = None
@@ -157,6 +159,7 @@ def run_arm_screen(args: argparse.Namespace) -> int:
     # deferred_survival (assemble only attaches those when store present), so
     # they fail-closed under v10 G0/three-arm without changing the contract.
     receipt["telemetry"] = bool(telemetry_on)
+    receipt["pre_post_telemetry"] = bool(pre_post_on)
 
     if args.correctness_smoke:
         fails = [k for k, v in receipt["asserts"].items() if not v]

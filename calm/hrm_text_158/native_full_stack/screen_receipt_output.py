@@ -36,6 +36,10 @@ from calm.hrm_text_158.native_full_stack.pressure_metric_proof_contract import (
 from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
     summarize_demand_totals,
 )
+from calm.hrm_text_158.native_full_stack.forgetting_screen_v10_1_contract import (
+    AUTHORITY_DISPATCH_V10_1,
+    PLAN_V10_1_SHA256,
+)
 from calm.hrm_text_158.native_full_stack.vote_lifetime_screen_reducers import (
     count_censored_active_episodes,
     lifetime_censored_frac,
@@ -75,6 +79,9 @@ AUTHORITY_DISPATCH_V9 = "1784812148229-f466bc29"
 # Current v10 implement authority (defect-cycle r2 dispatch).
 AUTHORITY_DISPATCH = "1784893417123-0300fdf7"
 DEFECT_CYCLE_AUTHORITY = "1784892185413-a4f0e9bb"
+# Distinct PLAN_v10.1 identity — sha/dispatch imported from contract (single source of truth).
+PLAN_V10_1_PATH = "artifacts/acc_entropy/forgetting_mechanism_screen_PLAN_v10_1.json"
+PINNED_CONTROL_SHA256 = "5e593454f0ddffb946692e09913da5df1ddfe0f2f11aaaf3fb663a2f00fbcfdb"
 # Packet-time launch authority — distinct field; filled at GPU packet time only.
 LAUNCH_AUTHORITY_DISPATCH = None
 COMMIT_SURFACE_FILES = [
@@ -97,6 +104,12 @@ def _receipt_schema_skeleton() -> dict:
         "authority_dispatch": AUTHORITY_DISPATCH,
         "defect_cycle_authority": DEFECT_CYCLE_AUTHORITY,
         "launch_authority_dispatch": LAUNCH_AUTHORITY_DISPATCH,
+        # Distinct v10.1 identity (additive; does not overwrite legacy PLAN_v10 fields).
+        "plan_v10_1_path": PLAN_V10_1_PATH,
+        "plan_v10_1_sha256": PLAN_V10_1_SHA256,
+        "authority_dispatch_v10_1": AUTHORITY_DISPATCH_V10_1,
+        "pinned_control_sha256": PINNED_CONTROL_SHA256,
+        "pre_post_telemetry": True,
         "fixed_qscale_credit_seam": True,
         "begin_credit_step_required": True,
         "dW_formula": "grad_output.reshape(-1,out).T @ act.reshape(-1,in)",
@@ -328,6 +341,20 @@ def assemble_arm_receipt(
     pt = loop_out.get("pressure_telemetry")
     if pt is not None:
         r1 = compact_r1_surface_from_store(pt)
+        ds = r1["deferred_survival"]
+        # v10.1: never invent 0/0 cohort fractions when N_events_evaluable==0.
+        if int(ds.get("N_events_evaluable", 0)) == 0:
+            ds = dict(ds)
+            ds["deferred_never_apply_within_H_frac"] = None
+            ds["deferred_survival_frac"] = None
+            # early/late/delta already None when cohorts empty
+            r1 = {**r1, "deferred_survival": ds}
         receipt["measurements"]["demand"] = r1["demand"]
         receipt["measurements"]["deferred_survival"] = r1["deferred_survival"]
+    # Compact pre/post-transform evidence (ARM1 decay discriminator; no raw arrays).
+    ppt = loop_out.get("pre_post_transform")
+    if ppt is not None:
+        receipt["measurements"]["pre_post_transform"] = ppt
+    # Self-identifying observer toggle (formal suppression requires True).
+    receipt["pre_post_telemetry"] = bool(getattr(args, "pre_post_telemetry", True))
     return receipt
