@@ -501,74 +501,39 @@ def test_phase1_aggregation_phase0_uncleared_null():
 
 
 def test_aggregate_no_phase0_proof_forces_f4():
+    """(a) REWRITE → v10 control-bind missing/sha-mismatch fail-closed (PLAN_v10r4)."""
     from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (
-        ARM1,
-        ARM2,
-        ARM3,
         FAMILY_F4,
-        build_phase1_terminal_receipt,
-        validate_phase0_receipt_for_aggregate,
+        build_v10_terminal_receipt,
+        validate_control_baseline_bind,
     )
 
-    v = validate_phase0_receipt_for_aggregate(None)
+    v = validate_control_baseline_bind(None, expected_sha256="x")
     assert v["ok"] is False
-    assert v["reason"] == "phase0_proof_missing"
-    out = build_phase1_terminal_receipt(
-        phase0_censor_cleared=False,
-        control_receipt={"measurements": {"H_bits_per_weight": 1.0}},
-        arm_receipts={
-            ARM1: {"measurements": {"H_bits_per_weight": 0.2}, "probes": {}},
-            ARM2: {"measurements": {"H_bits_per_weight": 0.1}, "probes": {}},
-            ARM3: {"measurements": {"H_bits_per_weight": 0.05}, "probes": {}},
-        },
+    assert v["reason"] == "control_baseline_missing"
+    out = build_v10_terminal_receipt(
+        control_bind=v,
+        arm_receipts={},
         plan_sha256="x",
         authority_dispatch="y",
-        force_null_reason="phase0_proof_missing",
+        force_null_reason="control_baseline_missing",
     )
     assert out["family"] == FAMILY_F4
-    assert out["stop_reason"] == "phase0_proof_missing"
-    # Even with cleared=True, force_null wins
-    out2 = build_phase1_terminal_receipt(
-        phase0_censor_cleared=True,
-        control_receipt={"measurements": {"H_bits_per_weight": 1.0}},
-        arm_receipts={
-            ARM1: {
-                "measurements": {
-                    "H_bits_per_weight": 0.5,
-                    "n_flips": 5000,
-                    "q_changed_count": 200,
-                    "n_applied_drains": 10000,
-                    "lifetime_censored_frac": 0.1,
-                },
-                "probes": {"retention_ok": True, "acq_delta_count": 1},
-            },
-            ARM2: {
-                "measurements": {
-                    "H_bits_per_weight": 0.4,
-                    "n_flips": 5000,
-                    "q_changed_count": 200,
-                    "n_applied_drains": 10000,
-                    "lifetime_censored_frac": 0.1,
-                },
-                "probes": {"retention_ok": True, "acq_delta_count": 1},
-            },
-            ARM3: {
-                "measurements": {
-                    "H_bits_per_weight": 0.3,
-                    "n_flips": 5000,
-                    "q_changed_count": 200,
-                    "n_applied_drains": 10000,
-                    "lifetime_censored_frac": 0.1,
-                },
-                "probes": {"retention_ok": True, "acq_delta_count": 1},
-            },
-        },
+    assert out["stop_reason"] == "control_baseline_missing"
+    assert out["arms_classified"] is False
+    v2 = validate_control_baseline_bind(
+        {"steps": 150}, expected_sha256="a", actual_sha256="b"
+    )
+    assert v2["ok"] is False
+    assert v2["reason"] == "control_baseline_sha_mismatch"
+    out2 = build_v10_terminal_receipt(
+        control_bind=v2,
+        arm_receipts={},
         plan_sha256="x",
         authority_dispatch="y",
-        force_null_reason="phase0_proof_missing",
     )
     assert out2["family"] == FAMILY_F4
-    assert out2["stop_reason"] == "phase0_proof_missing"
+    assert out2["arms_classified"] is False
 
 
 def _contract_arm(
@@ -885,73 +850,46 @@ def test_phase0_full_contract_negative_and_positive():
 
 
 def test_phase0_geometry_and_fallback_once_predecessor():
+    """(a) REWRITE → real artifact geometry + paired_proof.device (PLAN_v10r4).
+
+    600-fallback-once predecessor assertions RETIRED as live authority.
+    """
+    import json
+    from pathlib import Path
+
     from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (
+        FORMAL150_CONTROL_SHA256,
         FAMILY_F4,
-        build_phase1_terminal_receipt,
-        validate_phase0_receipt_for_aggregate,
+        build_v10_terminal_receipt,
+        validate_control_baseline_bind,
     )
 
-    # Wrong batch / topk → fail closed
-    for blob, reason in (
-        (_valid_phase0_receipt(batch=1), "phase0_batch_mismatch"),
-        (_valid_phase0_receipt(topk=1), "phase0_topk_mismatch"),
-    ):
-        vv = validate_phase0_receipt_for_aggregate(blob)
-        assert vv["ok"] is False
-        assert vv["reason"] == reason
-        out = build_phase1_terminal_receipt(
-            phase0_censor_cleared=False,
-            control_receipt={"measurements": {"H_bits_per_weight": 1.0}},
-            arm_receipts={
-                "arm1_decay_leak": {
-                    "measurements": {"H_bits_per_weight": 0.2},
-                    "probes": {},
-                },
-                "arm2_ttl_age_drain": {
-                    "measurements": {"H_bits_per_weight": 0.1},
-                    "probes": {},
-                },
-                "arm3_sparse_hot_forgettable_cold": {
-                    "measurements": {"H_bits_per_weight": 0.05},
-                    "probes": {},
-                },
-            },
-            plan_sha256="x",
-            authority_dispatch="y",
-            authoritative=False,
-            force_null_reason=vv["reason"],
-        )
-        assert out["family"] == FAMILY_F4
-        assert out["authoritative"] is False
-
-    # Standalone 600 → reject
-    alone = validate_phase0_receipt_for_aggregate(
-        _valid_phase0_receipt(lcf=0.1, steps=600)
-    )
-    assert alone["ok"] is False
-    assert alone["reason"] == "phase0_fallback_predecessor_missing"
-
-    # 600 with CLEARED 150 predecessor → reject
-    cleared_pred = _valid_phase0_receipt(lcf=0.1, steps=150)
-    bad = validate_phase0_receipt_for_aggregate(
-        _valid_phase0_receipt(lcf=0.1, steps=600),
-        phase0_predecessor_receipt=cleared_pred,
-    )
-    assert bad["ok"] is False
-    assert bad["reason"] == "phase0_fallback_predecessor_cleared"
-
-    # 600 with FAILED 150 predecessor (lcf>=0.50) → accepted
-    failed_pred = _valid_phase0_receipt(lcf=0.55, steps=150)
-    good = validate_phase0_receipt_for_aggregate(
-        _valid_phase0_receipt(lcf=0.1, steps=600),
-        phase0_predecessor_receipt=failed_pred,
+    formal = Path("artifacts/acc_entropy/pressure_metric_formal150_censor_null.json")
+    obj = json.loads(formal.read_text())
+    good = validate_control_baseline_bind(
+        obj, expected_sha256=FORMAL150_CONTROL_SHA256, actual_sha256=FORMAL150_CONTROL_SHA256
     )
     assert good["ok"] is True
-    assert good["phase0_censor_cleared"] is True
-    assert good["steps"] == 600
-    assert good["phase0_predecessor"]["failed_censor_guard"] is True
-    assert good["phase0_predecessor"]["lifetime_censored_frac"] == 0.55
-
+    for key, bad_val in (("batch", 1), ("topk", 1), ("steps", 149), ("arm", "x")):
+        blob = dict(obj)
+        blob[key] = bad_val
+        vv = validate_control_baseline_bind(
+            blob, expected_sha256=FORMAL150_CONTROL_SHA256, actual_sha256=FORMAL150_CONTROL_SHA256
+        )
+        assert vv["ok"] is False
+        out = build_v10_terminal_receipt(
+            control_bind=vv, arm_receipts={}, plan_sha256="x", authority_dispatch="y"
+        )
+        assert out["family"] == FAMILY_F4
+        assert out["arms_classified"] is False
+    # paired_proof.device mismatch
+    blob = json.loads(formal.read_text())
+    blob["paired_proof"] = dict(blob["paired_proof"])
+    blob["paired_proof"]["device"] = "cpu"
+    vv = validate_control_baseline_bind(
+        blob, expected_sha256=FORMAL150_CONTROL_SHA256, actual_sha256=FORMAL150_CONTROL_SHA256
+    )
+    assert vv["ok"] is False
 
 def test_arm_exact_geometry_and_phase0_window_bind():
     from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (
@@ -1049,68 +987,49 @@ def test_arm_exact_geometry_and_phase0_window_bind():
 
 
 def test_phase0_aggregate_state_machine_transitions():
+    """(a) REWRITE → CONTROL_BASELINE_BIND transitions only (PLAN_v10r4).
+
+    Live actions fallback_required / design_null_censor_unreducible RETIRED.
+    """
+    import json
+    from pathlib import Path
+
     from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (
+        FORMAL150_CONTROL_SHA256,
         FAMILY_F4,
-        build_phase1_terminal_receipt,
-        decide_phase0_aggregate_transition,
-        validate_phase0_receipt_for_aggregate,
+        build_v10_terminal_receipt,
+        validate_control_baseline_bind,
     )
 
-    # Uncleared 150 → fallback_required
-    p0 = validate_phase0_receipt_for_aggregate(_valid_phase0_receipt(lcf=0.55, steps=150))
-    d = decide_phase0_aggregate_transition(p0)
-    assert d["action"] == "fallback_required"
-    assert d["authoritative"] is False
-    out = build_phase1_terminal_receipt(
-        phase0_censor_cleared=False,
-        control_receipt={},
-        arm_receipts={},
-        plan_sha256="x",
-        authority_dispatch="y",
-        authoritative=False,
-        force_null_reason=d["stop_reason"],
-        null_family=None,
-        transition="fallback_required",
-        arms_classified=False,
+    formal = Path("artifacts/acc_entropy/pressure_metric_formal150_censor_null.json")
+    obj = json.loads(formal.read_text())
+    ok = validate_control_baseline_bind(
+        obj, expected_sha256=FORMAL150_CONTROL_SHA256, actual_sha256=FORMAL150_CONTROL_SHA256
     )
-    assert out["family"] is None
-    assert out["authoritative"] is False
-    assert out["arms_classified"] is False
-    assert out["stop_reason"] == "phase0_censor_uncleared_fallback_required"
-    assert out["transition"] == "fallback_required"
-
-    # Uncleared 600 w/ failed-150 pred → design_null authoritative
-    failed = _valid_phase0_receipt(lcf=0.55, steps=150)
-    p0b = validate_phase0_receipt_for_aggregate(
-        _valid_phase0_receipt(lcf=0.6, steps=600),
-        phase0_predecessor_receipt=failed,
+    assert ok["ok"] is True and ok["action"] == "ok"
+    missing = validate_control_baseline_bind(None, expected_sha256="x")
+    assert missing["action"] == "stop"
+    sha_bad = validate_control_baseline_bind(
+        obj, expected_sha256="0" * 64, actual_sha256=FORMAL150_CONTROL_SHA256
     )
-    d2 = decide_phase0_aggregate_transition(p0b)
-    assert d2["action"] == "design_null_censor_unreducible"
-    assert d2["authoritative"] is True
-    out2 = build_phase1_terminal_receipt(
-        phase0_censor_cleared=False,
-        control_receipt={},
-        arm_receipts={},
-        plan_sha256="x",
-        authority_dispatch="y",
-        authoritative=True,
-        force_null_reason=d2["stop_reason"],
-        null_family=FAMILY_F4,
-        transition="design_null_censor_unreducible",
-        arms_classified=False,
+    assert sha_bad["action"] == "stop" and sha_bad["reason"] == "control_baseline_sha_mismatch"
+    field_bad = validate_control_baseline_bind(
+        {**obj, "batch": 1},
+        expected_sha256=FORMAL150_CONTROL_SHA256,
+        actual_sha256=FORMAL150_CONTROL_SHA256,
     )
-    assert out2["family"] == FAMILY_F4
-    assert out2["authoritative"] is True
-    assert out2["stop_reason"] == "design_null_censor_unreducible"
-    assert out2["arms_classified"] is False
-
-    # Cleared → enter_phase1
-    p0c = validate_phase0_receipt_for_aggregate(_valid_phase0_receipt(lcf=0.1, steps=150))
-    d3 = decide_phase0_aggregate_transition(p0c)
-    assert d3["action"] == "enter_phase1"
-    assert d3["authoritative"] is True
-
+    assert field_bad["action"] == "stop"
+    for vv in (missing, sha_bad, field_bad):
+        out = build_v10_terminal_receipt(
+            control_bind=vv, arm_receipts={}, plan_sha256="x", authority_dispatch="y"
+        )
+        assert out["family"] == FAMILY_F4
+        assert out["transition"] is None
+        assert out["arms_classified"] is False
+        assert out.get("stop_reason") not in {
+            "phase0_censor_uncleared_fallback_required",
+            "design_null_censor_unreducible",
+        }
 
 def test_arm_route_integrity_fail_closed():
     from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (
@@ -1210,220 +1129,131 @@ def _formal_arm(arm, **kwargs):
         DEFAULT_PLAN_SHA256,
     )
 
-    return _contract_arm(
-        arm,
-        plan=DEFAULT_PLAN_SHA256,
-        parent=DEFAULT_PARENT_SHA256,
-        **kwargs,
-    )
+    kwargs.setdefault("plan", DEFAULT_PLAN_SHA256)
+    kwargs.setdefault("parent", DEFAULT_PARENT_SHA256)
+    return _contract_arm(arm, **kwargs)
 
 
 def test_run_aggregate_phase1_e2e_wiring(tmp_path):
-    """Commit-durable wiring: invoke _run_aggregate_phase1, not reducers alone."""
+    """(a) REWRITE/MOVE live coverage → CONTROL_BASELINE_BIND + v10 path.
+
+    Must NOT assert live fallback_required / design_null_censor_unreducible.
+    Full CLI wiring suite lives in test_forgetting_screen_v10_contract.py;
+    this stub proves the old symbol no longer encodes PLAN_v9 authority.
+    """
     import argparse
     import json
+    from pathlib import Path
 
     from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (
-        ARM0,
-        ARM1,
-        ARM2,
-        ARM3,
-        FAMILY_F3,
-        FAMILY_F4,
+        ARM1, ARM2, ARM3, FORMAL150_CONTROL_SHA256,
+    )
+    from calm.hrm_text_158.native_full_stack.screen_receipt_output import (
+        AUTHORITY_DISPATCH,
+        PLAN_SHA256,
     )
 
     mod = _load_screen_module()
-    run = mod._run_aggregate_phase1
-
-    # (a) uncleared-150 + arms -> fallback_required; arms NOT classified
-    p0_unc = tmp_path / "p0_unc150.json"
-    _write_json(p0_unc, _valid_phase0_receipt(lcf=0.55, steps=150))
+    formal = Path("artifacts/acc_entropy/pressure_metric_formal150_censor_null.json")
     arm_paths = []
-    for arm, H in (
-        (ARM0, 1.5),
-        (ARM1, 0.8),
-        (ARM2, 0.7),
-        (ARM3, 0.2),
-    ):
-        r = _formal_arm(arm)
-        r["measurements"]["H_bits_per_weight"] = H
+    for arm in (ARM1, ARM2, ARM3):
+        r = _formal_arm(
+            arm,
+            plan=PLAN_SHA256,
+            authority=AUTHORITY_DISPATCH,
+        )
+        r["measurements"]["H_bits_per_weight"] = 2.0
+        r["measurements"]["demand"] = {
+            "mean_ratio": 1.0,
+            "max_ratio": 2.0,
+            "frac_steps_ratio_ge_2": 0.2,
+            "n_steps": 150,
+        }
+        r["measurements"]["deferred_survival"] = {
+            "N_events_evaluable": 1000,
+            "N_survived_applied_within_H": 400,
+            "N_never_applied_within_H": 600,
+            "N_events_censored_insufficient_followup": 10,
+            "N_events_evaluable_early": 500,
+            "N_events_evaluable_late": 500,
+            "N_never_applied_within_H_early": 350,
+            "N_never_applied_within_H_late": 250,
+            "deferred_never_apply_within_H_frac": 0.6,
+            "deferred_never_apply_within_H_frac_early": 0.7,
+            "deferred_never_apply_within_H_frac_late": 0.5,
+            "delta_never_apply": -0.2,
+            "deferred_survival_class": "collapsing",
+        }
+        r["probes"]["retention_ok"] = True
+        r["probes"]["acq_delta_count"] = 1
         ap = tmp_path / f"{arm}.json"
         _write_json(ap, r)
         arm_paths.append(str(ap))
-    out_a = tmp_path / "out_a.json"
+    out = tmp_path / "out_v10.json"
     ns = argparse.Namespace(
-        phase0_receipt=str(p0_unc),
-        phase0_predecessor_receipt=None,
-        phase0_censor_cleared=None,
+        control_baseline_json=str(formal),
+        control_baseline_sha256=FORMAL150_CONTROL_SHA256,
         arm_receipts=",".join(arm_paths),
-        output_json=str(out_a),
-    )
-    assert run(ns) == 0
-    rec_a = json.loads(out_a.read_text())
-    assert rec_a["transition"] == "fallback_required"
-    assert rec_a["authoritative"] is False
-    assert rec_a["arms_classified"] is False
-    assert rec_a["family"] is None
-    assert rec_a.get("phase0_proof", {}).get("arms_rejected") is True
-    assert rec_a["source_arm_receipts"] == []
-
-    # (b) failed-150 predecessor -> uncleared-600, NO arms -> auth F4
-    p0_fail150 = tmp_path / "p0_fail150.json"
-    p0_unc600 = tmp_path / "p0_unc600.json"
-    _write_json(p0_fail150, _valid_phase0_receipt(lcf=0.55, steps=150))
-    _write_json(p0_unc600, _valid_phase0_receipt(lcf=0.60, steps=600))
-    out_b = tmp_path / "out_b.json"
-    ns_b = argparse.Namespace(
-        phase0_receipt=str(p0_unc600),
-        phase0_predecessor_receipt=str(p0_fail150),
-        phase0_censor_cleared=None,
-        arm_receipts=None,
-        output_json=str(out_b),
-    )
-    assert run(ns_b) == 0
-    rec_b = json.loads(out_b.read_text())
-    assert rec_b["authoritative"] is True
-    assert rec_b["family"] == FAMILY_F4
-    assert rec_b["stop_reason"] == "design_null_censor_unreducible"
-    assert rec_b["transition"] == "design_null_censor_unreducible"
-    assert rec_b["arms_classified"] is False
-
-    # (c) cleared-150 WITHOUT arms -> fail (arms required)
-    p0_clr = tmp_path / "p0_clr150.json"
-    _write_json(p0_clr, _valid_phase0_receipt(lcf=0.1, steps=150))
-    out_c = tmp_path / "out_c.json"
-    ns_c = argparse.Namespace(
-        phase0_receipt=str(p0_clr),
+        output_json=str(out),
+        phase0_receipt=None,
         phase0_predecessor_receipt=None,
         phase0_censor_cleared=None,
-        arm_receipts=None,
-        output_json=str(out_c),
+    )
+    assert mod._run_aggregate_phase1(ns) == 0
+    rec = json.loads(out.read_text())
+    assert rec["screen"] == "forgetting_mechanism_phase1/v10"
+    assert rec["control_baseline_ok"] is True
+    assert rec["transition"] is None
+    assert rec["control_arm0_receipt_present"] is False
+    assert rec["stop_reason"] not in {
+        "phase0_censor_uncleared_fallback_required",
+        "design_null_censor_unreducible",
+    }
+    # Legacy flags hard-refuse
+    ns_legacy = argparse.Namespace(
+        control_baseline_json=str(formal),
+        control_baseline_sha256=FORMAL150_CONTROL_SHA256,
+        arm_receipts=",".join(arm_paths),
+        output_json=str(tmp_path / "x.json"),
+        phase0_receipt=str(tmp_path / "p0.json"),
+        phase0_predecessor_receipt=None,
+        phase0_censor_cleared=None,
     )
     try:
-        run(ns_c)
-        assert False, "expected SystemExit for missing arms on cleared path"
+        mod._run_aggregate_phase1(ns_legacy)
+        assert False, "expected HARD-REFUSE"
     except SystemExit as e:
-        assert "arm-receipts required" in str(e).lower() or "required" in str(e).lower()
-    assert not out_c.exists()
-
-    # (d) cleared-150 + route-invalid arm -> SystemExit
-    bad_arms = []
-    for arm, H in (
-        (ARM0, 1.5),
-        (ARM1, 0.8),
-        (ARM2, 0.7),
-        (ARM3, 0.2),
-    ):
-        r = _formal_arm(arm, n_fixed=(0 if arm == ARM2 else 10))
-        r["measurements"]["H_bits_per_weight"] = H
-        if arm == ARM1:
-            r["correctness_smoke"] = True  # also invalid; either fail is fine
-        ap = tmp_path / f"bad_{arm}.json"
-        _write_json(ap, r)
-        bad_arms.append(str(ap))
-    # Use only n_fixed==0 on ARM2 (clearer single defect); reset smoke
-    bad_arms = []
-    for arm, H in (
-        (ARM0, 1.5),
-        (ARM1, 0.8),
-        (ARM2, 0.7),
-        (ARM3, 0.2),
-    ):
-        r = _formal_arm(arm, n_fixed=(0 if arm == ARM2 else 10))
-        r["measurements"]["H_bits_per_weight"] = H
-        ap = tmp_path / f"bad2_{arm}.json"
-        _write_json(ap, r)
-        bad_arms.append(str(ap))
-    out_d = tmp_path / "out_d.json"
-    ns_d = argparse.Namespace(
-        phase0_receipt=str(p0_clr),
-        phase0_predecessor_receipt=None,
-        phase0_censor_cleared=None,
-        arm_receipts=",".join(bad_arms),
-        output_json=str(out_d),
-    )
-    try:
-        run(ns_d)
-        assert False, "expected SystemExit for route-invalid arm"
-    except SystemExit as e:
-        msg = str(e).lower()
-        assert "contract" in msg or "n_fixed" in msg or "fail-closed" in msg
-
-    # Happy path sanity: cleared-150 + valid arms -> authoritative family (not null wiring)
-    good_arms = []
-    for arm, H in (
-        (ARM0, 1.5),
-        (ARM1, 0.9),
-        (ARM2, 0.85),
-        (ARM3, 0.2),  # best H_progress -> F3
-    ):
-        r = _formal_arm(arm)
-        r["measurements"]["H_bits_per_weight"] = H
-        r["measurements"]["n_flips"] = 5000
-        r["measurements"]["q_changed_count"] = 200
-        r["measurements"]["n_applied_drains"] = 10000
-        r["measurements"]["lifetime_censored_frac"] = 0.1
-        ap = tmp_path / f"good_{arm}.json"
-        _write_json(ap, r)
-        good_arms.append(str(ap))
-    out_ok = tmp_path / "out_ok.json"
-    ns_ok = argparse.Namespace(
-        phase0_receipt=str(p0_clr),
-        phase0_predecessor_receipt=None,
-        phase0_censor_cleared=None,
-        arm_receipts=",".join(good_arms),
-        output_json=str(out_ok),
-    )
-    assert run(ns_ok) == 0
-    rec_ok = json.loads(out_ok.read_text())
-    assert rec_ok["authoritative"] is True
-    assert rec_ok["arms_classified"] is True
-    assert rec_ok["family"] == FAMILY_F3
-
+        assert "HARD-REFUSE" in str(e)
 
 def test_failed_600_f4_aggregate_strict_json_no_nan():
-    """No-arm authoritative F4 must be strict-JSON (null, never IEEE NaN)."""
+    """HISTORICAL_PLAN_v9_NON_AUTHORITY (b) DEMOTE.
+
+    Retains strict-JSON sanitize characterization for no-arm F4 payloads.
+    Does NOT assert 600-censor / design_null_censor_unreducible as live v10 authority.
+    """
     import json
     import math
 
     from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (
         FAMILY_F4,
-        build_phase1_terminal_receipt,
-        decide_phase0_aggregate_transition,
+        build_v10_terminal_receipt,
         sanitize_receipt_for_strict_json,
-        validate_phase0_receipt_for_aggregate,
     )
 
-    pred = _valid_phase0_receipt(lcf=0.55, steps=150)
-    p0 = validate_phase0_receipt_for_aggregate(
-        _valid_phase0_receipt(lcf=0.55, steps=600),
-        phase0_predecessor_receipt=pred,
-    )
-    d = decide_phase0_aggregate_transition(p0)
-    assert d["action"] == "design_null_censor_unreducible"
-    assert d["authoritative"] is True
-    receipt = build_phase1_terminal_receipt(
-        phase0_censor_cleared=False,
-        control_receipt={},
+    receipt = build_v10_terminal_receipt(
+        control_bind={"ok": False, "reason": "control_baseline_missing", "action": "stop"},
         arm_receipts={},
         plan_sha256="07a02aff",
         authority_dispatch="1784812148229-f466bc29",
-        authoritative=True,
-        force_null_reason=d["stop_reason"],
-        null_family=FAMILY_F4,
-        transition="design_null_censor_unreducible",
-        arms_classified=False,
+        force_null_reason="control_baseline_missing",
     )
     assert receipt["arms_classified"] is False
-    assert receipt["H_control_final"] is None
-    for arm_m in receipt["arm_metrics"].values():
-        assert arm_m["H_final"] is None
-        assert not isinstance(arm_m["H_final"], float) or not math.isnan(arm_m["H_final"])
-
+    assert receipt["family"] == FAMILY_F4
+    # Inject a NaN then sanitize — historical strict-JSON guard.
+    receipt["H_control_final"] = float("nan")
     payload = sanitize_receipt_for_strict_json(receipt)
     dumped = json.dumps(payload, allow_nan=False)
-    assert "NaN" not in dumped
-    assert "Infinity" not in dumped
+    assert "NaN" not in dumped and "Infinity" not in dumped
 
     def _reject_constant(c):
         raise ValueError(f"non-standard JSON constant: {c}")
@@ -1431,4 +1261,3 @@ def test_failed_600_f4_aggregate_strict_json_no_nan():
     roundtrip = json.loads(dumped, parse_constant=_reject_constant)
     assert roundtrip["H_control_final"] is None
     assert roundtrip["family"] == FAMILY_F4
-    assert roundtrip["stop_reason"] == "design_null_censor_unreducible"

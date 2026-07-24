@@ -1,16 +1,14 @@
-"""Forgetting-mechanism screen — thin CLI facade (PLAN_v9 / r6b).
+"""Forgetting-mechanism screen — thin CLI facade (PLAN_v10r4).
 
-Bound by PLAN_v9 sha 07a02aff… + authority 1784812148229 + +1 implement 1784812700643
-+ defect-cycle completion + r6b/r6c runner thinning.
+Bound by frozen PLAN_v10r4 msg 1784890890052 + +1 1784891014883
++ sixth-path amendment 1784891334017 + defect-cycle 1784892185413.
 
-Train/probe/receipt: screen_run_loop shim -> model_runtime / execution_loop / receipt_output.
-Phase-1 aggregate orchestration stays here (CLI/IO + state-machine wiring only;
-validators live in phase_receipt_contracts).
+Train/probe/receipt: screen_run_loop shim.
+Aggregate: pin formal-150 control + exactly 3 mechanism receipts (F1/F2/F3).
 
-Developer checks: py_compile, CPU-static tests, --schema-only smoke,
-vote_lifetime nonregression, --aggregate-phase1 dry orchestration.
-Formal 1-step GPU --correctness-smoke and Phase-0/1 science runs are
-claude/test-operator (not plan-dev).
+Legacy flags --phase0-receipt / --phase0-predecessor-receipt /
+    --phase0-censor-cleared HARD-REFUSE under v10.
+--control-baseline-json + --control-baseline-sha256 MANDATORY on aggregate.
 """
 from __future__ import annotations
 
@@ -30,15 +28,16 @@ from calm.hrm_text_158.native_full_stack.family_classifier import (  # noqa: E40
     ARM1,
     ARM2,
     ARM3,
-    FAMILY_F4,
+)
+from calm.hrm_text_158.native_full_stack.forgetting_mechanism_screen_reducers import (  # noqa: E402
+    FORMAL150_CONTROL_SHA256,
+    V10ArmReceiptContractError,
+    build_v10_terminal_receipt,
+    pin_and_load_formal_control_baseline,
+    validate_three_mechanism_arm_receipts_v10,
 )
 from calm.hrm_text_158.native_full_stack.phase_receipt_contracts import (  # noqa: E402
-    ArmReceiptContractError,
-    build_phase1_terminal_receipt,
-    decide_phase0_aggregate_transition,
     sanitize_receipt_for_strict_json,
-    validate_phase0_receipt_for_aggregate,
-    validate_shared_held_fixed_arm_receipts,
 )
 from calm.hrm_text_158.native_full_stack.screen_run_loop import (  # noqa: E402
     AUTHORITY_DISPATCH,
@@ -60,19 +59,52 @@ __all__ = [
     "COMMIT_SURFACE_FILES",
 ]
 
+_LEGACY_PHASE0_FLAGS = (
+    "phase0_receipt",
+    "phase0_predecessor_receipt",
+    "phase0_censor_cleared",
+)
 
-def _load_arm_receipts(arm_receipts_arg: str | None) -> tuple[list[str], dict[str, Any], dict[str, str]]:
-    """Load exactly 4 arm receipts. Raises SystemExit on bad input."""
+
+def _refuse_legacy_phase0_flags(args: argparse.Namespace) -> None:
+    present = [
+        name
+        for name in _LEGACY_PHASE0_FLAGS
+        if getattr(args, name, None) not in (None, "")
+    ]
+    if present:
+        raise SystemExit(
+            "HARD-REFUSE under PLAN_v10: legacy Phase-0 flags not accepted: "
+            + ", ".join(f"--{n.replace('_', '-')}" for n in present)
+        )
+
+
+def _require_control_baseline(args: argparse.Namespace) -> None:
+    if not getattr(args, "control_baseline_json", None):
+        raise SystemExit(
+            "FAIL-CLOSED: --control-baseline-json is mandatory on "
+            "--aggregate-phase1 / v10 classification paths"
+        )
+    if not getattr(args, "control_baseline_sha256", None):
+        raise SystemExit(
+            "FAIL-CLOSED: --control-baseline-sha256 is mandatory on "
+            "--aggregate-phase1 / v10 classification paths"
+        )
+
+
+def _load_mechanism_receipts(
+    arm_receipts_arg: str | None,
+) -> tuple[list[str], dict[str, Any], dict[str, str]]:
     if not arm_receipts_arg:
         raise SystemExit(
-            "--arm-receipts required on cleared Phase-0 path "
-            "(exactly 4 comma-separated arm0,arm1,arm2,arm3 receipts)"
+            "--arm-receipts required on v10 classify path "
+            "(exactly 3 comma-separated arm1,arm2,arm3 mechanism receipts)"
         )
     paths = [p.strip() for p in str(arm_receipts_arg).split(",") if p.strip()]
-    if len(paths) != 4:
+    if len(paths) != 3:
         raise SystemExit(
-            "--arm-receipts requires exactly 4 comma-separated arm receipts "
-            "(arm0,arm1,arm2,arm3)"
+            "--arm-receipts requires exactly 3 comma-separated mechanism receipts "
+            "(arm1,arm2,arm3); formal-150 artifact is the sole control"
         )
     loaded = []
     source_shas: dict[str, str] = {}
@@ -83,199 +115,44 @@ def _load_arm_receipts(arm_receipts_arg: str | None) -> tuple[list[str], dict[st
         loaded.append(r)
         source_shas[str(r.get("arm", p))] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     by_arm = {str(r.get("arm")): r for r in loaded}
-    for need in (ARM0, ARM1, ARM2, ARM3):
+    for need in (ARM1, ARM2, ARM3):
         if need not in by_arm:
             raise SystemExit(f"missing arm receipt for {need} among {list(by_arm)}")
     return paths, by_arm, source_shas
 
 
 def _run_aggregate_phase1(args: argparse.Namespace) -> int:
-    """Orchestration: Phase-0 state machine first, then optional Phase-1 arms.
+    """v10 aggregate: pin formal control, then classify three mechanism arms."""
+    _refuse_legacy_phase0_flags(args)
+    _require_control_baseline(args)
 
-    Formal path requires a validated Phase-0 receipt (fail-closed). Synthetic
-    `--phase0-censor-cleared` is dry/test-only and marks the receipt
-    non-authoritative; it cannot substitute for Phase-0 proof on the formal path.
-
-    Arm receipts are required ONLY on the cleared Phase-0 → Phase-1 path.
-    """
-    # --- Phase-0 proof FIRST (fail-closed) ---
-    synthetic = False
-    phase0_proof_meta: dict[str, Any] = {}
-    p0_obj = None
-    p0_pred_obj = None
-    if args.phase0_receipt:
-        with open(args.phase0_receipt, encoding="utf-8") as f:
-            p0_raw = f.read()
-        p0_obj = json.loads(p0_raw)
-        phase0_proof_meta["phase0_receipt_sha256"] = hashlib.sha256(
-            p0_raw.encode("utf-8")
-        ).hexdigest()
-        phase0_proof_meta["phase0_receipt_path"] = str(args.phase0_receipt)
-    elif args.phase0_censor_cleared is not None:
-        synthetic = True
-        phase0_proof_meta["synthetic_phase0_override"] = True
-        phase0_proof_meta["synthetic_value"] = int(args.phase0_censor_cleared)
-
-    if getattr(args, "phase0_predecessor_receipt", None):
-        with open(args.phase0_predecessor_receipt, encoding="utf-8") as f:
-            pred_raw = f.read()
-        p0_pred_obj = json.loads(pred_raw)
-        phase0_proof_meta["phase0_predecessor_receipt_sha256"] = hashlib.sha256(
-            pred_raw.encode("utf-8")
-        ).hexdigest()
-        phase0_proof_meta["phase0_predecessor_receipt_path"] = str(
-            args.phase0_predecessor_receipt
-        )
-
-    p0_val = validate_phase0_receipt_for_aggregate(
-        p0_obj,
-        phase0_predecessor_receipt=p0_pred_obj,
+    control_bind = pin_and_load_formal_control_baseline(
+        args.control_baseline_json,
+        supplied_sha256=str(args.control_baseline_sha256),
     )
-    phase0_proof_meta.update(p0_val)
-
-    arms_arg = getattr(args, "arm_receipts", None)
-    arms_supplied = bool(arms_arg and str(arms_arg).strip())
-
-    if p0_obj is None and not synthetic:
-        if arms_supplied:
-            raise SystemExit(
-                "arm receipts supplied without Phase-0 proof "
-                "(contract violation — evaluate Phase-0 first)"
-            )
-        receipt = build_phase1_terminal_receipt(
-            phase0_censor_cleared=False,
-            control_receipt={},
+    if not control_bind.get("ok"):
+        receipt = build_v10_terminal_receipt(
+            control_bind=control_bind,
             arm_receipts={},
             plan_sha256=PLAN_SHA256,
             authority_dispatch=AUTHORITY_DISPATCH,
-            phase0_proof=phase0_proof_meta,
-            authoritative=False,
-            synthetic_phase0_override=False,
-            force_null_reason="phase0_proof_missing",
-            null_family=FAMILY_F4,
-            arms_classified=False,
+            force_null_reason=str(control_bind.get("reason") or "control_baseline_not_ok"),
         )
         return _write_phase1(args, receipt, [])
 
-    if synthetic and p0_obj is None:
-        # Dry/test-only synthetic path still needs arms to exercise classifier.
-        paths, by_arm, source_shas = _load_arm_receipts(arms_arg)
-        phase0_cleared = bool(args.phase0_censor_cleared)
-        try:
-            shared = validate_shared_held_fixed_arm_receipts(
-                by_arm,
-                expected_plan_sha256=PLAN_SHA256,
-                expected_parent_sha256=EXPECTED_PARENT_SHA256,
-                expected_authority_dispatch=AUTHORITY_DISPATCH,
-            )
-        except ArmReceiptContractError as e:
-            raise SystemExit(f"arm receipt contract fail-closed: {e}") from e
-        receipt = build_phase1_terminal_receipt(
-            phase0_censor_cleared=phase0_cleared,
-            control_receipt=by_arm[ARM0],
-            arm_receipts={
-                ARM1: by_arm[ARM1],
-                ARM2: by_arm[ARM2],
-                ARM3: by_arm[ARM3],
-            },
-            plan_sha256=PLAN_SHA256,
-            authority_dispatch=AUTHORITY_DISPATCH,
-            phase0_proof=phase0_proof_meta,
-            source_receipt_sha256s=source_shas,
-            shared_contract=shared,
-            authoritative=False,
-            synthetic_phase0_override=True,
-            force_null_reason=(None if phase0_cleared else "phase0_censor_uncleared"),
-        )
-        return _write_phase1(args, receipt, paths)
-
-    # Formal Phase-0 present — state machine.
-    decision = decide_phase0_aggregate_transition(p0_val)
-
-    if decision["action"] == "malformed":
-        if arms_supplied:
-            raise SystemExit(
-                "arm receipts supplied with malformed Phase-0 proof "
-                "(contract violation)"
-            )
-        receipt = build_phase1_terminal_receipt(
-            phase0_censor_cleared=False,
-            control_receipt={},
-            arm_receipts={},
-            plan_sha256=PLAN_SHA256,
-            authority_dispatch=AUTHORITY_DISPATCH,
-            phase0_proof=phase0_proof_meta,
-            authoritative=False,
-            synthetic_phase0_override=False,
-            force_null_reason=str(decision["stop_reason"]),
-            null_family=FAMILY_F4,
-            transition=decision.get("transition"),
-            arms_classified=False,
-        )
-        return _write_phase1(args, receipt, [])
-
-    if decision["action"] == "fallback_required":
-        # Uncleared 150 → transition; do NOT classify arms (even if supplied).
-        if arms_supplied:
-            phase0_proof_meta["arms_supplied_without_cleared_gate"] = True
-            phase0_proof_meta["arms_rejected"] = True
-        receipt = build_phase1_terminal_receipt(
-            phase0_censor_cleared=False,
-            control_receipt={},
-            arm_receipts={},
-            plan_sha256=PLAN_SHA256,
-            authority_dispatch=AUTHORITY_DISPATCH,
-            phase0_proof=phase0_proof_meta,
-            authoritative=False,
-            synthetic_phase0_override=False,
-            force_null_reason="phase0_censor_uncleared_fallback_required",
-            null_family=None,
-            transition="fallback_required",
-            arms_classified=False,
-        )
-        return _write_phase1(args, receipt, [])
-
-    if decision["action"] == "design_null_censor_unreducible":
-        # Failed 600 fallback → authoritative design-null; no Phase-1 arms.
-        if arms_supplied:
-            raise SystemExit(
-                "arm receipts supplied on uncleared Phase-0b path "
-                "(design_null_censor_unreducible forbids Phase-1 arms)"
-            )
-        receipt = build_phase1_terminal_receipt(
-            phase0_censor_cleared=False,
-            control_receipt={},
-            arm_receipts={},
-            plan_sha256=PLAN_SHA256,
-            authority_dispatch=AUTHORITY_DISPATCH,
-            phase0_proof=phase0_proof_meta,
-            authoritative=True,
-            synthetic_phase0_override=False,
-            force_null_reason="design_null_censor_unreducible",
-            null_family=FAMILY_F4,
-            transition="design_null_censor_unreducible",
-            arms_classified=False,
-        )
-        return _write_phase1(args, receipt, [])
-
-    # Cleared Phase-0/0b → require arms + classify.
-    assert decision["action"] == "enter_phase1"
-    paths, by_arm, source_shas = _load_arm_receipts(arms_arg)
+    paths, by_arm, source_shas = _load_mechanism_receipts(getattr(args, "arm_receipts", None))
     try:
-        shared = validate_shared_held_fixed_arm_receipts(
+        shared = validate_three_mechanism_arm_receipts_v10(
             by_arm,
             expected_plan_sha256=PLAN_SHA256,
             expected_parent_sha256=EXPECTED_PARENT_SHA256,
             expected_authority_dispatch=AUTHORITY_DISPATCH,
-            expected_steps=int(p0_val["steps"]),
-            phase0_receipt=p0_obj,
         )
-    except ArmReceiptContractError as e:
+    except V10ArmReceiptContractError as e:
         raise SystemExit(f"arm receipt contract fail-closed: {e}") from e
 
-    receipt = build_phase1_terminal_receipt(
-        phase0_censor_cleared=True,
-        control_receipt=by_arm[ARM0],
+    receipt = build_v10_terminal_receipt(
+        control_bind=control_bind,
         arm_receipts={
             ARM1: by_arm[ARM1],
             ARM2: by_arm[ARM2],
@@ -283,13 +160,10 @@ def _run_aggregate_phase1(args: argparse.Namespace) -> int:
         },
         plan_sha256=PLAN_SHA256,
         authority_dispatch=AUTHORITY_DISPATCH,
-        phase0_proof=phase0_proof_meta,
-        source_receipt_sha256s=source_shas,
-        shared_contract=shared,
-        authoritative=True,
-        synthetic_phase0_override=False,
-        arms_classified=True,
     )
+    receipt["source_receipt_sha256s"] = source_shas
+    receipt["shared_contract"] = shared
+    receipt["control_arm0_receipt_present"] = False
     return _write_phase1(args, receipt, paths)
 
 
@@ -303,12 +177,11 @@ def _write_phase1(args: argparse.Namespace, receipt: dict, paths: list[str]) -> 
     with open(out, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, allow_nan=False)
     print(
-        f"[forget-mech] phase1 aggregate -> {out} family={receipt['family']} "
+        f"[forget-mech] v10 aggregate -> {out} family={receipt['family']} "
         f"reason={receipt['stop_reason']} authoritative={receipt.get('authoritative')}",
         flush=True,
     )
     return 0
-
 
 
 def main() -> int:
@@ -320,7 +193,14 @@ def main() -> int:
     ap.add_argument("--topk", type=int, default=TOPK_PER_STEP)
     ap.add_argument("--arm", default=ARM0)
     ap.add_argument("--output-json", default=None)
-    ap.add_argument("--schema-only", action="store_true")
+    ap.add_argument(
+        "--schema-only",
+        action="store_true",
+        help=(
+            "Shape/schema smoke only — does NOT perform control-bind or "
+            "v10 classification; cannot bypass the control validator."
+        ),
+    )
     ap.add_argument("--correctness-smoke", action="store_true")
     ap.add_argument(
         "--skip-probes",
@@ -330,45 +210,52 @@ def main() -> int:
     ap.add_argument(
         "--aggregate-phase1",
         action="store_true",
-        help="Aggregate 4 arm receipts into forgetting_mechanism_phase1_receipt.json",
+        help="Aggregate 3 mechanism receipts under pinned formal-150 control (PLAN_v10).",
     )
     ap.add_argument(
         "--arm-receipts",
         default=None,
-        help=(
-            "Comma-separated arm0,arm1,arm2,arm3 receipt paths. Required only on "
-            "cleared Phase-0 → Phase-1 path; forbidden/ignored on uncleared transitions."
-        ),
+        help="Comma-separated arm1,arm2,arm3 receipt paths (required on classify).",
     )
-    ap.add_argument("--phase0-receipt", default=None)
     ap.add_argument(
-        "--phase0-predecessor-receipt",
+        "--control-baseline-json",
+        default=None,
+        help="Path to formal-150 control baseline JSON (MANDATORY on aggregate).",
+    )
+    ap.add_argument(
+        "--control-baseline-sha256",
         default=None,
         help=(
-            "Required when Phase-0 receipt steps==600 (fallback-once): hash-bound "
-            "failed 150-step predecessor (lcf>=0.50, full provenance+geometry)."
+            "Must equal FORMAL150_CONTROL_SHA256 (pinned; not operator-selectable). "
+            f"Formal: {FORMAL150_CONTROL_SHA256}"
         ),
     )
+    # Legacy Phase-0 flags retained ONLY so we can HARD-REFUSE if supplied.
+    ap.add_argument("--phase0-receipt", default=None, help=argparse.SUPPRESS)
+    ap.add_argument("--phase0-predecessor-receipt", default=None, help=argparse.SUPPRESS)
     ap.add_argument(
         "--phase0-censor-cleared",
         type=int,
         choices=[0, 1],
         default=None,
-        help=(
-            "DRY/TEST-ONLY synthetic Phase-0 override. Formal aggregation requires "
-            "--phase0-receipt; synthetic marks receipt non-authoritative."
-        ),
+        help=argparse.SUPPRESS,
     )
     args = ap.parse_args()
 
     if args.aggregate_phase1:
         return _run_aggregate_phase1(args)
 
+    # Refuse legacy flags on ALL entrypoints (not only aggregate).
+    _refuse_legacy_phase0_flags(args)
+
     if args.schema_only:
+        # Explicit non-authority: schema/shape only; no control-bind claim.
         return run_schema_only(args)
 
     if not args.ckpt_path:
-        raise SystemExit("--ckpt-path is required unless --schema-only/--aggregate-phase1")
+        raise SystemExit(
+            "--ckpt-path is required unless --schema-only/--aggregate-phase1"
+        )
 
     if args.correctness_smoke:
         args.steps = 1

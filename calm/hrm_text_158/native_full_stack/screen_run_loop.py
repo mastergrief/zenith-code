@@ -1,9 +1,10 @@
-"""Thin re-export / orchestration shim for forgetting-mechanism screen (r6c).
+"""Thin re-export / orchestration shim for forgetting-mechanism screen.
 
 Keeps public names stable for the CLI + tests. Owns only the glue that wires:
   screen_model_runtime -> screen_execution_loop -> screen_receipt_output
 
-Lower seams own the real concerns. Bound by PLAN_v9 sha 07a02aff….
+Lower seams own the real concerns. Bound by PLAN_v10 identity from
+screen_receipt_output (PLAN_SHA256 / AUTHORITY_DISPATCH).
 """
 from __future__ import annotations
 
@@ -90,6 +91,16 @@ def run_arm_screen(args: argparse.Namespace) -> int:
         for q, e in rows
     ]
 
+    # Accepted DeviceLifecycleStore / R1 observer — required for compact R1 surface.
+    from calm.hrm_text_158.native_full_stack.pressure_metric_gpu_lifecycle_derisk import (
+        DeviceLifecycleStore,
+    )
+
+    pressure_store = DeviceLifecycleStore.from_arm_shapes(
+        {n: tuple(q.shape) for n, q in q_levels.items()},
+        steps=int(args.steps),
+        device=device if str(device).startswith("cuda") else "cpu",
+    )
     loop_out = run_train_loop(
         m=m,
         tok=tok,
@@ -104,6 +115,7 @@ def run_arm_screen(args: argparse.Namespace) -> int:
         max_seq_len=max_seq_len,
         device=device,
         correctness_smoke=bool(args.correctness_smoke),
+        pressure_telemetry=pressure_store,
     )
 
     acq_final = ret_final = None

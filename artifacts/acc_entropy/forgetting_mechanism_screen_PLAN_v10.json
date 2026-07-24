@@ -1,0 +1,52 @@
+{
+  "control_baseline": {
+    "c2_key_count": 27,
+    "geometry_top_level": {
+      "arm": "arm0_coupled_q_no_forget",
+      "batch": 8,
+      "steps": 150,
+      "telemetry": true,
+      "topk": 1024
+    },
+    "paired_proof_device": "cuda:0",
+    "path": "artifacts/acc_entropy/pressure_metric_formal150_censor_null.json",
+    "seed0_authority": "inherited_from_artifact_sha_and_paired_proof_seed_discipline",
+    "sha256": "5e593454f0ddffb946692e09913da5df1ddfe0f2f11aaaf3fb663a2f00fbcfdb"
+  },
+  "control_baseline_flags": "mandatory_on_aggregate_classify_pinned_to_FORMAL150_CONTROL_SHA256",
+  "defect_cycle_authorization_msg_id": "1784892185413-a4f0e9bb",
+  "defect_cycle_r2_dispatch_msg_id": "1784893417123-0300fdf7",
+  "plan_sha256_binding": "frozen_constant_in_screen_receipt_output_PLAN_SHA256_updated_same_edit_no_self_ref_in_plan_json",
+  "explicit_non_claims": [
+    "implementation readiness only",
+    "no forgetting-law ship",
+    "no sub-2 / representation-limit / stability claim",
+    "lcf never Phase-0/G0 stop under v10"
+  ],
+  "file_surface": [
+    "artifacts/acc_entropy/forgetting_mechanism_screen_PLAN_v10.json",
+    "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py",
+    "calm/hrm_text_158/native_full_stack/forgetting_screen_v10_contract.py",
+    "scripts/hrm_text_158_forgetting_mechanism_screen.py",
+    "calm/hrm_text_158/tests/test_forgetting_screen_v10_contract.py",
+    "calm/hrm_text_158/tests/test_forgetting_mechanism_screen_reducers.py",
+    "calm/hrm_text_158/native_full_stack/screen_run_loop.py",
+    "calm/hrm_text_158/native_full_stack/screen_receipt_output.py"
+  ],
+  "file_surface_authority": [
+    "sixth_path_amendment_1784891334017",
+    "defect_cycle_1784892185413_bounded_producer_receipt_expansion",
+    "defect_cycle_r2_1784893417123"
+  ],
+  "frozen_plan_msg_id": "1784890890052-0985bf17",
+  "g0": "R1_full_surface_cohort_conservation_class_recompute_not_censor",
+  "gate2_pass_msg_id": "1784890996172-c48ff438",
+  "legacy_phase0_flags": "hard_refuse",
+  "mechanism_receipts": "exactly_three_arm1_arm2_arm3_formal150_sole_control",
+  "plan_id": "forgetting_mechanism_screen_PLAN_v10",
+  "plan_revision": "v10r4",
+  "plus1_implement_msg_id": "1784891014883-2642e659",
+  "pressure_regime_exit": "(mean_ratio < 2.0) OR (frac_steps_ratio_ge_2 < 0.50)",
+  "supersedes_plan_sha256": "07a02afff92cef7b2c6cee46a761a1e46b6b3422df911f8b4d4f63d41157e7a5",
+  "win": "H_bar_and_pressure_bar_OR_regime_exit_and_backlog_bar"
+}
