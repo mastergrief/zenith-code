@@ -1,0 +1,16 @@
+{
+  "schema": "pressure_metric_proof_contract_amendment_fork2_DRAFT/v0",
+  "status": "DRAFT_ONLY_NOT_LIVE_ENFORCED",
+  "variable": "shared_A_B_GPU_selection_entrypoint",
+  "registered_tiebreak": "abs_acc desc, flat_index asc (composite int64 key with inversion)",
+  "new_paired_baseline": {
+    "A_and_B": "both use shared GPU selection + device acc/episode path",
+    "q_levels": "remain CPU-authoritative",
+    "observer_B_only": "lifecycle trackers/aggregates attach after selection"
+  },
+  "old_cpu_baseline_proof_semantics": "NOT consumable by formal without this amendment landing in a later gated commit",
+  "plan_v6_event_semantics": "unchanged",
+  "defect_cycle": "1784844666015",
+  "source_plan": "1784843820069",
+  "implement_gate": "1784843955671"
+}
