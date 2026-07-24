@@ -169,6 +169,7 @@ def run_one_diagnostic_loop(
     warmup_enable: bool = True,
     probe_order_trace: list[str] | None = None,
     formal_mode: bool = False,
+    phase_timer: Any | None = None,
 ) -> dict[str, Any]:
     """Hot-path warmup on throwaway → load measured AFTER → coupled-q train loop."""
     if formal_mode:
@@ -266,6 +267,7 @@ def run_one_diagnostic_loop(
         device=device,
         correctness_smoke=False,
         pressure_telemetry=store,
+        phase_timer=phase_timer,
     )
     cuda_sync(device)
     wall_s = time.perf_counter() - t0

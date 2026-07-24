@@ -1,0 +1,16 @@
+# Branch-A B-only observer-cost plan v2 manifest (exact paths; drift excluded)
+# PRE immutable; POST binds pre_artifact_sha256; refused trio NOT included (untracked unless gated)
+# AUTHORIZATION (gate-1 narrow defect amendment 1784884582472): pressure_metric_warmup_runtime.py
+#   is an authorized pass-through-only phase_timer kwarg (default None) through
+#   run_one_diagnostic_loop → run_train_loop; zero other warmup_runtime behavior change.
+# POST reminted after GATE-2 BLOCK 1784885417902 with FINAL staged timer/reducer/loop sources;
+#   PRE 751fc883… FAIL-CLOSED immutable; comparison authority = PRE vs reminted POST (both timer-ON).
+6b7ac74b2d0dd537ffcc427857dc470ac2f805f739363c671cfce92bc3b97e7a  calm/hrm_text_158/native_full_stack/pressure_metric_fork2_phase_timing.py
+241c21874d2b24d202317f725aaf549a878586df8b56751b5b802f81142c9900  calm/hrm_text_158/native_full_stack/screen_execution_loop.py
+02a7e0f222a863eeaa07b57859dc4cf55a7c0596385c7fe450378cf534c828b4  calm/hrm_text_158/native_full_stack/pressure_metric_warmup_runtime.py
+c774a190cb4a4e2ee4cd5f977d76422557f93d27eeea9a9fdfd685ab87fd6b7e  calm/hrm_text_158/native_full_stack/pressure_metric_gpu_lifecycle_derisk.py
+113aec39e2a8347f8d72c0111de4d632bc7a63b002099df24271bc1601709529  scripts/hrm_text_158_fork2_b_only_live_phase_baseline.py
+816ed2664fab8bbd4f05326797f6203dd162ea5c91486ca94620cde74739621f  calm/hrm_text_158/tests/test_pressure_metric_fork2_b_only_observer.py
+751fc883fe55bec270f2af657df0ec8e54857e9e92a67cd2276ed183d87d2e3e  artifacts/acc_entropy/pressure_metric_fork2_b_only_live_phase_baseline_PRE.json
+b8d3c8fb181d789a736fedd5cb070fed06edf28394807ee776f086263ee25364  artifacts/acc_entropy/pressure_metric_fork2_b_only_live_phase_baseline_POST.json
+751fc883fe55bec270f2af657df0ec8e54857e9e92a67cd2276ed183d87d2e3e  PRE_ARTIFACT_SHA256

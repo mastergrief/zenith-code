@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any
+from typing import Any, Callable
 
 import torch
 
@@ -44,7 +44,6 @@ from calm.hrm_text_158.native_full_stack.pressure_metric_gpu_loop_bridge import 
     init_gpu_loop_residency,
     lifetimes_before_writeback,
     ordered_selection_frame,
-    predict_residual_zero,
     project_credit_shared,
     select_shared,
     writeback_shared,
@@ -58,6 +57,14 @@ from calm.hrm_text_158.native_full_stack.two_tier_threshold_semantics import (
 
 CLIP = 127
 TOPK_PER_STEP = 1024
+
+
+def _run_phase(timer: Any | None, name: str, fn: Callable[[], Any]) -> Any:
+    """Direct call when timer is None (true OFF no-op); timed wrapper only if provided."""
+    if timer is None:
+        return fn()
+    with timer.time(name):
+        return fn()
 
 
 def run_train_loop(
@@ -76,13 +83,16 @@ def run_train_loop(
     device: str,
     correctness_smoke: bool = False,
     pressure_telemetry: Any | None = None,
+    phase_timer: Any | None = None,
 ) -> dict[str, Any]:
     """Mutate q/acc/episode for `steps`; return telemetry + final state tensors.
 
     Shared A/B: residency + deterministic selection/update/writeback.
     If `pressure_telemetry` is set, run event lifecycle around pre-writeback masks.
+    `phase_timer` is diagnostic-only (default None/OFF = true no-op seams).
     """
     residency = init_gpu_loop_residency(q_levels, device=device)
+    _timer = phase_timer
 
     lifetimes: list[int] = []
     credited_mass = 0
@@ -152,52 +162,69 @@ def run_train_loop(
                     canonical=CROSSING_THRESHOLD_ABS,
                 )
             )
-            pressure_telemetry.process_pre_writeback(
-                candidate_masks=cand_masks,
-                applied_masks=masks,
-                step=step,
-                n_candidates=n_cand,
-                n_applied=n_app,
-            )
+
+            def _process_pre() -> None:
+                pressure_telemetry.process_pre_writeback(
+                    candidate_masks=cand_masks,
+                    applied_masks=masks,
+                    step=step,
+                    n_candidates=n_cand,
+                    n_applied=n_app,
+                )
+
+            _run_phase(_timer, "process_pre", _process_pre)
             if step % 25 == 0 or step == int(steps):
-                margin_traj.append(
-                    {
-                        "step": int(step),
-                        "residual_margin_pre_cap_crossers": global_margin_quantiles(
-                            residency.acc,
-                            cand_masks,
-                            threshold=CROSSING_THRESHOLD_ABS,
-                        ),
-                        "residual_margin_applied_topk": global_margin_quantiles(
-                            residency.acc,
-                            masks,
-                            threshold=CROSSING_THRESHOLD_ABS,
-                        ),
-                        "n_candidates": int(n_cand),
-                        "n_applied": int(n_app),
-                    }
-                )
-                ep_stats = active_episode_stats(
-                    residency.acc, residency.episode_start, step=step
-                )
-                episode_traj.append({"step": int(step), **ep_stats})
+
+                def _publish() -> None:
+                    margin_traj.append(
+                        {
+                            "step": int(step),
+                            "residual_margin_pre_cap_crossers": global_margin_quantiles(
+                                residency.acc,
+                                cand_masks,
+                                threshold=CROSSING_THRESHOLD_ABS,
+                            ),
+                            "residual_margin_applied_topk": global_margin_quantiles(
+                                residency.acc,
+                                masks,
+                                threshold=CROSSING_THRESHOLD_ABS,
+                            ),
+                            "n_candidates": int(n_cand),
+                            "n_applied": int(n_app),
+                        }
+                    )
+                    ep_stats = active_episode_stats(
+                        residency.acc, residency.episode_start, step=step
+                    )
+                    episode_traj.append({"step": int(step), **ep_stats})
+
+                _run_phase(_timer, "publish", _publish)
 
         # B-only: full episode_start clone before writeback mutation.
-        ep_before = (
-            {n: residency.episode_start[n].clone() for n in residency.episode_start}
-            if pressure_telemetry is not None
-            else None
-        )
+        if pressure_telemetry is not None:
+
+            def _episode_snapshot() -> dict[str, torch.Tensor]:
+                return {
+                    n: residency.episode_start[n].clone()
+                    for n in residency.episode_start
+                }
+
+            ep_before = _run_phase(_timer, "episode_snapshot", _episode_snapshot)
+        else:
+            ep_before = None
 
         if pressure_telemetry is not None:
-            residual_zero = predict_residual_zero(
-                residency, masks, threshold=CROSSING_THRESHOLD_ABS
-            )
-            pressure_telemetry.close_before_writeback_resets(
-                applied_masks=masks,
-                step=step,
-                residual_zero=residual_zero,
-            )
+
+            def _close_before() -> None:
+                # Branch-A F1: fused close no longer needs residual_zero split;
+                # skip predict_residual_zero (was inside this timed phase).
+                pressure_telemetry.close_before_writeback_resets(
+                    applied_masks=masks,
+                    step=step,
+                    residual_zero=None,
+                )
+
+            _run_phase(_timer, "close_before", _close_before)
 
         step_lifetimes = lifetimes_before_writeback(
             residency, masks, step=step
@@ -230,12 +257,16 @@ def run_train_loop(
         )
 
         if pressure_telemetry is not None and ep_before is not None:
-            pressure_telemetry.roll_tracker_after_writeback(
-                applied_masks=masks,
-                episode_start_before=ep_before,
-                episode_start_after=residency.episode_start,
-                step=step,
-            )
+
+            def _roll() -> None:
+                pressure_telemetry.roll_tracker_after_writeback(
+                    applied_masks=masks,
+                    episode_start_before=ep_before,
+                    episode_start_after=residency.episode_start,
+                    step=step,
+                )
+
+            _run_phase(_timer, "roll", _roll)
 
         if should_record_h_trajectory(step, int(steps)):
             H_now = entropy_bits(
@@ -260,7 +291,11 @@ def run_train_loop(
             )
 
     if pressure_telemetry is not None:
-        pressure_telemetry.finalize_window(final_step=int(steps))
+
+        def _finalize() -> None:
+            pressure_telemetry.finalize_window(final_step=int(steps))
+
+        _run_phase(_timer, "finalize", _finalize)
 
     if last_store is None:
         train_route_counters = {

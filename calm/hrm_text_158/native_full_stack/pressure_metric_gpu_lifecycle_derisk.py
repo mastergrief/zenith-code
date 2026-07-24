@@ -214,31 +214,24 @@ class DeviceLifecycleStore:
         residual_zero: Mapping[str, torch.Tensor] | None = None,
         residual_restart: Mapping[str, torch.Tensor] | None = None,
     ) -> None:
-        del residual_restart
+        """Close open-applied rows before writeback resets.
+
+        residual_clear/residual_restart partition open_applied and share the same
+        residual-arm branch in ``_close_events_masked``. Fuse to ONE close pass
+        per arm (Branch-A F1; semantics-preserving vs dual-pass partition).
+        """
+        del residual_restart, residual_zero
         t = int(step)
         for n, applied in applied_masks.items():
             first = self.first_deferral_step[n]
             after = self.applied_after_deferral_step[n]
             open_applied = applied & (first > 0)
-            if residual_zero is not None:
-                zero_m = open_applied & residual_zero[n].bool()
-                restart_m = open_applied & ~residual_zero[n].bool()
-            else:
-                zero_m = torch.zeros_like(open_applied)
-                restart_m = open_applied
             self._close_events_masked(
                 first=first,
                 after=after,
-                close_mask=zero_m,
+                close_mask=open_applied,
                 now_step=t,
                 reason="residual_clear",
-            )
-            self._close_events_masked(
-                first=first,
-                after=after,
-                close_mask=restart_m,
-                now_step=t,
-                reason="residual_restart",
             )
 
     def roll_tracker_after_writeback(
