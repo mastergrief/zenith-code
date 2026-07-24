@@ -29,6 +29,10 @@ from calm.hrm_text_158.native_full_stack.forgetting_laws import (
 from calm.hrm_text_158.native_full_stack.phase_probe_sets import (
     build_phase1_probe_sets,
 )
+from calm.hrm_text_158.native_full_stack.pressure_metric_proof_contract import (
+    applied_identity_sha256_from_frames,
+    canonical_arm_dict_sha256,
+)
 from calm.hrm_text_158.native_full_stack.pressure_metric_telemetry import (
     summarize_demand_totals,
 )
@@ -275,6 +279,22 @@ def assemble_arm_receipt(
             },
             "q_sha": {"before": q_sha_before, "after": q_sha_after},
             "route_counters": dict(train_route_counters),
+            # Per-index identity (telemetry-independent). Ordering basis for
+            # applied_identity_sha256: concatenation of per-step frames from
+            # ordered_selection_frame(step, selection_idx_host) =
+            # little-endian uint32 step header + int64 ordered flat-idx bytes
+            # (pressure_metric_gpu_loop_bridge.ordered_selection_frame;
+            # frames appended in step order in screen_execution_loop).
+            "flip_count_sha256": canonical_arm_dict_sha256(flip_count),
+            "applied_identity_sha256": applied_identity_sha256_from_frames(
+                list(loop_out.get("selection_frames") or [])
+            ),
+            "applied_identity_ordering": {
+                "frame": "ordered_selection_frame",
+                "step_header": "uint32_le",
+                "payload": "int64_ordered_flat_idx_host",
+                "sequence": "append_per_step_in_train_loop_order",
+            },
             "measurements": {
                 "n_flips": n_flips,
                 "n_applied_drains": n_applied_drains,
