@@ -91,16 +91,20 @@ def run_arm_screen(args: argparse.Namespace) -> int:
         for q, e in rows
     ]
 
-    # Accepted DeviceLifecycleStore / R1 observer — required for compact R1 surface.
-    from calm.hrm_text_158.native_full_stack.pressure_metric_gpu_lifecycle_derisk import (
-        DeviceLifecycleStore,
-    )
+    # R1 observer attach: default ON (formal arm mint). OFF exposes existing
+    # run_train_loop(pressure_telemetry=None) capability for observer-cost pairing.
+    telemetry_on = bool(getattr(args, "telemetry", True))
+    pressure_store = None
+    if telemetry_on:
+        from calm.hrm_text_158.native_full_stack.pressure_metric_gpu_lifecycle_derisk import (
+            DeviceLifecycleStore,
+        )
 
-    pressure_store = DeviceLifecycleStore.from_arm_shapes(
-        {n: tuple(q.shape) for n, q in q_levels.items()},
-        steps=int(args.steps),
-        device=device if str(device).startswith("cuda") else "cpu",
-    )
+        pressure_store = DeviceLifecycleStore.from_arm_shapes(
+            {n: tuple(q.shape) for n, q in q_levels.items()},
+            steps=int(args.steps),
+            device=device if str(device).startswith("cuda") else "cpu",
+        )
     loop_out = run_train_loop(
         m=m,
         tok=tok,
@@ -149,6 +153,10 @@ def run_arm_screen(args: argparse.Namespace) -> int:
         ret_final=ret_final,
         loop_out=loop_out,
     )
+    # Self-identifying: OFF runs carry telemetry=false and lack R1 demand/
+    # deferred_survival (assemble only attaches those when store present), so
+    # they fail-closed under v10 G0/three-arm without changing the contract.
+    receipt["telemetry"] = bool(telemetry_on)
 
     if args.correctness_smoke:
         fails = [k for k, v in receipt["asserts"].items() if not v]

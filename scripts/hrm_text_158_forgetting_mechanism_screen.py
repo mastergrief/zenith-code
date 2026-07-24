@@ -208,6 +208,17 @@ def main() -> int:
         help="Skip step0/final exact-match probes (auto under --correctness-smoke).",
     )
     ap.add_argument(
+        "--telemetry",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Attach DeviceLifecycleStore R1 observer (default ON). "
+            "--no-telemetry is timing-only / observer-cost pairing; OFF receipts "
+            "are marked telemetry=false and lack demand/deferred_survival so they "
+            "cannot pass v10 G0/three-arm as formal arm receipts."
+        ),
+    )
+    ap.add_argument(
         "--aggregate-phase1",
         action="store_true",
         help="Aggregate 3 mechanism receipts under pinned formal-150 control (PLAN_v10).",
