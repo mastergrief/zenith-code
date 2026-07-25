@@ -1,0 +1,96 @@
+{
+  "kind": "f3_sparse_hot_law_conformance_repair_receipt",
+  "revision": "v1",
+  "dispatch_msg_id": "1784987123257-473bbe67",
+  "plus_one_implement": "1784987123257-473bbe67",
+  "contract_path": "artifacts/acc_entropy/arm3_sparse_hot_F3_amended_CONTRACT_v2.json",
+  "contract_sha256": "034ec8e966ca020d5ac95630a66613c0cc556aeb67e31418c3bbd5d263f858d7",
+  "gate2_routing": "1784986975295",
+  "dual_accept_digest": "1784987057084",
+  "fence_banked_commit": "5d0b12930b91a52e7781e35084c10e3b45837c28",
+  "head_at_receipt": "5d0b12930b91a52e7781e35084c10e3b45837c28",
+  "drafted_at_utc": "2026-07-25T13:47:24Z",
+  "repair_summary": "Replace apply_sparse_hot threshold+flat-trim with exact torch.topk(...).indices keep mask — impl-conformance to CONTRACT law_verbatim retain global top-H |acc|.",
+  "tie_break_policy": "torch.topk native index order among equal |acc|; kept |values| multiset always equals the true top-k multiset; every |x| strictly above the k-th largest is retained.",
+  "pre_post_sha256": {
+    "forgetting_laws.py": {
+      "pre": "36f41e16f01cffb69b5f46582f8b927d56049f47f3492bf435ba8b5b9e1795f6",
+      "post": "ffd5563486b9166b86416c9e249df956a184a5448a24f3c32de7907fdba4f476"
+    },
+    "test_sparse_hot_exactness_fence.py": {
+      "pre": "65fbf9309c06281204bc63dcd3f07acd8870ee7091fe5aa6fe04d77ea3e4c81b",
+      "post": "908bb1520b81d98caf2670f8fa87c8e63e08be3675f644858629c358959cc0b3"
+    }
+  },
+  "diff_surface_enumeration": [
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_laws.py",
+      "action": "EDIT apply_sparse_hot :137-165 ONLY — docstring + topk indices keep; signature/default hot_h=8192/k-min/k<=0/reassembly unchanged"
+    },
+    {
+      "path": "calm/hrm_text_158/tests/test_sparse_hot_exactness_fence.py",
+      "action": "RETARGET fence: conformance test keeps 10; property dual-oracle; tie properties; contrast/true-neg/cross-tensor retained"
+    },
+    {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_law_conformance_repair_receipt_v1.json",
+      "action": "CREATE_O_EXCL"
+    }
+  ],
+  "NOT_touched": [
+    "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+    "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py",
+    "no counters/emitters",
+    "no ns5 packet"
+  ],
+  "tests": {
+    "path": "calm/hrm_text_158/tests/test_sparse_hot_exactness_fence.py",
+    "sha256": "908bb1520b81d98caf2670f8fa87c8e63e08be3675f644858629c358959cc0b3",
+    "result": "8 passed",
+    "command": "timeout 180 python3 -m pytest -q calm/hrm_text_158/tests/test_sparse_hot_exactness_fence.py -v",
+    "log_tail": [
+      "============================= test session starts ==============================",
+      "platform linux -- Python 3.13.7, pytest-9.0.3, pluggy-1.6.0",
+      "rootdir: /mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "plugins: anyio-4.13.0, typeguard-4.5.1",
+      "collected 8 items",
+      "",
+      "calm/hrm_text_158/tests/test_sparse_hot_exactness_fence.py ........      [100%]",
+      "",
+      "============================== 8 passed in 4.45s ==============================="
+    ]
+  },
+  "acceptance_i_to_vi": {
+    "i_keeps_10": {
+      "fixture": "[5,5,5,10] H=2",
+      "result": "out=[0,0,5,10]; index3==10",
+      "pass": true
+    },
+    "ii_kept_eq_H": {
+      "method": "keep[topk.indices]; keep.sum()==k when n>=k",
+      "pass": true
+    },
+    "iii_above_thresh_retained": {
+      "method": "all abs>thresh indices in keep mask",
+      "pass": true
+    },
+    "iv_dual_oracle_retargeted": {
+      "detail": "property oracle always; exact pure-Python match on tie-free only",
+      "pass": true
+    },
+    "v_contrast_legs": {
+      "test": "test_no_mixin_contrast_vs_decay_and_ttl",
+      "pass": true
+    },
+    "vi_diff_surface": {
+      "only": "law + tests + this receipt",
+      "pass": true
+    }
+  },
+  "explicit_non_work": [
+    "NO counters",
+    "NO GPU",
+    "NO ns5 mint",
+    "NO facade/reducers/loop edits",
+    "NO commit/push"
+  ]
+}

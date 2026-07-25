@@ -139,7 +139,13 @@ def apply_sparse_hot(
     *,
     hot_h: int = 8192,
 ) -> dict[str, torch.Tensor]:
-    """Retain global top-H |acc|; zero cold."""
+    """Retain global top-H |acc|; zero cold.
+
+    Exact top-k index selection via ``torch.topk(allabs, k).indices`` (not
+    threshold+flat-trim). Tie-break among equal |acc| follows torch.topk's
+    native index order; the kept |values| multiset always equals the true
+    top-k multiset (every |x| strictly above the k-th largest is retained).
+    """
     flat = []
     meta = []
     for n, a in arms_acc.items():
@@ -149,13 +155,8 @@ def apply_sparse_hot(
     k = min(int(hot_h), int(allabs.numel()))
     if k <= 0:
         return {n: torch.zeros_like(a) for n, a in arms_acc.items()}
-    thresh = torch.topk(allabs, k).values.min()
-    keep = allabs >= thresh
-    # if ties make >H, keep arbitrary first H
-    if int(keep.sum()) > k:
-        idx = torch.nonzero(keep, as_tuple=False).flatten()
-        drop = idx[k:]
-        keep[drop] = False
+    keep = torch.zeros(allabs.shape[0], dtype=torch.bool, device=allabs.device)
+    keep[torch.topk(allabs, k).indices] = True
     out: dict[str, torch.Tensor] = {}
     off = 0
     for n, nn, shape in meta:
