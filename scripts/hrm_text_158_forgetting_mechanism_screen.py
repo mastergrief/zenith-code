@@ -189,6 +189,15 @@ def main() -> int:
     ap.add_argument("--ckpt-path", default=None)
     ap.add_argument("--steps", type=int, default=150)
     ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument(
+        "--batch-rng-base",
+        type=int,
+        default=1000,
+        help=(
+            "Data/batch-order RNG base: per-step rng = Random(batch_rng_base + step). "
+            "Default 1000 preserves ns5-identical batch order. No env-var override."
+        ),
+    )
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--topk", type=int, default=TOPK_PER_STEP)
     ap.add_argument("--arm", default=ARM0)

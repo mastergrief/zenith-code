@@ -45,6 +45,7 @@ def _mocked_loop_out(*, pre_post_on: bool) -> dict:
         "n_flips": 0,
         "q_changed_count": 0,
         "n_applied_drains": 0,
+        "batch_rng_base": 1000,
         "excluded_hit_count": 0,
         "H_trajectory": [
             {"step": s, "H_bits_per_weight": 0.0}
@@ -231,6 +232,7 @@ def test_cli_main_pre_post_telemetry_parse_and_receipt_propagation(tmp_path, mon
             "n_flips": 0,
             "q_changed_count": 0,
             "n_applied_drains": 0,
+            "batch_rng_base": 1000,
             "excluded_hit_count": 0,
             "H_trajectory": [],
             "train_route_counters": {

@@ -88,6 +88,7 @@ def run_train_loop(
     pressure_telemetry: Any | None = None,
     phase_timer: Any | None = None,
     pre_post_telemetry: bool = True,
+    batch_rng_base: int = 1000,
 ) -> dict[str, Any]:
     """Mutate q/acc/episode for `steps`; return telemetry + final state tensors.
 
@@ -95,6 +96,8 @@ def run_train_loop(
     If `pressure_telemetry` is set, run event lifecycle around pre-writeback masks.
     `phase_timer` is diagnostic-only (default None/OFF = true no-op seams).
     `pre_post_telemetry` gates ARM1 PrePostTransformAccumulator (default ON).
+    `batch_rng_base` seeds per-step data/batch-order RNG as Random(base + step);
+    default 1000 preserves pre-plumbing / ns5-identical batch order.
     """
     residency = init_gpu_loop_residency(q_levels, device=device)
     _timer = phase_timer
@@ -122,7 +125,7 @@ def run_train_loop(
     t0 = time.time()
     last_store = None
     for step in range(1, int(steps) + 1):
-        rng = random.Random(1000 + step)
+        rng = random.Random(int(batch_rng_base) + step)
         batch_tuples, n_excl = sample_batch_excluding_acquisition(
             pool,
             batch=int(batch),
@@ -354,6 +357,7 @@ def run_train_loop(
         "n_applied_drains": n_applied_drains,
         "n_ttl_force_zero_drains": n_ttl_force_zero_drains,
         "n_sparse_hot_cold_zeros": n_sparse_hot_cold_zeros,
+        "batch_rng_base": int(batch_rng_base),
         "excluded_hit_count": excluded_hit_count,
         "H_trajectory": H_trajectory,
         "train_route_counters": train_route_counters,

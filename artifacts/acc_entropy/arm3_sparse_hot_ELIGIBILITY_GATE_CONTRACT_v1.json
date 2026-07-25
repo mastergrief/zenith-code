@@ -1,0 +1,282 @@
+{
+  "artifact_kind": "ELIGIBILITY_GATE_CONTRACT",
+  "revision": "v1",
+  "experiment": "a_seed_stability_ONLY",
+  "immutable_basename": "arm3_sparse_hot_ELIGIBILITY_GATE_CONTRACT_v1.json",
+  "O_EXCL": true,
+  "mint_ts_utc": "2026-07-25T15:46:14Z",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "lane": "plan_only",
+  "source_edits": false,
+  "gpu": false,
+  "packet_mint": false,
+  "commit_push": false,
+  "provenance": {
+    "gabe_standing_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science",
+    "task_id": "1784809634527-2c088463",
+    "dispatch_msg_id": "1784994260708-c0a68076",
+    "converged_thinking_boundary": {
+      "claude_S1_S5": "1784994057172-ac599432",
+      "co_lead_plus1_pins": "1784994079514-3641d6e9",
+      "eligibility_seed_opened": "1784993992085-f8b66ca3",
+      "phase_A_banked_commit": "1cef5f22f410da2704b79ecc1148cc6f0c2bc1c1",
+      "phase_A_receipt_v2_sha256": "7659b8075225bec7374c6a862465692c2f599bd9aaa01518b12b7bcb2248e0fd",
+      "phase_A_contract_v3_sha256": "2fe6e8a38ee7ceab2dc90d2b068ab3976965e0f43f71039e4cfa54459a45e447"
+    },
+    "ns5_banked_anchors": {
+      "classification_sha256": "648f473339751b04170db80b155b5be447600f17801fe13ce4da556fb844ee32",
+      "ON_receipt_sha256": "0998170f3300312c23d2e21f43b68eb92c10e320669c5c3b903a763b1ee81ede",
+      "acceptance_branch": "A_sparse_hot_operative",
+      "F3_CONTRACT_v2_sha256": "034ec8e966ca020d5ac95630a66613c0cc556aeb67e31418c3bbd5d263f858d7",
+      "parent_seed_label": "formal150_control_parent_2d9b9f67",
+      "ckpt_path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c2K2add50s_seed0017_replay80_n12k_lr5e5_pc1p0_rsL0b1math1r1b2m1idfull1k1to4pin1k5to8pin1L0c1pin1_ceL0c1x3_anchorsv1r3_from_L0c2K2add120k5to8_step01000_final_step00750.pt"
+    }
+  },
+  "question": "Is ns5's A_sparse_hot_operative reproducible under data/batch-order seed variation, or is it a seed artifact?",
+  "FINDING_MISSING_BATCH_RNG_CLI_FLAG": {
+    "severity": "HIGH",
+    "statement": "Live forgetting-mechanism screen driver has NO CLI seed flag for data/batch-order variation.",
+    "evidence": [
+      "calm/hrm_text_158/native_full_stack/screen_execution_loop.py:125: rng = random.Random(1000 + step) \u2014 hardcoded base 1000",
+      "scripts/hrm_text_158_forgetting_mechanism_screen.py --help (no --seed / --batch-rng-*); argparse surface has --batch but no seed axis",
+      "Prior packet lineage documents this as code-pinned: 'random.Random(1000 + step) in screen_execution_loop.py (code-pinned; no CLI --seed)'"
+    ],
+    "ns5_baseline_batch_rng_base": 1000,
+    "consequence": "Experiment (a) CANNOT be launched honestly until a gated observation-only plumbing slice exposes a CLI axis. Packet mint for eligibility repeats is BLOCKED on that slice dual-accept+commit \u2014 this CONTRACT does not invent a nonexistent flag as if it already exists.",
+    "proposed_precondition_slice_SMALL": {
+      "name": "batch_rng_base_CLI_plumbing",
+      "flag": "--batch-rng-base",
+      "type": "int",
+      "default": 1000,
+      "semantics": "screen_execution_loop uses random.Random(int(batch_rng_base) + step); default 1000 preserves ns5-identical batch order when unset/defaulted",
+      "scope": "plumbing only \u2014 NO law/signature/default-hot_h change; apply_sparse_hot / apply_sparse_hot_with_count untouched",
+      "acceptance": "CPU unit: base=1000 reproduces prior batch-order fixture; base=2000 yields different sampled batch ids on step=1; --help lists the flag",
+      "STOP_if": "any need to touch law body / torch-init seed / parent load path \u2192 STOP + re-plan",
+      "gate": "full plan \u2192 dual-accept \u2192 +1 implement \u2192 commit BEFORE any eligibility packet mint"
+    }
+  },
+  "seed_surface_S1": {
+    "vary_ONLY": "data/batch-order RNG base (proposed CLI --batch-rng-base; today hardcoded 1000)",
+    "CLI_seed_flags_from_live_driver_TODAY": [],
+    "CLI_seed_flags_NOTE": "EMPTY list is intentional and verified \u2014 do not treat as omission. Precondition slice proposes --batch-rng-base.",
+    "frozen": {
+      "parent_chain_head": "formal150_control_parent_2d9b9f67 (ckpt path pinned in provenance.ns5_banked_anchors.ckpt_path)",
+      "geometry": {
+        "steps": 150,
+        "batch": 8,
+        "topk": 1024,
+        "device": "cuda:0",
+        "arm": "arm3_sparse_hot_forgettable_cold"
+      },
+      "hot_h": 8192,
+      "law_fourth_class_pin": "exact global top-H |acc| MULTISET retain (repaired apply_sparse_hot / torch.topk); witness measurements.n_sparse_hot_cold_zeros ONLY \u2014 never n_applied_drains / n_ttl_force_zero_drains / pre_post_transform",
+      "H_trajectory_samples": [
+        25,
+        50,
+        75,
+        100,
+        125,
+        150
+      ],
+      "formal150_control_mass": 2910513700
+    },
+    "torch_init_seed_axis": {
+      "status": "EXCLUDED",
+      "reason": "q/acc state is inherited from the frozen parent checkpoint load; torch-init seed is mostly vacuous for this screen and is NOT the S1 axis"
+    }
+  },
+  "repeats": {
+    "N": 2,
+    "namespace_prefix": "ns6_seedstab",
+    "runs": [
+      {
+        "repeat_id": "R1",
+        "batch_rng_base": 2000,
+        "constraint": "\u2260 ns5 baseline 1000; \u2260 R2",
+        "receipt_basename_TEMPLATE": "arm3_sparse_hot_seedstab_R1_base2000_formal150_ns6_*"
+      },
+      {
+        "repeat_id": "R2",
+        "batch_rng_base": 3000,
+        "constraint": "\u2260 ns5 baseline 1000; \u2260 R1",
+        "receipt_basename_TEMPLATE": "arm3_sparse_hot_seedstab_R2_base3000_formal150_ns6_*"
+      }
+    ],
+    "ns5_baseline_NOT_a_repeat": "ns5 (base=1000) is the banked reference A_sparse_hot_operative; it is NOT counted toward the 2/2 decision \u2014 the two additional runs are the decision set"
+  },
+  "pass_predicates_S2_ALL_FIVE_per_repeat": {
+    "i_branch": {
+      "id": "P1_branch",
+      "predicate": "acceptance_branch == A_sparse_hot_operative under F3 CONTRACT v2 classifier VERBATIM (order D\u2192Z1\u2192Z2\u2192A\u2192B\u2192C; STOP-on-Z; witness n_sparse_hot_cold_zeros; no pre_post_transform conjunct)",
+      "authority": "artifacts/acc_entropy/arm3_sparse_hot_F3_amended_CONTRACT_v2.json sha256 034ec8e966ca020d5ac95630a66613c0cc556aeb67e31418c3bbd5d263f858d7"
+    },
+    "ii_retention": {
+      "id": "P2_retention_ok",
+      "predicate": "probes.retention_ok == true AND live count keys present (retention_step0_count / retention_final_count; acq_*_count fail-closed if both count+legacy absent)"
+    },
+    "iii_witness": {
+      "id": "P3_cold_zeros",
+      "predicate": "measurements.n_sparse_hot_cold_zeros > 0"
+    },
+    "iv_mass": {
+      "id": "P4_mass_band",
+      "predicate": "credited_mass / 2910513700 \u2208 [0.90, 1.10] inclusive",
+      "formal150_control_mass": 2910513700
+    },
+    "v_H_flat_NUMERIC": {
+      "id": "P5_H_flat",
+      "predicates_ALL": [
+        "max(H_traj) - min(H_traj) <= epsilon",
+        "all H_bits_per_weight in H_traj <= H_max"
+      ],
+      "epsilon": 0.0005,
+      "H_max": 0.006,
+      "derivation": {
+        "banked_ON_receipt_sha256": "0998170f3300312c23d2e21f43b68eb92c10e320669c5c3b903a763b1ee81ede",
+        "banked_H_trajectory": [
+          {
+            "step": 25,
+            "H": 0.004700000804144959
+          },
+          {
+            "step": 50,
+            "H": 0.0047366214096099335
+          },
+          {
+            "step": 75,
+            "H": 0.004720522589212707
+          },
+          {
+            "step": 100,
+            "H": 0.0047249972536570675
+          },
+          {
+            "step": 125,
+            "H": 0.004737186192610073
+          },
+          {
+            "step": 150,
+            "H": 0.004742817198551902
+          }
+        ],
+        "banked_spread_max_minus_min": 4.281639440694308e-05,
+        "banked_spread_reported_by_dispatch": 4.2816394406943e-05,
+        "epsilon_rule": "\u03b5 = 5e-4 \u2248 10\u00d7 banked spread (dispatch-frozen proposal)",
+        "H_max_rule": "H_max = 0.006 \u2014 headroom above banked max\u22480.00474 while remaining \u226a TTL-scale H (~4\u20135 bpw)",
+        "co_lead_pin_msg": "1784994079514-3641d6e9"
+      }
+    }
+  },
+  "decision_rule": {
+    "A_seed_stable": "BOTH R1 and R2 satisfy ALL FIVE predicates (2/2)",
+    "Z_seed_artifact": "1/2 or 0/2 \u2014 MUST name WHICH predicate id(s) failed on WHICH repeat_id; disposition NON-success / diagnosis-valid seed-sensitivity only",
+    "NO_third_seed_tiebreak": true,
+    "NO_third_seed_tiebreak_reason": "third-seed after 1/2 is knob-escalation-shaped; STOP and re-plan if more evidence is desired"
+  },
+  "pre_registered_branch_classifier_S5": {
+    "order": "D_wiring \u2192 Z_seed_artifact \u2192 A_seed_stable",
+    "evaluation_rule": "STOP on first match. After D clear, evaluate Z then A. Never fall through from Z to A.",
+    "D_wiring": {
+      "when": [
+        "missing ARM3 witness key n_sparse_hot_cold_zeros",
+        "geometry mismatch vs frozen 150/8/1024/cuda:0/arm3",
+        "law-identity / fourth-class pin broken (flat-trim regression / wrong witness bind)",
+        "--batch-rng-base absent/unwired when packet claims seed variation (post-plumbing)",
+        "parent/ckpt mismatch vs frozen chain-head"
+      ],
+      "disposition": "NON-success wiring; do not interpret as seed science"
+    },
+    "Z_seed_artifact": {
+      "when": "decision_rule Z_seed_artifact (1/2 or 0/2 with named predicate failures)",
+      "disposition": {
+        "receipt_valid_for_diagnosis": true,
+        "mechanism_eligible": false,
+        "seed_stable": false,
+        "blocks_experiments_b_and_c": true
+      }
+    },
+    "A_seed_stable": {
+      "when": "decision_rule A_seed_stable (2/2 all five predicates)",
+      "disposition": {
+        "receipt_valid_for_diagnosis": true,
+        "seed_stable_at_formal150": true,
+        "mechanism_eligible": false,
+        "family_winner": false,
+        "note": "A_seed_stable does NOT mint mechanism_eligible \u2014 only clears the (a) gate toward later (b)/(c) contracts"
+      }
+    }
+  },
+  "non_claims": {
+    "A_seed_stable_does_NOT_mint": [
+      "mechanism_eligible",
+      "family_winner",
+      "sub-2",
+      "full_sub2_runtime",
+      "FP-free",
+      "readiness",
+      "formal_G0",
+      "codec_exists"
+    ],
+    "experiment_b_longer_runway": {
+      "in_scope_this_contract": false,
+      "prereg_next_horizon_if_ever": 500,
+      "S3": "500-only next; 1500 needs its own amended contract",
+      "msg_pin": "1784994079514-3641d6e9"
+    },
+    "experiment_c_acquisition_under_forgetting": {
+      "in_scope_this_contract": false,
+      "S4_curriculum_bank_non_collision": "when (c) is ever contracted it MUST state non-collision with the curriculum/bank acquire\u226590 retain-priors gate \u2014 (c) is not a silent curriculum-bank rewrite",
+      "msg_pin": "1784994079514-3641d6e9"
+    },
+    "Phase_A_A_codec_feasible": "carrier bounds-admit \u2260 training eligibility; not reused as pass predicate here"
+  },
+  "claim_ceiling": {
+    "this_contract": "plan/diagnosis framing ONLY \u2014 freezes experiment (a) design; mints no science",
+    "on_A_seed_stable": "diagnosis-valid seed-stability at formal-150 same parent/geometry ONLY",
+    "on_Z_seed_artifact": "diagnosis-valid seed-sensitivity; blocks (b)/(c) without amended re-plan",
+    "forbidden_language": [
+      "mechanism_eligible",
+      "family_winner",
+      "sub-2 bank",
+      "readiness",
+      "upgrade F3"
+    ]
+  },
+  "cost_note": {
+    "gpu_formal_window_estimate": "~2 \u00d7 ~800s (two additional formal-150 observer runs; pair/off-on budgets re-derived at packet mint from named wall model \u2014 do not cargo-cult ns5 1044/1344 without re-fit if rates change)",
+    "GPU_HOLD": true,
+    "GPU_HOLD_until": [
+      "this CONTRACT dual-accepts (claude gate-1 + co_lead gate-2)",
+      "precondition --batch-rng-base plumbing slice dual-accepts + commits",
+      "separate eligibility packet mint dual-accepts",
+      "fresh persisted +1 launch"
+    ],
+    "packet_gate_is_NOT_this_contract": true
+  },
+  "void_remint_rules": {
+    "immutable_basename_per_version": true,
+    "any_byte_change": "v2 remint on fresh O_EXCL path; v1 void-preserved with bounce/revise msg id",
+    "never_overwrite_existing_path": true
+  },
+  "DEVELOPER_STEPS_after_dual_accept": [
+    "1. GATED SMALL plumbing slice: add --batch-rng-base (default 1000) per FINDING.proposed_precondition_slice_SMALL \u2014 plan/+1/commit before packet",
+    "2. Packet mint (separate gate): ns6 seed-stability formal-150 OFF+ON\u00d72 bases {2000,3000}, own pair proofs, F3 classifier verbatim + this contract's D\u2192Z\u2192A overlay, H \u03b5/H_max frozen",
+    "3. Fresh +1 launch \u2192 test-operator runs \u2192 classification receipt evaluating 2/2 rule"
+  ],
+  "named_risk": {
+    "id": "RISK_SEED_AXIS_REQUIRES_SOURCE_PLUMBING",
+    "statement": "Contract freezes (a) but the live driver cannot yet express seed variation without a source edit. Treating the hardcoded 1000 as secretly variable, or varying torch-init instead, would falsify S1.",
+    "mitigation": "FINDING + mandatory precondition plumbing slice; empty CLI_seed_flags_from_live_driver_TODAY list; packet mint STOP until flag lands"
+  },
+  "STOP_conditions": [
+    "ambiguity about seed axis \u2192 STOP and ask claude (do not substitute torch-init)",
+    "any law / apply_sparse_hot semantic change \u2192 STOP",
+    "folding (b) or (c) into this contract/packet \u2192 STOP",
+    "third-seed tiebreak after 1/2 \u2192 STOP",
+    "GPU / packet mint from this plan-only slice \u2192 STOP",
+    "source edits in this plan-only slice \u2192 STOP"
+  ]
+}

@@ -238,6 +238,14 @@ def assemble_arm_receipt(
     n_flips = loop_out["n_flips"]
     q_changed_count = loop_out["q_changed_count"]
     n_applied_drains = loop_out["n_applied_drains"]
+    # Driver batch-order RNG base: always-present after plumbing (ALL arms).
+    # Present-and-1000 ≠ absent — KeyError if missing (no silent default).
+    if "batch_rng_base" not in loop_out:
+        raise KeyError(
+            "loop_out missing batch_rng_base "
+            "(absent ≠ present-and-default-1000; plumbing required)"
+        )
+    batch_rng_base = int(loop_out["batch_rng_base"])
     # ARM2-only TTL force-zero counter: fail-closed — ARM2 requires key in loop_out.
     # Non-ARM2: do not read into a defaulted local that could be emitted as fake zero.
     n_ttl_force_zero_drains: int | None
@@ -327,6 +335,7 @@ def assemble_arm_receipt(
             "arm": str(args.arm),
             "steps": int(args.steps),
             "batch": int(args.batch),
+            "batch_rng_base": int(batch_rng_base),
             "topk": int(args.topk),
             "device": device,
             "banked_sha": {

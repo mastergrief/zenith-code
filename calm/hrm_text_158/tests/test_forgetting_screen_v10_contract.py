@@ -702,6 +702,7 @@ def test_assemble_arm_receipt_emits_live_r1_passes_v10_contract(tmp_path):
         "n_flips": 5000,
         "q_changed_count": 200,
         "n_applied_drains": 10000,
+        "batch_rng_base": 1000,
         "excluded_hit_count": 0,
         "H_trajectory": [
             {

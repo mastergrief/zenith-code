@@ -107,6 +107,7 @@ def test_telemetry_off_skips_store_passes_none_to_loop(monkeypatch, tmp_path):
             "n_flips": 0,
             "q_changed_count": 0,
             "n_applied_drains": 0,
+            "batch_rng_base": 1000,
             "excluded_hit_count": 0,
             "H_trajectory": [],
             "train_route_counters": {
@@ -213,6 +214,7 @@ def test_telemetry_on_default_constructs_store(monkeypatch, tmp_path):
             "n_flips": 0,
             "q_changed_count": 0,
             "n_applied_drains": 0,
+            "batch_rng_base": 1000,
             "excluded_hit_count": 0,
             "H_trajectory": [],
             "train_route_counters": {
@@ -322,6 +324,7 @@ def test_telemetry_off_receipt_fails_g0_and_three_arm(tmp_path):
         "n_flips": 5000,
         "q_changed_count": 200,
         "n_applied_drains": 10000,
+        "batch_rng_base": 1000,
         "excluded_hit_count": 0,
         "H_trajectory": [
             {

@@ -1,0 +1,164 @@
+{
+  "artifact_kind": "PLAN",
+  "slice": "batch_rng_base_CLI_plumbing",
+  "revision": "v1",
+  "immutable_basename": "arm3_sparse_hot_batch_rng_base_plumbing_PLAN_v1.json",
+  "O_EXCL": true,
+  "mint_ts_utc": "2026-07-25T15:52:06Z",
+  "lane": "plan_only_FULL_gate_no_fast_path",
+  "sizing": "SMALL",
+  "source_edits_this_slice": false,
+  "gpu": false,
+  "packet_mint": false,
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "provenance": {
+    "gabe_standing_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science",
+    "gabe_directive_cite_msg": "1784993572718-d2d0f9e7",
+    "eligibility_contract_v1_sha256": "8ef12c340842abc8017a40ce44a5582285fe9814d58adb04e8aa42b740b9005b",
+    "eligibility_dual_accept": {
+      "gate1": "1784994526662-0498cc14",
+      "gate2": "1784994601932"
+    },
+    "dispatch_msg_id": "1784994633329-e681e359",
+    "co_lead_full_gate_ruling_and_residuals": "1784994601932",
+    "contract_precondition_slice_name": "batch_rng_base_CLI_plumbing"
+  },
+  "intent": "Expose an observation-only CLI axis so eligibility-gate experiment (a) can vary data/batch-order RNG without touching law. Default/unset MUST preserve ns5-identical batch order (base=1000).",
+  "exact_diff_surface": {
+    "MUST_TOUCH": [
+      {
+        "file": "scripts/hrm_text_158_forgetting_mechanism_screen.py",
+        "functions": [
+          "main"
+        ],
+        "change": "ap.add_argument('--batch-rng-base', type=int, default=1000, help=...); no other argparse changes"
+      },
+      {
+        "file": "calm/hrm_text_158/native_full_stack/screen_run_loop.py",
+        "functions": [
+          "run_arm_screen"
+        ],
+        "change": "pass batch_rng_base=int(args.batch_rng_base) into run_train_loop(...)"
+      },
+      {
+        "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+        "functions": [
+          "run_train_loop"
+        ],
+        "change": "add kw-only param batch_rng_base: int = 1000; replace Random(1000 + step) with Random(int(batch_rng_base) + step); emit loop_out['batch_rng_base']=int(batch_rng_base)"
+      },
+      {
+        "file": "calm/hrm_text_158/native_full_stack/screen_receipt_output.py",
+        "functions": [
+          "assemble_arm_receipt"
+        ],
+        "change": "fail-closed read loop_out['batch_rng_base'] (ALL arms \u2014 KeyError if absent); emit top-level receipt key batch_rng_base"
+      },
+      {
+        "file": "calm/hrm_text_158/tests/test_batch_rng_base_plumbing.py",
+        "functions": [
+          "CREATE"
+        ],
+        "change": "CPU acceptance tests (i)\u2013(v)"
+      }
+    ],
+    "DEFAULT_PRESERVES_CALLERS_NO_EDIT_REQUIRED": [
+      {
+        "file": "calm/hrm_text_158/native_full_stack/pressure_metric_warmup_runtime.py",
+        "note": "two run_train_loop call sites \u2014 rely on batch_rng_base default=1000; do NOT edit unless typecheck forces explicit kwarg"
+      }
+    ],
+    "MUST_NOT_APPEAR": [
+      "calm/hrm_text_158/native_full_stack/forgetting_laws.py",
+      "apply_sparse_hot",
+      "apply_sparse_hot_with_count",
+      "apply_ttl_age_drain",
+      "apply_ttl_age_drain_with_count",
+      "any env-var override path (ZENITH_*/HRM_*/BATCH_RNG_*)",
+      "torch.manual_seed / cuda seed / parent-load seed axis"
+    ]
+  },
+  "fail_closed_semantics": {
+    "argparse": "--batch-rng-base type=int \u2192 non-int/invalid token = argparse SystemExit/error (fail-closed)",
+    "NO_env_var_override": true,
+    "default_or_unset": "default=1000 EXACTLY \u2192 Random(1000 + step) byte-identical to today's hardcoded path (ns5-identical batch order)",
+    "no_silent_coerce": "do not clamp/abs/mask the int; argparse int is the authority"
+  },
+  "emit_witness": {
+    "key_name": "batch_rng_base",
+    "loop_out": "always present after plumbing: loop_out['batch_rng_base'] = int(batch_rng_base)",
+    "receipt_site": "assemble_arm_receipt top-level field alongside steps/batch/topk/arm (NOT only inside measurements)",
+    "presence_rule": "ALL arms require the key in loop_out after this slice (fail-closed KeyError if absent). Present-and-1000 \u2260 absent. Pre-plumbing receipts lacking the key are history_only.",
+    "NOT_in_pressure_metric_receipt_REQUIRED_KEYS": true,
+    "reason_not_global_required_keys": "screen receipt is the eligibility binding surface; do not force unrelated pressure-metric consumers",
+    "measurements_echo_optional": "do NOT also stuff into measurements; single top-level key avoids dual-source drift"
+  },
+  "acceptance_tests_CPU": {
+    "file": "calm/hrm_text_158/tests/test_batch_rng_base_plumbing.py",
+    "cases": [
+      {
+        "id": "i_base1000_ns5_identical_batch_order",
+        "assert": "For a frozen tiny pool fixture and steps={1,2,3}, sampled batch question-ids under batch_rng_base=1000 equal the LEGACY oracle random.Random(1000 + step) / sample_batch_excluding_acquisition sequence \u2014 id-identical to pre-plumbing"
+      },
+      {
+        "id": "ii_base2000_differs_step1",
+        "assert": "At step=1, sampled batch ids under base=2000 differ from base=1000 on the same pool (ordered tuples not equal)"
+      },
+      {
+        "id": "iii_help_lists_flag",
+        "assert": "scripts/hrm_text_158_forgetting_mechanism_screen.py --help stdout contains '--batch-rng-base'"
+      },
+      {
+        "id": "iv_invalid_value_errors",
+        "assert": "CLI --batch-rng-base not-an-int exits non-zero via argparse; no env fallback succeeds"
+      },
+      {
+        "id": "v_receipt_records_base",
+        "assert": "When loop_out contains batch_rng_base=2000, receipt['batch_rng_base']==2000; when key absent from loop_out, assemble_arm_receipt raises KeyError (absent\u2260default)"
+      }
+    ]
+  },
+  "D_wiring_carry_co_lead_residual_2": {
+    "surface": "acq_*_count fail-closed handling from ns5 v3",
+    "plan_statement": "NO TOUCH to acq_step0_count/acq_final_count/retention_*_count emit or classifier fail-closed tokens (ARM3_MISSING_ACQ_PROBE_COUNTS)."
+  },
+  "claim_ceiling": {
+    "this_plan": "plumbing ONLY \u2014 mints no science, no seed-stability result, no mechanism_eligible",
+    "forbidden": [
+      "seed_stable claim from plumbing alone",
+      "sub-2",
+      "family_winner",
+      "readiness"
+    ]
+  },
+  "void_remint_rules": {
+    "immutable_basename_per_version": true,
+    "any_byte_change": "v2 remint on fresh O_EXCL path; v1 void-preserved with bounce/revise msg id",
+    "never_overwrite_existing_path": true
+  },
+  "STOP_conditions": [
+    "any law/signature/default-hot_h/parent-load change \u2192 STOP",
+    "forgetting_laws.py appears in diff \u2192 STOP",
+    "any second RNG axis (torch-init, cuda, numpy global) \u2192 STOP",
+    "any env-var override path \u2192 STOP",
+    "GPU \u2192 STOP",
+    "eligibility packet mint in this slice \u2192 STOP",
+    "implementation before persisted +1 implement after dual plan accept \u2192 STOP"
+  ],
+  "named_risk": {
+    "id": "RISK_WARMUP_CALLSITE_KWARG_DEFAULT",
+    "statement": "pressure_metric_warmup_runtime.py calls run_train_loop without batch_rng_base; relies on default=1000.",
+    "mitigation": "kw-only param with default=1000; acceptance case i pins default path; MUST_NOT force warmup edits"
+  },
+  "workflow_after_dual_accept": [
+    "persisted +1 implement",
+    "edit exact_diff_surface.MUST_TOUCH only",
+    "run pytest on test_batch_rng_base_plumbing.py (timeout-bounded)",
+    "IMPLEMENT receipt O_EXCL with complete touched-file enumeration + shas",
+    "claude gate-1 \u2192 co_lead gate-2 \u2192 commit gates",
+    "THEN eligibility packet mint may proceed under separate dispatch"
+  ]
+}

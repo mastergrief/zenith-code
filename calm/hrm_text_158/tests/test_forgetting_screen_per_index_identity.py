@@ -51,6 +51,7 @@ def _cpu_assemble_fixture(tmp_path, *, flip_count, selection_frames, tag: str):
         "n_flips": 0,
         "q_changed_count": 0,
         "n_applied_drains": 0,
+        "batch_rng_base": 1000,
         "excluded_hit_count": 0,
         "H_trajectory": [
             {

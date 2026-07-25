@@ -1,0 +1,90 @@
+{
+  "artifact_kind": "IMPLEMENT_RECEIPT",
+  "slice": "batch_rng_base_CLI_plumbing",
+  "revision": "v1",
+  "PLAN_SHA256": "42f88536192af877bd08038852864f5aea432caefb6450c576ba5a277d7d2701",
+  "plus_one_implement_msg_id": "1784994891120-49db588b",
+  "dual_accept": {
+    "gate1": "1784994798377-e955f4d9",
+    "gate2": "1784994875616"
+  },
+  "HEAD": "1cef5f22f410da2704b79ecc1148cc6f0c2bc1c1",
+  "mint_ts_utc": "2026-07-25T15:58:25Z",
+  "forgetting_laws_py_sha_UNCHANGED": {
+    "expected": "881174b5dfebb0fe2829f30438ea938ebdbfa57cce340c84f9af1b4daac8c1ad",
+    "post_edit_rehash": "881174b5dfebb0fe2829f30438ea938ebdbfa57cce340c84f9af1b4daac8c1ad",
+    "match": true
+  },
+  "env_var_grep_touched_production_files": {
+    "patterns": [
+      "ZENITH_",
+      "HRM_",
+      "BATCH_RNG_",
+      "getenv",
+      "os.environ"
+    ],
+    "files": [
+      "scripts/hrm_text_158_forgetting_mechanism_screen.py",
+      "calm/hrm_text_158/native_full_stack/screen_run_loop.py",
+      "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "calm/hrm_text_158/native_full_stack/screen_receipt_output.py"
+    ],
+    "matches": 0,
+    "result": "CLEAN"
+  },
+  "touched_files": {
+    "scripts/hrm_text_158_forgetting_mechanism_screen.py": {
+      "pre": "6c49cdf85145a83fbe8ee9dd4601269043b1c8b9a6f22211d27464df95777932",
+      "post": "a94fcec0162db2d1d0f1f0d5b05ee4f1ef59198ae1b3a038b3fa15a8cf808688",
+      "role": "argparse --batch-rng-base"
+    },
+    "calm/hrm_text_158/native_full_stack/screen_run_loop.py": {
+      "pre": "7265f56347fbc734231a3f69cf00086023d63aeef73cee6483840e9791ca4d0d",
+      "post": "49cd1225fedc1dbc955b1fa1696bab2f96ea96cb2105ad5daef3357f172e2301",
+      "role": "thread batch_rng_base into run_train_loop (getattr default 1000 for Namespace fixtures)"
+    },
+    "calm/hrm_text_158/native_full_stack/screen_execution_loop.py": {
+      "pre": "7b3a0cda32e02df798d8b8c3812bcafb2e043aee9775079331ea9ab0c12a6a36",
+      "post": "c7f7d4800fab1910fbcaeee5879442531435b1fdf16e1db9449cb44e73215f46",
+      "role": "kw-only batch_rng_base=1000; Random(base+step); loop_out emit"
+    },
+    "calm/hrm_text_158/native_full_stack/screen_receipt_output.py": {
+      "pre": "902a8d7f4ca28e90bc01c22a3be6df0f0ae1ee2e9b999400c6504448497f7038",
+      "post": "3f4662dc8e0b4dbed284915cd15ce722958ab914d1735db850d737ebc17a4ad0",
+      "role": "ALL-arms fail-closed read + top-level receipt.batch_rng_base"
+    },
+    "calm/hrm_text_158/tests/test_batch_rng_base_plumbing.py": {
+      "pre": null,
+      "post": "477b4ee485dd0221d4f0bff2a75aebf94b2a941147daf8e389c1911574fb8089",
+      "role": "CREATE acceptance (i)\u2013(v)"
+    }
+  },
+  "fixture_retargets_for_always_present_key": {
+    "note": "Existing assemble_arm_receipt loop_out fixtures required batch_rng_base=1000 after ALL-arms fail-closed witness landed \u2014 necessary consequence of plan emit_witness, not law/scope expansion",
+    "files": {
+      "calm/hrm_text_158/tests/test_forgetting_screen_per_index_identity.py": "dd44211c4650c05c5d2c585a3cc07708524b4695a198bd0064f95894a8cb3ced",
+      "calm/hrm_text_158/tests/test_forgetting_screen_v10_1_producer_toggle.py": "69031f29984dfdfb03e220edd14b9933a5997a263a50cf68aadb2b5ead64200f",
+      "calm/hrm_text_158/tests/test_forgetting_screen_telemetry_toggle.py": "9837192f3460bed0ad99de21dcb955b4e4e6336e280fb41200e6a087b9f891ee",
+      "calm/hrm_text_158/tests/test_forgetting_screen_v10_contract.py": "b73ef0858e3f1a808ada60e63311ee20e77685da2fbb53c721320be630aa0489"
+    }
+  },
+  "getattr_default_note": "screen_run_loop uses int(getattr(args, \"batch_rng_base\", 1000)) so Namespace fixtures without the attr still get ns5-identical default; CLI argparse default=1000 remains authority for real runs",
+  "pytest": {
+    "command": "timeout 300 python3 -m pytest calm/hrm_text_158/tests/test_batch_rng_base_plumbing.py calm/hrm_text_158/tests/test_forgetting_screen_per_index_identity.py calm/hrm_text_158/tests/test_forgetting_screen_v10_1_producer_toggle.py calm/hrm_text_158/tests/test_forgetting_screen_telemetry_toggle.py -q",
+    "result": "16 passed in ~22s",
+    "cases_i_through_v": "PASS incl. golden legacy-oracle id-identity at base=1000"
+  },
+  "emit_witness": {
+    "loop_out_key": "batch_rng_base",
+    "receipt_top_level_key": "batch_rng_base",
+    "absent_neq_default": true
+  },
+  "MUST_NOT_APPEAR_held": true,
+  "gpu": false,
+  "packet_mint": false,
+  "commit": false,
+  "claim_ceiling": "plumbing ONLY \u2014 no seed-stability / mechanism_eligible / science claim",
+  "REPORT_TO": [
+    "claude"
+  ]
+}

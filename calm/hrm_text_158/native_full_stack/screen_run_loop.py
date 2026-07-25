@@ -122,6 +122,7 @@ def run_arm_screen(args: argparse.Namespace) -> int:
         correctness_smoke=bool(args.correctness_smoke),
         pressure_telemetry=pressure_store,
         pre_post_telemetry=pre_post_on,
+        batch_rng_base=int(getattr(args, "batch_rng_base", 1000)),
     )
 
     acq_final = ret_final = None
