@@ -1,0 +1,86 @@
+{
+  "kind": "f2_ttl_age_drain_exactness_fence_receipt",
+  "revision": "v1",
+  "dispatch_msg_id": "1784980822215-4fb2ed4f",
+  "contract_sha256": "bebe6143a0ce9f0cebea752b256de3280ddfdcc8c428117728021f7ded594633",
+  "head": "188c8695c148a89cf237682f1382b1823c0a1641",
+  "drafted_at_utc": "2026-07-25T12:02:14Z",
+  "tests": {
+    "path": "calm/hrm_text_158/tests/test_ttl_age_drain_exactness_fence.py",
+    "sha256": "67234f1350496372517bf115ec8276b3540ccd2e7b580f8331bbe581d3385105",
+    "result": "6 passed",
+    "command": "timeout 180 python3 -m pytest -q calm/hrm_text_158/tests/test_ttl_age_drain_exactness_fence.py -v",
+    "log_tail": [
+      "============================= test session starts ==============================",
+      "platform linux -- Python 3.13.7, pytest-9.0.3, pluggy-1.6.0",
+      "rootdir: /mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "plugins: anyio-4.13.0, typeguard-4.5.1",
+      "collected 6 items",
+      "",
+      "calm/hrm_text_158/tests/test_ttl_age_drain_exactness_fence.py ......     [100%]",
+      "",
+      "============================== 6 passed in 6.28s ===============================",
+      "WALL=7.73"
+    ]
+  },
+  "primitive": {
+    "exists": true,
+    "symbol": "apply_ttl_age_drain",
+    "file": "calm/hrm_text_158/native_full_stack/forgetting_laws.py",
+    "lines": "99-113",
+    "sha256": "003ddee38ffbc7e0a86f463c22b3611ba4ccf3df10413cdb5820facf270c27b1",
+    "semantics": "age=step-episode_start; drain iff episode_start>0 AND age>ttl (strict >); default ttl=32; drained acc:=0 and episode_start:=0",
+    "wire_site": {
+      "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "lines": "154-158",
+      "note": "ARM2 calls apply_ttl_age_drain(..., ttl=32) each step before select/writeback"
+    }
+  },
+  "live_drain_field_names_pinned": {
+    "receipt_measurements_n_applied_drains": {
+      "field": "measurements.n_applied_drains",
+      "emit_file_line": [
+        "calm/hrm_text_158/native_full_stack/screen_execution_loop.py:106",
+        "calm/hrm_text_158/native_full_stack/screen_execution_loop.py:258-259",
+        "calm/hrm_text_158/native_full_stack/screen_execution_loop.py:344",
+        "calm/hrm_text_158/native_full_stack/screen_receipt_output.py:214",
+        "calm/hrm_text_158/native_full_stack/screen_receipt_output.py:313"
+      ],
+      "definition_file_line": "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_loop_bridge.py:355-367 apply_drained_flip_counts",
+      "meaning": "COUNT OF FLIP-APPLIED MASKS (writeback drains), NOT TTL age>T force-zero events",
+      "also_aliases_in_loop": "n_flips is incremented by the same drained total (screen_execution_loop.py:260)"
+    },
+    "FINDING_no_dedicated_ttl_force_zero_counter": {
+      "status": "FINDING",
+      "detail": "Live receipt schema has no field that counts apply_ttl_age_drain force-zeros. Packet-stage must either add a named TTL drain counter or redefine A_ttl requires_all to use a measurement derivable from existing tensors (e.g. pre/post episode_start deltas) — do NOT silently invent counters in the fence.",
+      "implication_for_A_ttl": "CONTRACT A_ttl 'n_applied_drains > 0 OR equivalent age-drain event counter' cannot bind to measurements.n_applied_drains as TTL evidence; that field is flip-path only."
+    }
+  },
+  "A_vs_Z_boundary": {
+    "observable": "age-conditional zeroing vs age-independent wipe",
+    "measurement": {
+      "young_age": "age<=T (fixture age=10, T=32)",
+      "old_age": "age>T (fixture age=50, T=32)",
+      "young_preserved_ttl": "post_ttl[young]==pre[young] (acc and episode_start)",
+      "old_drained_ttl": "post_ttl[old]==0 (acc and episode_start)",
+      "young_wiped_z": "post_age_independent_wipe[young]==0",
+      "discrimination": "same pre-state yields young_preserved_ttl=True under apply_ttl_age_drain AND young_wiped_z=True under age-independent wipe; post young values differ across operators"
+    },
+    "proven_by_test": "test_a_ttl_vs_z_discrimination_measurement",
+    "F1_soft_decay_contrast_test": "test_decay_leak_is_age_independent_contrast (forbidden mix-in)"
+  },
+  "source_defects": [
+    {
+      "id": "MISSING_TTL_FORCE_ZERO_TELEMETRY_COUNTER",
+      "severity": true,
+      "built_mechanism": false,
+      "note": "Primitive exists and is exact vs oracle; missing is receipt telemetry for TTL drains — packet-stage wiring concern, not fence license to change transfer law."
+    }
+  ],
+  "explicit_non_work": [
+    "NO GPU",
+    "NO F2 packet mint",
+    "NO transfer-law semantic change",
+    "NO commit/push"
+  ]
+}

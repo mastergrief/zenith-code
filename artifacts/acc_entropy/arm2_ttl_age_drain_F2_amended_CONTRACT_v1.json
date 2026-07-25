@@ -1,0 +1,387 @@
+{
+  "plan_id": "arm2_ttl_age_drain_F2_amended_CONTRACT",
+  "plan_revision": "v1",
+  "SIZING": "LARGE",
+  "DEVELOPER_STEPS": 3,
+  "kind": "run_packet_CONTRACT",
+  "not_a_packet_mint": true,
+  "amended_contract": true,
+  "family": "F2_ttl_age_drain",
+  "arm_id": "arm2_ttl_age_drain",
+  "task_id": "1784809634527-2c088463",
+  "dispatch_msg_id": "1784980423038-4eaa002a",
+  "f1_formal_terminal_receipt_msg_id": "1784980373704-df1789e7",
+  "f1_plus_one_launch_msg_id": "1784979216749-5b2a7b98",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "context_health": "self-measured ~58% — plan-only F2 amended CONTRACT; no packet mint",
+  "provenance": {
+    "gabe_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science",
+    "eligibility_trigger": {
+      "rule_source": "artifacts/acc_entropy/arm1_decay_suppression_formal150_ns3_run_packet_CONTRACT_v1.json §claim_ceiling_formal_arm",
+      "rule_sha256": "7b29ba4f253cf1a2cdd51dc080fa122b8d8287b67779cddfaa8182289e348473",
+      "rule_text": "A-match unblocks sequential F2 consideration under amended contract WITHOUT inheriting suppression assumption",
+      "ns3_terminal": {
+        "classification_path": "artifacts/acc_entropy/arm1_decay_suppression_formal150_ns3_classification.json",
+        "classification_sha256": "af1b786df3f103458db31b99a2acde89fe74a94e482624c7426cf8f13414087b",
+        "acceptance_branch": "A_suppression_diagnostic",
+        "discriminator_branch": "degenerate_full_suppression",
+        "ok": true,
+        "ratio_vs_formal150": 0.9970603007297303,
+        "terminal_label_canonical": "arm1_decay_leak__law_trunc_toward_zero_lambda_1_32_int16_carrier__geom_steps150_batch8_topk1024_cuda0__degenerate_full_suppression",
+        "disposition": {
+          "receipt_valid_for_diagnosis": true,
+          "mechanism_eligible": false,
+          "family_winner": false
+        }
+      },
+      "ns3_OFF_receipt": {
+        "path": "artifacts/acc_entropy/arm1_decay_suppression_formal150_ns3_OFF_receipt.json",
+        "sha256": "f7d5bc0f8776bde11ed258917203fea92380973fab72039bdd3ef36702ae5888",
+        "credited_mass": 2901957665,
+        "steps": 150
+      },
+      "ns3_ON_receipt": {
+        "path": "artifacts/acc_entropy/arm1_decay_suppression_formal150_ns3_ON_receipt.json",
+        "sha256": "a75e9078470fb13c53a47f663d76ab697bbd7da61d42b004b9e2a867b147252d",
+        "credited_mass": 2901957665,
+        "steps": 150,
+        "pre_post_telemetry": true
+      },
+      "ns3_observer_pair_proof": {
+        "path": "artifacts/acc_entropy/arm1_decay_suppression_formal150_ns3_observer_pair_proof.json",
+        "sha256": "3163abdb20ed8b2525942d090df89923b9809e78958388b3b24f83cca546c16c",
+        "ok": true,
+        "identity_ok": true,
+        "explicitly_not_formal_g0": true,
+        "off_ms_per_step": 2754.88130569458,
+        "on_ms_per_step": 2925.05468527476
+      }
+    },
+    "PLAN_v10_1_sequential_boundary": {
+      "path": "artifacts/acc_entropy/forgetting_mechanism_screen_PLAN_v10_1.json",
+      "sha256": "d55a21c44ab604adb547e947207774a55c244ab82a471eaf0891203bd0e643fa",
+      "plan_revision": "v10.1r12",
+      "F2_must_not_inherit": "assumption that F2 will also suppress",
+      "diagnostic_valid_noneligible_F1": "unblocks sequential F2 under amended contract"
+    },
+    "family_prereg_F2_mechanism": {
+      "authority_plan": "artifacts/acc_entropy/forgetting_mechanism_screen_PLAN_v9.json",
+      "sha256": "07a02afff92cef7b2c6cee46a761a1e46b6b3422df911f8b4d4f63d41157e7a5",
+      "id": "arm2_ttl_age_drain",
+      "family": "F2_ttl_age_drain",
+      "law_screen_local": "force-zero any active episode with age > T; T prereg=32 (matches prior R1 old-bin edge)",
+      "forbidden": "no soft decay mixed in",
+      "note": "Mechanism definition is NOT improvised — copied from family prereg arms_one_variable_each[1]; PLAN_v10.1 cites sequential F2 boundary but does not redefine the law"
+    },
+    "ns3_mechanical_packet_for_template_lineage_ONLY": {
+      "path": "artifacts/acc_entropy/arm1_decay_suppression_formal150_ns3_launch_packet_v6.json",
+      "PACKET_SHA256": "531b3c7f3a620e34ef244542422227f202723cf0093543564e933611d8b7e21a",
+      "role": "mechanical template lineage for later mint (deadline/source/no-clobber/marker/O_EXCL) — NOT F2 acceptance evidence"
+    },
+    "V7_formal_receipt_NEVER_REINTERPRETED": {
+      "path": "artifacts/acc_entropy/forgetting_mechanism_arm1_decay_leak_receipt.json",
+      "sha256": "bea3d421c756e57c6cedf7ed4057da0ad2a6ec93daa2566f2d9305237a8a58d9",
+      "status": "still diagnostic evidence ONLY — F2 amended contract does not upgrade V7 or F1 A-match to G0/family/winner"
+    },
+    "git_head_observed_at_draft": "188c8695c148a89cf237682f1382b1823c0a1641"
+  },
+  "decision_contract": {
+    "intent": "Draft F2 amended-contract CONTRACT v1 after ns3 formal-150 A-match, dropping F1 suppression inheritance and preregistering F2 (ttl_age_drain) classifier branches before any F2 packet mint.",
+    "chosen_option": "Fresh F2 amended CONTRACT artifact now (plan gate only); F2 packet mint / GPU separately gated after dual accept.",
+    "rejected_alternatives": [
+      "Fast-path mint of an F2 packet without a contract — rejected: F2 is a novel slice (new mechanism), full plan gate mandatory",
+      "Reinterpreting the F1 A-match as evidence about F2 — rejected: A-match is diagnosis-valid only",
+      "Inheriting F1 degenerate_full_suppression as F2 success/acceptance — rejected by PLAN_v10.1 sequential_boundary.F2_must_not_inherit",
+      "Reuse ns3 namespace/artifacts for F2 — rejected: claim-surface collision with F1 formal diagnosis lane"
+    ],
+    "authority": "claude plan gate-1 → codex_co_lead gate-2; mint only after dual accept + fresh +1 implement for packet slice",
+    "autonomy_rung": "L3",
+    "confidence": "high",
+    "risk": "high",
+    "executor": "plan-dev (handle=codex)",
+    "validation_proof": "contract sha freeze + co_lead refute loop; no GPU in this slice",
+    "escalation_rule": "ambiguity in F2 mechanism definition vs family prereg → STOP + ask claude (do not improvise)",
+    "receipt_sink": "claude gate-1 ONLY",
+    "mode": "planning",
+    "required_gates": [
+      "plan"
+    ]
+  },
+  "suppression_assumption_DROPPED": {
+    "what_F1_arm1_assumed": [
+      "Live transfer law is soft per-step decay: pre=clamp(acc+move,-127,127); out=trunc_toward_zero(pre*31/32); λ=1/32 int16 carrier",
+      "Formal acceptance path evaluates suppression-diagnostic FIRST (degenerate_full_suppression / A_suppression_diagnostic)",
+      "A-match means full pre→post erase with zero flips, mass band vs 2910513700, probes retained — diagnosis-valid ONLY",
+      "A-match does NOT make arm1 mechanism_eligible or family_winner"
+    ],
+    "why_it_does_NOT_carry_to_F2": [
+      "PLAN_v10.1 sequential_boundary.F2_must_not_inherit explicitly forbids assuming F2 will also suppress",
+      "F2 family law is hard age-threshold force-zero (ttl_age_drain, T=32), FORBIDDEN to mix soft decay — different mechanism, different success surface",
+      "F1 A-match terminal_label_canonical names arm1_decay_leak ONLY — NEVER ARM2/ARM3 labels (PLAN_v10.1 terminal_label_rule)",
+      "F1 disposition.mechanism_eligible=false / family_winner=false — sequential unlock is procedural eligibility to DRAFT F2 contract, not scientific evidence about F2 outcomes"
+    ],
+    "forbidden_inheritances": [
+      "Treating F2 full-erase / zero-flip collapse as an A-success by analogy to F1",
+      "Citing ns3 pair proof / classification as F2 nonperturbation or F2 G0",
+      "Carrying F1 suppression requires_all as F2 acceptance requires_all",
+      "Predicting F2/F3 outcomes from F1 diagnosis"
+    ]
+  },
+  "namespace_proposal": {
+    "chosen": "ns4",
+    "full_prefix": "arm2_ttl_age_drain_formal150_ns4",
+    "justify": [
+      "ns3 is the F1 formal-150 diagnosis lane (A-match locked); F2 needs a fresh claim surface",
+      "fresh run_root / marker / void-ledger / identity strings avoid F1 artifact clobber and suppression-claim bleed",
+      "preserves ns3 v1–v6 + classification/receipts as the sequential-eligibility chain"
+    ],
+    "rejected": {
+      "ns3_reuse": "would mix F1 suppression-diagnosis claim ceiling with F2 ttl mechanism",
+      "ns3b": "implies same-mechanism defect remint; F2 is a new mechanism"
+    }
+  },
+  "run_geometry_proposed": {
+    "formal_arm": {
+      "arm": "arm2_ttl_age_drain",
+      "family": "F2_ttl_age_drain",
+      "law": "force-zero any active episode with age > T; T=32; NO soft decay mixed in",
+      "steps": 150,
+      "batch": 8,
+      "topk": 1024,
+      "device": "cuda:0",
+      "seed_family": "same parent/seed/source as pinned formal-150 control (parent_sha256 2d9b9f67…)",
+      "pre_post_telemetry": true,
+      "H_sample_steps_exact": [
+        25,
+        50,
+        75,
+        100,
+        125,
+        150
+      ]
+    },
+    "observer_pair_REQUIRED": {
+      "rule": "F2 formal packet emits its OWN observer_pair_proof at 150-step — ns3/F1 pair proof NEVER cited as F2 nonperturbation",
+      "binding": "same as ns3 CONTRACT binding #2 / dual-accept"
+    },
+    "named_wall_model_seed_from_ns3_same_geometry_rates": {
+      "note": "ns3 OFF/ON rates are SAME GEOMETRY (150/8/1024) but DIFFERENT arm law — use only as initial budget floor seed; F2 mint MUST re-fit budgets to a named wall model measured for arm2 (or accelerated containment characterization), not cargo-cult 3300/3600 blindly",
+      "ns3_off_ms_per_step": 2754.88130569458,
+      "ns3_on_ms_per_step": 2925.05468527476,
+      "ns3_pair_est_seconds_approx": 852,
+      "requirement_at_mint": "budget-fit-to-named-wall-model (standing mechanic)"
+    }
+  },
+  "credited_mass_ratio_semantics_NOW_APPLICABLE": {
+    "formula": "credited_mass_ratio = fresh_formal_arm.measurements.credited_mass / 2910513700",
+    "denominator_sha256": "5e593454f0ddffb946692e09913da5df1ddfe0f2f11aaaf3fb663a2f00fbcfdb",
+    "health_band_inclusive": [
+      0.9,
+      1.1
+    ],
+    "note": "Mass band remains a health/integrity check on formal-150 geometry; it is NOT an F2 suppression-success criterion and NOT inherited from F1 A-match semantics"
+  },
+  "pre_registered_branch_classifier": {
+    "order": "D wiring/law FIRST → A ttl_age_drain_operative → B ordinary g0_valid_v10 → C vacuous_unresolved; full-suppression-like collapse is NON-success (see Z)",
+    "rationale": "F2 must not inherit F1's suppression-first acceptance. TTL age drain succeeds by age-gated force-zero dynamics, not by total soft-decay erase.",
+    "D_wiring_or_representation": {
+      "when": [
+        "soft decay / λ-leak signatures present (FORBIDDEN mix-in)",
+        "age>T force-zero not implemented or law_mismatch>0",
+        "pre unexpectedly zero despite positive moves without age>T justification",
+        "arm label ≠ arm2_ttl_age_drain"
+      ],
+      "result": "source repair; mint NOTHING downstream; STOP F2 claim path"
+    },
+    "A_ttl_age_drain_operative": {
+      "name": "ttl_age_drain_operative",
+      "requires_all": [
+        "receipt.arm == arm2_ttl_age_drain ONLY",
+        "geometry steps=150 batch=8 topk=1024 device=cuda:0",
+        "H_trajectory samples exactly {25,50,75,100,125,150}",
+        "pre_post_transform.steps_accumulated == 150 AND pre_post_telemetry True",
+        "law identity matches force-zero age>T=32 (no trunc_toward_zero λ-leak law string)",
+        "n_applied_drains > 0 OR equivalent age-drain event counter > 0 (TTL mechanism must act)",
+        "NOT the F1 strong_S1 full-erase profile: forbid accepting pre_nonzero_to_post_zero_frac==1.0 with n_flips==0 and post_decay abs_max==0 as F2 A-success",
+        "probes: typed acq/ret step0==final; bank parent_ok; frozen_scale before==after==c01ecdcc…",
+        "credited_mass_ratio in [0.90,1.10] vs 2910513700 as health check",
+        "own observer_pair_proof ok at this packet (identity_ok) — never cite ns3 pair"
+      ],
+      "on_match_disposition": {
+        "receipt_valid_for_diagnosis": true,
+        "mechanism_eligible": false,
+        "family_winner": false,
+        "terminal_label_canonical_TEMPLATE": "arm2_ttl_age_drain__law_force_zero_age_gt_T32__geom_steps150_batch8_topk1024_cuda0__ttl_age_drain_operative",
+        "note": "diagnosis-valid operative TTL behavior ONLY — not family closure"
+      }
+    },
+    "B_ordinary_dynamic_branch_g0_valid_v10": {
+      "when": "TTL operative predicate false AND dynamic events exist with full g0 field set",
+      "behavior": "call g0_valid_v10 BYTE-UNCHANGED on arm_metrics_for_v10_classifier(receipt)",
+      "required_fields_for_g0_ok_FULL_SET": [
+        "n_flips",
+        "N_events_evaluable",
+        "N_survived_applied_within_H",
+        "N_never_applied_within_H",
+        "N_events_evaluable_early",
+        "N_events_evaluable_late",
+        "N_never_applied_within_H_early",
+        "N_never_applied_within_H_late",
+        "N_events_censored_insufficient_followup",
+        "never_frac",
+        "deferred_survival_class",
+        "mean_ratio",
+        "max_ratio",
+        "frac_steps_ratio_ge_2",
+        "n_steps",
+        "early_never_frac",
+        "late_never_frac",
+        "delta_never_apply",
+        "H_final",
+        "receipt_steps"
+      ],
+      "n_steps_must_equal": 150
+    },
+    "C_vacuous_unresolved": {
+      "when": "zero-event / missing cohorts / class vacuous WITHOUT TTL-operative evidence",
+      "result": "G0-invalid vacuous_unresolved — must NOT mint TTL-operative success"
+    },
+    "Z_full_suppression_like_NON_SUCCESS": {
+      "when": "F2 run exhibits F1-like degenerate_full_suppression profile (total pre→post erase, zero flips, soft-decay-like wipe) despite arm2 label",
+      "result": "diagnosis of over-aggression / wrong-law / inheritance failure — NOT A-success; NOT mechanism_eligible; NOT family_winner; do NOT treat as F1 analogy win",
+      "why": "this is exactly the suppression assumption F2 must not inherit"
+    }
+  },
+  "standing_mechanics_CARRY_FORWARD": {
+    "fence_before_mint": {
+      "status": "LOAD-BEARING",
+      "f1_fence_done": {
+        "commit": "188c8695c148a89cf237682f1382b1823c0a1641",
+        "note": "trunc-div exactness fence landed for F1 soft-decay law"
+      },
+      "f2_proposed_fence": {
+        "sizing": "SMALL",
+        "scope": "CPU characterization of age>T=32 force-zero primitive / episode-age accounting exactness BEFORE F2 packet mint",
+        "stop": "any need to change live transfer-law SEMANTICS → STOP + re-plan",
+        "ordering": "F2 CONTRACT dual-accept → F2 age/TTL fence slice → F2 packet mint → dual packet accept → fresh +1 launch"
+      }
+    },
+    "whole_packet_zero_scan": {
+      "status": "LOAD-BEARING",
+      "rule": "at mint/freeze: byte-level sweep for stale identity, false deadline literals, current-tense cross-lane claims; zero-scan must PASS before gate-1 freeze"
+    },
+    "budget_fit_to_named_wall_model": {
+      "status": "LOAD-BEARING",
+      "rule": "pair timeout + GLOBAL_DEADLINE_SECS must be derived from a named wall model for THIS arm/geometry (+ margin); do not cargo-cult ns3 3300/3600 without re-fit",
+      "seed_only": "ns3 same-geometry rates may seed the model but must be labeled seed_only"
+    },
+    "PACKET_PATH_O_EXCL_REFUSE_IF_EXISTS": {
+      "status": "LOAD-BEARING",
+      "token": "PACKET_PATH_O_EXCL_REFUSE_IF_EXISTS",
+      "rule": "immutable filename per version; remint ALWAYS bumps basename; os.open O_CREAT|O_EXCL — never write to an existing chain path"
+    },
+    "own_observer_pair_proof_per_formal_packet": {
+      "status": "LOAD-BEARING",
+      "rule": "F2 formal packet emits its OWN observer_pair_proof — never inherit ns2/ns3/F1 pair proof as F2 nonperturbation"
+    }
+  },
+  "claim_ceiling_F2_arm": {
+    "three_ledger": [
+      "diagnosis-valid only on declared F2 branch match (A ttl operative or B ordinary g0) — not science acceptance",
+      "mechanism_eligible=false / family_winner=false on this CONTRACT's formal arm until a later explicit eligibility gate (NOT this contract)",
+      "no science / sub-2 / formal-G0 / family-winner / F1-closure / V7-upgrade language"
+    ],
+    "if_A_ttl_operative_matches": [
+      "receipt_valid_for_diagnosis=true ONLY",
+      "mechanism_eligible=false",
+      "family_winner=false",
+      "terminal label names EXACT arm2 candidate — NOT F2-family closure",
+      "does NOT auto-unblock F3; F3 requires its own amended contract after explicit sequential rule"
+    ],
+    "explicit_non_claims": [
+      "No inheritance of F1 suppression assumption or A-match as F2 evidence",
+      "No retroactive reinterpretation of V7 or ns3 A-match as G0/family/winner",
+      "No functional_veto_freeze claim",
+      "No forgetting-law / stability / representation-limit / sub-2 / readiness claim",
+      "No F3 outcome prediction",
+      "No treating Z_full_suppression_like as success"
+    ]
+  },
+  "stop_conditions": [
+    "ambiguity about F2 mechanism vs family prereg (arm2_ttl_age_drain / T=32 / no soft decay) → STOP and ask claude — do not improvise",
+    "any pressure to inherit F1 suppression assumption as F2 acceptance → STOP and flag",
+    "reinterpret V7 / ns3 A-match as G0/family/winner → STOP",
+    "F2 packet mint or GPU before dual plan accept + ordered F2 fence + fresh +1 launch → STOP",
+    "repo source edits in THIS plan-only slice → STOP (contract artifact + room post only)",
+    "write to an existing packet/contract path (violate O_EXCL) → STOP",
+    "cite ns3 observer_pair_proof as F2 nonperturbation → STOP",
+    "mix soft decay into F2 law → STOP"
+  ],
+  "DEVELOPER_STEPS_detail": [
+    {
+      "step": 1,
+      "name": "F2 amended CONTRACT plan freeze",
+      "this_slice": true,
+      "assertions": [
+        "artifact sha posted",
+        "no packet mint",
+        "no GPU",
+        "no source edits",
+        "suppression inheritance explicitly dropped",
+        "F2 classifier preregistered"
+      ]
+    },
+    {
+      "step": 2,
+      "name": "F2 age/TTL exactness-fence SMALL slice",
+      "this_slice": false,
+      "assertions": [
+        "CPU fence receipt for age>T=32 force-zero semantics",
+        "no GPU",
+        "no F2 packet"
+      ]
+    },
+    {
+      "step": 3,
+      "name": "ns4 F2 formal-150 packet mint + later launch",
+      "this_slice": false,
+      "assertions": [
+        "PACKET_PATH_O_EXCL_REFUSE_IF_EXISTS",
+        "budget-fit-to-named-wall-model",
+        "own observer_pair_proof",
+        "CHAR_E2E_PASS on minted bytes",
+        "whole-packet zero-scan PASS",
+        "fresh +1 launch separately gated"
+      ]
+    }
+  ],
+  "explicit_non_work_this_slice": [
+    "NO packet mint",
+    "NO repo source edits outside this new contract artifact",
+    "NO GPU",
+    "NO commit/push",
+    "NO F1 suppression inheritance",
+    "NO V7 reinterpretation"
+  ],
+  "named_risk_ONE": {
+    "id": "RISK_F2_SUPPRESSION_ANALOGY_CLASSIFIER",
+    "statement": "The highest residual risk is classifier/operator analogy error: reading an F1-like full-erase profile on arm2 as success because ns3 A-matched — exactly the inheritance PLAN_v10.1 forbids.",
+    "mitigation_in_this_contract": "Z_full_suppression_like_NON_SUCCESS branch + explicit forbidden_inheritances + A_ttl requires n_applied_drains/age-drain activity and rejects F1 strong_S1 full-erase profile as A-success",
+    "open_for_refutation": "whether A_ttl requires_all drain-counter field names match the live receipt schema (may need rename to the actual age-drain telemetry fields at mint-preflight — do not invent counters silently)"
+  },
+  "open_for_refutation": [
+    "ns4 namespace vs alternative F2 suffix naming",
+    "exact live telemetry field names for age>T drains (fence slice must pin them)",
+    "whether F2 fence is validate-only vs tiny source assert",
+    "whether A_ttl should require a minimum age-drain rate vs any positive drain count",
+    "budget seed from ns3 rates vs requiring a fresh micro-benchmark before mint"
+  ],
+  "mint_safety_for_THIS_contract_artifact": {
+    "token": "PACKET_PATH_O_EXCL_REFUSE_IF_EXISTS",
+    "rule": "This CONTRACT file itself was created with O_EXCL refuse-if-path-exists"
+  },
+  "drafted_at_utc": "2026-07-25T11:55:37Z"
+}
