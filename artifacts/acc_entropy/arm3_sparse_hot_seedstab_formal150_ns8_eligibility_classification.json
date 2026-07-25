@@ -1,0 +1,24 @@
+{
+  "claim_ceiling": "A_seed_stable \u2260 mechanism_eligible/family_winner/sub-2/readiness",
+  "classifier_order": "D_wiring \u2192 Z_seed_artifact \u2192 A_seed_stable",
+  "decision_rule": "2/2 \u2192 A_seed_stable; 1/2|0/2 \u2192 Z_seed_artifact; NO third-seed",
+  "label": "A_seed_stable",
+  "n_pass": 2,
+  "ok": true,
+  "per_repeat": {
+    "R1": {
+      "fails": [],
+      "pass": true
+    },
+    "R2": {
+      "fails": [],
+      "pass": true
+    }
+  },
+  "predicates": {
+    "CONTROL_MASS": 2910513700,
+    "EPS": 0.0005,
+    "H_MAX": 0.006
+  },
+  "schema": "arm3_sparse_hot_seedstab_formal150_ns8_eligibility_classification_v1"
+}

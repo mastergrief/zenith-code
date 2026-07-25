@@ -1,0 +1,33 @@
+{
+  "B1_fix": {
+    "new": "_box_health_fsync_probe_ns8.bin",
+    "ns7_in_live_orch": false,
+    "old": "_box_health_fsync_probe_ns7.bin"
+  },
+  "CHAR_E2E": {
+    "NS8_B1_FAMILY_INFIX_ZERO_SCAN_OK": true,
+    "NS8_OPS_WALL_REDERIVATION_OK": true,
+    "duration_s_approx": 101.5,
+    "rc": 0,
+    "token": "CHAR_E2E_PASS"
+  },
+  "HEAD": "eba17a712a973e07e980e0d28ef3e5fcc9149f39",
+  "PACKET_SHA256": "0a1df67ab7e65e69d55a86ed0c0685e9661c52f8a67b1681be1527f6c95b6ccd",
+  "bounce_msg_id": "1785006202072-dbab9de3",
+  "carried_unchanged": {
+    "global_deadline_seconds": 3540,
+    "observer_overhead_bound": 194.1955,
+    "pair_timeout_seconds": 1620
+  },
+  "dispatch_msg_id": "1785005442018-8391f048",
+  "gpu_hold": true,
+  "kind": "ns8_v13_remint_receipt",
+  "minted_at_utc": "2026-07-25T19:06:28Z",
+  "no_commit": true,
+  "no_launch": true,
+  "packet_path": "artifacts/acc_entropy/arm3_sparse_hot_seedstab_formal150_ns8_launch_packet_v13.json",
+  "predecessor_path": "artifacts/acc_entropy/arm3_sparse_hot_seedstab_formal150_ns8_launch_packet_v12.json",
+  "predecessor_sha256": "ffd6fdacf476c3955eafa4d8a29e1e1f8b707b72f5a863361fa20a3b67751948",
+  "staged_count": 0,
+  "void_ledger_n": 12
+}

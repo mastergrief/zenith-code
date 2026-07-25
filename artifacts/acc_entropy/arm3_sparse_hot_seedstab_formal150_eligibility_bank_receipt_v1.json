@@ -1,0 +1,64 @@
+{
+ "authority": {
+  "gate1_freeze_msg_id": "1785006492270-a0e158e0",
+  "gate2_pass_msg_id": "1785006570334-6659f322",
+  "plus_one_launch_msg_id": "1785006586202-62759011",
+  "route_concur_msg_id": "1785008732377-91d130a5",
+  "terminal_receipt_msg_id": "1785008689936-40281efc"
+ },
+ "claim_ceiling": "A_seed_stable != mechanism_eligible/family_winner/sub-2/readiness; experiments (b)/(c) remain out of scope without own contracts",
+ "contract": {
+  "path": "artifacts/acc_entropy/arm3_sparse_hot_ELIGIBILITY_GATE_CONTRACT_v1.json",
+  "sha256": "8ef12c340842abc8017a40ce44a5582285fe9814d58adb04e8aa42b740b9005b"
+ },
+ "created_by": "claude",
+ "determinism_witness_note_only": "R1 OFF/ON receipts byte-identical across ns6/ns7/ns8 (3 independent GPU runs); R2 OFF byte-identical ns7/ns8; NOTE_ONLY, not a science promotion",
+ "eligibility_classification": {
+  "path": "artifacts/acc_entropy/arm3_sparse_hot_seedstab_formal150_ns8_eligibility_classification.json",
+  "sha256": "dc1646357b642c17747b8e8967c6ecef811b5b6452b3bf0067fae77400a867d1"
+ },
+ "head": "eba17a712a973e07e980e0d28ef3e5fcc9149f39",
+ "label": "A_seed_stable",
+ "n_pass": 2,
+ "ops_walls": {
+  "deltas_ms_per_step": {
+   "R1": -237.89,
+   "R2": 5.16
+  },
+  "global_deadline_s": 3540,
+  "measured_pair_walls_s": {
+   "R1": 1098,
+   "R2": 844
+  },
+  "observer_bound_ms_per_step": 194.1955,
+  "pair_timeout_s": 1620
+ },
+ "packet": {
+  "path": "artifacts/acc_entropy/arm3_sparse_hot_seedstab_formal150_ns8_launch_packet_v13.json",
+  "sha256": "0a1df67ab7e65e69d55a86ed0c0685e9661c52f8a67b1681be1527f6c95b6ccd"
+ },
+ "prior_terminals": [
+  {
+   "class": "ENV_IO_DEGRADATION_SYNC_BACKLOG",
+   "ns": "ns6_v10",
+   "receipt_msg_id": "1785001436334-8ba92b94"
+  },
+  {
+   "class": "R2_PAIR_TIMEOUT_STALE_WALL_MODEL",
+   "ns": "ns7_v11",
+   "receipt_msg_id": "1785005372786-9fd3a39d"
+  }
+ ],
+ "run_output_pins_uncommitted": {
+  "R1_OFF": "69604d6b191b46440e7d8cf07151c416ff1cb7bd25d40e19086b859fff814fc9",
+  "R1_ON": "9da111b78d9a341c6cce772b9398d7a34b3a02f776564e5bbf9cd2388e67cca9",
+  "R1_classification": "49975319771cc52e10fdc674281c7ec82cbf12259ce6fcb57c99b6d60a42bf4a",
+  "R1_pair_proof": "dbebad5888c1c19fb43269ad048c49c0b313e05bbe498067e1f19c31fc0c3b2e",
+  "R2_OFF": "a7f2cb7dd271be8d5dbd579cc2a2fde4b195ef37bd9520a5e3ec86a49f6de296",
+  "R2_ON": "4f082a491cebb0970fabfc390a4e9b3bace55e7f3c2f1ffc6dc0124914fe53df",
+  "R2_classification": "bae565a349239509cda9780ef4e973e0fc1fa3d940baea216967f02a8fcf40c4",
+  "R2_pair_proof": "56cbe725906d83c4fef51348da1b45ec2dd3dcf63547a722aa27700fd2a27655",
+  "driver_log": "3dc05a616001a8e248f645c3b485f232f28c46210a2d9731303cde30d7b0b658"
+ },
+ "schema": "arm3_sparse_hot_seedstab_formal150_eligibility_bank_receipt_v1"
+}
