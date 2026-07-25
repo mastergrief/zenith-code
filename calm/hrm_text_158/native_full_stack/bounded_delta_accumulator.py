@@ -910,7 +910,10 @@ def _sparse_value_sha256(
 def _truncate_toward_zero_division(numerator: int, denominator: int) -> int:
     if int(denominator) <= 0:
         raise ValueError("denominator must be > 0")
-    return int(math.trunc(float(int(numerator)) / float(int(denominator))))
+    n = int(numerator)
+    d = int(denominator)
+    q = abs(n) // d
+    return q if n >= 0 else -q
 
 
 def _clip_i16(value: int, clip_min: int, clip_max: int) -> int:
