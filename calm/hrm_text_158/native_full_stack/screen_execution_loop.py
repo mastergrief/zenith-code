@@ -89,6 +89,8 @@ def run_train_loop(
     phase_timer: Any | None = None,
     pre_post_telemetry: bool = True,
     batch_rng_base: int = 1000,
+    phaseb_acc_dump_dir: str | None = None,
+    phaseb_dump_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Mutate q/acc/episode for `steps`; return telemetry + final state tensors.
 
@@ -98,9 +100,18 @@ def run_train_loop(
     `pre_post_telemetry` gates ARM1 PrePostTransformAccumulator (default ON).
     `batch_rng_base` seeds per-step data/batch-order RNG as Random(base + step);
     default 1000 preserves pre-plumbing / ns5-identical batch order.
+    `phaseb_acc_dump_dir` default None/OFF = zero Phase B dump writes; when set,
+    observation-only compact dumps at H-trajectory steps (law untouched).
     """
     residency = init_gpu_loop_residency(q_levels, device=device)
     _timer = phase_timer
+    phaseb_writer = None
+    if phaseb_acc_dump_dir:
+        from calm.hrm_text_158.native_full_stack.phaseb_acc_carrier_dump import (
+            PhaseBAccCarrierDumpWriter,
+        )
+
+        phaseb_writer = PhaseBAccCarrierDumpWriter(phaseb_acc_dump_dir)
 
     lifetimes: list[int] = []
     credited_mass = 0
@@ -318,6 +329,8 @@ def run_train_loop(
                     "estimator": "shannon_unique_counts",
                 }
             )
+            if phaseb_writer is not None:
+                phaseb_writer.record_snapshot(int(step), residency.acc)
 
         if step % 10 == 0 or step == int(steps) or correctness_smoke:
             print(
@@ -370,4 +383,13 @@ def run_train_loop(
         out["pressure_telemetry"] = pressure_telemetry
         out["margin_trajectory"] = margin_traj
         out["episode_trajectory"] = episode_traj
+    if phaseb_writer is not None:
+        meta = dict(phaseb_dump_meta or {})
+        meta.setdefault("batch_rng_base", int(batch_rng_base))
+        meta.setdefault("arm", str(arm))
+        meta.setdefault(
+            "geometry",
+            f"{int(steps)}/{int(batch)}/{int(topk)}/{device}/{str(arm)}",
+        )
+        out["phaseb_dump"] = phaseb_writer.finalize(meta)
     return out

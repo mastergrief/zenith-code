@@ -1,0 +1,97 @@
+{
+  "kind": "implement_receipt",
+  "slice": "phaseB_compact_dump_helper_SMALL",
+  "revision": "v1",
+  "minted_at_utc": "2026-07-25T20:00:50Z",
+  "dispatch_msg_id": "1785009531998-122d6948",
+  "contract_authority": {
+    "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_sub2_carrier_analysis_PHASE_B_CONTRACT_v2.json",
+    "CONTRACT_SHA256": "c4ad3c7bbbaa8ccd55c63fceb18e9d5ca7636943aedbd04d446c1950af791360",
+    "gate1": "1785009445298",
+    "gate2": "1785009502164"
+  },
+  "HEAD": "37817f8dfa1c43dbd8a82adf029f9c80e1979a90",
+  "EXECUTOR": "codex",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "law_untouched": {
+    "forgetting_laws.py_sha256_before": "881174b5dfebb0fe2829f30438ea938ebdbfa57cce340c84f9af1b4daac8c1ad",
+    "forgetting_laws.py_sha256_after": "881174b5dfebb0fe2829f30438ea938ebdbfa57cce340c84f9af1b4daac8c1ad",
+    "match": true,
+    "apply_sparse_hot_edits": false
+  },
+  "files_touched": [
+    {
+      "path": "calm/hrm_text_158/native_full_stack/phaseb_acc_carrier_dump.py",
+      "action": "CREATE",
+      "sha256": "8ee6d3b408f15a93ce929f86bca286d795220aa56e7d748b01d961103eec6c09",
+      "why": "observation-only compact dump helper + writer"
+    },
+    {
+      "path": "calm/hrm_text_158/tests/test_phaseb_acc_carrier_dump.py",
+      "action": "CREATE",
+      "sha256": "1df9d8117fe9804824de8b31b34cfa1e2b2ac7404ac31d4e32195d7ef670ad58",
+      "why": "CPU unit/schema/fail-closed/flag-OFF tests"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "action": "MODIFY",
+      "sha256": "8147a7942c2d60f04309bac2f63d2640db0f8317b173273a60b16937bc8c899c",
+      "why": "flag-gated phaseb_acc_dump_dir wire-in at H-trajectory steps; default None/OFF"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/screen_run_loop.py",
+      "action": "MODIFY",
+      "sha256": "d69dced5b45a0d784ecd2a3860363b8da3bae39e979d5eb95449e55a61564c88",
+      "why": "thread args.phaseb_acc_dump_dir + dump meta into run_train_loop"
+    },
+    {
+      "path": "scripts/hrm_text_158_forgetting_mechanism_screen.py",
+      "action": "MODIFY",
+      "sha256": "82a352780152c1d573ebda86e38dba7c658368aead6d5b6f28de736c141f3d57",
+      "why": "CLI --phaseb-acc-dump-dir default OFF"
+    }
+  ],
+  "diff_summary": {
+    "CREATE": 2,
+    "MODIFY": 3,
+    "forgetting_laws.py": "UNCHANGED",
+    "full_int8_dumps": false,
+    "gpu": false,
+    "packet_mint": false
+  },
+  "cli_flag": {
+    "name": "--phaseb-acc-dump-dir",
+    "default": null,
+    "absent_behavior": "zero new dump writes; run_train_loop phaseb_acc_dump_dir=None"
+  },
+  "schema_emit": {
+    "snapshots_jsonl": "acc_carrier_snapshots.jsonl",
+    "summary": "acc_carrier_dump_summary.json",
+    "run_receipt": "dump_run_receipt.json",
+    "snapshot_steps": [
+      25,
+      50,
+      75,
+      100,
+      125,
+      150
+    ],
+    "BULK_SUFFIXES": [
+      "gqkv_proj.weight",
+      "o_proj.weight",
+      "gate_up_proj.weight",
+      "down_proj.weight"
+    ],
+    "N_production": 29360128
+  },
+  "validation": {
+    "command": "timeout 180 python3 -m pytest -q calm/hrm_text_158/tests/test_phaseb_acc_carrier_dump.py --tb=short",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "result": "9 passed in 6.80s",
+    "exit_code": 0
+  },
+  "claim_ceiling": "helper+tests only; no bounds measurement claim; dumps uncommitted; packet mint is next separate dispatch",
+  "EDIT_FREEZE": true
+}

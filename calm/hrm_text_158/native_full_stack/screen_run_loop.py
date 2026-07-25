@@ -106,6 +106,21 @@ def run_arm_screen(args: argparse.Namespace) -> int:
             steps=int(args.steps),
             device=device if str(device).startswith("cuda") else "cpu",
         )
+    phaseb_dir = getattr(args, "phaseb_acc_dump_dir", None)
+    phaseb_meta = None
+    if phaseb_dir:
+        phaseb_meta = {
+            "geometry": (
+                f"{int(args.steps)}/{int(args.batch)}/{int(args.topk)}/"
+                f"{device}/{str(args.arm)}"
+            ),
+            "parent_sha256": str(rt["sha_before"]),
+            "batch_rng_base": int(getattr(args, "batch_rng_base", 1000)),
+            "arm": str(args.arm),
+            "ckpt_path": str(args.ckpt_path),
+            "scale_sha_before": str(rt["scale_sha_before"]),
+            "q_sha_before": str(rt["q_sha_before"]),
+        }
     loop_out = run_train_loop(
         m=m,
         tok=tok,
@@ -123,6 +138,8 @@ def run_arm_screen(args: argparse.Namespace) -> int:
         pressure_telemetry=pressure_store,
         pre_post_telemetry=pre_post_on,
         batch_rng_base=int(getattr(args, "batch_rng_base", 1000)),
+        phaseb_acc_dump_dir=str(phaseb_dir) if phaseb_dir else None,
+        phaseb_dump_meta=phaseb_meta,
     )
 
     acq_final = ret_final = None

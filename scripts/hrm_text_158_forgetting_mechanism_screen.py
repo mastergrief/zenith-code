@@ -198,6 +198,16 @@ def main() -> int:
             "Default 1000 preserves ns5-identical batch order. No env-var override."
         ),
     )
+    ap.add_argument(
+        "--phaseb-acc-dump-dir",
+        default=None,
+        help=(
+            "Optional Phase B observation-only compact acc-carrier dump directory. "
+            "Default OFF (None) = byte-identical behavior / zero new dump writes. "
+            "When set, writes acc_carrier_snapshots.jsonl + summary + dump_run_receipt "
+            "at H-trajectory steps (law untouched)."
+        ),
+    )
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--topk", type=int, default=TOPK_PER_STEP)
     ap.add_argument("--arm", default=ARM0)
