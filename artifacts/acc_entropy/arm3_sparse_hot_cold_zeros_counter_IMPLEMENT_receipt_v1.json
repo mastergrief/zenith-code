@@ -1,0 +1,111 @@
+{
+  "kind": "f3_sparse_hot_cold_zeros_counter_IMPLEMENT_receipt",
+  "revision": "v1",
+  "dispatch_msg_id": "1784987809175-7563c130",
+  "plus_one_implement": "1784987809175-7563c130",
+  "plan_path": "artifacts/acc_entropy/arm3_sparse_hot_cold_zeros_counter_PLAN_v1.json",
+  "plan_sha256": "4eb75d117d7bea2d06796a280d2a4600afd70d752da24955ce93082d1e2e9a54",
+  "head_at_receipt": "41bb5446f6bdf088e2d9da851876edfad0689c40",
+  "drafted_at_utc": "2026-07-25T13:58:45Z",
+  "field": "measurements.n_sparse_hot_cold_zeros",
+  "wrapper": "apply_sparse_hot_with_count",
+  "witness_predicate": "(pre != 0) & (post == 0) after unchanged apply_sparse_hot",
+  "law_body_proof": {
+    "apply_sparse_hot_body_sha256": "e7d89af45f3996cfecdef1d1cd050e15def4094de9641e623282337c4148c847",
+    "identical_to_HEAD_body": true,
+    "HEAD_file_sha256_pre_wrapper": "ffd5563486b9166b86416c9e249df956a184a5448a24f3c32de7907fdba4f476",
+    "post_file_sha256": "881174b5dfebb0fe2829f30438ea938ebdbfa57cce340c84f9af1b4daac8c1ad"
+  },
+  "bindings": {
+    "BINDING_1": "output-derived only; no recomputed keep/topk outside primitive",
+    "BINDING_2": "ARM3 always-present incl 0; other arms KEY ABSENT; harness asserted",
+    "BINDING_3": "presence-conditional pass-through; NOT in REQUIRED_KEYS; no .get(...,0)"
+  },
+  "tests": {
+    "path": "calm/hrm_text_158/tests/test_sparse_hot_cold_zeros_counter.py",
+    "sha256": "21780f51ccf54292e9652e574cb81ac8db3e9322bddf9c3cfcb08cbacd3f3e80",
+    "result": "8 passed",
+    "command": "timeout 180 python3 -m pytest -q calm/hrm_text_158/tests/test_sparse_hot_cold_zeros_counter.py -v",
+    "log_tail": [
+      "============================= test session starts ==============================",
+      "platform linux -- Python 3.13.7, pytest-9.0.3, pluggy-1.6.0",
+      "rootdir: /mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "plugins: anyio-4.13.0, typeguard-4.5.1",
+      "collected 8 items",
+      "",
+      "calm/hrm_text_158/tests/test_sparse_hot_cold_zeros_counter.py ........   [100%]",
+      "",
+      "============================== 8 passed in 4.84s ==============================="
+    ]
+  },
+  "touched_files_COMPLETE_enumeration": [
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_laws.py",
+      "action": "EDIT",
+      "sha256": "881174b5dfebb0fe2829f30438ea938ebdbfa57cce340c84f9af1b4daac8c1ad",
+      "cite": "apply_sparse_hot_with_count after :165; apply_sparse_hot body UNCHANGED"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py",
+      "action": "EDIT",
+      "sha256": "51640c5719c7c746ce6314283b7c4bc41f89f0472fd0736782f319243cefaf99",
+      "cite": "import + __all__ facade re-export"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "action": "EDIT",
+      "sha256": "7b3a0cda32e02df798d8b8c3812bcafb2e043aee9775079331ea9ab0c12a6a36",
+      "cite": "init :108; ARM3 :167-170; loop_out :356"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/screen_receipt_output.py",
+      "action": "EDIT",
+      "sha256": "902a8d7f4ca28e90bc01c22a3be6df0f0ae1ee2e9b999400c6504448497f7038",
+      "cite": "helper :203-212; fail-closed :254-263; emit :383-389"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/phase_receipt_contracts.py",
+      "action": "EDIT",
+      "sha256": "f26d7e08e5f31ea1fcbb22451ac5360d45f2fa53502e75f58e78b8a1254a24b2",
+      "cite": "presence-conditional :94-98"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_screen_v10_contract.py",
+      "action": "EDIT",
+      "sha256": "f2933cbc319f3f36685792760cf28e62accb3c19c0cf099cac1d730b2fb27d23",
+      "cite": "presence-conditional :244-248"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/pressure_metric_warmup_runtime.py",
+      "action": "EDIT",
+      "sha256": "ef8df7f5f116d2215820b18274c61102ba2216f0338a9697e76bc279825b2618",
+      "cite": "omit comments :329-330"
+    },
+    {
+      "path": "calm/hrm_text_158/tests/test_sparse_hot_cold_zeros_counter.py",
+      "action": "CREATE",
+      "sha256": "21780f51ccf54292e9652e574cb81ac8db3e9322bddf9c3cfcb08cbacd3f3e80",
+      "cite": "CREATE characterization"
+    },
+    {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_cold_zeros_counter_IMPLEMENT_receipt_v1.json",
+      "action": "CREATE_O_EXCL"
+    },
+    {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_cold_zeros_counter_PLAN_v1.json",
+      "action": "pre-existing plan artifact (not edited this slice)",
+      "sha256": "4eb75d117d7bea2d06796a280d2a4600afd70d752da24955ce93082d1e2e9a54"
+    }
+  ],
+  "NOT_touched": [
+    "apply_sparse_hot body/signature/default",
+    "pressure_metric_receipt.py REQUIRED_KEYS",
+    "ns5 packet",
+    "GPU"
+  ],
+  "explicit_non_work": [
+    "NO GPU",
+    "NO ns5 mint",
+    "NO commit/push"
+  ]
+}

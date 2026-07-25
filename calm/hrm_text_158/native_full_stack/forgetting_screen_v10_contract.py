@@ -241,6 +241,12 @@ def arm_metrics_for_v10_classifier(arm_receipt: Mapping[str, Any]) -> dict[str, 
             if "n_ttl_force_zero_drains" in m
             else {}
         ),
+        # ARM3-conditional: pass through only when present — NEVER m.get(..., 0).
+        **(
+            {"n_sparse_hot_cold_zeros": int(m["n_sparse_hot_cold_zeros"])}
+            if "n_sparse_hot_cold_zeros" in m
+            else {}
+        ),
     }
 
 def g0_valid_v10(m: Mapping[str, Any]) -> tuple[bool, str | None]:

@@ -326,6 +326,8 @@ def run_one_diagnostic_loop(
         "episode_trajectory": loop_out.get("episode_trajectory") or [],
         # ARM0 warmup path: OMIT n_ttl_force_zero_drains (absent ≠ fake zero).
         # Do NOT copy loop_out["n_ttl_force_zero_drains"] even if present as 0.
+        # Likewise OMIT n_sparse_hot_cold_zeros on non-ARM3 warmup paths.
+        # Do NOT copy loop_out["n_sparse_hot_cold_zeros"] even if present as 0.
     }
 
     return {

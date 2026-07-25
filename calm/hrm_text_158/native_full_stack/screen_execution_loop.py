@@ -27,7 +27,7 @@ from calm.hrm_text_158.native_full_stack.family_classifier import (
 )
 from calm.hrm_text_158.native_full_stack.forgetting_laws import (
     apply_decay_leak,
-    apply_sparse_hot,
+    apply_sparse_hot_with_count,
     apply_ttl_age_drain_with_count,
     entropy_bits,
     should_record_h_trajectory,
@@ -105,6 +105,7 @@ def run_train_loop(
     q_changed_count = 0
     n_applied_drains = 0
     n_ttl_force_zero_drains = 0
+    n_sparse_hot_cold_zeros = 0
     excluded_hit_count = 0
     H_trajectory: list[dict[str, Any]] = []
     margin_traj: list[dict[str, Any]] = []
@@ -163,7 +164,10 @@ def run_train_loop(
                 )
                 n_ttl_force_zero_drains += int(n_ttl)
         elif arm == ARM3:
-            residency.acc = apply_sparse_hot(residency.acc, hot_h=8192)
+            residency.acc, n_cz = apply_sparse_hot_with_count(
+                residency.acc, hot_h=8192
+            )
+            n_sparse_hot_cold_zeros += int(n_cz)
         elif arm != ARM0:
             raise SystemExit(f"unknown --arm {arm}")
 
@@ -349,6 +353,7 @@ def run_train_loop(
         "q_changed_count": q_changed_count,
         "n_applied_drains": n_applied_drains,
         "n_ttl_force_zero_drains": n_ttl_force_zero_drains,
+        "n_sparse_hot_cold_zeros": n_sparse_hot_cold_zeros,
         "excluded_hit_count": excluded_hit_count,
         "H_trajectory": H_trajectory,
         "train_route_counters": train_route_counters,

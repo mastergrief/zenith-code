@@ -92,6 +92,11 @@ def arm_metrics_for_classifier(arm_receipt: Mapping[str, Any]) -> dict[str, Any]
             if "n_ttl_force_zero_drains" in m
             else {}
         ),
+        **(
+            {"n_sparse_hot_cold_zeros": int(m["n_sparse_hot_cold_zeros"])}
+            if "n_sparse_hot_cold_zeros" in m
+            else {}
+        ),
     }
 
 

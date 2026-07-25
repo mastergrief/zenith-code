@@ -166,6 +166,24 @@ def apply_sparse_hot(
     return out
 
 
+def apply_sparse_hot_with_count(
+    arms_acc: Mapping[str, torch.Tensor],
+    *,
+    hot_h: int = 8192,
+) -> tuple[dict[str, torch.Tensor], int]:
+    """Observation wrapper: call unchanged apply_sparse_hot; return cold_zero_count.
+
+    Count is derived from the primitive's INPUT/OUTPUT only (not a recomputed
+    keep/cold mask): per named tensor, ((pre != 0) & (post == 0)).sum().
+    Pre-zero elements never count. Law outputs remain byte-identical.
+    """
+    new_acc = apply_sparse_hot(arms_acc, hot_h=hot_h)
+    cold_zero_count = 0
+    for name, pre in arms_acc.items():
+        post = new_acc[name]
+        cold_zero_count += int(((pre != 0) & (post == 0)).sum().item())
+    return new_acc, cold_zero_count
+
 
 def entropy_bits(acc: torch.Tensor) -> float:
     vals, counts = torch.unique(acc, return_counts=True)

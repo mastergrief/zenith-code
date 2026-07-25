@@ -1,0 +1,216 @@
+{
+  "plan_id": "arm3_sparse_hot_cold_zeros_counter_PLAN",
+  "plan_revision": "v1",
+  "SIZING": "SMALL",
+  "DEVELOPER_STEPS": 1,
+  "kind": "source_slice_PLAN",
+  "not_a_packet_mint": true,
+  "task_id": "1784809634527-2c088463",
+  "dispatch_msg_id": "1784987578082-eef66eaf",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "context_health": "self-measured ~50% — plan-only; no source edits yet",
+  "provenance": {
+    "gabe_verbatim_standing": "auto-research directive … no need to wait on me at any gates including pushes and gpu runs",
+    "law_repair_commit": {
+      "sha": "41bb5446f6bdf088e2d9da851876edfad0689c40",
+      "note": "REPAIRED exact-top-k apply_sparse_hot landed; HEAD==remote"
+    },
+    "F3_CONTRACT_v2": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_amended_CONTRACT_v2.json",
+      "sha256": "034ec8e966ca020d5ac95630a66613c0cc556aeb67e31418c3bbd5d263f858d7",
+      "binding": "A_sparse_hot witness = measurements.n_sparse_hot_cold_zeros after gated observation-only telemetry slice; never invent counters in packet classifier"
+    },
+    "template_pattern": {
+      "path": "artifacts/acc_entropy/arm2_ttl_force_zero_counter_PLAN_v1.json",
+      "sha256": "6ecb4dde7d1b228d3438812a8ff572fc80fecb4d8fdf255e8da80df201c38d54",
+      "landed_commit": "a086c456400f6fb46aab787a3de57a7f9cec17e7"
+    },
+    "repaired_law_sha256": "ffd5563486b9166b86416c9e249df956a184a5448a24f3c32de7907fdba4f476",
+    "git_head_at_draft": "41bb5446f6bdf088e2d9da851876edfad0689c40"
+  },
+  "decision_contract": {
+    "intent": "Add ARM3-only receipt measurement witnessing apply_sparse_hot force-zeros (pre-nonzero→post-zero) so ns5 A_sparse_hot has a real carrier.",
+    "chosen_option": "NEW named counter measurements.n_sparse_hot_cold_zeros — observation-only; thin wrapper apply_sparse_hot_with_count calling UNCHANGED repaired primitive; TTL-counter 3 bindings.",
+    "rejected_alternatives": [
+      {
+        "option": "count numel−k (or cold-mask.sum() including already-zero)",
+        "why_rejected": "Counts already-zero cold as events — inflates witness; not a force-zero event. Dispatch pins pre-nonzero AND post-zero."
+      },
+      {
+        "option": "independently recompute keep/cold mask in the loop (dual-maintenance)",
+        "why_rejected": "r1 TTL bounce lesson: duplicated predicate drifts from law. Must derive count from primitive INPUT/OUTPUT only."
+      },
+      {
+        "option": "tensor-delta reconstruction without source change",
+        "why_rejected": "Weaker than a named witness once A_sparse_hot is load-bearing; kept as STOP-fallback only if wrapper couples to law."
+      },
+      {
+        "option": "overload n_applied_drains / n_ttl_force_zero_drains",
+        "why_rejected": "Wrong surfaces (flip-path / ARM2 TTL). Binding A_sparse_hot to either is D-class wiring."
+      },
+      {
+        "option": "also add hot-set survival/turnover counters this slice",
+        "why_rejected": "STOP — scope creep; contract names them missing but this slice is cold_zeros ONLY."
+      }
+    ],
+    "authority": "claude plan gate-1 → codex_co_lead gate-2 → persisted +1 implement before any edit",
+    "executor": "plan-dev (codex)",
+    "mode": "planning",
+    "required_gates": [
+      "plan"
+    ]
+  },
+  "proposed_field": {
+    "name": "n_sparse_hot_cold_zeros",
+    "location": "receipt.measurements.n_sparse_hot_cold_zeros",
+    "type": "int (>=0)",
+    "event_semantics": "Per step: count elements force-zeroed by apply_sparse_hot = sum over named tensors of ((pre != 0) & (post == 0)).sum(); accumulate across steps. Pre-zero elements NEVER count (zeros-in-topk-mask invisibility).",
+    "arm_surface": {
+      "ARM3_arm3_sparse_hot_forgettable_cold": "ALWAYS present (including explicit 0) — present-and-zero is valid (no force-zeros this run)",
+      "other_arms": "KEY ABSENT (not null, not 0) — absent ≠ zero; ns5/D-branch fail-closed on ARM3 missing key"
+    },
+    "NOT": [
+      "n_applied_drains",
+      "n_ttl_force_zero_drains",
+      "numel - k",
+      "hot-set survival / turnover counters (out of scope)"
+    ]
+  },
+  "api_shape": {
+    "wrapper": "apply_sparse_hot_with_count(arms_acc, *, hot_h=8192) -> (new_acc_dict, cold_zero_count: int)",
+    "invariant": "Calls UNCHANGED apply_sparse_hot first; derives cold_zero_count from pre/post tensors only — law body/signature/default hot_h byte-identical (sha ffd55634… must hold post-edit for the primitive body).",
+    "call_site_ONLY": {
+      "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "line": 166,
+      "from": "residency.acc = apply_sparse_hot(residency.acc, hot_h=8192)",
+      "to": "residency.acc, n_cz = apply_sparse_hot_with_count(...); n_sparse_hot_cold_zeros += n_cz"
+    },
+    "facade_reexport": {
+      "file": "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py",
+      "note": "Mirror TTL pattern: add import + __all__ entry for apply_sparse_hot_with_count (facade-only; enumerate in receipt)"
+    }
+  },
+  "THREE_BINDINGS_MANDATORY": {
+    "BINDING_1_single_sourced_output_derived": "Witness predicate = (pre!=0)&(post==0) AFTER calling unchanged apply_sparse_hot — no duplicated topk/keep formula outside the primitive.",
+    "BINDING_2_ARM3_only_emit_absent_ne_zero": "ARM3 always emits key (incl. 0); other arms KEY ABSENT; CPU harness asserts non-ARM3 omit NOW (not deferred to ns5).",
+    "BINDING_3_consumers_presence_conditional": "Pass-through only via if-key-in / presence-conditional int(m[...]); NEVER m.get('n_sparse_hot_cold_zeros', 0) on non-ARM3; NEVER add to pressure_metric_receipt REQUIRED_KEYS; never feed into flip-path G0b floors."
+  },
+  "emit_chain_file_line_cites_TO_MIRROR": [
+    {
+      "role": "loop init",
+      "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "sibling_ttl": ":107 n_ttl_force_zero_drains = 0",
+      "plan": "add n_sparse_hot_cold_zeros = 0 beside it"
+    },
+    {
+      "role": "loop accumulate",
+      "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "sibling_ttl": ":156-164 ARM2 with_count accumulate",
+      "plan": "ARM3 :166 switch to with_count + accumulate"
+    },
+    {
+      "role": "loop_out",
+      "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "sibling_ttl": ":351 n_ttl_force_zero_drains in return dict",
+      "plan": "add n_sparse_hot_cold_zeros key"
+    },
+    {
+      "role": "receipt helper",
+      "file": "calm/hrm_text_158/native_full_stack/screen_receipt_output.py",
+      "sibling_ttl": ":191-199 arm2_ttl_force_zero_measurement_fields",
+      "plan": "add arm3_sparse_hot_cold_zeros_measurement_fields"
+    },
+    {
+      "role": "fail-closed read",
+      "file": "calm/hrm_text_158/native_full_stack/screen_receipt_output.py",
+      "sibling_ttl": ":230-239 ARM2 requires key in loop_out",
+      "plan": "ARM3 requires key; non-ARM3 → None / omit"
+    },
+    {
+      "role": "measurements emit",
+      "file": "calm/hrm_text_158/native_full_stack/screen_receipt_output.py",
+      "sibling_ttl": ":355-358 **arm2 helper if not None",
+      "plan": "same pattern for ARM3 helper"
+    },
+    {
+      "role": "phase pass-through",
+      "file": "calm/hrm_text_158/native_full_stack/phase_receipt_contracts.py",
+      "sibling_ttl": ":91-92 presence-conditional",
+      "plan": "sibling if-in block"
+    },
+    {
+      "role": "v10 pass-through",
+      "file": "calm/hrm_text_158/native_full_stack/forgetting_screen_v10_contract.py",
+      "sibling_ttl": ":240-241 presence-conditional",
+      "plan": "sibling if-in block"
+    },
+    {
+      "role": "warmup omit",
+      "file": "calm/hrm_text_158/native_full_stack/pressure_metric_warmup_runtime.py",
+      "sibling_ttl": ":327-328 ARM0 omit",
+      "plan": "omit n_sparse_hot_cold_zeros on non-ARM3; no fake zero"
+    },
+    {
+      "role": "REQUIRED_KEYS do-NOT-add",
+      "file": "calm/hrm_text_158/native_full_stack/pressure_metric_receipt.py",
+      "sibling": ":36 n_applied_drains in global required set",
+      "plan": "do NOT add n_sparse_hot_cold_zeros"
+    }
+  ],
+  "characterization_tests": {
+    "primary_file": "calm/hrm_text_158/tests/test_sparse_hot_cold_zeros_counter.py (CREATE)",
+    "assertions": [
+      "counter == pure-Python oracle count of (pre!=0)&(post==0) on fence-style fixtures",
+      "tie fixtures on repaired exact-topk law: count matches output-derived oracle (not numel-k)",
+      "zeros-in-topk-mask / pre-zero elements NEVER increment counter",
+      "identity path (H≥numel) → counter == 0",
+      "k<=0 all-zero path → counter == count of pre-nonzero (all force-zeroed)",
+      "ARM3 emit helper: key present incl. 0; non-ARM3 omit",
+      "presence-conditional pass-through: no .get(...,0) fake zeros on non-ARM3"
+    ],
+    "no_GPU": true
+  },
+  "acceptance": [
+    "CPU tests pass on exact bytes",
+    "apply_sparse_hot body sha unchanged (ffd55634…) — wrapper-only addition",
+    "ARM3 emit present / non-ARM3 omit harness asserted",
+    "Receipt enumerates EVERY touched file (incl. facade re-export)",
+    "Diff surface = laws wrapper + loop + receipt_output + pass-throughs + tests + plan/receipt artifacts — no ns5 / no GPU"
+  ],
+  "stop_conditions": [
+    "any change to apply_sparse_hot body/signature/default hot_h → STOP",
+    "hot-set survival/turnover counters this slice → STOP (scope creep)",
+    "GPU / ns5 mint → STOP",
+    "implementation before persisted +1 implement → STOP",
+    "pressure to add field to global REQUIRED_KEYS or .get(...,0) on non-ARM3 → STOP"
+  ],
+  "named_risk_ONE": {
+    "id": "RISK_PREZERO_INVISIBILITY_MISCOUNT",
+    "statement": "If implementer counts cold-mask True bits (or numel−k) instead of (pre!=0)&(post==0), already-zero elements inflate the witness and A_sparse_hot becomes reachable on vacuous force-zero evidence.",
+    "mitigation": "Pin output-derived predicate in wrapper + characterization fixtures that include pre-zeros under H < numel; receipt must show oracle==counter on those fixtures."
+  },
+  "explicit_non_work_this_slice": [
+    "NO source edits until +1 implement",
+    "NO GPU",
+    "NO ns5 packet mint",
+    "NO commit/push",
+    "NO hot-set survival/turnover counters",
+    "NO apply_sparse_hot body change"
+  ],
+  "ordering": [
+    "1) THIS plan dual-accept",
+    "2) +1 implement → wrapper + emit + tests → validation receipt gate-1 → gate-2",
+    "3) +1 commit/(+push if LOW)",
+    "4) later ns5 packet mint binds A_sparse_hot to measurements.n_sparse_hot_cold_zeros"
+  ],
+  "drafted_at_utc": "2026-07-25T13:54:04Z",
+  "mint_safety_for_THIS_plan_artifact": {
+    "path": "artifacts/acc_entropy/arm3_sparse_hot_cold_zeros_counter_PLAN_v1.json",
+    "write_mode": "O_EXCL",
+    "immutable": true,
+    "any_change": "v2 remint on fresh O_EXCL path"
+  }
+}

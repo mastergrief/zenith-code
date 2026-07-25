@@ -21,6 +21,7 @@ import torch
 
 from calm.hrm_text_158.native_full_stack.family_classifier import (
     ARM2,
+    ARM3,
     retention_ok,
 )
 from calm.hrm_text_158.native_full_stack.forgetting_laws import (
@@ -199,6 +200,18 @@ def arm2_ttl_force_zero_measurement_fields(
     return {}
 
 
+def arm3_sparse_hot_cold_zeros_measurement_fields(
+    arm: str, n_sparse_hot_cold_zeros: int
+) -> dict[str, int]:
+    """ARM3-only surface: {n_sparse_hot_cold_zeros: N} or {} (absent ≠ zero).
+
+    Non-ARM3 MUST omit the key — never default to 0 on non-ARM3 paths.
+    """
+    if str(arm) == ARM3:
+        return {"n_sparse_hot_cold_zeros": int(n_sparse_hot_cold_zeros)}
+    return {}
+
+
 def assemble_arm_receipt(
     *,
     args: argparse.Namespace,
@@ -237,6 +250,17 @@ def assemble_arm_receipt(
         n_ttl_force_zero_drains = int(loop_out["n_ttl_force_zero_drains"])
     else:
         n_ttl_force_zero_drains = None
+    # ARM3-only sparse-hot cold-zero counter: fail-closed — ARM3 requires key.
+    n_sparse_hot_cold_zeros: int | None
+    if str(args.arm) == ARM3:
+        if "n_sparse_hot_cold_zeros" not in loop_out:
+            raise KeyError(
+                "ARM3 loop_out missing n_sparse_hot_cold_zeros "
+                "(absent ≠ present-and-zero)"
+            )
+        n_sparse_hot_cold_zeros = int(loop_out["n_sparse_hot_cold_zeros"])
+    else:
+        n_sparse_hot_cold_zeros = None
     excluded_hit_count = loop_out["excluded_hit_count"]
     H_trajectory = list(loop_out["H_trajectory"])
     train_route_counters = loop_out["train_route_counters"]
@@ -355,6 +379,13 @@ def assemble_arm_receipt(
                         str(args.arm), int(n_ttl_force_zero_drains)
                     )
                     if n_ttl_force_zero_drains is not None
+                    else {}
+                ),
+                **(
+                    arm3_sparse_hot_cold_zeros_measurement_fields(
+                        str(args.arm), int(n_sparse_hot_cold_zeros)
+                    )
+                    if n_sparse_hot_cold_zeros is not None
                     else {}
                 ),
             },
