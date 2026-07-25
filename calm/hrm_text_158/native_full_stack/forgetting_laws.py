@@ -113,6 +113,27 @@ def apply_ttl_age_drain(
     return new_acc, new_ep
 
 
+def apply_ttl_age_drain_with_count(
+    acc: torch.Tensor,
+    episode_start: torch.Tensor,
+    *,
+    step: int,
+    ttl: int = 32,
+) -> tuple[torch.Tensor, torch.Tensor, int]:
+    """Observation wrapper: call unchanged apply_ttl_age_drain; return drained_count.
+
+    Count is derived from the primitive's OUTPUTS (not a recomputed drain predicate):
+    an active episode (episode_start > 0) whose new_ep is 0 was force-zeroed by the
+    primitive — the only zeroing path in apply_ttl_age_drain. Law outputs remain
+    byte-identical; this does not alter transfer-law semantics.
+    """
+    new_acc, new_ep = apply_ttl_age_drain(
+        acc, episode_start, step=step, ttl=ttl
+    )
+    drained_count = int(((episode_start > 0) & (new_ep == 0)).sum().item())
+    return new_acc, new_ep, drained_count
+
+
 def apply_sparse_hot(
     arms_acc: Mapping[str, torch.Tensor],
     *,

@@ -1,0 +1,147 @@
+{
+  "plan_id": "arm2_ttl_force_zero_counter_PLAN",
+  "plan_revision": "v1",
+  "SIZING": "SMALL",
+  "DEVELOPER_STEPS": 1,
+  "kind": "source_slice_PLAN",
+  "not_a_packet_mint": true,
+  "task_id": "1784809634527-2c088463",
+  "dispatch_msg_id": "1784981243683-a432db60",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "context_health": "self-measured ~55% — plan-only; no source edits yet",
+  "provenance": {
+    "gabe_verbatim_standing": "auto-research directive … no need to wait on me at any gates including pushes and gpu runs",
+    "commit_push_receipt": {
+      "sha": "1d1a8b51043d89ce5ad34055c9109df2d8c29f5b",
+      "msg_id": "1784981243683-a432db60",
+      "note": "F2 fence COMPLETE; EDIT FREEZE lifted for this dispatched plan slice only"
+    },
+    "F2_CONTRACT": {
+      "path": "artifacts/acc_entropy/arm2_ttl_age_drain_F2_amended_CONTRACT_v1.json",
+      "sha256": "bebe6143a0ce9f0cebea752b256de3280ddfdcc8c428117728021f7ded594633"
+    },
+    "fence_FINDING": {
+      "id": "MISSING_TTL_FORCE_ZERO_TELEMETRY_COUNTER",
+      "receipt_path": "artifacts/acc_entropy/arm2_ttl_age_drain_F2_exactness_fence_receipt_v1.json",
+      "sha256": "69fab5f3406258d8dd80fcca519e183c082246ec8cb999c54a1e68cbb87f3df6",
+      "gate2_preference": "named TTL force-zero counter (preferred) over tensor-delta reconstruction"
+    },
+    "git_head_at_draft": "1d1a8b51043d89ce5ad34055c9109df2d8c29f5b"
+  },
+  "decision_contract": {
+    "intent": "Add a named ARM2-only receipt measurement that witnesses apply_ttl_age_drain force-zero events so ns4 A_ttl has a real carrier (not n_applied_drains).",
+    "chosen_option": "NEW named counter n_ttl_force_zero_drains — observation-only emit chain mirroring n_applied_drains plumbing; do NOT overload n_applied_drains.",
+    "rejected_alternatives": [
+      {
+        "option": "tensor-delta derivation without source change (reconstruct drained count from pre/post episode_start or acc)",
+        "why_rejected": "Weaker: reconstructs rather than witnesses the drain event; can disagree under concurrent mutations / future law tweaks; gate-2 already stated named counter preferred. Zero source risk is real but insufficient once ns4 A_ttl is load-bearing.",
+        "kept_as": "fallback only if counter slice hits STOP on transfer-law coupling — not the default"
+      },
+      {
+        "option": "overload measurements.n_applied_drains to include TTL zeros",
+        "why_rejected": "Fence FINDING + ns3 evidence: n_applied_drains is flip-mask drains (apply_drained_flip_counts). Overloading would be a D-class wiring lie and break G0b q-motion floors that interpret it as flip drains."
+      },
+      {
+        "option": "change apply_ttl_age_drain zeroing predicate (e.g. age>=T)",
+        "why_rejected": "STOP — transfer-law semantic change; fence proved strict age>T"
+      }
+    ],
+    "authority": "claude plan gate-1 → codex_co_lead gate-2 → +1 implement before any edit",
+    "executor": "plan-dev (codex)",
+    "mode": "planning",
+    "required_gates": [
+      "plan"
+    ]
+  },
+  "proposed_field": {
+    "name": "n_ttl_force_zero_drains",
+    "location": "receipt.measurements.n_ttl_force_zero_drains",
+    "type": "int (>=0)",
+    "semantics": "Cumulative count of tensor elements force-zeroed by apply_ttl_age_drain across all named params and steps in the run (= sum over steps of drained_mask.sum()).",
+    "arm_surface": {
+      "ARM2_arm2_ttl_age_drain": "ALWAYS present (including explicit 0) — present-and-zero is valid operative evidence of no TTL drains this run",
+      "other_arms": "KEY ABSENT (not null, not 0) — absent ≠ zero; ns4/D-branch can fail-closed on ARM2 missing key"
+    },
+    "NOT": "n_applied_drains / n_flips (flip-path only)"
+  },
+  "edit_strategy": {
+    "observation_only_invariant": "Zeroing predicate and outputs of apply_ttl_age_drain MUST remain byte-identical for (acc, episode_start); counter only witnesses the existing drained mask.",
+    "preferred_api_shape": [
+      "Add helper or extend apply_ttl_age_drain to ALSO return drained_count = int(old.sum()) while keeping (new_acc, new_ep) identical — OR compute count in the ARM2 loop from the same mask expression without changing law.",
+      "Prefer returning count from a thin wrapper/helper next to apply_ttl_age_drain to avoid silent dual-maintenance of the mask formula in the loop.",
+      "Update ARM2 call site only; other call sites keep current 2-tuple unpack (or adapt if signature changes — enumerate at implement)."
+    ],
+    "emit_chain_mirror_n_applied_drains": [
+      {
+        "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+        "init": "~:106 sibling: n_ttl_force_zero_drains = 0",
+        "accumulate": "ARM2 block :154-158 — after/with apply_ttl_age_drain, add drained_ttl count; non-ARM2 leaves counter at 0 and still omit at emit",
+        "out_dict": "~:344 sibling key n_ttl_force_zero_drains in loop_out"
+      },
+      {
+        "file": "calm/hrm_text_158/native_full_stack/screen_receipt_output.py",
+        "read": "~:214 sibling from loop_out",
+        "emit": "~:313 measurements — include key IFF arm==ARM2 (always int); omit for other arms"
+      }
+    ],
+    "do_NOT_add_to_global_required_keys": {
+      "file": "calm/hrm_text_158/native_full_stack/pressure_metric_receipt.py",
+      "note": "REQUIRED measurement list currently includes n_applied_drains for all arms. Adding n_ttl_force_zero_drains there would force presence on non-ARM2 and destroy absent≠zero. Keep ARM2-conditional emit only; update any ARM2-specific schema asserts instead."
+    },
+    "consumer_sweep_at_implement": [
+      "rg n_applied_drains / loop_out measurement copy sites (warmup_runtime, phase_receipt_contracts, forgetting_screen_v10*_contract) — add ARM2-conditional pass-through where receipts are rebuilt, without making the field globally required"
+    ]
+  },
+  "fail_closed_rules": [
+    "ARM2 receipt missing measurements.n_ttl_force_zero_drains → classifier/preflight D-wiring (absent)",
+    "ARM2 present with value 0 → valid (no TTL drains) — NOT absent",
+    "Non-ARM2 receipt containing the key → optional warn/fail in characterization (prefer omit)",
+    "Binding A_ttl to n_applied_drains → forbidden (FINDING stands)"
+  ],
+  "characterization_tests": {
+    "primary_file": "calm/hrm_text_158/tests/test_ttl_age_drain_exactness_fence.py (extend) and/or new test_ttl_force_zero_counter_fence.py",
+    "assertions": [
+      "oracle drained-count from fence fixtures (young/old boundary) == helper/counter",
+      "exhaustive grid spot-strata: counter == number of True drained flags from existing pure-Python oracle",
+      "inactive episode_start==0 contributes 0",
+      "age==ttl contributes 0; age==ttl+1 contributes 1 per element",
+      "ARM2 emit path unit/harness: key present; non-ARM2 omit (if cheap to stub without GPU)"
+    ],
+    "no_GPU": true
+  },
+  "acceptance": [
+    "CPU tests pass on exact bytes",
+    "Source diff limited to observation/emit + tests (no law predicate change)",
+    "Receipt shows file:line cites for init/accumulate/emit",
+    "Document that ns4 A_ttl binds to measurements.n_ttl_force_zero_drains (not n_applied_drains)"
+  ],
+  "stop_conditions": [
+    "any need to change apply_ttl_age_drain zeroing semantics → STOP + re-plan",
+    "pressure to overload n_applied_drains → STOP",
+    "F2 packet mint / GPU in this slice → STOP",
+    "ambiguity vs family prereg T=32 / age>T → STOP + ask claude",
+    "implementation before +1 implement → STOP"
+  ],
+  "named_risk_ONE": {
+    "id": "RISK_COUNTER_API_BLAST_RADIUS",
+    "statement": "Changing apply_ttl_age_drain's return arity could break overlooked call sites; counting only in the loop duplicates the mask formula and can drift.",
+    "mitigation": "At implement: rg all apply_ttl_age_drain call sites first; prefer a new helper apply_ttl_age_drain_with_count that calls the unchanged primitive (or shares one mask) so law stays single-sourced; characterize call-site count in receipt."
+  },
+  "explicit_non_work_this_slice": [
+    "NO source edits until +1 implement",
+    "NO GPU",
+    "NO F2/ns4 packet mint",
+    "NO commit/push",
+    "NO transfer-law semantic change"
+  ],
+  "ordering": [
+    "1) THIS plan dual-accept",
+    "2) +1 implement → observation-only counter + tests → validation receipt gate-1 → gate-2",
+    "3) +1 commit/(+push if LOW)",
+    "4) later ns4 packet mint binds A_ttl to n_ttl_force_zero_drains"
+  ],
+  "drafted_at_utc": "2026-07-25T12:08:20Z"
+}

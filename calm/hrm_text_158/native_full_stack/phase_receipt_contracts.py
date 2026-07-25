@@ -85,6 +85,13 @@ def arm_metrics_for_classifier(arm_receipt: Mapping[str, Any]) -> dict[str, Any]
         "lifetime_censored_frac": float(m.get("lifetime_censored_frac", 1.0)),
         "retention_ok": bool(probes.get("retention_ok", False)),
         "acq_delta_count": int(probes.get("acq_delta_count", -10**9)),
+        # ARM2-conditional: pass through only when present — NEVER m.get(..., 0)
+        # (fake zeros destroy absent≠zero for ns4 D-wiring).
+        **(
+            {"n_ttl_force_zero_drains": int(m["n_ttl_force_zero_drains"])}
+            if "n_ttl_force_zero_drains" in m
+            else {}
+        ),
     }
 
 

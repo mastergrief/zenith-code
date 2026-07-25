@@ -1,0 +1,93 @@
+{
+  "receipt_id": "arm2_ttl_force_zero_counter_IMPLEMENT_receipt",
+  "receipt_revision": "v1",
+  "kind": "implementation_validation_receipt",
+  "SIZING": "SMALL",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "task_id": "1784809634527-2c088463",
+  "dispatch_msg_id": "1784981478327-7fbee84e",
+  "plan": {
+    "path": "artifacts/acc_entropy/arm2_ttl_force_zero_counter_PLAN_v1.json",
+    "sha256": "6ecb4dde7d1b228d3438812a8ff572fc80fecb4d8fdf255e8da80df201c38d54",
+    "dual_accept": {
+      "gate1": "1784981380385-7ee15e9a",
+      "gate2": "1784981461139",
+      "plus1_implement": "1784981478327-7fbee84e"
+    }
+  },
+  "git_head": "1d1a8b51043d89ce5ad34055c9109df2d8c29f5b",
+  "field": "measurements.n_ttl_force_zero_drains",
+  "bindings_executed": {
+    "BINDING_1_wrapper": "apply_ttl_age_drain_with_count @ forgetting_laws.py:116 — calls unchanged apply_ttl_age_drain; returns (acc, ep, drained_count)",
+    "BINDING_2_non_ARM2_omit": "arm2_ttl_force_zero_measurement_fields + test_non_arm2_omit_key_present_and_zero_distinct",
+    "BINDING_3_consumer_anti_pattern": "presence-only pass-through at phase_receipt_contracts + forgetting_screen_v10_contract; warmup OMITs; no m.get(...,0); g0b untouched flip-path-only"
+  },
+  "apply_ttl_age_drain_body_untouched": {
+    "proof": "function-text sha256 identical HEAD vs WORKING",
+    "func_sha256": "84fd0e4c1a3a3d177d66c27b1698c5623e6c81dc3e25cf71781bceb58f3ee8c4",
+    "BODY_UNTOUCHED": true,
+    "note": "wrapper appended after primitive; primitive body byte-identical to HEAD"
+  },
+  "file_line_cites": {
+    "init": "screen_execution_loop.py:107 n_ttl_force_zero_drains = 0",
+    "accumulate": "screen_execution_loop.py:155-164 ARM2 apply_ttl_age_drain_with_count + += n_ttl",
+    "loop_out": "screen_execution_loop.py:351",
+    "receipt_read": "screen_receipt_output.py:228-239 ARM2 fail-closed / non-ARM2 None",
+    "receipt_emit": "screen_receipt_output.py:190-199 helper; :354-358 measurements splat",
+    "consumer_phase": "phase_receipt_contracts.py:88-94 presence-only",
+    "consumer_v10": "forgetting_screen_v10_contract.py:238-243 presence-only",
+    "consumer_warmup_omit": "pressure_metric_warmup_runtime.py:327-328 explicit OMIT comment (ARM0)",
+    "export": "forgetting_mechanism_screen_reducers.py:58/:394",
+    "helper": "forgetting_laws.py:116-135"
+  },
+  "rg_call_site_enumeration": {
+    "live_train_call": "screen_execution_loop.py:161 apply_ttl_age_drain_with_count ONLY",
+    "primitive_definition": "forgetting_laws.py:99",
+    "wrapper_definition": "forgetting_laws.py:116",
+    "reexport_facade": "forgetting_mechanism_screen_reducers.py import+__all__ (zero calls)",
+    "tests": "test_ttl_age_drain_exactness_fence.py + test_ttl_force_zero_counter.py"
+  },
+  "source_shas": {
+    "before_selected": {
+      "forgetting_laws.py": "003ddee38ffbc7e0a86f463c22b3611ba4ccf3df10413cdb5820facf270c27b1",
+      "screen_execution_loop.py": "6d89102e8fa7c735b54ff31c3f9ed3c84544e8649ae1ab55775ec3cdcd7c4704",
+      "screen_receipt_output.py": "6355d01dc55b42870834b89d7683f3e90734591c08ae6f9355c09017dcbadae5",
+      "test_ttl_age_drain_exactness_fence.py": "67234f1350496372517bf115ec8276b3540ccd2e7b580f8331bbe581d3385105"
+    },
+    "after_touched": {
+      "calm/hrm_text_158/native_full_stack/forgetting_laws.py": "399446d22948663424c57f53e187dd0b89e265f382315d58109f02d0ab953016",
+      "calm/hrm_text_158/native_full_stack/screen_execution_loop.py": "bad69dd0d53ef7c7759504ddc1051b809982add5d7200f4478a10249f061f01a",
+      "calm/hrm_text_158/native_full_stack/screen_receipt_output.py": "8be2570fa941324fdd1647905f88c1ee9e31a9e1f512a5ae0967b73f4a126458",
+      "calm/hrm_text_158/native_full_stack/phase_receipt_contracts.py": "7d03efe30578d60c79d41cb9b24c69adcea491f9f6781cea34c036d34b7c343d",
+      "calm/hrm_text_158/native_full_stack/forgetting_screen_v10_contract.py": "efa1e2e6c4500f230c66cdd7125714a0b204ff35e25698dc2d94fa0435aebc53",
+      "calm/hrm_text_158/native_full_stack/pressure_metric_warmup_runtime.py": "52f55be62f33c77199fe6f55e2ae1f5e4217bac6b3d5077d52fd333a22059f92",
+      "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py": "fda32521fbf51584dbb230079b18e4c6b26318f7f2324f35fb2540ced8eeda9b",
+      "calm/hrm_text_158/tests/test_ttl_force_zero_counter.py": "e3222d75fc99c2a2f46268d70723808d8e234c3ad778147c5a716560345616b8"
+    }
+  },
+  "not_done": {
+    "pressure_metric_receipt_REQUIRED_KEYS": "NOT modified — n_ttl_force_zero_drains absent from global required set",
+    "family_classifier.g0b_q_motion_ok": "flip-path only; n_ttl_force_zero_drains NOT fed",
+    "no_fake_zero_get": true,
+    "no_GPU": true,
+    "no_F2_packet_mint": true,
+    "no_commit": true
+  },
+  "cpu_tests": {
+    "command": "python3 -m pytest -q calm/hrm_text_158/tests/test_ttl_force_zero_counter.py calm/hrm_text_158/tests/test_ttl_age_drain_exactness_fence.py --tb=line",
+    "exit_code": 0,
+    "summary": "11 passed",
+    "exact_stdout": "...........                                                              [100%]\n11 passed in 9.99s"
+  },
+  "acceptance": [
+    "counter == oracle drained-count on boundary + exhaustive grid",
+    "wrapper outputs byte-identical to primitive for (acc, ep)",
+    "ARM2 present-and-zero ≠ non-ARM2 absent",
+    "consumer pass-through no fake zeros",
+    "apply_ttl_age_drain body untouched"
+  ],
+  "drafted_at_utc": "2026-07-25T12:14:14Z"
+}

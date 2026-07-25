@@ -20,6 +20,7 @@ from typing import Any
 import torch
 
 from calm.hrm_text_158.native_full_stack.family_classifier import (
+    ARM2,
     retention_ok,
 )
 from calm.hrm_text_158.native_full_stack.forgetting_laws import (
@@ -186,6 +187,18 @@ def run_schema_only(args: argparse.Namespace) -> int:
     return 0
 
 
+def arm2_ttl_force_zero_measurement_fields(
+    arm: str, n_ttl_force_zero_drains: int
+) -> dict[str, int]:
+    """ARM2-only surface: {n_ttl_force_zero_drains: N} or {} (absent ≠ zero).
+
+    Non-ARM2 MUST omit the key — never default to 0 on non-ARM2 paths.
+    """
+    if str(arm) == ARM2:
+        return {"n_ttl_force_zero_drains": int(n_ttl_force_zero_drains)}
+    return {}
+
+
 def assemble_arm_receipt(
     *,
     args: argparse.Namespace,
@@ -212,6 +225,18 @@ def assemble_arm_receipt(
     n_flips = loop_out["n_flips"]
     q_changed_count = loop_out["q_changed_count"]
     n_applied_drains = loop_out["n_applied_drains"]
+    # ARM2-only TTL force-zero counter: fail-closed — ARM2 requires key in loop_out.
+    # Non-ARM2: do not read into a defaulted local that could be emitted as fake zero.
+    n_ttl_force_zero_drains: int | None
+    if str(args.arm) == ARM2:
+        if "n_ttl_force_zero_drains" not in loop_out:
+            raise KeyError(
+                "ARM2 loop_out missing n_ttl_force_zero_drains "
+                "(absent ≠ present-and-zero)"
+            )
+        n_ttl_force_zero_drains = int(loop_out["n_ttl_force_zero_drains"])
+    else:
+        n_ttl_force_zero_drains = None
     excluded_hit_count = loop_out["excluded_hit_count"]
     H_trajectory = list(loop_out["H_trajectory"])
     train_route_counters = loop_out["train_route_counters"]
@@ -325,6 +350,13 @@ def assemble_arm_receipt(
                     "units": "bits_per_weight",
                     "trajectory_every": H_TRAJECTORY_EVERY,
                 },
+                **(
+                    arm2_ttl_force_zero_measurement_fields(
+                        str(args.arm), int(n_ttl_force_zero_drains)
+                    )
+                    if n_ttl_force_zero_drains is not None
+                    else {}
+                ),
             },
             "probes": probes_out,
             "asserts": {

@@ -324,6 +324,8 @@ def run_one_diagnostic_loop(
         "H_trajectory": loop_out["H_trajectory"],
         "margin_trajectory": loop_out.get("margin_trajectory") or [],
         "episode_trajectory": loop_out.get("episode_trajectory") or [],
+        # ARM0 warmup path: OMIT n_ttl_force_zero_drains (absent ≠ fake zero).
+        # Do NOT copy loop_out["n_ttl_force_zero_drains"] even if present as 0.
     }
 
     return {

@@ -1,0 +1,122 @@
+{
+  "receipt_id": "arm2_ttl_force_zero_counter_IMPLEMENT_receipt",
+  "receipt_revision": "v2",
+  "supersedes": {
+    "path": "artifacts/acc_entropy/arm2_ttl_force_zero_counter_IMPLEMENT_receipt_v1.json",
+    "sha256": "f46f596d81fe5735f5979dbdf08e1592da7ce3185e7f5d1bd276c01c8d45d0e0",
+    "bounce_msg_id": "1784981780239-f59c89b9"
+  },
+  "kind": "implementation_validation_receipt",
+  "SIZING": "SMALL",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "task_id": "1784809634527-2c088463",
+  "dispatch_msg_id": "1784981780239-f59c89b9",
+  "plan": {
+    "path": "artifacts/acc_entropy/arm2_ttl_force_zero_counter_PLAN_v1.json",
+    "sha256": "6ecb4dde7d1b228d3438812a8ff572fc80fecb4d8fdf255e8da80df201c38d54"
+  },
+  "git_head": "1d1a8b51043d89ce5ad34055c9109df2d8c29f5b",
+  "field": "measurements.n_ttl_force_zero_drains",
+  "r1_blockers_fixed": {
+    "BLOCKER_1": {
+      "issue": "wrapper recomputed drain predicate (dual-maintenance)",
+      "fix": "derive drained_count from primitive outputs AFTER apply_ttl_age_drain: int(((episode_start > 0) & (new_ep == 0)).sum().item()); no age>ttl predicate in wrapper",
+      "wrapper_func_sha256": "d32d770c866d09e553d0926a1d3a98549ae040e4d7ec828e0caae1d03cdda23a",
+      "wrapper_lines": "forgetting_laws.py:116-134"
+    },
+    "BLOCKER_2": {
+      "issue": "forgetting_mechanism_screen_reducers.py missing from v1 cite list",
+      "fix": "enumerated below with file:line (facade re-export only)"
+    }
+  },
+  "apply_ttl_age_drain_body_untouched": {
+    "proof": "function-text sha256 identical HEAD vs WORKING",
+    "func_sha256": "84fd0e4c1a3a3d177d66c27b1698c5623e6c81dc3e25cf71781bceb58f3ee8c4",
+    "BODY_UNTOUCHED": true
+  },
+  "touched_files_complete_enumeration": [
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_laws.py",
+      "sha256": "36f41e16f01cffb69b5f46582f8b927d56049f47f3492bf435ba8b5b9e1795f6",
+      "cites": [
+        "apply_ttl_age_drain :99-113 UNTOUCHED",
+        "apply_ttl_age_drain_with_count :116-134 (output-derived count)"
+      ]
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "sha256": "bad69dd0d53ef7c7759504ddc1051b809982add5d7200f4478a10249f061f01a",
+      "cites": [
+        "import :31",
+        "init :107",
+        "accumulate :155-164",
+        "loop_out :351"
+      ]
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/screen_receipt_output.py",
+      "sha256": "8be2570fa941324fdd1647905f88c1ee9e31a9e1f512a5ae0967b73f4a126458",
+      "cites": [
+        "arm2_ttl_force_zero_measurement_fields :190-199",
+        "read :228-239",
+        "emit :354-358"
+      ]
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/phase_receipt_contracts.py",
+      "sha256": "7d03efe30578d60c79d41cb9b24c69adcea491f9f6781cea34c036d34b7c343d",
+      "cites": [
+        "presence-only pass-through :88-94"
+      ]
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_screen_v10_contract.py",
+      "sha256": "efa1e2e6c4500f230c66cdd7125714a0b204ff35e25698dc2d94fa0435aebc53",
+      "cites": [
+        "presence-only pass-through :238-243"
+      ]
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/pressure_metric_warmup_runtime.py",
+      "sha256": "52f55be62f33c77199fe6f55e2ae1f5e4217bac6b3d5077d52fd333a22059f92",
+      "cites": [
+        "ARM0 OMIT comment :327-328 (no key copied)"
+      ]
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py",
+      "sha256": "fda32521fbf51584dbb230079b18e4c6b26318f7f2324f35fb2540ced8eeda9b",
+      "cites": [
+        "re-export import :58",
+        "__all__ :394"
+      ],
+      "note": "BLOCKER 2 — was missing from v1 receipt; facade only, zero calls"
+    },
+    {
+      "path": "calm/hrm_text_158/tests/test_ttl_force_zero_counter.py",
+      "sha256": "e3222d75fc99c2a2f46268d70723808d8e234c3ad778147c5a716560345616b8",
+      "cites": [
+        "CREATE — counter==oracle + non-ARM2 omit + consumer no-fake-zero"
+      ]
+    }
+  ],
+  "not_done": {
+    "pressure_metric_receipt_REQUIRED_KEYS": "NOT modified",
+    "family_classifier.g0b_q_motion_ok": "flip-path only; untouched",
+    "no_fake_zero_get": true,
+    "no_GPU": true,
+    "no_F2_packet_mint": true,
+    "no_commit": true,
+    "no_other_edits_beyond_blocker_fixes": true
+  },
+  "cpu_tests": {
+    "command": "python3 -m pytest -q calm/hrm_text_158/tests/test_ttl_force_zero_counter.py calm/hrm_text_158/tests/test_ttl_age_drain_exactness_fence.py --tb=line",
+    "exit_code": 0,
+    "summary": "11 passed",
+    "exact_stdout": "...........                                                              [100%]\n11 passed in 10.02s"
+  },
+  "drafted_at_utc": "2026-07-25T12:17:01Z"
+}
