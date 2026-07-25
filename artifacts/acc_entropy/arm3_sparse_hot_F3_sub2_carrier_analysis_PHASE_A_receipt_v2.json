@@ -1,0 +1,287 @@
+{
+  "kind": "analysis_receipt",
+  "plan_id": "arm3_sparse_hot_F3_sub2_carrier_analysis",
+  "plan_revision": "v3",
+  "phase": "A",
+  "receipt_revision": "v2",
+  "SIZING": "SMALL",
+  "lane": "plan-dev",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "task_id": "1784809634527-2c088463",
+  "implement_dispatch_msg_id": "1784993572718-d2d0f9e7",
+  "contract_path": "artifacts/acc_entropy/arm3_sparse_hot_F3_sub2_carrier_analysis_CONTRACT_v3.json",
+  "CONTRACT_SHA256": "2fe6e8a38ee7ceab2dc90d2b068ab3976965e0f43f71039e4cfa54459a45e447",
+  "dual_accept": {
+    "claude_gate1_PASS_FREEZE_msg_id": "1784993276932",
+    "colead_gate2_PASS_msg_id": "1784993360675"
+  },
+  "HEAD_at_receipt": "ba2689c32c23559953389b4a5bf0bbabc1b55c57",
+  "cpu_only": true,
+  "gpu": false,
+  "source_edits": false,
+  "pt_loads": false,
+  "minted_at_utc": "2026-07-25T15:37:28Z",
+  "FINDING_MISSING_NS5_ACC_TENSOR_DUMPS": {
+    "id": "MISSING_NS5_ACC_TENSOR_DUMPS",
+    "run_root": "artifacts/acc_entropy/runs/arm3_sparse_hot_formal150_ns5",
+    "file_count": 0,
+    "consequence": "Phase A is receipt-H + analytical-UB only. Phase B dump remains a separate gate. No mid-run tensor paths invented; no GPU re-run."
+  },
+  "rehash_verify_banked_receipts_no_pt": {
+    "ns5_ON": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_ON_receipt.json",
+      "sha256": "0998170f3300312c23d2e21f43b68eb92c10e320669c5c3b903a763b1ee81ede",
+      "expected": "0998170f3300312c23d2e21f43b68eb92c10e320669c5c3b903a763b1ee81ede",
+      "match": true
+    },
+    "ns5_OFF": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_OFF_receipt.json",
+      "sha256": "fabdc8e44f9b069e8db0b86838b0eb93f6623beabc2c8556e72b736dd1a187a2",
+      "expected": "fabdc8e44f9b069e8db0b86838b0eb93f6623beabc2c8556e72b736dd1a187a2",
+      "match": true
+    },
+    "ns5_classification": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_classification.json",
+      "sha256": "648f473339751b04170db80b155b5be447600f17801fe13ce4da556fb844ee32",
+      "expected": "648f473339751b04170db80b155b5be447600f17801fe13ce4da556fb844ee32",
+      "match": true
+    },
+    "ns5_pair": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_observer_pair_proof.json",
+      "sha256": "dfaf44e0941cddfcec89dd4688cd196b39723d317458051a05c3e1c0081e740c",
+      "expected": "dfaf44e0941cddfcec89dd4688cd196b39723d317458051a05c3e1c0081e740c",
+      "match": true
+    },
+    "CONTRACT_v3": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_sub2_carrier_analysis_CONTRACT_v3.json",
+      "sha256": "2fe6e8a38ee7ceab2dc90d2b068ab3976965e0f43f71039e4cfa54459a45e447",
+      "expected": "2fe6e8a38ee7ceab2dc90d2b068ab3976965e0f43f71039e4cfa54459a45e447",
+      "match": true
+    },
+    "int8_entropy_screen": {
+      "path": "artifacts/acc_entropy/int8_acc_entropy_screen_receipt.json",
+      "sha256": "e64aa619b3ae2e7d783061bf03de7026af4e1bf66451a5d10c895e0cc183807e",
+      "expected": "e64aa619b3ae2e7d783061bf03de7026af4e1bf66451a5d10c895e0cc183807e",
+      "match": true
+    }
+  },
+  "M1_value_entropy": {
+    "source": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_ON_receipt.json",
+    "ON_receipt_sha256": "0998170f3300312c23d2e21f43b68eb92c10e320669c5c3b903a763b1ee81ede",
+    "ON_receipt_sha256_prefix": "0998170f",
+    "field": "measurements.H_bits_per_weight + H_trajectory[*].H_bits_per_weight",
+    "estimator": {
+      "name": "pooled_empirical_shannon",
+      "support": "all named parameter tensors concatenated flatten",
+      "denominator": "acc.numel() across pooled weights",
+      "units": "bits_per_weight",
+      "trajectory_every": 25
+    },
+    "H_final_bits_per_weight": 0.004742817198551902,
+    "H_trajectory": [
+      {
+        "step": 25,
+        "H_bits_per_weight": 0.004700000804144959
+      },
+      {
+        "step": 50,
+        "H_bits_per_weight": 0.0047366214096099335
+      },
+      {
+        "step": 75,
+        "H_bits_per_weight": 0.004720522589212707
+      },
+      {
+        "step": 100,
+        "H_bits_per_weight": 0.0047249972536570675
+      },
+      {
+        "step": 125,
+        "H_bits_per_weight": 0.004737186192610073
+      },
+      {
+        "step": 150,
+        "H_bits_per_weight": 0.004742817198551902
+      }
+    ],
+    "trajectory_steps": [
+      25,
+      50,
+      75,
+      100,
+      125,
+      150
+    ],
+    "matches_contract_banked_final": true
+  },
+  "M2_support_index_cost_analytical_UB": {
+    "formula_inline": "H*(log2(N)+8)/N  # exact indices + int8 values; no coding gain assumed",
+    "N_eligible_weights": 29360128,
+    "hot_h_prereg": 8192,
+    "value_bpw": 0.00915383786887768,
+    "expected_contract_decimal": 0.00915383786887768,
+    "match": true,
+    "empirical_hot_set_size_trajectory": "UNAVAILABLE \u2014 FINDING MISSING_NS5_ACC_TENSOR_DUMPS (file_count=0)",
+    "law_identity": "retain exact global top-H |acc| MULTISET (H=8192) \u2192 |nonzero|\u22648192 after each apply_sparse_hot"
+  },
+  "R1_N_eligible_weights_provenance": {
+    "N_eligible_weights": 29360128,
+    "method": "param-count: sum(p.numel() for p in eligible.values()) where eligible = named_parameters ending with BULK_SUFFIXES",
+    "file_line": "scripts/hrm_text_158_acc_entropy_screen.py:59-60 (BULK_SUFFIXES def); :114-121 (param-count sum)",
+    "BULK_SUFFIXES": [
+      "gqkv_proj.weight",
+      "o_proj.weight",
+      "gate_up_proj.weight",
+      "down_proj.weight"
+    ],
+    "banked_screen_receipt": {
+      "path": "artifacts/acc_entropy/int8_acc_entropy_screen_receipt.json",
+      "sha256": "e64aa619b3ae2e7d783061bf03de7026af4e1bf66451a5d10c895e0cc183807e",
+      "field": "n_eligible_weights",
+      "value": 29360128
+    },
+    "ON_receipt_cross_pin": {
+      "H_estimator_denominator": "acc.numel() across pooled weights",
+      "route_counters.n_eligible_keys": 32,
+      "note": "H is bits/weight over pooled acc.numel(); same eligible bulk set as screen (32 tensors = 4 BULK_SUFFIXES \u00d7 8 layers)."
+    },
+    "not_a_bare_constant": true,
+    "n_eligible_keys_composition": {
+      "n_eligible_keys": 32,
+      "formula": "4 BULK_SUFFIXES \u00d7 8 layers = 32",
+      "source_cross_pin": "ON route_counters.n_eligible_keys=32"
+    }
+  },
+  "R2_B_acc_UB_from_definition": {
+    "definition": "B_acc_UB := M1 + M2 + acc_side_scale_bits_bpw",
+    "M1": 0.004742817198551902,
+    "M2": 0.00915383786887768,
+    "acc_side_scale_bits_bpw": 0.0,
+    "acc_side_scale_justification": "acc-side scale bits = 0. Frozen FP32 scales live on the q-side (screen_model_runtime.py:251-252: frozen_scales[n] = mean-|w| scalar reshape(()); persistent_state_budget charges them as frozen_scale_fp32). Acc is the int8 vote carrier; B_acc includes M1+M2 only \u2014 no separate acc FP32 scale term.",
+    "B_acc_UB": 0.013896655067429582,
+    "NOT_M2_alone_seed_proxy": true,
+    "M2_alone_would_have_been": 0.00915383786887768,
+    "threshold": 0.4,
+    "threshold_name": "SUB2_ACC_BUDGET_BITS",
+    "B_acc_UB_lt_0.4": true
+  },
+  "R3_q_scale_bpw_in_B_total_saved": {
+    "q_scale_bpw": 3.487723214285714e-05,
+    "q_scale_bits_total": 1024,
+    "derivation": "persistent_state_budget.py ledger: scale_bits += 32 per qscale_state (one FP32 scalar). ON route_counters.n_eligible_keys=32; screen_model_runtime.py:252 reshape(()) confirms scalar scales. q_scale_bits=1024; q_scale_bpw=1024/29360128=3.487723214285714e-05. Numerically ~3.49e-5 \u2014 NOT treated as zero; explicit value used.",
+    "treated_as_approx_zero": false,
+    "numerical_note": "Value is ~3.49e-5 bpw; included explicitly in B_total_saved_UB (not omitted)."
+  },
+  "two_budget_arithmetic": {
+    "B_acc_UB": {
+      "quantity": "acc_live_carrier_scale_inclusive_UB_bpw",
+      "value": 0.013896655067429582,
+      "components": {
+        "M1": 0.004742817198551902,
+        "M2": 0.00915383786887768,
+        "acc_side_scale_bits_bpw": 0.0
+      },
+      "excludes": [
+        "bits(q)/N",
+        "q_scale_bits",
+        "LIVE_int8_row"
+      ],
+      "threshold": 0.4,
+      "threshold_name": "SUB2_ACC_BUDGET_BITS",
+      "threshold_derivation": "2.0 \u2212 1.6 base-3 packed q",
+      "compare": "B_acc_UB vs 0.4 ONLY \u2014 never compare bits(q)/N alone against 0.4",
+      "pass": true
+    },
+    "B_total_saved_UB": {
+      "quantity": "saved_byte_persistent_train_state_UB_bpw",
+      "formula": "1.6 (base-3 q) + B_acc_UB + q_scale_bpw",
+      "q_base3_packed_bpw": 1.6,
+      "B_acc_UB": 0.013896655067429582,
+      "q_scale_bpw": 3.487723214285714e-05,
+      "value": 1.6139315322995724,
+      "threshold": 2.0,
+      "threshold_name": "SUB2_SAVED_BYTE_BAR",
+      "pass": true
+    },
+    "LIVE_row_separate": {
+      "quantity": "live_int8_q_plus_acc_bpw",
+      "nominal": "~16 bpw (int8 q + int8 acc live training surface; stated separately; never collapsed into B_acc or B_total_saved)",
+      "rule": "stated alongside; NEVER used as B_acc or B_total_saved; never collapsed",
+      "collapsed_into_budgets": false
+    },
+    "never_compare_bits_q_over_N_alone_against_0.4": true
+  },
+  "pre_registered_analysis_classifier": {
+    "order": "D_wiring \u2192 C_over_budget \u2192 A_codec_feasible \u2192 B_needs_support_measurement",
+    "evaluation_rule": "Evaluate D first. Then C (B_acc_UB\u22650.4 OR B_total_saved_UB\u22652.0 \u2014 name which). Then A (B_acc_UB<0.4 AND B_total_saved_UB<2.0 AND M1 banked). Else B. STOP on first match.",
+    "trace": [
+      {
+        "checked": "D_wiring",
+        "matched": false,
+        "geometry_ok": true,
+        "h_est_ok": true,
+        "receipts_ok": true
+      },
+      {
+        "checked": "C_over_budget",
+        "matched": false,
+        "B_acc_UB": 0.013896655067429582,
+        "B_total_saved_UB": 1.6139315322995724
+      },
+      {
+        "checked": "A_codec_feasible",
+        "matched": true,
+        "note": "bounds-admit ONLY; does NOT mean a codec exists; NOT a sub-2 bank"
+      }
+    ],
+    "branch_label": "A_codec_feasible",
+    "C_fired_predicate_if_any": null,
+    "STOP_on_first_match": true
+  },
+  "claim_ceiling": {
+    "analysis_valid_only": true,
+    "A_means": "bounds-admit ONLY \u2014 B_acc and B_total_saved upper bounds fit their budgets; NOT codec-exists",
+    "forbidden": [
+      "full_sub2_runtime",
+      "FP-free",
+      "sub-2 bank / persistent-train-state <2 bpw claim",
+      "formal-G0",
+      "family_winner",
+      "mechanism_eligible",
+      "readiness",
+      "science claim that a codec implementation exists",
+      "treating 2-bit flat codes as sub-2 under this ledger"
+    ],
+    "allowed": [
+      "classification of banked F3 state against 0.4 acc-carrier budget under named bounds",
+      "FINDING restatement (empty run tree / missing dumps)",
+      "recommendation for Phase B dump gate or eligibility-gate discussion without executing them"
+    ],
+    "verbatim_equivalent_restatement": "This Phase A receipt is analysis-valid-only. Branch A_codec_feasible = bounds-admit ONLY (B_acc_UB and B_total_saved_UB fit). It does NOT bank sub-2, full_sub2_runtime, FP-free, mechanism_eligible, family_winner, readiness, or claim a codec exists. 2-bit flat codes are not sub-2 under this ledger."
+  },
+  "ns5_operative_screen_cite_only": {
+    "acceptance_branch": "A_sparse_hot_operative",
+    "classification_sha256": "648f473339751b04170db80b155b5be447600f17801fe13ce4da556fb844ee32",
+    "note": "F3 operative screen is upstream context; this receipt does not re-bank or elevate it."
+  },
+  "next_step_per_contract": {
+    "branch": "A_codec_feasible",
+    "route": "eligibility_gate_design_contract",
+    "note": "A \u2192 eligibility-gate thinking-boundary only (synthesis Q#2). Does NOT auto-dispatch GPU; does NOT bank sub-2. Separate plan/+1 required."
+  },
+  "EDIT_FREEZE": true,
+  "commit_push": "FORBIDDEN until separate claude gate-1 + colead gate-2 on this receipt",
+  "gate1_bounce": {
+    "bounce_msg_id": "1784993833202-f0e496d9",
+    "blocker_id": "B1",
+    "void_preserved_v1": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_sub2_carrier_analysis_PHASE_A_receipt_v1.json",
+      "sha256": "18bd199dd0654bcbc8899f15266d2b0a69f25182b7163004e7a983132adcf1b7",
+      "role": "v1_gate1_bounce_void_BULK_SUFFIXES_incomplete"
+    },
+    "fix": "BULK_SUFFIXES corrected to 4-tuple from scripts/hrm_text_158_acc_entropy_screen.py:59-60; n_eligible_keys=32=4\u00d78 made explicit; all arithmetic/classifier values unchanged."
+  }
+}

@@ -1,0 +1,356 @@
+{
+  "kind": "analysis_contract",
+  "plan_id": "arm3_sparse_hot_F3_sub2_carrier_analysis",
+  "plan_revision": "v3",
+  "SIZING": "MEDIUM",
+  "lane": "plan-dev",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "task_id": "1784809634527-2c088463",
+  "dispatch_msg_id": "1784993036466-1713c039",
+  "drafted_at_utc": "2026-07-25T15:27:14Z",
+  "not_a_packet_mint": true,
+  "not_a_gpu_slice": true,
+  "HEAD_at_draft": "ba2689c32c23559953389b4a5bf0bbabc1b55c57",
+  "context_health": "self-measured; synthesis-grounded; ns5 run tree measured empty",
+  "provenance": {
+    "standing_gabe_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science",
+    "synthesis_msg_id": "1784992990418-84f98c58",
+    "recommended_path": 1,
+    "recommended_path_text": "Sub-2 carrier analysis of the banked F3 acc state \u2014 read-only/CPU over ns5 tree; prereg analysis contract; classify-before-build",
+    "family_screen_complete": {
+      "F1_ns3": "A suppression-like diagnostic",
+      "F2_ns4": "B ordinary + named over-forget",
+      "F3_ns5": "A_sparse_hot_operative"
+    },
+    "gate2_ns5_pass_msg_id": "1784992932357",
+    "formal_dispatch_msg_id": "1784993036466-1713c039",
+    "colead_route_concur_msg_id": "1784993009977",
+    "prior_plan_request_msg_id": "1784993120667-17af6507"
+  },
+  "decision_contract": {
+    "question": "Under the split 3-ledger budgets (B_acc vs 0.4; B_total_saved vs 2.0; LIVE row separate), does the banked F3 sparse-hot accumulator state classify as codec-feasible on the acc-carrier term, support-measurement-blocked, or over-budget \u2014 WITHOUT banking a sub-2 claim?",
+    "classify_before_build": true,
+    "measurement_named_FIRST": {
+      "id": "M_carrier_accounting_3ledger",
+      "name": "scale_inclusive_persistent_train_state_carrier_accounting",
+      "definition": "TWO NAMED BUDGETS (never conflate rows \u2014 3-ledger discipline):\nB_acc := scale-inclusive upper bound on the ACC LIVE-CARRIER term only (M1 value entropy + M2 support/index cost + any acc-side scale bits) compared to SUB2_ACC_BUDGET_BITS=0.4 (= 2.0 \u2212 1.6 base-3 q headroom).\nB_total_saved := q base-3 packed 1.6 bpw + B_acc + q-scale bits, compared to 2.0 (saved-byte persistent ledger).\nLIVE row (~16 bpw int8 q+acc while training) is a SEPARATE stated row \u2014 reported alongside; never collapsed into B_acc or B_total_saved.\nPhase A emits all three rows; branch predicates use ONLY B_acc and B_total_saved as specified.",
+      "budget_bits_per_weight": 0.4,
+      "components": [
+        {
+          "id": "M1_value_entropy",
+          "source": "receipt",
+          "field": "measurements.H_bits_per_weight + H_trajectory[*].H_bits_per_weight",
+          "estimator": "pooled_empirical_shannon over acc.numel() (receipt H_estimator)",
+          "banked_final": 0.004742817198551902,
+          "banked_trajectory": [
+            0.004700000804144959,
+            0.0047366214096099335,
+            0.004720522589212707,
+            0.0047249972536570675,
+            0.004737186192610073,
+            0.004742817198551902
+          ],
+          "banked_steps": [
+            25,
+            50,
+            75,
+            100,
+            125,
+            150
+          ]
+        },
+        {
+          "id": "M2_support_index_cost",
+          "source": "analytical_upper_bound_from_law_THEN_optional_empirical",
+          "law_identity": "retain exact global top-H |acc| MULTISET (H=8192) \u2192 |nonzero|\u22648192 after each apply_sparse_hot",
+          "N_eligible_weights": 29360128,
+          "hot_h_prereg": 8192,
+          "naive_sparse_upper_bound_bpw": 0.00915383786887768,
+          "naive_formula": "H*(log2(N)+8)/N  # exact indices + int8 values; no coding gain assumed",
+          "empirical_hot_set_size_trajectory": "NOT IN RECEIPT; run tree EMPTY \u2014 see FINDING",
+          "multiset_index_order_residual": {
+            "law_identity": "retain exact global top-H |acc| MULTISET (H=8192); equal-|acc| tie index order backend-native",
+            "residual_note": "CUDA vs CPU torch.topk tie index order may differ; analysis MUST treat kept |values| multiset as the law object and treat exact index sets as backend-native residual \u2014 never claim cross-device index identity. Fence/conformance receipts already characterize this.",
+            "index_value_entropy_split": "Report separately: (a) value entropy of nonzero (or all) acc entries; (b) support/index coding cost upper bound from |hot-set|\u2264H; (c) do not collapse (a)+(b) into a single unlabeled H."
+          }
+        },
+        {
+          "id": "M3_scale_inclusive_ledger",
+          "source": "receipt_pins + 3ledger_discipline",
+          "frozen_scale_sha": {
+            "before": "c01ecdcc8fa7d9b1e159c57956e5976348c8fc77b3822392c7f72fea03b8ade7",
+            "after": "c01ecdcc8fa7d9b1e159c57956e5976348c8fc77b3822392c7f72fea03b8ade7",
+            "match": true
+          },
+          "q_sha": {
+            "before": "7f0ce3161868f059f90a45d1a30d859a822e6be8c4b579d4725c2b4e736e1414",
+            "after": "0270c6ab20c2bfb4e754d660b054ef873b659f01d2b76a1643a6d4fc5bc20897"
+          },
+          "banked_sha": {
+            "before": "2d9b9f6746e66cec9e7e39d65e8171151e836daca99df6b56fb488d8a6f2403b",
+            "after": "2d9b9f6746e66cec9e7e39d65e8171151e836daca99df6b56fb488d8a6f2403b",
+            "match": true
+          },
+          "note": "Analysis must state q-side and scale-side bpw contributions explicitly; do not hide them inside acc-only H.",
+          "flat_code_reminder": "If any candidate carrier uses 4-level/2-bit codes, ledger charges 2.0 bpw before scales \u2014 that path cannot clear sub-2. Ternary + base-3 packing is required for any sub-2-shaped reading.",
+          "role_in_two_budgets": "q-scale bits enter B_total_saved only; acc-side scale bits (if any) enter B_acc. Do not add bits(q)/N into B_acc."
+        }
+      ],
+      "ledger_binding": "ledger_contract_invariant",
+      "hot_set_size_trajectory": {
+        "required_in_measurement_surface": true,
+        "empirical_status": "UNAVAILABLE \u2014 ns5 run tree empty (FINDING MISSING_NS5_ACC_TENSOR_DUMPS)",
+        "phase_A_proxy": "law bound |nonzero|\u22648192 after each apply_sparse_hot; use as hard UB for M2",
+        "phase_B": "empirical trajectory only after separate dump gate"
+      },
+      "two_budgets": {
+        "B_acc": {
+          "quantity": "acc_live_carrier_scale_inclusive_UB_bpw",
+          "includes": [
+            "M1_value_entropy",
+            "M2_support_index_cost",
+            "acc_side_scale_bits_if_any"
+          ],
+          "excludes": [
+            "bits(q)/N",
+            "q_scale_bits",
+            "LIVE_int8_row"
+          ],
+          "threshold": 0.4,
+          "threshold_name": "SUB2_ACC_BUDGET_BITS",
+          "threshold_derivation": "2.0 \u2212 1.6 base-3 packed q"
+        },
+        "B_total_saved": {
+          "quantity": "saved_byte_persistent_train_state_UB_bpw",
+          "includes": [
+            "q_base3_packed_1.6",
+            "B_acc",
+            "q_scale_bits"
+          ],
+          "excludes": [
+            "LIVE_int8_row"
+          ],
+          "threshold": 2.0,
+          "threshold_name": "SUB2_SAVED_BYTE_BAR"
+        },
+        "LIVE_row_separate": {
+          "quantity": "live_int8_q_plus_acc_bpw",
+          "nominal": "~16 bpw",
+          "rule": "stated alongside; NEVER used as B_acc or B_total_saved; never collapsed"
+        }
+      }
+    }
+  },
+  "FINDING_at_contract_draft": {
+    "id": "MISSING_NS5_ACC_TENSOR_DUMPS",
+    "consequence": "Phase A MUST proceed on receipt H + law-bounded analytical support upper bound. Phase B (tensor dump / bounded CPU reload) is a SEPARATE gated slice only if Phase A classifies as B_needs_support_measurement or co_lead requires empirical support counts.",
+    "do_not": "Do not invent mid-run tensor paths; do not silently re-run GPU to obtain dumps in this contract.",
+    "observation": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/artifacts/acc_entropy/runs/arm3_sparse_hot_formal150_ns5 exists but contains ZERO files (file_count=0). Banked evidence for F3 is receipt/log/classification/pair/authority only. Hot-set size trajectory cannot be empirically re-counted from disk without a gated dump or bounded reprobe.",
+    "severity": "HIGH_for_empirical_hot_set_trajectory__LOW_for_Phase_A_analytical_path"
+  },
+  "phased_work": {
+    "phase_A_this_contract_after_dual_accept_and_plus1": {
+      "sizing": "SMALL",
+      "gpu": false,
+      "source_edits": false,
+      "deliverable": "O_EXCL analysis receipt JSON under artifacts/acc_entropy/ that (1) recomputes/records M1 from banked ON receipt, (2) computes M2 analytical upper bound from N+H, (3) states M3 scale-inclusive ledger arithmetic, (4) emits pre-registered analysis branch label, (5) restates claim ceiling.",
+      "cpu_only": true
+    },
+    "phase_B_separate_gate_if_needed": {
+      "trigger": "analysis branch B_needs_support_measurement OR co_lead requires empirical |hot-set| trajectory",
+      "shape": "observation-only dump helper OR load banked parent+final if a dump lands \u2014 still no science claim",
+      "requires": "fresh plan/+1; not folded into Phase A"
+    }
+  },
+  "pre_registered_analysis_classifier": {
+    "order": "D_wiring \u2192 C_over_budget \u2192 A_codec_feasible \u2192 B_needs_support_measurement",
+    "evaluation_rule": "Evaluate D first. Then C (B_acc_UB\u22650.4 OR B_total_saved_UB\u22652.0 \u2014 name which). Then A (B_acc_UB<0.4 AND B_total_saved_UB<2.0 AND M1 banked). Else B. STOP on first match. Never upgrade to sub-2 bank / mechanism_eligible. Never compare bits(q)/N alone against 0.4.",
+    "branches": {
+      "D_wiring": {
+        "when": "missing/mismatched banked receipts, geometry \u2260 150/8/1024/cuda:0/arm3, or H_estimator contract broken",
+        "disposition": "repair evidence surface; mint nothing downstream",
+        "next_step_if_matched": {
+          "route": "repair_evidence_surface",
+          "note": "Mint nothing downstream until receipts/geometry/H_estimator join."
+        }
+      },
+      "C_over_budget": {
+        "when": "B_acc_UB >= 0.4 OR B_total_saved_UB >= 2.0 \u2014 receipt MUST name which predicate fired (B_acc and/or B_total_saved)",
+        "disposition": "diagnosis: named budget exceeded; more forgetting/sketch or ledger-path change required before carrier work; NOT a veto of F3 operative screen; NOT a sub-2 claim either way",
+        "next_step_if_matched": {
+          "route": "named_alternative_mechanism_class",
+          "candidates_to_name_not_build": [
+            "more_forgetting_before_carrier (stronger sparse/forgettable law class)",
+            "sketch_topK_retrieval_carrier (query-to-answer, not dense-array compress)",
+            "accept_acc_term_blocked_at_this_geometry"
+          ],
+          "note": "Name which class remains with a measured reason; do not invent a new arm without amended family contract."
+        }
+      },
+      "A_codec_feasible": {
+        "when": "B_acc_UB < 0.4 AND B_total_saved_UB < 2.0 AND M1 banked (finite H trajectory) AND M2 analytical UB used (or empirical support closed)",
+        "disposition": "analysis-valid bounds-admit ONLY: B_acc and B_total_saved upper bounds fit their budgets \u2014 DOES NOT mean a codec exists; DOES NOT bank sub-2 / full_sub2_runtime / FP-free / mechanism_eligible",
+        "seed_numbers_at_draft": {
+          "M1_final": 0.004742817198551902,
+          "M2_naive_ub_as_B_acc_proxy": 0.00915383786887768,
+          "B_acc_budget": 0.4,
+          "B_total_saved_seed_proxy": "1.6 + B_acc_UB (+ q-scale bits TBD in Phase A) \u2014 expect < 2.0 if scales small",
+          "LIVE_row_nominal": "~16 bpw (stated separately)",
+          "note": "Seeds illustrate intent; Phase A must compute B_total_saved with explicit q-scale bits."
+        },
+        "next_step_if_matched": {
+          "route": "eligibility_gate_design_contract",
+          "note": "ONLY opens the thinking/contract lane for synthesis question #2 (what elevates A_operative\u2192mechanism_eligible). Does NOT auto-dispatch GPU; does NOT bank sub-2."
+        }
+      },
+      "B_needs_support_measurement": {
+        "when": "M1 << 0.4 but B_acc and/or B_total_saved cannot be honestly closed without empirical support counts or unresolved scale bpw pins (empty run tree may force this if analytical M2 is rejected)",
+        "disposition": "open Phase B dump gate; do not build a carrier",
+        "next_step_if_matched": {
+          "route": "phase_B_dump_gate_plan",
+          "note": "Separate plan/+1; still CPU/read-only preferred; no GPU science run."
+        }
+      }
+    }
+  },
+  "claim_ceiling": {
+    "analysis_valid_only": true,
+    "observation_to_preregistered_measurement_only": true,
+    "forbidden": [
+      "full_sub2_runtime",
+      "FP-free",
+      "sub-2 bank / persistent-train-state <2 bpw claim",
+      "formal-G0",
+      "family_winner",
+      "mechanism_eligible",
+      "readiness",
+      "reinterpret F1/F2 terminals",
+      "science claim that a codec implementation exists",
+      "treating 2-bit flat codes as sub-2 under this ledger"
+    ],
+    "allowed": [
+      "classification of banked F3 state against 0.4 acc-carrier budget under named bounds",
+      "FINDING restatement (empty run tree / missing dumps)",
+      "recommendation for Phase B dump gate or eligibility-gate discussion without executing them"
+    ]
+  },
+  "explicitly_out_of_scope": {
+    "eligibility_gate_design_question_2": "Parallel thinking-boundary only per synthesis \u2014 what would elevate A_operative\u2192mechanism_eligible (seed-stability / longer runway / acquisition-UNDER-forgetting). NOT part of this analysis contract body.",
+    "rejected_alternatives": [
+      "GPU re-run of F3 to harvest dumps without a dump-gate plan",
+      "F2 A_ttl telemetry repair",
+      "new forgetting arms / hybrids",
+      "building a sparse codec implementation before analysis branch A"
+    ]
+  },
+  "anchors_on_disk": {
+    "ns5_classification": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_classification.json",
+      "sha256": "648f473339751b04170db80b155b5be447600f17801fe13ce4da556fb844ee32"
+    },
+    "ns5_ON": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_ON_receipt.json",
+      "sha256": "0998170f3300312c23d2e21f43b68eb92c10e320669c5c3b903a763b1ee81ede"
+    },
+    "ns5_OFF": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_OFF_receipt.json",
+      "sha256": "fabdc8e44f9b069e8db0b86838b0eb93f6623beabc2c8556e72b736dd1a187a2"
+    },
+    "ns5_pair": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_observer_pair_proof.json",
+      "sha256": "dfaf44e0941cddfcec89dd4688cd196b39723d317458051a05c3e1c0081e740c"
+    },
+    "ns5_packet_v3": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_formal150_ns5_launch_packet_v3.json",
+      "sha256": "d3114f9b9e5f0b52b586c6219a44aeb8fb59348e6f5b6b653957c13250a0c7fb"
+    },
+    "F3_CONTRACT_v2": {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_amended_CONTRACT_v2.json",
+      "sha256": "034ec8e966ca020d5ac95630a66613c0cc556aeb67e31418c3bbd5d263f858d7"
+    },
+    "int8_entropy_screen": {
+      "path": "artifacts/acc_entropy/int8_acc_entropy_screen_receipt.json",
+      "sha256": "e64aa619b3ae2e7d783061bf03de7026af4e1bf66451a5d10c895e0cc183807e"
+    }
+  },
+  "named_risk": {
+    "id": "RISK_SUPPORT_COST_UNDERCOUNTED_WITHOUT_DUMPS",
+    "statement": "Analytical M2 uses |hot-set|\u2264H after each law application; if implementation ever leaves residual nonzeros outside the keep mask (wiring defect), the upper bound is invalid. Mitigate by citing law fence+conformance receipts and by fail-closing to B/D if dump Phase B later shows |nonzero|>H. Separately: mis-applying 2-bit flat-code 2.0 bpw as if it were sub-2 is a ledger-discipline failure mode."
+  },
+  "DEVELOPER_STEPS_after_dual_accept": [
+    "1. Dual-accept THIS contract (claude gate-1 \u2192 co_lead gate-2).",
+    "2. +1 implement Phase A only: CPU analysis receipt O_EXCL; no source edits unless a pure helper is dual-accepted.",
+    "3. If branch B: STOP and request Phase B dump plan \u2014 do not improvise GPU.",
+    "4. Commit/push only under separate claude gates; no .pt commits."
+  ],
+  "stop_conditions": [
+    "Any pressure to bank sub-2 / full_sub2_runtime / FP-free / mechanism_eligible / readiness / family_winner from this analysis \u2192 STOP",
+    "Any GPU launch \u2192 STOP",
+    "Any new counter/emitter/source change \u2192 STOP (separate gated slice)",
+    "Any apply_sparse_hot / transfer-law edit \u2192 STOP (wrong lane)",
+    ".pt mutation \u2192 STOP; banked sha read-only \u2014 if any .pt is opened, re-hash BEFORE and AFTER and require identical digests",
+    "Ambiguity in 3-ledger scale bpw or flat-code vs ternary packing \u2192 cite ternary_hybrid_stack; if unresolvable \u2192 branch B/D, do not guess"
+  ],
+  "PACKET_PATH_O_EXCL_REFUSE_IF_EXISTS": true,
+  "predecessor_contract_path": "artifacts/acc_entropy/arm3_sparse_hot_F3_sub2_carrier_analysis_CONTRACT_v2.json",
+  "predecessor_contract_sha256": "1b435a44c385a46a1e39ff55ea3ed1bd90980c10560bbaa70f6c63488d8d7530",
+  "void_ledger": [
+    {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_sub2_carrier_analysis_CONTRACT_v1.json",
+      "sha256": "5a64d739914d0ffe3456b1cf0ebf1620ba75bc85628b14a8649727eb7fa36b51",
+      "receipt_msg_id": "1784993189220-f65adbbe",
+      "role": "v1_gate1_bounce_void",
+      "reason": "GATE-1 bounce: budget-ledger conflation made A_codec_feasible unreachable (bits(q)/N alone \u22651.6 \u22650.4)."
+    },
+    {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_sub2_carrier_analysis_CONTRACT_v2.json",
+      "sha256": "1b435a44c385a46a1e39ff55ea3ed1bd90980c10560bbaa70f6c63488d8d7530",
+      "receipt_msg_id": "1784993189220-f65adbbe",
+      "role": "v2_pre_bounce_binding_foldin_still_dead_branch",
+      "reason": "v2 folded co_lead ledger/non-claim bindings but retained conflated compare-to-0.4 on total bits(q)+acc+scales; same dead-A class. Superseded by v3 two-budget pin."
+    }
+  ],
+  "ledger_contract_invariant": {
+    "source": ".codex/rules/ternary_hybrid_stack.md (and .claude mirror)",
+    "additive_scale_inclusive_flat_code_ledger": true,
+    "rules": [
+      "4-level (2-bit) codes = 2.0 bpw BEFORE scales under this ledger \u2014 NO scale packing clears strict <2.0",
+      "sub-2 persistent claim requires 3-level (ternary) codes + base-3 packing, scale-inclusive",
+      "base-3 packed_base3_5ternary_uint8 = 8/5 = 1.6 bpw physical for q when wired",
+      "acc sub-2 ceiling \u2248 0.4 bpw = 2.0 \u2212 1.6 (base-3 q) \u2014 the open term is the acc live-carrier",
+      "Two axes stay separate: persistent train-state WIDTH vs decision/eligibility QUANTIZATION"
+    ],
+    "persistent_train_state_bpw_decomposition": {
+      "q_term_if_base3_packed": 1.6,
+      "acc_live_carrier_budget": 0.4,
+      "scales": "must be stated scale-inclusive; never omitted to fake sub-2",
+      "total_sub2_bar": 2.0
+    },
+    "forbidden_misread": "Do NOT treat receipt H_bits_per_weight alone as a sub-2 bank; do NOT treat 2-bit flat codes as sub-2; do NOT conflate decision-family nulls with persistent-width progress."
+  },
+  "pt_read_only_protocol": {
+    "banked_sha_read_only": true,
+    "if_any_pt_opened": "sha256 before == sha256 after (byte-identical); log both digests in analysis receipt",
+    "mutation": "STOP"
+  },
+  "revision_delta": {
+    "from": "v2",
+    "from_sha256": "1b435a44c385a46a1e39ff55ea3ed1bd90980c10560bbaa70f6c63488d8d7530",
+    "to": "v3",
+    "gate1_bounce": "1784993189220-f65adbbe",
+    "blocker_fix": "split B_acc vs 0.4 and B_total_saved vs 2.0; LIVE row separate; A/C predicates retargeted",
+    "carried_good_from_bounce_verdict": [
+      "M2 arithmetic",
+      "M1 trajectory match",
+      "MISSING_NS5_ACC_TENSOR_DUMPS FINDING",
+      "Phase A/B discipline",
+      "D\u2192C\u2192A\u2192B order",
+      "claim ceiling / phased_work / STOPs",
+      "v2 ledger_contract_invariant + non-claims + branch next-steps + pt rehash"
+    ]
+  },
+  "gate1_bounce_msg_id": "1784993189220-f65adbbe"
+}
