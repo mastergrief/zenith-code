@@ -1,0 +1,515 @@
+{
+  "kind": "amended_CONTRACT",
+  "plan_id": "arm3_sparse_hot_F3_amended_CONTRACT_v2",
+  "plan_revision": "v2",
+  "arm_id": "arm3_sparse_hot_forgettable_cold",
+  "family": "F3_sparse_hot_forgettable_cold",
+  "SIZING": "LARGE",
+  "REPORT_TO": [
+    "claude"
+  ],
+  "CROSS_THREAD_REQUIRED": true,
+  "task_id": "1784809634527-2c088463",
+  "dispatch_msg_id": "1784986190587-438893b6",
+  "drafted_at_utc": "2026-07-25T13:31:16Z",
+  "not_a_packet_mint": true,
+  "context_health": "self-measured ~42%; plan-only contract draft after ns4 B terminal; artifact-read count ~12",
+  "provenance": {
+    "gabe_standing_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science",
+    "trigger_terminal_receipt_msg_id": "1784985706747-b8183a47",
+    "co_lead_grounding_msg_id": "1784985768713-004fce68",
+    "board_debt_converged_msg_id": "1784985784617-04b362b2",
+    "ns4_classifier_branch_banked": "B_ordinary_dynamic / ordinary_g0_valid_v10",
+    "ns4_observations_banked_NOT_science": [
+      "TTL over-forget: probes acq 64→25 / ret 64→11 retention_ok=false while training alive",
+      "MISSING_ARM2_PRE_POST_TRANSFORM_TELEMETRY (A_ttl unreachable; ARM1-scoped accumulator)",
+      "n_ttl_force_zero_drains=102207814 witness worked"
+    ]
+  },
+  "decision_contract": {
+    "intent": "Remint F3 amended-contract CONTRACT v2 after gate-2 REVISE 1784986169138-98ed9778: fix classifier evaluation precedence so Z1/Z2 are sequenced NON-success branches before A/B (not labels-only). All other v1 bindings unchanged.",
+    "chosen_option": "Fresh F3 amended CONTRACT artifact now (plan gate only); F3 fence/telemetry/packet mint / GPU separately gated after dual accept.",
+    "rejected_alternatives": [
+      "F2 telemetry repair first — deferred optional; NOT blocking F3 per converged route 1784985768713 / board 1784985784617",
+      "Re-run F2 without a new prereg question — rejected: reburns GPU; F2 already proved TTL wiring + over-forget class",
+      "Reuse ns4 namespace/artifacts for F3 — rejected: claim-surface collision with F2 formal diagnosis lane",
+      "Fast-path mint of an F3 packet without a contract — rejected: F3 is a novel mechanism slice; full plan gate mandatory",
+      "Reinterpreting ns4 B-match or F1 A-match as evidence about F3 — rejected: diagnosis-valid only"
+    ],
+    "authority": "claude plan gate-1 → codex_co_lead gate-2; mint only after dual accept + fresh +1 implement for ordered fence/telemetry/packet slices",
+    "autonomy_rung": "L3",
+    "confidence": "high",
+    "risk": "high",
+    "executor": "plan-dev (handle=codex)",
+    "validation_proof": "contract sha freeze + co_lead refute loop; no GPU in this slice",
+    "escalation_rule": "ambiguity in F3 mechanism definition vs family prereg → STOP + ask claude (do not improvise)",
+    "receipt_sink": "claude gate-1 ONLY",
+    "mode": "planning",
+    "required_gates": [
+      "plan"
+    ]
+  },
+  "amended_contract": {
+    "family_prereg_law_PLAN_v9_arms_one_variable_each_2_VERBATIM": {
+      "id": "arm3_sparse_hot_forgettable_cold",
+      "family": "F3_sparse_hot_forgettable_cold",
+      "law_screen_local": "retain only global top-H |acc| hot set each step; zero cold; H prereg=8192",
+      "forbidden": "no TTL/decay mixed in",
+      "source_path": "artifacts/acc_entropy/forgetting_mechanism_screen_PLAN_v9.json",
+      "source_sha256": "07a02afff92cef7b2c6cee46a761a1e46b6b3422df911f8b4d4f63d41157e7a5",
+      "json_path": "$.phased_screen_design.phase_1_family_arm_sweep.arms_one_variable_each[2]"
+    },
+    "live_primitive_EXISTS": {
+      "symbol": "apply_sparse_hot",
+      "file": "calm/hrm_text_158/native_full_stack/forgetting_laws.py",
+      "lines": "137-165",
+      "default_hot_h": 8192,
+      "docstring": "Retain global top-H |acc|; zero cold.",
+      "wiring_call_site": {
+        "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+        "line": 166,
+        "code": "residency.acc = apply_sparse_hot(residency.acc, hot_h=8192)",
+        "arm_gate": "elif arm == ARM3"
+      },
+      "facade_reexport": {
+        "file": "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py",
+        "lines": "56 / 392",
+        "note": "import + __all__ only; zero additional call sites"
+      }
+    }
+  },
+  "prior_inheritances_DROPPED": {
+    "F1_suppression_assumption_DROPPED": {
+      "what_F1_arm1_assumed": [
+        "Live transfer law is soft per-step decay λ=1/32",
+        "Formal acceptance evaluates suppression-diagnostic FIRST (degenerate_full_suppression / A_suppression_diagnostic)",
+        "A-match = diagnosis-valid ONLY; not mechanism_eligible / family_winner"
+      ],
+      "why_it_does_NOT_carry_to_F3": [
+        "PLAN_v10.1 sequential_boundary.F2_must_not_inherit already forbids assuming later arms will also suppress; F3 inherits that anti-inheritance",
+        "F3 family law is hard top-H |acc| retain / cold-zero — FORBIDDEN to mix TTL/decay — different mechanism, different success surface",
+        "F1 A-match and ns3 terminal name arm1_decay_leak ONLY"
+      ],
+      "forbidden_inheritances": [
+        "Treating F3 full-erase / zero-flip collapse as A-success by F1 analogy",
+        "Citing ns3 pair/classification as F3 nonperturbation or F3 G0",
+        "Carrying F1 suppression requires_all as F3 acceptance requires_all"
+      ]
+    },
+    "F2_A_ttl_pre_post_transform_conjunct_DROPPED": {
+      "co_lead_binding_msg_id": "1784985768713-004fce68",
+      "what_F2_A_ttl_required": "pre_post_transform.steps_accumulated==150 with receipt.pre_post_telemetry=true (ARM1-shaped geometry evidence)",
+      "why_it_does_NOT_carry_to_F3": [
+        "pre_post_transform is ARM1-decay geometry evidence, NOT a universal formal-arm health bit (co_lead binding)",
+        "Emitter is ARM1-only: screen_execution_loop.py:115-118 constructs PrePostTransformAccumulator only if arm==ARM1 and pre_post_on",
+        "ns4 proved A_ttl was unreachable on ARM2 from this wiring — importing the same conjunct into F3 would repeat the ns4 lesson as a guaranteed miss"
+      ],
+      "forbidden_inheritances": [
+        "Any F3 A_sparse_hot / geom_ok requires_all that names pre_post_transform / PrePostTransformAccumulator",
+        "Treating receipt.pre_post_telemetry flag alone as F3 health without an ARM3-native emitter",
+        "Silently binding ARM1/ARM2 telemetry fields as F3 mechanism witnesses"
+      ],
+      "known_instrumentation_debt_DOCUMENTED_not_blocking": {
+        "id": "MISSING_ARM2_PRE_POST_TRANSFORM_TELEMETRY",
+        "board_msg_id": "1784985784617-04b362b2",
+        "status": "documented; optional F2 repair; NOT a gate on F3"
+      }
+    }
+  },
+  "F3_native_evidence_fields": {
+    "rule": "verify emitter existence with file:line BEFORE binding any evidence field (ns4 lesson)",
+    "existing_receipt_surfaces_VERIFIED_present": {
+      "n_flips": {
+        "path": "measurements.n_flips",
+        "emitter": "screen_receipt_output.py / loop n_flips",
+        "usable_for": "dynamics-alive / g0 / Z discrimination"
+      },
+      "credited_mass": {
+        "path": "measurements.credited_mass",
+        "usable_for": "mass-band health vs 2910513700"
+      },
+      "H_trajectory": {
+        "path": "measurements.H_trajectory",
+        "usable_for": "H sample steps {25,50,75,100,125,150}"
+      },
+      "probes_acq_ret": {
+        "path": "probes.acq_step0_count/acq_final_count/ret_* / retention_ok",
+        "usable_for": "probe stability vs Z2 over-forget"
+      },
+      "n_applied_drains": {
+        "path": "measurements.n_applied_drains",
+        "note": "flip-drain count — NOT a sparse-hot cold-zero witness; do NOT bind as A_sparse_hot mechanism-acted"
+      },
+      "deferred_survival_R1": {
+        "path": "measurements.deferred_survival / demand fields",
+        "usable_for": "g0_valid_v10 BYTE-UNCHANGED field set"
+      }
+    },
+    "preferred_surfaces_ABSENT_FINDING": {
+      "id": "MISSING_ARM3_SPARSE_HOT_EVENT_COUNTERS",
+      "status": "FINDING (pre-mint; fence/telemetry lane — NOT improvised conjunct)",
+      "missing": [
+        "hot-set survival / turnover counters",
+        "cold-zero event counts from apply_sparse_hot"
+      ],
+      "sweep_evidence": {
+        "screen_receipt_measurements_on_ns4_ON": "keys include n_flips/n_applied_drains/n_ttl_force_zero_drains/credited_mass/H_trajectory — NO n_cold_zeros / n_hot_kept / hot_turnover",
+        "rg_n_cold_hot_set_in_native_full_stack": "no screen-receipt emitters; cold_zero_counterfactual_* lives ONLY in bounded_delta_representative_verdict.py (sub-2 projection surface) — FORBIDDEN as F3 formal witness"
+      },
+      "consequence": "A_sparse_hot mechanism-acted witness MUST bind a NEW named ARM3 counter after a gated observation-only telemetry slice (F2 n_ttl_force_zero_drains pattern), OR remain unbound (A_sparse_hot unreachable) — never invent counters in the packet classifier",
+      "proposed_counter_name_for_later_gated_slice_NOT_this_contract": "measurements.n_sparse_hot_cold_zeros"
+    },
+    "explicitly_NOT_F3_witnesses": [
+      "measurements.pre_post_transform (ARM1-only)",
+      "measurements.n_ttl_force_zero_drains (ARM2-only)",
+      "bounded_delta_representative_verdict.cold_zero_counterfactual_* (wrong surface)",
+      "ns3/ns4 observer_pair_proof (wrong claim surface)"
+    ]
+  },
+  "pre_registered_branch_classifier": {
+    "order": "D wiring/law FIRST → Z1 full-suppression-like NON-success → Z2 over-forget-like NON-success → A_sparse_hot_operative → B ordinary g0_valid_v10 → C vacuous_unresolved",
+    "rationale": "F3 must not inherit F1 suppression-first acceptance NOR F2 A_ttl ARM1-pp geometry. Sparse-hot succeeds by top-H retain / cold-zero dynamics with probe-stable training, not by total wipe or over-forget.",
+    "D_wiring_or_representation": {
+      "when": [
+        "TTL / soft-decay / λ-leak signatures present (FORBIDDEN mix-in)",
+        "apply_sparse_hot not invoked or hot_h ≠ 8192 or law_mismatch",
+        "arm label ≠ arm3_sparse_hot_forgettable_cold",
+        "A_sparse_hot classifier binds a missing witness field (ARM3 counter absent on ARM3 receipt) — D-wiring, same class as ARM2-missing n_ttl"
+      ],
+      "result": "source repair; mint NOTHING downstream; STOP F3 claim path"
+    },
+    "A_sparse_hot_operative": {
+      "name": "sparse_hot_operative",
+      "requires_all": [
+        "receipt.arm == arm3_sparse_hot_forgettable_cold ONLY",
+        "geometry steps=150 batch=8 topk=1024 device=cuda:0",
+        "H_trajectory samples exactly {25,50,75,100,125,150}",
+        "law identity matches retain global top-H |acc| / zero cold; H=8192; NO TTL/decay mix-in strings",
+        "NO pre_post_transform conjunct (explicitly dropped)",
+        "mechanism-acted witness: measurements.n_sparse_hot_cold_zeros > 0 (OR successor name from gated telemetry dual-accept) — NEVER n_applied_drains / n_ttl_force_zero_drains / improvised fields",
+        "if witness field ABSENT on ARM3 receipt → D-wiring (not A miss)",
+        "probes: typed acq/ret step0==final; bank parent_ok; frozen_scale before==after==c01ecdcc…",
+        "credited_mass_ratio in [0.90,1.10] vs 2910513700 as health check",
+        "own observer_pair_proof ok at this packet — never cite ns3/ns4 pair",
+        "NOT Z1 profile; NOT Z2 profile"
+      ],
+      "on_match_disposition": {
+        "receipt_valid_for_diagnosis": true,
+        "mechanism_eligible": false,
+        "family_winner": false,
+        "terminal_label_canonical_TEMPLATE": "arm3_sparse_hot_forgettable_cold__law_topH8192_zero_cold__geom_steps150_batch8_topk1024_cuda0__sparse_hot_operative",
+        "note": "diagnosis-valid operative sparse-hot behavior ONLY — not family closure; unreachable until ARM3 cold-zero witness lands"
+      },
+      "precondition_on_witness_emitter": "gated telemetry slice must land BEFORE any ns5 mint that could claim A_sparse_hot; fence characterizes the primitive first"
+    },
+    "B_ordinary_dynamic_branch_g0_valid_v10": {
+      "when": "A false AND Z1 false AND Z2 false AND dynamic g0 full field set",
+      "behavior": "call g0_valid_v10 BYTE-UNCHANGED on arm_metrics_for_v10_classifier(receipt)",
+      "required_fields_for_g0_ok_FULL_SET": [
+        "n_flips",
+        "N_events_evaluable",
+        "N_survived_applied_within_H",
+        "N_never_applied_within_H",
+        "N_events_evaluable_early",
+        "N_events_evaluable_late",
+        "N_never_applied_within_H_early",
+        "N_never_applied_within_H_late",
+        "N_events_censored_insufficient_followup",
+        "never_frac",
+        "deferred_survival_class",
+        "mean_ratio",
+        "max_ratio",
+        "frac_steps_ratio_ge_2",
+        "n_steps",
+        "early_never_frac",
+        "late_never_frac",
+        "delta_never_apply",
+        "H_final",
+        "receipt_steps"
+      ],
+      "n_steps_must_equal": 150,
+      "note": "ns4 F2 landed here with over-forget probes — B remains diagnosis-valid ordinary dynamics, NOT A-success and NOT Z2 (Z2 is explicit NON-success branch when over-forget shape is classified)"
+    },
+    "C_vacuous_unresolved": {
+      "when": "zero-event / missing cohorts / class vacuous WITHOUT sparse-hot-operative evidence",
+      "result": "G0-invalid vacuous_unresolved — must NOT mint sparse-hot-operative success"
+    },
+    "Z1_full_suppression_like_NON_SUCCESS": {
+      "when": "F3 run exhibits F1-like degenerate_full_suppression profile (total erase, zero flips, wipe) despite arm3 label",
+      "result": "diagnosis of over-aggression / wrong-law / inheritance failure — NOT A-success; NOT mechanism_eligible; NOT family_winner",
+      "why": "F1 suppression assumption must not be inherited as F3 success"
+    },
+    "Z2_over_forget_like_NON_SUCCESS": {
+      "when": "(n_flips>0 OR mass-in-band OR H-trajectory alive) AND (acq_final<acq_step0 OR retention_ok=false)",
+      "result": "diagnosis-valid over-forget class (F2 analogy) — NON-success; NOT A-success; NOT mechanism_eligible; NOT family_winner",
+      "why": "ns4 proved this shape on F2 (TTL acted + training alive + probe collapse). Elevating it to A or science is forbidden.",
+      "discrimination_vs_A": "A requires probe step0==final; Z2 is exactly the probe-collapse leg with alive training"
+    },
+    "evaluation_rule": "After D clear, evaluate Z1 then Z2; on either match STOP with NON-success disposition; NEVER fall through to A or B."
+  },
+  "claim_ceiling_F3_arm": {
+    "three_ledger": [
+      "diagnosis-valid only on declared F3 branch match (A sparse-hot operative or B ordinary g0) — not science acceptance",
+      "mechanism_eligible=false / family_winner=false on this CONTRACT's formal arm until a later explicit eligibility gate (NOT this contract)",
+      "no science / sub-2 / formal-G0 / family-winner / F1-closure / F2-closure / V7-upgrade language"
+    ],
+    "if_A_sparse_hot_operative_matches": [
+      "receipt_valid_for_diagnosis=true ONLY",
+      "mechanism_eligible=false",
+      "family_winner=false",
+      "terminal label names EXACT arm3 candidate — NOT F3-family closure",
+      "does NOT auto-unblock further arms; later arms need their own amended contracts"
+    ],
+    "if_B_matches": [
+      "diagnosis-valid ordinary dynamics ONLY (as ns4 F2 B)",
+      "over-forget observation may be noted as receipt observation under Z2 if classified — never science upgrade"
+    ],
+    "explicit_non_claims": [
+      "No inheritance of F1 suppression assumption or A-match as F3 evidence",
+      "No inheritance of F2 A_ttl pre_post_transform conjunct as F3 geom health",
+      "No retroactive reinterpretation of V7 / ns3 A / ns4 B as G0/family/winner",
+      "No functional_veto_freeze claim",
+      "No forgetting-law / stability / representation-limit / sub-2 / readiness claim",
+      "No treating Z1 or Z2 as success",
+      "No binding cold_zero_counterfactual_* or n_ttl_force_zero_drains as F3 witnesses"
+    ]
+  },
+  "standing_mechanics_CARRY_FORWARD": {
+    "fence_before_mint": {
+      "status": "LOAD-BEARING",
+      "f1_fence_done": {
+        "commit": "188c8695c148a89cf237682f1382b1823c0a1641",
+        "note": "trunc-div exactness"
+      },
+      "f2_fence_done": {
+        "commit": "1d1a8b51043d89ce5ad34055c9109df2d8c29f5b",
+        "note": "TTL age>T=32 fence + A/Z boundary"
+      },
+      "f2_counter_done": {
+        "commit": "a086c456400f6fb46aab787a3de57a7f9cec17e7",
+        "note": "n_ttl_force_zero_drains observation-only"
+      },
+      "f3_proposed_fence": {
+        "sizing": "SMALL",
+        "scope": "CPU characterization of apply_sparse_hot H=8192 exactness (top-H retain / cold-zero / tie-break) BEFORE any ns5 mint — primitive EXISTS at forgetting_laws.py:137-165",
+        "stop": "any need to change live transfer-law SEMANTICS → STOP + re-plan",
+        "ordering": "F3 CONTRACT dual-accept → F3 sparse-hot fence → gated ARM3 cold-zero counter telemetry (if A_sparse_hot to be mintable) → ns5 packet mint → dual packet accept → fresh +1 launch"
+      },
+      "f3_proposed_telemetry_if_A_to_be_mintable": {
+        "sizing": "SMALL",
+        "scope": "observation-only counter measurements.n_sparse_hot_cold_zeros (proposed name) — ARM3 always-present incl. 0; other arms KEY ABSENT; wrapper calls unchanged apply_sparse_hot and derives count from outputs; NEVER overload n_applied_drains",
+        "stop": "law coupling → STOP; no packet in that slice"
+      }
+    },
+    "whole_packet_zero_scan": {
+      "status": "LOAD-BEARING",
+      "rule": "at mint/freeze: whitelist-FREE byte-level sweep for stale ns2/ns3/ns4/F1/F2 identity in authority positions; prose deadline literals must match fitted budgets; zero-scan must PASS before gate-1 freeze"
+    },
+    "budget_fit_to_named_wall_model": {
+      "status": "LOAD-BEARING",
+      "rule": "pair timeout + GLOBAL_DEADLINE_SECS derived from named wall model for THIS arm/geometry (+ margin); do NOT cargo-cult ns4 1278/1578 or ns3 3300/3600 without re-fit",
+      "seed_only_from_ns4_same_geometry_rates": {
+        "label": "seed_only",
+        "note": "ns4 OFF/ON rates are SAME GEOMETRY (150/8/1024) but DIFFERENT arm law — initial budget floor seed only; F3 mint MUST re-fit. Dispatch prose '~1.5s/step' was approximate; authoritative seed numbers are the ns4 pair-proof ms/step below (~2.27–2.37 s/step).",
+        "ns4_off_ms_per_step": 2271.2587531407676,
+        "ns4_on_ms_per_step": 2366.0898399353027,
+        "ns4_pair_est_seconds_approx": 695.6022889614106,
+        "ns4_pair_proof_sha256": "635f07dcae9bb396e9af2d2f7bfb06e8e8d60760c0f7fda320f20e6de8f043a0",
+        "requirement_at_mint": "budget-fit-to-named-wall-model with ≥1.5× margin on seed unless a closer arm3 measurement exists"
+      }
+    },
+    "PACKET_PATH_O_EXCL_REFUSE_IF_EXISTS": {
+      "status": "LOAD-BEARING",
+      "token": "PACKET_PATH_O_EXCL_REFUSE_IF_EXISTS",
+      "rule": "immutable filename per version; remint ALWAYS bumps basename; os.open O_CREAT|O_EXCL — never write to an existing chain path"
+    },
+    "own_observer_pair_proof_per_formal_packet": {
+      "status": "LOAD-BEARING",
+      "rule": "F3 formal packet emits its OWN observer_pair_proof — never inherit ns2/ns3/ns4/F1/F2 pair proof as F3 nonperturbation"
+    }
+  },
+  "run_geometry_proposed": {
+    "formal_arm": {
+      "arm": "arm3_sparse_hot_forgettable_cold",
+      "family": "F3_sparse_hot_forgettable_cold",
+      "law": "retain only global top-H |acc| hot set each step; zero cold; H prereg=8192",
+      "forbidden": "no TTL/decay mixed in",
+      "steps": 150,
+      "batch": 8,
+      "topk": 1024,
+      "device": "cuda:0",
+      "hot_h": 8192,
+      "seed_family": "same parent/seed/source as pinned formal-150 control (parent_sha256 2d9b9f67…)",
+      "pre_post_telemetry": "ARM3-native only if an ARM3 emitter exists after gated telemetry; do NOT require ARM1 pre_post_transform",
+      "H_sample_steps_exact": [
+        25,
+        50,
+        75,
+        100,
+        125,
+        150
+      ]
+    },
+    "observer_pair_REQUIRED": {
+      "rule": "F3 formal packet emits its OWN observer_pair_proof at 150-step — prior-lane pair proofs NEVER cited as F3 nonperturbation"
+    }
+  },
+  "credited_mass_ratio_semantics_NOW_APPLICABLE": {
+    "formula": "credited_mass_ratio = fresh_formal_arm.measurements.credited_mass / 2910513700",
+    "denominator_sha256": "5e593454f0ddffb946692e09913da5df1ddfe0f2f11aaaf3fb663a2f00fbcfdb",
+    "health_band_inclusive": [
+      0.9,
+      1.1
+    ],
+    "note": "Mass band remains a health/integrity check on formal-150 geometry; it is NOT an F3 suppression-success criterion and NOT inherited from F1 A-match or F2 A_ttl semantics"
+  },
+  "namespace_proposal": {
+    "chosen": "ns5",
+    "full_prefix": "arm3_sparse_hot_forgettable_cold_formal150_ns5",
+    "justify": [
+      "ns4 is the F2 formal-150 diagnosis lane (B-match + over-forget locked); F3 needs a fresh claim surface",
+      "fresh run_root / marker / void-ledger / identity strings avoid F2 artifact clobber and A_ttl/pp-claim bleed",
+      "preserves ns3/ns4 chains as sequential-eligibility lineage only"
+    ],
+    "rejected": {
+      "ns4_reuse": "would mix F2 TTL-diagnosis claim ceiling with F3 sparse-hot mechanism",
+      "ns4b": "implies same-mechanism defect remint; F3 is a new mechanism"
+    }
+  },
+  "DEVELOPER_STEPS": 4,
+  "DEVELOPER_STEPS_detail": [
+    {
+      "step": 1,
+      "name": "F3 amended CONTRACT plan freeze",
+      "this_slice": true,
+      "assertions": [
+        "artifact sha posted",
+        "no packet mint",
+        "no GPU",
+        "no source edits",
+        "F1 suppression + F2 A_ttl pp inheritances explicitly dropped",
+        "F3 classifier preregistered D→Z1→Z2→A→B→C with evaluation_rule STOP-on-Z",
+        "FINDING MISSING_ARM3_SPARSE_HOT_EVENT_COUNTERS recorded"
+      ]
+    },
+    {
+      "step": 2,
+      "name": "F3 sparse-hot exactness-fence SMALL slice",
+      "this_slice": false,
+      "assertions": [
+        "CPU fence for apply_sparse_hot H=8192 exactness",
+        "no GPU",
+        "no F3 packet"
+      ]
+    },
+    {
+      "step": 3,
+      "name": "ARM3 cold-zero counter telemetry SMALL slice (required if A_sparse_hot is to be mintable)",
+      "this_slice": false,
+      "assertions": [
+        "observation-only counter; law body untouched",
+        "ARM3 always-present incl. 0; other arms omit key",
+        "no GPU",
+        "no packet"
+      ]
+    },
+    {
+      "step": 4,
+      "name": "ns5 F3 formal-150 packet mint + later launch",
+      "this_slice": false,
+      "assertions": [
+        "PACKET_PATH_O_EXCL_REFUSE_IF_EXISTS",
+        "budget-fit-to-named-wall-model (ns4 rates seed_only)",
+        "own observer_pair_proof",
+        "CHAR_E2E_PASS on minted bytes",
+        "whole-packet zero-scan PASS (whitelist-free)",
+        "fresh +1 launch separately gated"
+      ]
+    }
+  ],
+  "named_risk_ONE": {
+    "id": "RISK_F3_WITNESS_GAP_OR_OVERFORGET_AS_SUCCESS",
+    "statement": "Highest residual risk is twin: (1) minting A_sparse_hot by binding a non-existent / wrong-surface cold-zero witness (ns4 lesson), or (2) reading an F2-like over-forget profile (mechanism acts + training alive + probe collapse) as F3 A-success or science.",
+    "mitigation_in_this_contract": "FINDING MISSING_ARM3_SPARSE_HOT_EVENT_COUNTERS + A unreachable until gated counter lands; Z2_over_forget_like_NON_SUCCESS explicit; forbidden bind list for n_ttl/n_applied_drains/pre_post/cold_zero_counterfactual; D-wiring on ARM3-missing witness key",
+    "open_for_refutation": "whether A_sparse_hot should stay structurally unreachable until the counter lands (preferred) vs allowing a weaker A based only on n_flips/mass/H/probes without a cold-zero witness (rejected here as under-specified mechanism-acted proof)"
+  },
+  "open_for_refutation": [
+    "proposed counter name measurements.n_sparse_hot_cold_zeros",
+    "budget margin ≥1.5× on ns4 seed vs requiring an arm3 micro-timing seed first"
+  ],
+  "stop_conditions": [
+    "ambiguity about F3 mechanism vs family prereg (arm3_sparse_hot_forgettable_cold / H=8192 / no TTL/decay) → STOP and ask claude — do not improvise",
+    "any pressure to inherit F1 suppression or F2 A_ttl pre_post_transform as F3 acceptance → STOP and flag",
+    "reinterpret V7 / ns3 A / ns4 B as G0/family/winner → STOP",
+    "F3 packet mint or GPU before dual plan accept + ordered fence (+ telemetry if A mintable) + fresh +1 launch → STOP",
+    "repo source edits in THIS plan-only slice → STOP (contract artifact + room post only)",
+    "write to an existing packet/contract path (violate O_EXCL) → STOP",
+    "cite ns3/ns4 observer_pair_proof as F3 nonperturbation → STOP",
+    "mix TTL/decay into F3 law OR bind missing/wrong-surface witnesses → STOP",
+    "block F3 on optional F2 telemetry repair → STOP (converged route forbids)"
+  ],
+  "explicit_non_work_this_slice": [
+    "no packet mint",
+    "no GPU",
+    "no source edits",
+    "no commit/push",
+    "no F2 telemetry repair implementation"
+  ],
+  "mint_safety_for_THIS_contract_artifact": {
+    "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_amended_CONTRACT_v2.json",
+    "write_mode": "O_EXCL",
+    "immutable": true,
+    "any_change": "v3 remint on fresh O_EXCL path"
+  },
+  "anchor_sha256s_rehashed_at_draft": {
+    "f2_contract": "bebe6143a0ce9f0cebea752b256de3280ddfdcc8c428117728021f7ded594633",
+    "f1_contract": "7b29ba4f253cf1a2cdd51dc080fa122b8d8287b67779cddfaa8182289e348473",
+    "ns4_class": "80f8f8b2a52ac8c84ab8e466b2308849f3e4bbdc703323fda63443c018912f73",
+    "ns4_off": "c9ce177304604b10ad6829c3de1b52407a35ee7b111098b672ddf9d1a3dcf400",
+    "ns4_on": "d1325e27936529ea89388ce6177e06b88d3611d05ca86f178c8a7ae7e1daaff1",
+    "ns4_pair": "635f07dcae9bb396e9af2d2f7bfb06e8e8d60760c0f7fda320f20e6de8f043a0",
+    "ns3_class": "af1b786df3f103458db31b99a2acde89fe74a94e482624c7426cf8f13414087b",
+    "plan_v9": "07a02afff92cef7b2c6cee46a761a1e46b6b3422df911f8b4d4f63d41157e7a5",
+    "plan_v10_1": "d55a21c44ab604adb547e947207774a55c244ab82a471eaf0891203bd0e643fa",
+    "formal_control": "5e593454f0ddffb946692e09913da5df1ddfe0f2f11aaaf3fb663a2f00fbcfdb"
+  },
+  "HEAD_at_draft": "a086c456400f6fb46aab787a3de57a7f9cec17e7",
+  "open_for_refutation_RESOLVED_in_v2": [
+    {
+      "item": "whether Z2 should fire automatically on probe collapse whenever dynamics are alive even if sparse-hot witness is absent (B vs Z2 precedence)",
+      "resolution": "evaluation precedence IS classifier semantics: order D→Z1→Z2→A→B→C; after D clear evaluate Z1 then Z2 and STOP on match (NON-success); never fall through to A/B",
+      "authority": "1784986169138-98ed9778"
+    }
+  ],
+  "void_of_prior_contract_revision": {
+    "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_amended_CONTRACT_v1.json",
+    "CONTRACT_SHA256": "2e410fd1bb56d632da57b6e929fa0c5e7292e40038aeb546f4296861fb8bf6d1",
+    "status": "VOID for dual-accept / gate purposes; byte-preserved on disk",
+    "reason_msg_id": "1784986169138-98ed9778",
+    "reason_class": "gate-2 REVISE: Z1/Z2 were labeled but unsequenced → Z2 dead code / over-forget misroutes to B",
+    "claude_remint_order_msg_id": "1784986190587-438893b6"
+  },
+  "v1_to_v2_delta_enumeration": {
+    "v1_CONTRACT_SHA256": "2e410fd1bb56d632da57b6e929fa0c5e7292e40038aeb546f4296861fb8bf6d1",
+    "changes_ONLY": [
+      "plan_id/plan_revision → v2",
+      "pre_registered_branch_classifier.order → D→Z1→Z2→A→B→C",
+      "pre_registered_branch_classifier.evaluation_rule ADDED (STOP on Z1/Z2; never fall through to A/B)",
+      "B.when → A false AND Z1 false AND Z2 false AND dynamic g0 full field set",
+      "Z2.when → crisp (n_flips>0 OR mass-in-band OR H-trajectory alive) AND (acq_final<acq_step0 OR retention_ok=false)",
+      "open_for_refutation: removed B-vs-Z2 precedence item (resolved)",
+      "DEVELOPER_STEPS_detail[1] classifier assertion aligned to D→Z1→Z2→A→B→C",
+      "void_of_prior_contract_revision for v1 under REVISE msg id",
+      "mint_safety path → v2; decision_contract.intent notes remint"
+    ],
+    "DO_NOT_REGRESS_cleared_by_gate2": [
+      "PLAN_v9 law verbatim H=8192 no TTL/decay",
+      "dual non-inheritance F1+F2 A_ttl pp drop",
+      "FINDING MISSING_ARM3_SPARSE_HOT_EVENT_COUNTERS",
+      "standing mechanics fence→counter→ns5 order",
+      "3-ledger claim ceiling",
+      "ns5 namespace",
+      "no packet/GPU/source edits in this slice"
+    ]
+  }
+}

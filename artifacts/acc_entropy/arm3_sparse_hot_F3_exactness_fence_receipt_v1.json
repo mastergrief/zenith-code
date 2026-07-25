@@ -1,0 +1,121 @@
+{
+  "kind": "f3_sparse_hot_exactness_fence_receipt",
+  "revision": "v1",
+  "dispatch_msg_id": "1784986430856-c20869c8",
+  "contract_path": "artifacts/acc_entropy/arm3_sparse_hot_F3_amended_CONTRACT_v2.json",
+  "contract_sha256": "034ec8e966ca020d5ac95630a66613c0cc556aeb67e31418c3bbd5d263f858d7",
+  "head": "a086c456400f6fb46aab787a3de57a7f9cec17e7",
+  "drafted_at_utc": "2026-07-25T13:35:52Z",
+  "tests": {
+    "path": "calm/hrm_text_158/tests/test_sparse_hot_exactness_fence.py",
+    "sha256": "65fbf9309c06281204bc63dcd3f07acd8870ee7091fe5aa6fe04d77ea3e4c81b",
+    "result": "8 passed",
+    "command": "timeout 180 python3 -m pytest -q calm/hrm_text_158/tests/test_sparse_hot_exactness_fence.py -v",
+    "log_tail": [
+      "============================= test session starts ==============================",
+      "platform linux -- Python 3.13.7, pytest-9.0.3, pluggy-1.6.0",
+      "rootdir: /mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "plugins: anyio-4.13.0, typeguard-4.5.1",
+      "collected 8 items",
+      "",
+      "calm/hrm_text_158/tests/test_sparse_hot_exactness_fence.py ........      [100%]",
+      "",
+      "============================== 8 passed in 4.75s ==============================="
+    ]
+  },
+  "primitive": {
+    "exists": true,
+    "symbol": "apply_sparse_hot",
+    "file": "calm/hrm_text_158/native_full_stack/forgetting_laws.py",
+    "lines": "137-165",
+    "sha256": "36f41e16f01cffb69b5f46582f8b927d56049f47f3492bf435ba8b5b9e1795f6",
+    "untouched": true,
+    "git_diff_vs_HEAD": "empty",
+    "semantics_live": "global top-H |acc| across name→tensor dict; k=min(hot_h,numel); thresh=min(topk); keep=|x|>=thresh; if keep.sum()>k drop later flat indices (nonzero ascending) to exactly k; cold→0; default hot_h=8192",
+    "wire_site": {
+      "file": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "line": 166,
+      "code": "residency.acc = apply_sparse_hot(residency.acc, hot_h=8192)",
+      "arm_gate": "elif arm == ARM3"
+    },
+    "facade_reexport_NOT_TOUCHED": {
+      "file": "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py",
+      "lines": "56 / 392",
+      "note": "import + __all__ only; zero additional call sites; this slice did not edit the facade"
+    }
+  },
+  "oracle_impl_sweep": {
+    "dual_oracle": "pure-Python _exact_oracle mirrors live flat-index trim algorithm (independent of torch topk path except matching semantics)",
+    "bounded_fixture_family_cases": 54,
+    "mismatches": 0,
+    "proven_by_test": "test_bounded_dual_oracle_sweep_zero_mismatches",
+    "true_negatives": [
+      "test_true_negative_k_le_zero_all_zero",
+      "test_true_negative_h_ge_numel_identity"
+    ]
+  },
+  "tie_trim_exactness": {
+    "proven_by_test": "test_tie_trim_exactly_h_and_subset_of_eligible",
+    "assertion": "|kept|==H under forced-tie fixture; kept ⊆ {|x|>=thresh}; live trim keeps earliest flat indices among eligible",
+    "fixture": "six equal |acc|=5, hot_h=3 → kept indices {0,1,2}"
+  },
+  "cross_tensor_global_top_h": {
+    "proven_by_test": "test_cross_tensor_global_top_h",
+    "assertion": "hot set GLOBAL across dict; a tensor may be all-cold; per-tensor masks reassemble to exactly H retained nonzeros"
+  },
+  "no_mixin_contrast_legs": {
+    "proven_by_test": "test_no_mixin_contrast_vs_decay_and_ttl",
+    "assertion": "sparse_hot output differs from apply_decay_leak and apply_ttl_age_drain on a shared fixture; cold index under sparse remains non-zero under decay"
+  },
+  "FINDING_MISSING_ARM3_SPARSE_HOT_EVENT_COUNTERS_RESTATED": {
+    "status": "FINDING",
+    "id": "MISSING_ARM3_SPARSE_HOT_EVENT_COUNTERS",
+    "detail": "rg of screen_execution_loop.py + screen_receipt_output.py finds zero emitters for hot-set survival / cold-zero / n_sparse_hot_* counters. Fence did NOT add counters (next slice).",
+    "evidence_commands": [
+      "rg -n 'n_sparse_hot|cold_zero|hot_set_survival|sparse_hot_cold' calm/hrm_text_158/native_full_stack/screen_receipt_output.py calm/hrm_text_158/native_full_stack/screen_execution_loop.py → no matches"
+    ],
+    "implication_for_A_sparse_hot": "CONTRACT A_sparse_hot remains unreachable until gated observation-only counter lands; do NOT bind n_applied_drains / n_ttl_force_zero_drains"
+  },
+  "source_defects_characterized_NOT_FIXED": [
+    {
+      "id": "SPARSE_HOT_FLAT_TRIM_CAN_DROP_ABOVE_THRESH",
+      "severity": "characterization",
+      "built_fix": false,
+      "proven_by_test": "test_finding_flat_trim_can_drop_above_thresh",
+      "detail": "Fixture [5,5,5,10] hot_h=2 → live keeps [5,5,0,0] dropping 10 even though |10|>thresh. Oracle mirrors live behavior; fence does not change transfer-law semantics. Flag for ns5 D-branch / optional later law review — STOP if a semantic fix is desired."
+    }
+  ],
+  "touched_files_COMPLETE_enumeration": [
+    {
+      "path": "calm/hrm_text_158/tests/test_sparse_hot_exactness_fence.py",
+      "action": "CREATE",
+      "sha256": "65fbf9309c06281204bc63dcd3f07acd8870ee7091fe5aa6fe04d77ea3e4c81b"
+    },
+    {
+      "path": "artifacts/acc_entropy/arm3_sparse_hot_F3_exactness_fence_receipt_v1.json",
+      "action": "CREATE_O_EXCL"
+    }
+  ],
+  "untouched_load_bearing": [
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_laws.py",
+      "sha256": "36f41e16f01cffb69b5f46582f8b927d56049f47f3492bf435ba8b5b9e1795f6",
+      "note": "apply_sparse_hot body UNTOUCHED"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgetting_mechanism_screen_reducers.py",
+      "note": "facade re-export NOT edited this slice"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/screen_execution_loop.py",
+      "note": "ARM3 wiring cite-only; NOT edited"
+    }
+  ],
+  "explicit_non_work": [
+    "NO counters/emitters added",
+    "NO GPU",
+    "NO ns5 packet mint",
+    "NO transfer-law semantic change",
+    "NO commit/push"
+  ]
+}
