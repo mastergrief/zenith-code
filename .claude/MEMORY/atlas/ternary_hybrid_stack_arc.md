@@ -363,6 +363,18 @@ worst-case sub-2 claim).
 
 **Non-claims:** no science/run authority from this append; no winner; no GPU; no full-sub2/bank/readiness; no eager-tier rules mutation; pre-existing mirror-line-count drift left untouched.
 
+### 2026-07-26 — Two-tier bit budget locked (≤2.5 working bar / <2.0 north star)
+
+Gabe decision capture (ai-room `1785017697122`): pragmatic working bar =
+**≤2.5 bpw scale-inclusive** for pass/fail gating; **<2.0** retained as north
+star / stretch; term **"sub-2" reserved for actually <2.0**; ledgers keep exact
+numbers. Codified into both `ternary_hybrid_stack.md` mirrors (acc headroom
+0.4/0.9; rotor 2-bit flat+scales clear working bar, fail strict <2.0).
+HRM-158 curriculum / bank-gate / sub-2-first launch-checker semantics untouched
+(separate slice if re-tiered). Fresh Gabe ask to codify under `.claude/rules`
+relayed in dispatch `1785053050691`.
+
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,

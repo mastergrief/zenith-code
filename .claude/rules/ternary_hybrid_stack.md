@@ -37,40 +37,46 @@ Always report FP-free claims as three separate ledgers; never collapse them.
 - **The win is real and specific**: no FP master weights, no Adam moments for
   the eligible bulk (eligible optimizer state entries = 0). State it that
   precisely — "FP-master-free for eligible bulk", not bare "FP-free".
+- **Two-tier pass/fail bar:** working **≤2.5 bpw scale-inclusive**; north star
+  **<2.0**; **"sub-2"**=actually <2.0; ledgers exact; acc headroom vs q 1.6 ≈
+  **0.4** / **0.9** (north-star / working-bar).
+- **Working-bar non-override:** ≤2.5 does **not** satisfy/override
+  `full_sub2_runtime_ready_for_science` (incl. `transient_fp_debt` /
+  diagnostic blocks) until a separately gated checker re-tier lands.
 - **NOT (yet) sub-2-bit persistent TOTAL; the LIVE row ≠ the saved-byte q
   ledger** — keep them separate. **Saved-byte checkpoint q** is banked below
   2.0: base-3 `packed_base3_5ternary_uint8` = **8/5 = 1.6 bpw** physical
-  (q+scale-inclusive enforced **< 2.0**; the 2-bit pack sits at the 2.0
+  (q+scale-inclusive north-star **< 2.0**; the 2-bit pack sits at the 2.0
   boundary). The vote-acc carrier is **int16→int8 (W8, ±127): in-vivo-confirmed
   at bit-exact live parity = 2× dominator reduction, LIVE ~24→~16 bpw** under
   the current clamp geometry (W6 `[-31,31]` is the separately-banked oracle
   reference). The acc term (now int8) **remains the dominator / next target**,
   but **fixed-width width-reduction (the W-series) is bounded — it cannot reach
-  the acc sub-2 ceiling (~0.4 bpw = 2.0 − 1.6 base-3 q)**; the sub-2 route is
-  event-coded/sparse/forgettable, NOT a narrower fixed width. Full persistent
-  sub-2 stays **unbanked** until the accumulator term, its live-carrier
-  authority, AND base-3 checkpoint-wiring all clear. Never upgrade this into
-  "fully FP-free persistent state."
+  the acc north-star ceiling (~0.4 = 2.0−1.6) nor the working-bar ceiling
+  (~0.9 = 2.5−1.6)**; the sub-2 route is event-coded/sparse/forgettable, NOT a
+  narrower fixed width. Full persistent sub-2 stays **unbanked** until the
+  accumulator term, its live-carrier authority, AND base-3 checkpoint-wiring
+  all clear. Never upgrade this into "fully FP-free persistent state."
 - **Event-coded live carrier = closed Phase-A accumulator-drain experiment**
-  (sparse `hot_exact` + cold default) at the dense-acc dominator —
-  **bounded negative as a sub-2 mechanism at terminal Phase-A geometry** (V4-LIVE
-  screen complete; does not reach sub-2 vs the dense-acc path); receipts in
-  `MEMORY/atlas/ternary_hybrid_stack_arc.md`. Does **not** close all
-  event-coded mechanisms or all accumulator alternatives (dense-acc-width
-  investigation remains open); no readiness / full-sub2 claim (transient
-  activation/KV buffers are a *separate* `full_sub2_runtime` surface — see
-  below — not this drain).
+  (sparse `hot_exact` + cold default): **bounded negative as a sub-2 mechanism
+  at terminal Phase-A geometry** (V4-LIVE); receipts in atlas. Does **not** close
+  all event-coded/acc alternatives; no readiness/full-sub2 claim (activations/KV
+  are a separate `full_sub2_runtime` surface — see below).
 - **3-ledger = weight-persistent train-state accounting; activations/KV are full-sub2-runtime target surfaces with separate levers.** Activations/residuals, attention-KV buffers, and backward-saved tensors are FP today under the D2.1 BitLinear contract (weights ternarized, activations not), and remain required `full_sub2_runtime` surfaces currently blocking main science. Their path is forward/runtime activation-KV quantization or recompute/compression (separately scoped), NOT the weight vote-accumulator: activations are transient, KV has no trainable optimizer state, no persistent votes to accumulate. Do not conflate the persistent-weight drain (the dense vote-acc, now int8/W8) with total-runtime memory (activations/KV scale with batch×seqlen, distinct levers).
 - **Ternary-rotor lane** (separately-scoped; plan + screen receipts:
   `.claude/MEMORY/ternary-rotor.md`) covers those runtime surfaces via rotated
-  scalar quantization + remat. Two standing invariants from it: (1) NEVER
-  quantize SDPA-saved q/k/v behind the fused attention kernel — its backward
-  recomputes scores against the exact forward logsumexp, so perturbed saves
-  blow up as exp(Δ); attention precision goes through a quantize-then-compute
-  kernel (the KV surface), never a saved-tensor swap. (2) 4-level (2-bit)
-  codes are 2.0 bpw before scales — NO scale packing clears the strict <2.0
-  bar; a sub-2 KV/runtime claim requires 3-level (ternary) codes + base-3
-  packing, scale-inclusive.
+  scalar quantization + remat. Two standing invariants from it: (1) SDPA-saved
+  q/k/v behind the fused attention kernel are SCREEN-EXCLUDED from saved-tensor
+  quantization — the fused backward recomputes scores against the exact forward
+  logsumexp, so perturbed saves blow up as exp(Δ); attention precision goes
+  through a quantize-then-compute kernel (the KV surface), never a saved-tensor
+  swap (dim4-bisect receipt pending). (2) 4-level (2-bit) codes are 2.0 bpw before scales
+  under this lane's additive scale-inclusive flat-code ledger — scale packing
+  lands ~2.1–2.2 bpw, which **clears the ≤2.5 working bar** but still **fails
+  strict <2.0** (accounting stays true; only its disqualifying force is
+  tiered). A north-star / "sub-2" KV/runtime claim still requires 3-level
+  (ternary) codes + base-3 packing, scale-inclusive. (Ledger-contract
+  invariant, not a universal info-theory law.)
 - **Two bit-width axes stay separate.** Persistent train-state WIDTH (q / vote-acc carrier, int16→int8/W8 → the sub-2 weight target) is distinct from decision/eligibility QUANTIZATION (ranking discrimination). A decision/receipt-family collapse or null is a representation limit, NOT evidence against persistent-width reduction; decision-family discrimination is a separate axis and B5b/H1 nulls do not close the persistent-width lane.
 
 ## Training dynamics + the stability problem
