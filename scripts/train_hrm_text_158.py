@@ -1458,6 +1458,7 @@ def train(
         from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
             AUTHORIZED_P1B_SURFACE_TUPLE,
             build_trainer_sub2_authority_live_conversion_receipt,
+            resolve_live_conversion_execution_device,
             compute_p1_parent_parity_max_abs_diff_by_site,
             mint_p1b_live_conversion_receipt_o_excl,
             save_trainer_sub2_live_checkpoint_envelope,
@@ -1612,6 +1613,13 @@ def train(
             else ""
         )
 
+        # r5b: observe staged proof tensors + model params AFTER .to(device);
+        # raw proof_batch (CPU loader) must not determine receipt device.
+        observed_execution_device = resolve_live_conversion_execution_device(
+            staged_inputs=child_batch["inputs"],
+            model=m,
+            device=device,
+        )
         receipt = build_trainer_sub2_authority_live_conversion_receipt(
             p1_checkpoint=p1_envelope,
             p1_envelope_bytes=p1_envelope_bytes,
@@ -1628,6 +1636,8 @@ def train(
             proof_command_argv=tuple(sys.argv),
             w6_parent_sha256_before=w6_before,
             w6_parent_sha256_after=w6_after,
+            cli_dry_run=bool(dry_run),
+            observed_execution_device=observed_execution_device,
         )
 
         row_count = len(receipt.readiness_row_flip_authorized_surface_names)
@@ -1637,6 +1647,10 @@ def train(
         print(
             "[hrm158] P1 live-conversion proof: "
             f"pass={receipt.pass_receipt} "
+            f"execution_device={receipt.execution_device} "
+            f"gpu_launched={receipt.gpu_launched} "
+            f"proof_exit_before_optimizer_step={receipt.proof_exit_before_optimizer_step} "
+            f"cli_dry_run={receipt.cli_dry_run} "
             f"dry_run={receipt.dry_run} "
             f"checkpoint_written={receipt.checkpoint_written} "
             f"optimizer_step_called={receipt.optimizer_step_called} "

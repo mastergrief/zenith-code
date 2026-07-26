@@ -2503,7 +2503,7 @@ def validate_trainer_sub2_authority_roundtrip_receipt(
 
 
 TRAINER_SUB2_LIVE_CONVERSION_SCHEMA_VERSION = (
-    "hrm_text_158_p1_trainer_sub2_authority/v0.live_conversion_proof"
+    "hrm_text_158_p1_trainer_sub2_authority/v0.live_conversion_proof.device_truth_v1"
 )
 TRAINER_SUB2_LIVE_CONVERSION_TARGET_NAME = (
     "p1_trainer_live_checkpoint_authority_conversion"
@@ -2539,13 +2539,70 @@ def _eligible_state_keys_sha256(keys: Sequence[str]) -> str:
     return h.hexdigest()
 
 
+def _normalize_execution_device(device: Any) -> str:
+    """Normalize a device-like object to exactly ``"cpu"`` or ``"cuda"``.
+
+    Accepts ``torch.device``, device strings (``cuda:0`` → ``cuda``), tensors
+    (via ``.device``), or duck-typed objects with a ``.type`` attribute.
+    Does **not** consult loader batches — raw CPU proof_batch tensors must
+    never override an observed staged/model execution device (r5b).
+    """
+    if torch.is_tensor(device):
+        return "cuda" if device.is_cuda else "cpu"
+    if isinstance(device, str):
+        kind = device.split(":", 1)[0].strip().lower()
+        if kind in ("cpu", "cuda"):
+            return kind
+        raise ValueError(f"unsupported execution device string {device!r}")
+    typ = getattr(device, "type", None)
+    if typ in ("cpu", "cuda"):
+        return str(typ)
+    resolved = torch.device(device)
+    return "cuda" if resolved.type == "cuda" else "cpu"
+
+
+def resolve_live_conversion_execution_device(
+    *,
+    observed_execution_device: Any | None = None,
+    staged_inputs: Any | None = None,
+    model: "torch.nn.Module | None" = None,
+    device: Any = "cpu",
+) -> str:
+    """Receipt execution device from OBSERVED staged/model evidence (r5b).
+
+    Priority: ``observed_execution_device`` → ``staged_inputs.device`` → ``device``.
+    Raw loader batches are never consulted. When ``model`` is provided, the
+    observed device must match the first parameter's device or mint is refused.
+    """
+    if observed_execution_device is not None:
+        observed = _normalize_execution_device(observed_execution_device)
+    elif staged_inputs is not None:
+        if torch.is_tensor(staged_inputs):
+            observed = _normalize_execution_device(staged_inputs.device)
+        else:
+            observed = _normalize_execution_device(getattr(staged_inputs, "device"))
+    else:
+        observed = _normalize_execution_device(device)
+    if model is not None:
+        param = next(model.parameters())
+        model_dev = _normalize_execution_device(param.device)
+        if observed != model_dev:
+            raise ValueError(
+                "P1b staged/observed execution device mismatches model parameter "
+                f"device (observed={observed!r}, model={model_dev!r})"
+            )
+    return observed
+
 @dataclass(frozen=True)
 class TrainerSub2AuthorityLiveConversionReceipt:
     schema_version: str
     target_name: str
     pass_receipt: bool
-    dry_run: bool
-    gpu_launched: bool
+    dry_run: bool  # synonym of proof_exit_before_optimizer_step; NOT CLI --dry-run
+    gpu_launched: bool  # True iff execution_device == "cuda" (measured)
+    execution_device: str  # measured "cpu" | "cuda"
+    proof_exit_before_optimizer_step: bool  # P1b proof branch; always True
+    cli_dry_run: bool  # truthful CLI --dry-run flag state at mint time
     optimizer_step_called: bool
     checkpoint_written: bool
     checkpoint_written_to_banked_parent: bool
@@ -2612,6 +2669,9 @@ def live_conversion_receipt_from_dict(payload: Mapping[str, Any]) -> TrainerSub2
         pass_receipt=bool(payload["pass_receipt"]),
         dry_run=bool(payload["dry_run"]),
         gpu_launched=bool(payload["gpu_launched"]),
+        execution_device=str(payload["execution_device"]),
+        proof_exit_before_optimizer_step=bool(payload["proof_exit_before_optimizer_step"]),
+        cli_dry_run=bool(payload["cli_dry_run"]),
         optimizer_step_called=bool(payload["optimizer_step_called"]),
         checkpoint_written=bool(payload["checkpoint_written"]),
         checkpoint_written_to_banked_parent=bool(payload["checkpoint_written_to_banked_parent"]),
@@ -2976,6 +3036,8 @@ def build_trainer_sub2_authority_live_conversion_receipt(
     poison_value: float = 17.0,
     w6_parent_sha256_before: str = "",
     w6_parent_sha256_after: str = "",
+    cli_dry_run: bool = False,
+    observed_execution_device: Any | None = None,
 ) -> TrainerSub2AuthorityLiveConversionReceipt:
     if not is_p1_live_sub2_checkpoint(p1_checkpoint):
         raise ValueError("P1b live conversion requires a P1 live checkpoint envelope")
@@ -3082,12 +3144,23 @@ def build_trainer_sub2_authority_live_conversion_receipt(
     pass_receipt = bool(base_pass)
 
     eligible_keys = tuple(sorted(loaded_states))
+    # r5b: never derive receipt device from raw loader batch tensors.
+    execution_device = resolve_live_conversion_execution_device(
+        observed_execution_device=observed_execution_device,
+        device=device,
+        model=resumed_model,
+    )
+    gpu_launched = execution_device == "cuda"
+    proof_exit_before_optimizer_step = True  # this branch exits before optimizer.step
     receipt = TrainerSub2AuthorityLiveConversionReceipt(
         schema_version=TRAINER_SUB2_LIVE_CONVERSION_SCHEMA_VERSION,
         target_name=TRAINER_SUB2_LIVE_CONVERSION_TARGET_NAME,
         pass_receipt=pass_receipt,
-        dry_run=True,
-        gpu_launched=False,
+        dry_run=proof_exit_before_optimizer_step,  # NOT CLI --dry-run
+        gpu_launched=gpu_launched,
+        execution_device=execution_device,
+        proof_exit_before_optimizer_step=proof_exit_before_optimizer_step,
+        cli_dry_run=bool(cli_dry_run),
         optimizer_step_called=False,
         checkpoint_written=True,
         checkpoint_written_to_banked_parent=False,
@@ -3143,7 +3216,10 @@ def build_trainer_sub2_authority_live_conversion_receipt(
         non_claims=TRAINER_SUB2_LIVE_CONVERSION_NON_CLAIMS,
     )
     if pass_receipt:
-        validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+        validate_trainer_sub2_authority_live_conversion_receipt(
+            receipt,
+            measured_device=execution_device,
+        )
     # receipt_mint_end is emitted by the trainer sink AFTER the authoritative
     # O_EXCL write (+validate) succeeds — never here (failure leaves phase open).
     return receipt
@@ -3165,6 +3241,7 @@ def validate_trainer_sub2_authority_live_conversion_receipt(
     receipt: TrainerSub2AuthorityLiveConversionReceipt,
     *,
     require_source_at_head: bool = True,
+    measured_device: "torch.device | str | None" = None,
 ) -> None:
     if receipt.schema_version != TRAINER_SUB2_LIVE_CONVERSION_SCHEMA_VERSION:
         raise ValueError("P1b live conversion schema version mismatch")
@@ -3172,8 +3249,31 @@ def validate_trainer_sub2_authority_live_conversion_receipt(
         raise ValueError("P1b live conversion target name mismatch")
     if not receipt.pass_receipt:
         raise ValueError("P1b live conversion proof did not pass")
-    if not receipt.dry_run or receipt.gpu_launched or receipt.optimizer_step_called:
-        raise ValueError("P1b must stay CPU dry-run with no optimizer step")
+    if receipt.optimizer_step_called:
+        raise ValueError("P1b must not call optimizer.step")
+    if not receipt.proof_exit_before_optimizer_step:
+        raise ValueError("P1b must exit before optimizer step (proof branch)")
+    if bool(receipt.dry_run) != bool(receipt.proof_exit_before_optimizer_step):
+        raise ValueError(
+            "P1b dry_run must equal proof_exit_before_optimizer_step "
+            "(dry_run is NOT the CLI --dry-run flag; see cli_dry_run)"
+        )
+    execution_device = str(receipt.execution_device)
+    if execution_device not in ("cpu", "cuda"):
+        raise ValueError(f"P1b execution_device must be cpu|cuda, got {execution_device!r}")
+    if bool(receipt.gpu_launched) != (execution_device == "cuda"):
+        raise ValueError("P1b gpu_launched inconsistent with execution_device")
+    if measured_device is not None:
+        measured = _normalize_execution_device(measured_device)
+        if execution_device != measured:
+            raise ValueError(
+                f"P1b execution_device {execution_device!r} != measured device {measured!r}"
+            )
+        if bool(receipt.gpu_launched) != (measured == "cuda"):
+            raise ValueError(
+                "P1b gpu_launched inconsistent with measured device "
+                f"(gpu_launched={receipt.gpu_launched}, measured={measured!r})"
+            )
     if receipt.checkpoint_written_to_banked_parent:
         raise ValueError("P1b cannot write banked parent checkpoints")
     if not str(receipt.source_commit_sha).strip():
