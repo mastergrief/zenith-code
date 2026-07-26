@@ -49,13 +49,17 @@ OPTIMIZER_CREDIT_STATE_NO_HIDDEN_FP_AUDIT_SCHEMA_VERSION = (
 DENSE_SURFACE_WEIGHTED_GRAD = "weighted_grad"
 DENSE_SURFACE_CREDIT = "credit"
 DENSE_SURFACE_DENSE_RANK_VOTES = "dense_rank_votes_before_sparse_event_extraction"
+DENSE_SURFACE_PROJECTED_MOVES = "projected_moves"
 
 AUDIT_OPT_EXCL = "AUDIT-OPT-EXCL"
 AUDIT_NO_DENSE_WG = "AUDIT-NO-DENSE-WG"
 AUDIT_NO_DENSE_CREDIT = "AUDIT-NO-DENSE-CREDIT"
 AUDIT_NO_DENSE_VOTES = "AUDIT-NO-DENSE-VOTES"
+AUDIT_NO_DENSE_PROJECTED_MOVES = "AUDIT-NO-DENSE-PROJECTED-MOVES"
 AUDIT_CAPTURE_LAUNDER = "AUDIT-CAPTURE-LAUNDER"
 AUDIT_PERSISTENT_STATE = "AUDIT-PERSISTENT-STATE"
+
+TENSOR_DIGEST_BYTE_ORDER = "torch_cpu_contiguous_native_endian"
 
 NO_HIDDEN_FP_AUDIT_NON_CLAIMS = (
     "3C-C1 audit is CPU/reference scaffold only; no GPU runtime receipt",
@@ -63,6 +67,150 @@ NO_HIDDEN_FP_AUDIT_NON_CLAIMS = (
     "optimizer_state_eligible_exclusion_proven requires BR-3C-C-AUDIT-PASS-CPU linkage",
     "real_native_integer_attribution_present and real_native_integer_credit_ranking_present stay false on CPU",
 )
+
+
+def compute_canonical_json_sha256(obj: Any) -> str:
+    """SHA-256 lowercase hex over canonical JSON (sorted keys, compact separators)."""
+    payload = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def compute_tensor_data_sha256(tensor: torch.Tensor) -> str:
+    """SHA-256 of contiguous CPU raw bytes (native endian via torch→numpy tobytes)."""
+    buf = tensor.detach().cpu().contiguous().numpy().tobytes()
+    return hashlib.sha256(buf).hexdigest()
+
+
+def compute_tensor_canonical_sha256(tensor: torch.Tensor) -> str:
+    """Outer SHA-256 of frozen_envelope JSON: dtype + shape + data_sha256."""
+    envelope = {
+        "data_sha256": compute_tensor_data_sha256(tensor),
+        "dtype": str(tensor.dtype),
+        "shape": [int(dim) for dim in tensor.shape],
+    }
+    return compute_canonical_json_sha256(envelope)
+
+
+def validate_tensor_digest_matches(tensor: torch.Tensor, claimed_sha256: str) -> None:
+    actual = compute_tensor_canonical_sha256(tensor)
+    if actual != claimed_sha256:
+        raise ValueError(
+            f"tensor digest mismatch: claimed={claimed_sha256} actual={actual}"
+        )
+
+
+def validate_canonical_json_digest(obj: Any, claimed_sha256: str) -> None:
+    actual = compute_canonical_json_sha256(obj)
+    if actual != claimed_sha256:
+        raise ValueError(
+            f"canonical JSON digest mismatch: claimed={claimed_sha256} actual={actual}"
+        )
+
+
+@dataclass(frozen=True)
+class ProjectedMovesObservationEvidence:
+    projected_moves_sha256: str
+    projected_moves_numel: int
+    projected_moves_dtype: str
+    projected_moves_shape: tuple[int, ...]
+    move_indices_sha256: str
+    move_indices_dtype: str
+    move_indices_numel: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "projected_moves_sha256": self.projected_moves_sha256,
+            "projected_moves_numel": self.projected_moves_numel,
+            "projected_moves_dtype": self.projected_moves_dtype,
+            "projected_moves_shape": list(self.projected_moves_shape),
+            "move_indices_sha256": self.move_indices_sha256,
+            "move_indices_dtype": self.move_indices_dtype,
+            "move_indices_numel": self.move_indices_numel,
+        }
+
+
+@dataclass(frozen=True)
+class IntegerPathDenseSurfaceObservationEvidence:
+    observed_surfaces: tuple[str, ...]
+    probe_mode: str
+    projected_moves_evidence: ProjectedMovesObservationEvidence
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "observed_surfaces": list(self.observed_surfaces),
+            "probe_mode": self.probe_mode,
+            "projected_moves_evidence": self.projected_moves_evidence.to_dict(),
+            "observation_evidence_type": "IntegerPathDenseSurfaceObservationEvidence",
+        }
+
+
+def build_projected_moves_observation_evidence(
+    *,
+    projected_moves: torch.Tensor,
+    move_indices: torch.Tensor,
+) -> ProjectedMovesObservationEvidence:
+    """Derive evidence fields from the EXACT :311 tensors (no recompute)."""
+    if not isinstance(projected_moves, torch.Tensor):
+        raise ValueError("projected_moves must be a torch.Tensor")
+    if not isinstance(move_indices, torch.Tensor):
+        raise ValueError("move_indices must be a torch.Tensor")
+    return ProjectedMovesObservationEvidence(
+        projected_moves_sha256=compute_tensor_canonical_sha256(projected_moves),
+        projected_moves_numel=int(projected_moves.numel()),
+        projected_moves_dtype=str(projected_moves.dtype),
+        projected_moves_shape=tuple(int(dim) for dim in projected_moves.shape),
+        move_indices_sha256=compute_tensor_canonical_sha256(move_indices),
+        move_indices_dtype=str(move_indices.dtype),
+        move_indices_numel=int(move_indices.numel()),
+    )
+
+
+def assert_eligible_modules_owned_by_model(
+    model: torch.nn.Module,
+    eligible: Mapping[str, torch.nn.Module],
+) -> None:
+    """Hard-fail unless every eligible module param is owned by model (by id)."""
+    model_param_ids = {id(param) for param in model.parameters()}
+    for name, module in eligible.items():
+        for param in module.parameters():
+            if id(param) not in model_param_ids:
+                raise ValueError(
+                    "eligible/model object-identity mismatch: "
+                    f"eligible module {name!r} has param not in model.parameters()"
+                )
+
+
+def validate_evidence_receipt_field_equality(
+    evidence: IntegerPathDenseSurfaceObservationEvidence,
+    receipt: Mapping[str, Any],
+) -> None:
+    """Receipt projected_moves_*/move_indices_*/observed_* must equal evidence.
+
+    Full plan field census must pass before the caller may emit
+    evidence_to_receipt_field_equality_validated=true.
+    """
+    pev = evidence.projected_moves_evidence
+    checks = {
+        "projected_moves_sha256": pev.projected_moves_sha256,
+        "projected_moves_numel": pev.projected_moves_numel,
+        "projected_moves_dtype": pev.projected_moves_dtype,
+        "projected_moves_shape": list(pev.projected_moves_shape),
+        "move_indices_sha256": pev.move_indices_sha256,
+        "move_indices_dtype": pev.move_indices_dtype,
+        "move_indices_numel": pev.move_indices_numel,
+        "observed_dense_surfaces": list(evidence.observed_surfaces),
+        "probe_mode": evidence.probe_mode,
+        "observation_evidence_type": "IntegerPathDenseSurfaceObservationEvidence",
+        "projected_moves_sha256_sourced_from_evidence_not_recomputed": True,
+    }
+    for key, expected in checks.items():
+        if key not in receipt:
+            raise ValueError(f"receipt missing evidence-bound field: {key}")
+        if receipt[key] != expected:
+            raise ValueError(
+                f"evidence↔receipt inequality on {key}: "
+                f"receipt={receipt[key]!r} evidence={expected!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -170,6 +318,11 @@ def _run_required_audits(
             detail=f"observed={sorted(observed)}",
         ),
         NoHiddenFpAuditResult(
+            audit_id=AUDIT_NO_DENSE_PROJECTED_MOVES,
+            passed=DENSE_SURFACE_PROJECTED_MOVES not in observed,
+            detail=f"observed={sorted(observed)}",
+        ),
+        NoHiddenFpAuditResult(
             audit_id=AUDIT_CAPTURE_LAUNDER,
             passed=not (credit_capture_observed and native_attribution_claimed),
             detail=(
@@ -201,7 +354,12 @@ def _classify_audit_branch(
     by_id = {item.audit_id: item for item in audit_results}
     if not by_id.get(AUDIT_CAPTURE_LAUNDER, NoHiddenFpAuditResult("", False, "")).passed:
         return BRANCH_3C_C_CAPTURE_LAUNDER
-    for audit_id in (AUDIT_NO_DENSE_WG, AUDIT_NO_DENSE_CREDIT, AUDIT_NO_DENSE_VOTES):
+    for audit_id in (
+        AUDIT_NO_DENSE_WG,
+        AUDIT_NO_DENSE_CREDIT,
+        AUDIT_NO_DENSE_VOTES,
+        AUDIT_NO_DENSE_PROJECTED_MOVES,
+    ):
         if not by_id.get(audit_id, NoHiddenFpAuditResult("", False, "")).passed:
             return BRANCH_3C_C_DENSE_LEAK
     if not by_id.get(AUDIT_OPT_EXCL, NoHiddenFpAuditResult("", False, "")).passed:
@@ -300,15 +458,29 @@ def run_integer_path_dense_surface_observation_with_alloc_guard(
     captures: Mapping[str, Any],
     weight_shape: tuple[int, int],
     q_flat: torch.Tensor,
-) -> tuple[tuple[str, ...], str]:
-    """Run 3C-A + 3C-B integer path under alloc-guard instrumentation."""
+) -> IntegerPathDenseSurfaceObservationEvidence:
+    """Run 3C-A + 3C-B integer path under alloc-guard instrumentation.
+
+    Returns IntegerPathDenseSurfaceObservationEvidence whose projected_moves
+    fields are derived from the EXACT post-:311 tensors (no recompute later).
+    """
     with _dense_surface_alloc_guard(weight_shape) as observed:
         events = integer_marginal_attribution_from_captures(
             captures["inputs"],
             captures["grad_outputs"],
             weight_shape=weight_shape,
         )
-        move_indices, projected_moves = projected_moves_from_integer_attribution(events, q_flat)
+        move_indices, projected_moves = projected_moves_from_integer_attribution(
+            events, q_flat
+        )
+        # Direct post-:311 observation — record dense projected_moves when materialized.
+        if isinstance(projected_moves, torch.Tensor):
+            if DENSE_SURFACE_PROJECTED_MOVES not in observed:
+                observed.append(DENSE_SURFACE_PROJECTED_MOVES)
+        projected_moves_evidence = build_projected_moves_observation_evidence(
+            projected_moves=projected_moves,
+            move_indices=move_indices,
+        )
         sparse_rank_bucketed_vote_events_from_integer_credit(
             events.attribution_q31,
             projected_moves,
@@ -316,7 +488,11 @@ def run_integer_path_dense_surface_observation_with_alloc_guard(
             spec=default_dry_run_rank_vote_spec(),
             credit_law_id=CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0,
         )
-    return tuple(sorted(set(observed))), OBSERVATION_PROBE_MODE_ALLOC_GUARD
+    return IntegerPathDenseSurfaceObservationEvidence(
+        observed_surfaces=tuple(sorted(set(observed))),
+        probe_mode=OBSERVATION_PROBE_MODE_ALLOC_GUARD,
+        projected_moves_evidence=projected_moves_evidence,
+    )
 
 
 def build_optimizer_credit_state_receipt_from_audit(

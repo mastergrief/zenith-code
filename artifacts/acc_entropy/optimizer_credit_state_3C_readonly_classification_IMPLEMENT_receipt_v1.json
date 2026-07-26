@@ -1,0 +1,81 @@
+{
+  "actions": [
+    {
+      "action": "UPDATE",
+      "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state_no_hidden_fp_audit.py",
+      "sha256": "77f88d54390c746b649cf8d21593a72e29f02854080ce4c0f2ceb5833acffd82",
+      "summary": "IntegerPathDenseSurfaceObservationEvidence; post-:311 DENSE_SURFACE_PROJECTED_MOVES; AUDIT_NO_DENSE_PROJECTED_MOVES; frozen_envelope hash helpers + 3 validators"
+    },
+    {
+      "action": "UPDATE",
+      "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_proof_contract.py",
+      "sha256": "a3d2244d3bf8543d19d7fd896da2b8318cada710557e24549de9fd94708c122e",
+      "summary": "expectation-only: :236 evidence unpack; observed includes projected_moves; branch DENSE_LEAK; :154/:203 untouched"
+    },
+    {
+      "action": "CREATE",
+      "path": "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+      "sha256": "90e9af319b632d7e06e0d50a561474c3ee9d3e66ce44294edc4f4c852da3ab2c",
+      "summary": "governing A+B harness; consumes evidence directly; no second projected_moves_from_integer_attribution call"
+    },
+    {
+      "action": "CREATE",
+      "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_3c_readonly_audit.py",
+      "sha256": "9d0e469e543410c0af961ed3fb6a08fcfee1233920849a2afcc7853a7189481b",
+      "summary": "13 tests: taxonomy + hostile recompute/injection/hash-drift + evidence equality"
+    },
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v1.json",
+      "sha256": "0aa5bfb3515121c0a1653b23a97b7fd5ad50e2e711a95af2fbabeb17160f8ba1",
+      "summary": "governing measurement-bound receipt; branch BR-3C-C-DENSE-LEAK; projected_moves_numel=6"
+    }
+  ],
+  "claim_ceiling": {
+    "authorizes_readiness_row_flip": false,
+    "authorizes_sub2_or_resolved": false,
+    "optimizer_credit_state_remains": "transient_fp_debt pending conjunctive bar"
+  },
+  "expected_branch": "BR-3C-C-DENSE-LEAK",
+  "fold_C_deferred": true,
+  "gate1_pass_msg_id": "1785099318196-d7a56d56",
+  "gate2_pass_msg_id": "1785099704090-29e5ed8d",
+  "minted_at_utc": "2026-07-26T21:07:13Z",
+  "non_claims": [
+    "no readiness-row flip",
+    "no sub2/resolved",
+    "no Fold C",
+    "no GPU/.pt",
+    "no commit/push"
+  ],
+  "observed_branch": "BR-3C-C-DENSE-LEAK",
+  "plan_path": "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v5.json",
+  "plan_sha256": "f6668f38ae19cd169c6186897aea6519203775dffbad0f65f5a31e165cc20159",
+  "plus1_implement_msg_id": "1785099727826-c04961c1",
+  "porcelain_truth": {
+    "allowlisted_paths_only_claimed": true,
+    "note": "worktree contains unrelated modified/untracked paths outside PLAN_v5 write surface; this receipt claims ONLY the allowlisted actions above; no commit/push performed",
+    "unrelated_dirty_worktree_present": true
+  },
+  "repo_head": "0a5e6249a68df0fbf7d8e165912228109907b417",
+  "routed_to": "claude plan_gate1 ONLY",
+  "schema": "hrm_text_158_optimizer_credit_state_3C_readonly_classification_IMPLEMENT_receipt/v1",
+  "shippable_null": true,
+  "task_id": "1785098031126-dc2dcc1a",
+  "validation": {
+    "b2_envelope_pin": "frozen_envelope JSON normative; length-prefixed dead",
+    "governing_measurement_command": "timeout 300 env PYTHONPATH=. python3 scripts/optimizer_credit_state_3C_readonly_audit_run.py --out artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v1.json --plan artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v5.json",
+    "governing_result": "exit 0; audit_branch_id=BR-3C-C-DENSE-LEAK; projected_moves_numel=6",
+    "harness_no_second_attribution_call": true,
+    "pytest": [
+      {
+        "command": "timeout 600 python3 -m pytest -q calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_3c_readonly_audit.py calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_proof_contract.py calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state.py",
+        "result": "30 passed"
+      },
+      {
+        "command": "timeout 600 python3 -m pytest -q calm/llm_computer/tests/test_hrm_text_158_integer_native_optimizer_credit_path_design.py calm/llm_computer/tests/test_hrm_text_158_integer_optimizer_credit_path_wire.py",
+        "result": "34 passed"
+      }
+    ]
+  }
+}

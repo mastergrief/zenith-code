@@ -1,0 +1,74 @@
+{
+  "audit_branch_id": "BR-3C-C-DENSE-LEAK",
+  "audit_receipt_sha256": "cf5ecfa88f9c0bec5886616e25c9398906c4a5c3e2a285e1ef63a2644e6561af",
+  "captures_grad_outputs_sha256": "c093d6230f34cba4dff1ac7ed69a3532d5618399c1d74d7ca21ea99667721591",
+  "captures_inputs_sha256": "042a651345bd01ec48721a9654814dd5d129e012f7489c1bafe1857d79a122a2",
+  "claim_ceiling": {
+    "may_claim": [
+      "CPU measurement-bound observations over four debt objects via frozen harness"
+    ],
+    "must_not_claim": [
+      "readiness-row flip",
+      "sub2 / resolved=true",
+      "full_sub2_runtime_ready_for_science"
+    ]
+  },
+  "evidence_to_receipt_field_equality_validated": true,
+  "expected_branch_seed158": "BR-3C-C-DENSE-LEAK",
+  "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+  "fold_C_deferred": true,
+  "move_indices_dtype": "torch.int64",
+  "move_indices_numel": 6,
+  "move_indices_sha256": "7e472559c6dc038fa4a4b7be0b509f2e32296efdf47f4132e9fde1df2589f392",
+  "observation_evidence_type": "IntegerPathDenseSurfaceObservationEvidence",
+  "observed_dense_surfaces": [
+    "projected_moves"
+  ],
+  "observed_surfaces_sha256": "419bcfc632e77cd085f56b3ebd8cff3c168384a7f77a669e9565a7a3b20683e1",
+  "optimizer_checks": {
+    "eligible_optimizer_state_entries": 0,
+    "eligible_params_in_optimizer": 0,
+    "pass": true
+  },
+  "optimizer_checks_sha256": "93fa4f4edd9e1b46a1a2e80a060273c166e61398d76d6db51fe43515946fa41f",
+  "parity_fixture_descriptor_sha256": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+  "plan_path": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v5.json",
+  "plan_sha256": "f6668f38ae19cd169c6186897aea6519203775dffbad0f65f5a31e165cc20159",
+  "probe_mode": "alloc_guard_instrumented",
+  "projected_moves_dtype": "torch.int8",
+  "projected_moves_numel": 6,
+  "projected_moves_sha256": "d17f385da2a698f26fbfb6d3a716622804409538e8fd8a9d54674edfab7c79e3",
+  "projected_moves_sha256_sourced_from_evidence_not_recomputed": true,
+  "projected_moves_shape": [
+    6
+  ],
+  "q_flat_sha256": "f4a60b6d8dd0e197ac4771937c04d04c3cb3b692e6e0886e3fbf1081bf3215aa",
+  "required_tokens": [
+    "AUDIT_NO_DENSE_PROJECTED_MOVES",
+    "DENSE_LEAK_EXPECTED_SEED158",
+    "PENDING_FORBIDDEN_AS_TERMINAL",
+    "FOLD_C_DEFERRED",
+    "MEASUREMENT_BINDING_PRESENT",
+    "HOSTILE_HAND_AUTHORED_EMPTY_OBSERVATIONS_REJECT",
+    "HOSTILE_ROW_FLIP_REJECT",
+    "EVIDENCE_SEAM_PRESENT",
+    "EVIDENCE_RECEIPT_EQUALITY",
+    "HOSTILE_RECOMPUTE_REJECT",
+    "HOSTILE_HASH_DRIFT_REJECT",
+    "CANONICAL_HASH_CONTRACT"
+  ],
+  "runtime_command_argv": [
+    "python3",
+    "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+    "--out",
+    "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v1.json",
+    "--plan",
+    "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v5.json"
+  ],
+  "runtime_command_sha256": "5842f45fabc11a47d823b5835f696eb5a7034f4fbc1592b3939db631e5aa8554",
+  "schema": "hrm_text_158_optimizer_credit_state_3C_readonly_classification_audit/v1",
+  "weight_shape": [
+    2,
+    3
+  ]
+}

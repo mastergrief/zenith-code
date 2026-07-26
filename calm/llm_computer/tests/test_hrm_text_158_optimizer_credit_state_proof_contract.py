@@ -34,6 +34,8 @@ from calm.hrm_text_158.native_full_stack.optimizer_credit_state import (
 from calm.hrm_text_158.native_full_stack.optimizer_credit_state_no_hidden_fp_audit import (
     AUDIT_CAPTURE_LAUNDER,
     DENSE_SURFACE_CREDIT,
+    DENSE_SURFACE_PROJECTED_MOVES,
+    assert_eligible_modules_owned_by_model,
     build_optimizer_credit_state_receipt_from_audit,
     run_integer_path_dense_surface_observation_with_alloc_guard,
     run_optimizer_credit_state_no_hidden_fp_audit,
@@ -49,7 +51,9 @@ class _Tiny(torch.nn.Module):
         return self.proj(x)
 
 
-def _dry_run_fixture() -> tuple[dict, torch.Tensor, tuple[int, int], dict[str, Any]]:
+def _dry_run_fixture() -> tuple[
+    dict, torch.Tensor, tuple[int, int], dict[str, Any], torch.nn.Module
+]:
     torch.manual_seed(158)
     model = _Tiny()
     with torch.no_grad():
@@ -76,7 +80,7 @@ def _dry_run_fixture() -> tuple[dict, torch.Tensor, tuple[int, int], dict[str, A
         loss.backward()
         captures = handle.captures["proj"]
     weight_shape = tuple(int(dim) for dim in tensor_state.q_levels.shape)
-    return captures, q.reshape(-1), weight_shape, eligible
+    return captures, q.reshape(-1), weight_shape, eligible, model
 
 
 def test_default_receipt_v1_still_blocks_flip():
@@ -232,17 +236,24 @@ def test_invalid_probe_mode_is_measurement_invalid():
 
 
 def test_alloc_guard_instrumented_integer_path_observation():
-    captures, q_flat, weight_shape, eligible = _dry_run_fixture()
-    observed, probe_mode = run_integer_path_dense_surface_observation_with_alloc_guard(
+    captures, q_flat, weight_shape, eligible, model = _dry_run_fixture()
+    evidence = run_integer_path_dense_surface_observation_with_alloc_guard(
         captures=captures,
         weight_shape=weight_shape,
         q_flat=q_flat,
     )
+    observed = evidence.observed_surfaces
+    probe_mode = evidence.probe_mode
     assert probe_mode == OBSERVATION_PROBE_MODE_ALLOC_GUARD
-    assert observed == ()
-    model = _Tiny()
+    assert DENSE_SURFACE_PROJECTED_MOVES in observed
+    assert evidence.projected_moves_evidence.projected_moves_numel > 0
+    # Fold-B ownership: use the SAME fixture model that owns eligible (not a fresh _Tiny).
+    assert_eligible_modules_owned_by_model(model, eligible)
     opt, checks = build_optimizer_excluding_eligible_masters(model, eligible, lr=0.0)
-    assert opt is not None
+    # Same-model with only eligible params → opt may be None (honest exclusion).
+    assert checks["eligible_params_in_optimizer"] == 0
+    assert checks["eligible_optimizer_state_entries"] == 0
+    assert checks["pass"] is True
     audit = run_optimizer_credit_state_no_hidden_fp_audit(
         optimizer_checks=checks,
         observed_dense_surfaces=observed,
@@ -250,7 +261,7 @@ def test_alloc_guard_instrumented_integer_path_observation():
         audit_observation_complete=True,
     )
     receipt = build_optimizer_credit_state_receipt_from_audit(audit)
-    assert audit.branch_id == BRANCH_3C_C_AUDIT_PASS_CPU
+    assert audit.branch_id == BRANCH_3C_C_DENSE_LEAK
     assert receipt.integer_attribution_law_id == INTEGER_MARGINAL_ATTRIBUTION_LAW_ID
     assert receipt.integer_credit_ranking_law_id == CREDIT_LAW_NEG_ATTRIBUTION_Q31_V0
     assert (

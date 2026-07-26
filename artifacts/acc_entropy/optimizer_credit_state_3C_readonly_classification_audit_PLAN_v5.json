@@ -1,0 +1,645 @@
+{
+  "plan_id": "optimizer_credit_state_3C_readonly_classification_audit",
+  "plan_revision": "v5",
+  "packet_revision": "v5",
+  "task_id": "1785098031126-dc2dcc1a",
+  "predecessor_task_id": "1785097496652-b2f08a87",
+  "dispatch_msg_id": "1785099195473-9af25589",
+  "gate2_block_msg_id": "1785099163252-8ee3a157",
+  "gate1_pass_on_v2_msg_id": "1785098288669-e71174dc",
+  "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "repo_branch": "feature/hrm-text-1.58",
+  "repo_head_at_plan_mint": "0a5e6249a68df0fbf7d8e165912228109907b417",
+  "risk": "high",
+  "autonomy_rung": "L3",
+  "mode": "planning",
+  "SIZING": "MEDIUM",
+  "plan_phase_source_edits": false,
+  "standing_plan_axes": [
+    "decision_contract_complete",
+    "anchor_cite_verification",
+    "write_surface_IN_or_OUT_no_ambiguity",
+    "claim_ceiling",
+    "measurement_input_to_runtime_command_to_exact_observed_object_evidence_seam_to_receipt_binding"
+  ],
+  "supersedes": {
+    "prior_plan_path": "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v4.json",
+    "prior_plan_sha256": "1fa96f5b9319c01ec4549bef10d13f474d3f06c2d8bdb36491acbafb960240a6",
+    "prior_status": "VOID_for_authority_gate2_BLOCK_bytes_preserved",
+    "void_reason": "co_lead gate-2 BLOCK 1785099163252 (+ Claude concession 1785099179426): B1 :311 tensor not returned from alloc-guard observation (receipt\u2260runtime object); B2 missing canonical hash serialization contract; B3 plan_phase still said PLAN_v3",
+    "bytes_preserved": true,
+    "v4_preserved_sha256": "1fa96f5b9319c01ec4549bef10d13f474d3f06c2d8bdb36491acbafb960240a6",
+    "v3_preserved_sha256": "d6d9379118f51ba7f1505bf6ccb6da5c54787c4ef8afb6c5ca0c523845748dd5",
+    "v2_preserved_sha256": "3ccc1cdbb0534e4d6761ccccae623a21506f0bd61bd86e1f7fe5c4e00a846fe9",
+    "v1_preserved_sha256": "75d754ee212a69670c31c5afc535e49396981cefb6c2cf2422ff30d82d0977a7",
+    "carried_forward": "ALL PLAN_v4 content dual-gate-verified except B1\u2013B3; measurement provenance, DENSE_LEAK honesty, proof_contract expectation-only UPDATE, anchors, claim ceiling, blindness_coding_rule unchanged"
+  },
+  "provenance": {
+    "gabe_standing_auto_research_directive": "verbatim on predecessor; successor inherits",
+    "direction_chain": [
+      "1785097759371 (v1 gate-1 PASS)",
+      "1785097949348 (v1 gate-2 BLOCK B1-B7)",
+      "1785098031126 (successor task)",
+      "1785098288669 (v2 gate-1 PASS)",
+      "1785098409174 (v2 gate-2 BLOCK measurement provenance)",
+      "1785098432324 (PLAN_v3 remint dispatch)",
+      "1785098908176 (v3 gate-1 BLOCK B1 write-surface)",
+      "1785099011231 (v4 gate-1 PASS+FREEZE)",
+      "1785099163252 (v4 gate-2 BLOCK B1\u2013B3)",
+      "1785099195473 (PLAN_v5 remint dispatch)"
+    ],
+    "chosen": "carry all dual-gate-verified PLAN_v4 content; close B1 evidence seam + B2 hash contract + B3 plan_phase wording",
+    "rejected": [
+      "pytest-only validation as proof of measurement",
+      "hand-authored observed_dense_surfaces=() + optimizer {0,0} \u2192 AUDIT_PASS_CPU",
+      "and/or probe-mode ambiguity",
+      "synthetic token satisfying projected_moves audit without tensor evidence",
+      "designing harness to force AUDIT_PASS_CPU",
+      "return (observed, probe_mode) only \u2014 drops :311 tensor identity",
+      "recompute projected_moves in harness for receipt hashing",
+      "hand-authored projected_moves_sha256/numel/dtype"
+    ]
+  },
+  "decision_contract": {
+    "intent": "Read-only classify optimizer_credit_state transient_fp_debt under conjunctive flip bar via a MEASUREMENT-BOUND governing audit receipt (input\u2192command\u2192receipt); cannot authorize readiness row",
+    "authority": "Gabe standing directive (Gabe gates waived only) + peer gates plan_gate1\u2192plan_gate2\u2192+1 implement\u2192implement_gate1\u2192implement_gate2",
+    "autonomy_rung": "L3",
+    "confidence": "high",
+    "risk": "high",
+    "executor": "codex (plan-dev) plan+bounded build after +1 implement; claude gates; codex_co_lead gate-2",
+    "validation_proof": "execute frozen A+B harness; bind IntegerPathDenseSurfaceObservationEvidence \u2192 receipt (no recompute); canonical hashes; CPU-only; expected BR-3C-C-DENSE-LEAK for seed-158",
+    "escalation_rule": "anchor fail / allowlist breach / GPU-.pt / row-flip proposal / harness-receipt hash disagreement / unexpected AUDIT_PASS_CPU without evidence \u2192 STOP to claude",
+    "receipt_sink": "claude gate-1 ONLY; co_lead gate-2 on frozen handoff",
+    "mode": "planning",
+    "required_gates": [
+      "plan",
+      "validation",
+      "diff"
+    ]
+  },
+  "measurement_provenance": {
+    "axis": "measurement_input \u2192 runtime_command \u2192 exact_observed_object_evidence_seam \u2192 receipt_binding",
+    "pre_mortem_addressed": "manually supplied observed_dense_surfaces=() + optimizer_checks {0,0} must NOT be able to mint a governing AUDIT_PASS_CPU receipt",
+    "governing_probe_mode_exact": {
+      "mode": "alloc_guard_instrumented",
+      "constant": "OBSERVATION_PROBE_MODE_ALLOC_GUARD",
+      "why_earns_audit_observation_complete": "governing harness MUST call run_integer_path_dense_surface_observation_with_alloc_guard which returns this mode only after executing the instrumented integer path; static_codepath_audit is OUT for the governing receipt",
+      "disagreement_semantics": "N/A \u2014 single probe; dual-probe not used"
+    },
+    "live_probe_at_plan_mint": {
+      "seed": 158,
+      "events": 6,
+      "projected_moves_numel": 6,
+      "projected_moves_dtype": "torch.int8",
+      "move_indices_dtype": "torch.int64",
+      "alloc_guard_observed_before_fix": [],
+      "optimizer_checks_sample": {
+        "eligible_params_in_optimizer": 0,
+        "eligible_optimizer_state_entries": 0,
+        "pass": true
+      },
+      "honest_expected_terminal_branch": "BR-3C-C-DENSE-LEAK",
+      "honesty_note": "SHIPPABLE NULL \u2014 do not design harness to reach AUDIT_PASS_CPU; projected_moves IS materialized dense on the live path"
+    },
+    "fixture_construction_exact": {
+      "recipe_name": "3C_C1_dry_run_fixture_seed158",
+      "parity_fixture_descriptor_sha256_constant": "OPTIMIZER_CREDIT_STATE_3C_C1_PARITY_FIXTURE_DESCRIPTOR_SHA256",
+      "parity_fixture_descriptor_sha256_value": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+      "steps": [
+        "torch.manual_seed(158)",
+        "model=_Tiny with BitLinear(3,2,bias=False); weight.zero_()",
+        "eligible={'proj': model.proj}",
+        "q=zeros_like(weight,dtype=int8); make_bounded_tensor_state('proj', q, scale=1.0, hot_exact_indices=range(numel))",
+        "x=[[1,-2,3]]; target=[[2,-1]]; authoritative_forward_context(...); mse_loss.backward(); captures=handle.captures['proj']",
+        "weight_shape=tuple(q_levels.shape); q_flat=q.reshape(-1)",
+        "optimizer_checks from build_optimizer_excluding_eligible_masters(model, eligible, lr=0.0) \u2014 derivation: overlap of eligible param ids with AdamW noneligible param groups; eligible_optimizer_state_entries = eligible modules with weight in opt.state"
+      ],
+      "source_reference_for_recipe": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_proof_contract.py:_dry_run_fixture + _Tiny + build_optimizer_excluding_eligible_masters (bounded_delta_learner.py:1652-1695)"
+    },
+    "projected_moves_observation_boundary": {
+      "method": "direct_post_return_observation",
+      "cite": "optimizer_credit_state_no_hidden_fp_audit.py:311 \u2014 after projected_moves_from_integer_attribution returns",
+      "accepted_evidence": {
+        "tensor": "projected_moves",
+        "dtype": "torch.int8",
+        "rank": 1,
+        "companion_indices_dtype": "torch.int64",
+        "note": "NOT a weight_shape 2-D torch.zeros/empty alloc \u2014 alloc-guard dtype/shape hook alone is insufficient; must observe the returned tensor object"
+      },
+      "classification_rule": "if projected_moves is a torch.Tensor materialized by the live call at :311 (regardless of empty vs nonempty), record DENSE_SURFACE_PROJECTED_MOVES in observed_dense_surfaces; nonempty (numel>0) is additional evidence but emptiness alone does not clear the surface if the tensor was materialized as part of the dense integer path",
+      "synthetic_token_forbidden": "inserting string 'projected_moves' into observed_dense_surfaces without the harness having materialized the tensor at the :311 boundary MUST NOT satisfy the audit \u2014 receipt binding requires tensor evidence hash",
+      "path_i_scaffold_requirement": "UPDATE no_hidden_fp_audit: (1) record DENSE_SURFACE_PROJECTED_MOVES from direct post-:311 observation; (2) return IntegerPathDenseSurfaceObservationEvidence carrying observed_surfaces + probe_mode + projected_moves evidence derived from the EXACT :311 tensor; (3) AUDIT_NO_DENSE_PROJECTED_MOVES in classifier; AUDIT_PASS_CPU unreachable while blind",
+      "evidence_return_required": true
+    },
+    "governing_runtime_command": {
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "timeout_s": 300,
+      "command": "timeout 300 env PYTHONPATH=. python3 scripts/optimizer_credit_state_3C_readonly_audit_run.py --out artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v1.json --plan artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v5.json",
+      "harness_module": "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+      "must_call_in_order": [
+        "build fixture per fixture_construction_exact (seed-158 / _dry_run_fixture equivalent)",
+        "build_optimizer_excluding_eligible_masters \u2192 optimizer_checks",
+        "evidence = run_integer_path_dense_surface_observation_with_alloc_guard(captures, weight_shape, q_flat)",
+        "assert evidence.probe_mode == alloc_guard_instrumented",
+        "run_optimizer_credit_state_no_hidden_fp_audit(optimizer_checks, observed_dense_surfaces=evidence.observed_surfaces, observation_probe_mode=evidence.probe_mode, audit_observation_complete=True)",
+        "mint receipt copying projected_moves_* / observed_* DIRECTLY from evidence (no recompute)",
+        "validate evidence\u2194receipt field equality + canonical hashes",
+        "write O_EXCL governing receipt"
+      ],
+      "not_pytest": true
+    },
+    "receipt_binding_required_fields": [
+      "plan_path + plan_sha256",
+      "fixture_recipe_name + parity_fixture_descriptor_sha256",
+      "captures_inputs_sha256 + captures_grad_outputs_sha256 + q_flat_sha256 + weight_shape",
+      "projected_moves_sha256 + projected_moves_numel + projected_moves_dtype",
+      "observed_dense_surfaces (tuple) + observed_surfaces_sha256",
+      "optimizer_checks (eligible_params_in_optimizer, eligible_optimizer_state_entries, pass) + optimizer_checks_sha256",
+      "probe_mode exact alloc_guard_instrumented",
+      "audit.branch_id + audit_receipt_sha256",
+      "runtime_command_argv + runtime_command_sha256",
+      "fold_C_deferred=true",
+      "observation_evidence_type=IntegerPathDenseSurfaceObservationEvidence",
+      "projected_moves_sha256 sourced_from_evidence_not_recomputed",
+      "evidence_to_receipt_field_equality_validated"
+    ],
+    "binding_failure_stops": [
+      "hand-authored observed surfaces without matching projected_moves_sha256 from harness run",
+      "probe_mode != alloc_guard_instrumented on governing receipt",
+      "optimizer_checks not derived from build_optimizer_excluding_eligible_masters on the same model/eligible",
+      "AUDIT_PASS_CPU without AUDIT_NO_DENSE_PROJECTED_MOVES pass evidence",
+      "PENDING as terminal branch",
+      "receipt projected_moves_* not equal to returned evidence fields",
+      "recomputed projected_moves used for receipt hash",
+      "manual injection of projected_moves_sha256/numel/dtype",
+      "canonical hash serialization drift (dtype/shape/value/ordering)"
+    ],
+    "evidence_seam": "IntegerPathDenseSurfaceObservationEvidence returned by run_integer_path_dense_surface_observation_with_alloc_guard; receipt fields projected_moves_* / observed_* MUST equal evidence fields (identity of derivation, not recompute)"
+  },
+  "blocker_closures_carried_from_v2": {
+    "B1": "RESOLVED_BOARD_SIDE",
+    "B2_B3_path_i": "CARRIED \u2014 now with concrete post-:311 observation boundary",
+    "B4_B5_fold_C_defer": "CARRIED",
+    "B6_developer_shape": "CARRIED + strengthened with executable A+B step",
+    "B7_adjacent_tests": "CARRIED"
+  },
+  "blocker_closures_v3_measurement_provenance": {
+    "MP1_exact_AB_runtime": "CLOSED \u2014 governing_runtime_command + fixture_construction_exact",
+    "MP2_probe_mode_exact": "CLOSED \u2014 alloc_guard_instrumented only",
+    "MP3_projected_moves_boundary": "CLOSED \u2014 direct post-:311; dtype int8; expected DENSE_LEAK",
+    "MP4_receipt_binding": "CLOSED \u2014 receipt_binding_required_fields",
+    "MP5_developer_runtime_assertion": "CLOSED \u2014 DEVELOPER_STEPS S3 executes harness",
+    "MP6_standing_axis": "CLOSED \u2014 standing_plan_axes includes measurement_input_to_runtime_command_to_receipt_binding",
+    "status": "CARRIED_VERIFIED"
+  },
+  "anchor_verification": {
+    "status": "VERIFIED_LIVE_AT_V3_MINT",
+    "anchors": [
+      {
+        "id": "A1",
+        "file_sha256": "0ecbabf1200ca6a9e001cbcc439bf6d7ba5a56f368711919e7de61a775e8f519",
+        "result": "PASS"
+      },
+      {
+        "id": "A2",
+        "file_sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230",
+        "result": "PASS"
+      },
+      {
+        "id": "A3",
+        "file_sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230",
+        "bounded_delta_learner_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+        "result": "PASS"
+      },
+      {
+        "id": "A4",
+        "file_sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230",
+        "result": "PASS"
+      }
+    ],
+    "blindness_verification": {
+      "no_hidden_fp_audit_sha256": "c54338ddeaa0e4a8bad8782a3cf7eec97e699a6a03c56ef4968d1bd4dba7cd6d",
+      "records_WG_credit_votes_only": "269-279",
+      "computes_projected_moves_unrecorded": "311",
+      "always_false_native_integer_fields": "249-251",
+      "live_probe_moves_numel": 6,
+      "live_probe_alloc_guard_observed": [],
+      "result": "PASS_GAP_CONFIRMED"
+    }
+  },
+  "branch_taxonomy_preregistered": {
+    "governing_expected_branch": "BR-3C-C-DENSE-LEAK",
+    "governing_expected_branch_rationale": "live seed-158 fixture materializes projected_moves with numel=6 (dtype int8) while current alloc-guard returns (); after path-(i) direct observation, observed must include projected_moves \u2192 DENSE_LEAK. AUDIT_PASS_CPU is NOT the design target.",
+    "shippable_nulls": [
+      "BR-3C-C-DENSE-LEAK",
+      "BR-3C-C-MEASUREMENT-INVALID"
+    ],
+    "terminal_allowed": [
+      "BR-3C-C-MEASUREMENT-INVALID",
+      "BR-3C-C-CAPTURE-LAUNDER",
+      "BR-3C-C-DENSE-LEAK",
+      "BR-3C-C-OPT-EXCL-FAIL",
+      "BR-3C-C-AUDIT-PASS-CPU"
+    ],
+    "non_terminal_forbidden_as_result": [
+      "BR-3C-C-AUDIT-PENDING"
+    ],
+    "non_authorizing_note": "even AUDIT_PASS_CPU does not authorize readiness-row flip"
+  },
+  "folds": {
+    "A_allocation_codepath_audit": {
+      "in_scope": true,
+      "probe_mode": "alloc_guard_instrumented",
+      "via": "run_integer_path_dense_surface_observation_with_alloc_guard + direct post-:311 projected_moves observation"
+    },
+    "B_no_hidden_fp_optimizer_exclusion": {
+      "in_scope": true,
+      "via": "run_optimizer_credit_state_no_hidden_fp_audit with optimizer_checks from build_optimizer_excluding_eligible_masters on same fixture model",
+      "requires_AUDIT_NO_DENSE_PROJECTED_MOVES": true
+    },
+    "C_mechanism_classification": {
+      "in_scope": false,
+      "deferred": true,
+      "forbidden_trigger": "hardcoded real_native_integer_*_present=false at :249-251"
+    },
+    "D_gpu_runtime_receipt": {
+      "in_scope": false
+    }
+  },
+  "claim_ceiling": {
+    "may_claim": [
+      "CPU measurement-bound observations over four debt objects via frozen harness",
+      "terminal taxonomy branch from that measurement (expected DENSE_LEAK)",
+      "Fold C deferred=true"
+    ],
+    "must_not_claim": [
+      "readiness-row flip / sub2 / resolved=true / full_sub2_runtime_ready_for_science",
+      "GPU receipt present",
+      "native integer attribution/ranking present from this CPU audit alone",
+      "discharge of dense objects",
+      "Fold C mechanism body",
+      "AUDIT_PASS_CPU as success criterion for this slice"
+    ]
+  },
+  "frozen_write_surface": {
+    "rule": "every path is IN with an action OR OUT \u2014 no ambiguous write-surface entries",
+    "this_plan_phase": {
+      "CREATE": [
+        "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v5.json"
+      ],
+      "PRESERVE": [
+        "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v4.json",
+        "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v3.json",
+        "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v2.json",
+        "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v1.json"
+      ]
+    },
+    "post_plus1_implement": {
+      "UPDATE": [
+        {
+          "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state_no_hidden_fp_audit.py",
+          "action": "UPDATE",
+          "required_changes": [
+            "DENSE_SURFACE_PROJECTED_MOVES + AUDIT_NO_DENSE_PROJECTED_MOVES",
+            "direct post-:311 observation of projected_moves tensor into observed list",
+            "return IntegerPathDenseSurfaceObservationEvidence (observed_surfaces, probe_mode, projected_moves evidence from EXACT :311 tensors)",
+            "include AUDIT_NO_DENSE_PROJECTED_MOVES in required dense audits / classifier",
+            "AUDIT_PASS_CPU unreachable if projected_moves audit missing",
+            "canonical hash helpers + validators per canonical_hash_contract"
+          ]
+        },
+        {
+          "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_proof_contract.py",
+          "action": "UPDATE",
+          "scope": "expectation_only_plus_evidence_unpack",
+          "rationale": "path-(i) scaffold changes live alloc-guard observation \u2192 branch; keep suite green under post-fix classifier",
+          "tests": [
+            {
+              "test": "test_alloc_guard_instrumented_integer_path_observation",
+              "line_asserts": [
+                242,
+                253
+              ],
+              "disposition": "MUST_UPDATE_EXPECTATIONS",
+              "pre_fix": {
+                "observed": "()",
+                "branch_id": "BR-3C-C-AUDIT-PASS-CPU"
+              },
+              "post_fix": {
+                "observed": "includes DENSE_SURFACE_PROJECTED_MOVES (from direct post-:311; seed-158 numel=6)",
+                "branch_id": "BR-3C-C-DENSE-LEAK"
+              },
+              "edit_limit": "expected-branch constant + assert lines for observed/branch_id only; law-id and parity asserts stay"
+            },
+            {
+              "test": "test_audit_opt_excl_passes_on_exclusion_checks",
+              "line_asserts": [
+                154
+              ],
+              "disposition": "NO_CHANGE",
+              "reason": "STATIC + hand-authored observed_dense_surfaces=() + audit_observation_complete=True; blindness rule does not invalidate empty STATIC inputs; AUDIT_PASS_CPU remains reachable when no dense surfaces are reported to the classifier"
+            },
+            {
+              "test": "test_empty_observed_with_completeness_can_pass",
+              "line_asserts": [
+                203
+              ],
+              "disposition": "NO_CHANGE",
+              "reason": "same STATIC empty-observation unit characterization as :154; survives under coded blindness rule"
+            }
+          ],
+          "pre_fix_characterization": "moves to NEW suite test_hrm_text_158_optimizer_credit_state_3c_readonly_audit.py (blindness/hostiles/DENSE_LEAK expected)",
+          "additional_required_edits": [
+            {
+              "site": "test_alloc_guard_instrumented_integer_path_observation :236",
+              "edit": "unpack IntegerPathDenseSurfaceObservationEvidence instead of (observed, probe_mode) tuple; assert evidence fields; branch DENSE_LEAK",
+              "edit_limit": "call-site unpack + expected-branch/observed asserts only; law-id and parity asserts stay"
+            }
+          ]
+        }
+      ],
+      "CREATE": [
+        {
+          "path": "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+          "action": "CREATE",
+          "required": "governing A+B harness: consume IntegerPathDenseSurfaceObservationEvidence directly into receipt; no recompute; implement canonical_hash_contract"
+        },
+        {
+          "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_3c_readonly_audit.py",
+          "action": "CREATE",
+          "required": "CPU-static taxonomy + binding hostiles (recompute/injection/hash-drift REJECT) + DENSE_LEAK expected for seed-158 after path-i + PENDING forbidden + evidence-seam equality"
+        },
+        {
+          "path": "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v1.json",
+          "action": "CREATE_O_EXCL",
+          "required": "governing measurement-bound audit receipt"
+        },
+        {
+          "path": "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_IMPLEMENT_receipt_v1.json",
+          "action": "CREATE_O_EXCL",
+          "required": "implementation receipt citing PLAN_v5 sha"
+        }
+      ],
+      "VALIDATE_ONLY": [
+        "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "calm/hrm_text_158/native_full_stack/integer_marginal_attribution.py",
+        "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state.py",
+        "calm/llm_computer/tests/test_hrm_text_158_integer_native_optimizer_credit_path_design.py",
+        "calm/llm_computer/tests/test_hrm_text_158_integer_optimizer_credit_path_wire.py",
+        "calm/llm_computer/tests/test_hrm_text_158_credit_bridge.py"
+      ],
+      "OUT": [
+        "scripts/hrm_text_158_credit_bridge.py",
+        "GPU / trainer loop / .pt / readiness discharge / backward_saved_tensors",
+        "unrelated dirty worktree drift",
+        "stage/commit/push",
+        "static_codepath_audit as governing probe"
+      ]
+    }
+  },
+  "DEVELOPER_STEPS": [
+    {
+      "id": "S1_scaffold_projected_moves",
+      "actions": [
+        "UPDATE optimizer_credit_state_no_hidden_fp_audit.py"
+      ],
+      "assertions": [
+        "types: IntegerPathDenseSurfaceObservationEvidence + AUDIT_NO_DENSE_PROJECTED_MOVES; evidence carries :311-derived digests",
+        "tests: proof_contract unpack updated; blindness\u2192record projected_moves; synthetic token without evidence REJECT",
+        "runtime: CPU-static",
+        "data: no .pt"
+      ]
+    },
+    {
+      "id": "S2_harness_and_taxonomy_tests",
+      "actions": [
+        "CREATE scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+        "CREATE test_hrm_text_158_optimizer_credit_state_3c_readonly_audit.py"
+      ],
+      "assertions": [
+        "types: harness CLI matches governing_runtime_command; receipt schema includes evidence-seam + hash-contract fields",
+        "tests: pytest taxonomy + binding hostiles (recompute/injection/dtype/shape/value/ordering drift) green",
+        "runtime: CPU-static",
+        "data: synthetic/seed-158 fixture only"
+      ]
+    },
+    {
+      "id": "S3_execute_governing_AB_and_bind",
+      "actions": [
+        "EXECUTE frozen governing_runtime_command",
+        "CREATE_O_EXCL audit receipt"
+      ],
+      "assertions": [
+        "types: receipt contains all receipt_binding_required_fields; evidence\u2194receipt equality holds",
+        "tests: proof_contract UPDATE expectations green (:253\u2192DENSE_LEAK; :154/:203 unchanged); VALIDATE_ONLY green; new suite green",
+        "runtime: EXACT governing command exits 0; branch_id terminal allowed != PENDING; seed-158 expected DENSE_LEAK",
+        "data: projected_moves_sha256 bound FROM evidence object; hand-authored/recomputed rejected"
+      ]
+    },
+    {
+      "id": "S4_implement_receipt",
+      "actions": [
+        "CREATE_O_EXCL IMPLEMENT receipt"
+      ],
+      "assertions": [
+        "types: cites PLAN_v5 sha; porcelain-truthful actions",
+        "tests: list pytest counts",
+        "runtime: no GPU",
+        "data: fold_C_deferred=true; claim ceiling restated"
+      ]
+    }
+  ],
+  "validation_plan": {
+    "plan_phase": [
+      "re-hash four anchor pins",
+      "reproduce live probe: moves_numel>0 and alloc_guard observed==() before fix",
+      "O_EXCL PLAN_v5; v1/v2/v3/v4 bytes preserved",
+      "standing_plan_axes includes evidence-seam binding axis"
+    ],
+    "post_plus1": {
+      "pytest_commands": [
+        "timeout 600 python3 -m pytest -q calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_3c_readonly_audit.py",
+        "timeout 600 python3 -m pytest -q calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state.py calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_proof_contract.py",
+        "timeout 600 python3 -m pytest -q calm/llm_computer/tests/test_hrm_text_158_integer_native_optimizer_credit_path_design.py calm/llm_computer/tests/test_hrm_text_158_integer_optimizer_credit_path_wire.py"
+      ],
+      "governing_measurement_command": "timeout 300 env PYTHONPATH=. python3 scripts/optimizer_credit_state_3C_readonly_audit_run.py --out artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v1.json --plan artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v5.json",
+      "required_tokens": [
+        "AUDIT_NO_DENSE_PROJECTED_MOVES",
+        "DENSE_LEAK_EXPECTED_SEED158",
+        "PENDING_FORBIDDEN_AS_TERMINAL",
+        "FOLD_C_DEFERRED",
+        "MEASUREMENT_BINDING_PRESENT",
+        "HOSTILE_HAND_AUTHORED_EMPTY_OBSERVATIONS_REJECT",
+        "HOSTILE_ROW_FLIP_REJECT",
+        "EVIDENCE_SEAM_PRESENT",
+        "EVIDENCE_RECEIPT_EQUALITY",
+        "HOSTILE_RECOMPUTE_REJECT",
+        "HOSTILE_HASH_DRIFT_REJECT",
+        "CANONICAL_HASH_CONTRACT"
+      ]
+    }
+  },
+  "stop_conditions": [
+    "Anchor cite fail \u2192 STOP",
+    "Mutation outside frozen_write_surface \u2192 STOP",
+    "GPU / .pt / trainer loop \u2192 STOP",
+    "Row-flip authorization proposal \u2192 STOP",
+    "Governing receipt without measurement binding fields \u2192 STOP",
+    "Hand-authored observations mint AUDIT_PASS_CPU \u2192 STOP",
+    "PENDING as terminal \u2192 STOP",
+    "Harness/receipt hash disagreement \u2192 STOP",
+    "Fold C body / credit-bridge invocation \u2192 STOP",
+    "Designing to force AUDIT_PASS_CPU against live dense projected_moves \u2192 STOP"
+  ],
+  "two_phase_shape": {
+    "PHASE_PLAN": "this artifact \u2192 claude plan_gate1 \u2192 co_lead plan_gate2",
+    "PHASE_IMPLEMENT": "fresh +1 implement citing PLAN_v5 sha \u2192 allowlist build \u2192 execute governing harness \u2192 O_EXCL receipts",
+    "PHASE_FOLD_C": "NOT authorized",
+    "PHASE_D_GPU": "NOT authorized"
+  },
+  "edit_freeze": {
+    "after_plan_request": true,
+    "this_dispatch_creates_only": [
+      "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_PLAN_v5.json"
+    ],
+    "note": "No implement/source edit/receipt mint until dual accept + persisted +1 implement; v1\u2013v4 bytes untouched"
+  },
+  "context_health": "self-measured ~55%; gate-2 B1 evidence-seam is load-bearing (P1b failure shape); bounded remint \u2014 no source edits this phase",
+  "gate1_block_msg_id": "1785098908176-cca236a9",
+  "gate1_block_on_v3": {
+    "msg_id": "1785098908176-cca236a9",
+    "verdict": "BLOCK",
+    "blocker_id": "B1_write_surface_proof_contract",
+    "blocker_summary": "VALIDATE_ONLY listed proof_contract but path-(i) scaffold necessarily flips test_alloc_guard_instrumented_integer_path_observation (:253); S3 hedge could not fire"
+  },
+  "blindness_coding_rule": {
+    "rule": "path-(i) closes blindness at the OBSERVATION layer, not by making empty observed_dense_surfaces always fail under STATIC hand-authored inputs",
+    "mechanism": [
+      "direct post-:311 records materialized projected_moves into observed_dense_surfaces as DENSE_SURFACE_PROJECTED_MOVES",
+      "AUDIT_NO_DENSE_PROJECTED_MOVES added to required dense-audit set; passes iff DENSE_SURFACE_PROJECTED_MOVES not in observed; fail \u2192 BR-3C-C-DENSE-LEAK",
+      "AUDIT_PASS_CPU unreachable on the live alloc_guard_instrumented path while projected_moves is materialized-but-unrecorded (because observation now records it)"
+    ],
+    "not_coded_as": "empty observed_dense_surfaces \u21d2 MEASUREMENT_INVALID for STATIC unit tests that hand-author inputs",
+    "synthetic_token_still_forbidden": "inserting string 'projected_moves' / DENSE_SURFACE_PROJECTED_MOVES without tensor evidence must not satisfy the governing harness audit; STATIC unit tests may still pass empty tuples to exercise the classifier"
+  },
+  "blocker_closures_v4_write_surface": {
+    "B1_proof_contract_write_surface": "CLOSED \u2014 proof_contract moved VALIDATE_ONLY\u2192UPDATE expectation-only; :253 mandatory AUDIT_PASS_CPU\u2192DENSE_LEAK (+ observed assert); :154/:203 NO_CHANGE under blindness_coding_rule; S3 assertions reworded",
+    "status": "CARRIED_VERIFIED"
+  },
+  "gate2_block_concession_msg_id": "1785099179426-f99574d3",
+  "gate1_pass_on_v4_msg_id": "1785099011231-afb41647",
+  "gate2_block_on_v4": {
+    "co_lead_validation_receipt": "1785099163252-8ee3a157",
+    "claude_concession": "1785099179426-f99574d3",
+    "claude_dispatch": "1785099195473-9af25589",
+    "verdict": "BLOCK",
+    "blockers": [
+      "B1_runtime_object_to_receipt_binding_evidence_seam",
+      "B2_canonical_hash_contract",
+      "B3_plan_phase_wording"
+    ]
+  },
+  "observation_evidence_seam": {
+    "blocker": "B1",
+    "problem": "run_integer_path_dense_surface_observation_with_alloc_guard computes move_indices, projected_moves at :311 but returns only (tuple(observed), probe_mode) at :319; harness cannot bind the SAME tensor that caused DENSE_SURFACE_PROJECTED_MOVES without recompute/hand-author",
+    "required_result_type": "IntegerPathDenseSurfaceObservationEvidence",
+    "immutability": "frozen dataclass (or equivalent immutable) \u2014 no in-place mutation after construction",
+    "required_fields": {
+      "observed_surfaces": "tuple[str, ...] \u2014 sorted unique dense surface names including DENSE_SURFACE_PROJECTED_MOVES when post-:311 tensor is materialized",
+      "probe_mode": "str \u2014 exactly OBSERVATION_PROBE_MODE_ALLOC_GUARD for governing path",
+      "projected_moves_evidence": {
+        "source": "EXACT tensor from line-:311 assignment move_indices, projected_moves = projected_moves_from_integer_attribution(events, q_flat)",
+        "fields": [
+          "projected_moves_sha256 \u2014 canonical tensor digest per hash_contract",
+          "projected_moves_numel \u2014 int",
+          "projected_moves_dtype \u2014 str (e.g. 'torch.int8')",
+          "projected_moves_shape \u2014 tuple[int, ...]",
+          "move_indices_sha256 \u2014 canonical digest of companion indices from same :311 call",
+          "move_indices_dtype \u2014 str (e.g. 'torch.int64')",
+          "move_indices_numel \u2014 int"
+        ],
+        "facade_note": "may retain tensor under a bounded audit facade only if receipt fields are derived from that same object identity; recompute of projected_moves_from_integer_attribution for receipt mint is FORBIDDEN"
+      }
+    },
+    "function_signature_change": {
+      "symbol": "run_integer_path_dense_surface_observation_with_alloc_guard",
+      "old_return": "tuple[tuple[str, ...], str]",
+      "new_return": "IntegerPathDenseSurfaceObservationEvidence",
+      "cite": "optimizer_credit_state_no_hidden_fp_audit.py:~298-319",
+      "must_derive_evidence_before_return": "from the exact :311 projected_moves / move_indices objects before they leave scope"
+    },
+    "callers_to_update": [
+      {
+        "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_proof_contract.py",
+        "site": "test_alloc_guard_instrumented_integer_path_observation :236",
+        "change": "unpack evidence result; observed from evidence.observed_surfaces; probe_mode from evidence.probe_mode; expected DENSE_LEAK after path-i"
+      },
+      {
+        "path": "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+        "change": "governing harness MUST consume evidence fields directly into receipt; MUST NOT recompute projected_moves for hashing"
+      },
+      {
+        "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_3c_readonly_audit.py",
+        "change": "hostile tests: recompute-for-receipt REJECTED; manual injection of sha/numel/dtype mismatched to evidence REJECTED"
+      }
+    ],
+    "receipt_mint_rule": "governing O_EXCL receipt MUST copy projected_moves_* and observed_* fields from the returned evidence object; any alternate path (fresh projected_moves_from_integer_attribution call, hand-authored sha, synthetic token) \u2192 STOP / hostile reject"
+  },
+  "canonical_hash_contract": {
+    "blocker": "B2",
+    "digest": "SHA-256 lowercase hex (64 chars)",
+    "tensor_serialization": {
+      "components_in_order": [
+        "dtype string (torch.dtype.__str__ / e.g. 'torch.int8')",
+        "shape tuple as canonical JSON array of ints",
+        "contiguous CPU clone bytes (tensor.detach().cpu().contiguous().numpy().tobytes() or equivalent)"
+      ],
+      "byte_order": "native endianness of the contiguous CPU buffer as produced by torch\u2192numpy tobytes; document in receipt as 'torch_cpu_contiguous_native_endian'",
+      "metadata_inside_digest": true,
+      "note": "dtype + shape ARE inside the digest (prepended as UTF-8 length-prefixed or via canonical JSON envelope \u2014 implement MUST pick ONE and freeze it in code + tests)",
+      "frozen_envelope": {
+        "format": "canonical JSON object then utf-8 bytes then SHA-256",
+        "json_keys_sorted": true,
+        "separators": [
+          ",",
+          ":"
+        ],
+        "fields": {
+          "dtype": "str",
+          "shape": "list[int]",
+          "data_sha256": "SHA-256 hex of contiguous CPU raw bytes alone"
+        },
+        "outer_digest": "SHA-256 hex of the canonical JSON envelope utf-8 bytes (this is projected_moves_sha256)",
+        "rationale": "separating data_sha256 inside envelope makes dtype/shape/value drift hostile-testable independently"
+      }
+    },
+    "list_map_serialization": {
+      "format": "json.dumps(..., sort_keys=True, separators=(',', ':'), ensure_ascii=True)",
+      "encoding": "utf-8"
+    },
+    "argv_encoding": {
+      "rule": "tuple/list of str argv exactly as executed; hash = SHA-256 of canonical JSON array of those strings",
+      "order": "significant \u2014 drift in flag order is REJECT"
+    },
+    "validators_required": [
+      "validate_tensor_digest_matches(tensor, claimed_sha256)",
+      "validate_canonical_json_digest(obj, claimed_sha256)",
+      "validate_evidence_receipt_field_equality(evidence, receipt)"
+    ],
+    "hostile_drift_tests_required": [
+      "dtype drift (int8 vs int16) \u2192 digest mismatch REJECT",
+      "shape drift \u2192 REJECT",
+      "value drift (flip one element) \u2192 REJECT",
+      "ordering drift in observed_surfaces / argv / map keys \u2192 REJECT",
+      "recompute projected_moves for receipt vs evidence object \u2192 REJECT",
+      "manual injection of projected_moves_sha256 \u2192 REJECT"
+    ]
+  },
+  "blocker_closures_v5": {
+    "B1_evidence_seam": "CLOSED \u2014 IntegerPathDenseSurfaceObservationEvidence; :311 tensor evidence returned; receipt consumes evidence directly; hostile recompute/injection REJECT",
+    "B2_canonical_hash_contract": "CLOSED \u2014 tensor envelope + canonical JSON + argv order; validators + hostile drift tests",
+    "B3_plan_phase_wording": "CLOSED \u2014 validation_plan.plan_phase cites O_EXCL PLAN_v5; v1/v2/v3/v4 preserved"
+  }
+}
