@@ -433,3 +433,18 @@ def test_trainer_live_conversion_proof_mints_receipt_and_exits(tmp_path, monkeyp
     trainer.train(**kwargs, splits_loader=_loader)
     ckpt_root = Path(kwargs["checkpoint_path"])
     assert not ckpt_root.exists()
+
+
+def test_mint_p1b_live_conversion_receipt_o_excl_preexistence_and_second_mint(tmp_path):
+    from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+        mint_p1b_live_conversion_receipt_o_excl,
+    )
+
+    receipt = _mint_live_conversion_receipt()
+    out = tmp_path / "p1b_receipt.json"
+    sha1 = mint_p1b_live_conversion_receipt_o_excl(out, receipt)
+    assert out.is_file()
+    assert len(sha1) == 64
+    # Preexistence / second-mint must refuse.
+    with pytest.raises(FileExistsError):
+        mint_p1b_live_conversion_receipt_o_excl(out, receipt)

@@ -94,7 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--json-out",
         type=Path,
-        help="optional path for the JSON receipt; stdout is always emitted",
+        help=(
+            "optional path for the JSON receipt; stdout is always emitted. "
+            "Uses O_EXCL create — refuses (stderr + exit 3) if the path already exists"
+        ),
     )
     parser.add_argument(
         "--expect-ready",
@@ -166,8 +169,18 @@ def main(argv: list[str] | None = None) -> int:
     payload = receipt.to_dict()
     encoded = json.dumps(payload, indent=args.indent, sort_keys=True) + "\n"
     if args.json_out is not None:
+        from scripts.p1b_o_excl_copy import write_bytes_o_excl
+
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
-        args.json_out.write_text(encoded, encoding="utf-8")
+        try:
+            write_bytes_o_excl(args.json_out, encoded.encode("utf-8"))
+        except FileExistsError:
+            print(
+                f"--json-out path already exists (O_EXCL refuse): {args.json_out}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 3
     sys.stdout.write(encoded)
     if args.expect_ready and not receipt.ready_for_main_science:
         return 2

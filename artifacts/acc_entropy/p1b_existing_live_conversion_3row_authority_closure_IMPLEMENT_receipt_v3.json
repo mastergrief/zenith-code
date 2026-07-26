@@ -1,0 +1,259 @@
+{
+  "actor": "plan-dev",
+  "created_at": "2026-07-26T16:02:38Z",
+  "edit_freeze": true,
+  "forbidden_held": [
+    "no commit",
+    "no production packet mint",
+    "no GPU",
+    "no egress/cleanup",
+    "no staging/push",
+    "no original-worktree WIP mutation"
+  ],
+  "forbidden_statement": "no commit / no GPU / no production packet mint",
+  "governing_plan_path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_PLAN_v22.json",
+  "governing_plan_sha256": "b32c288ed83c3cf748475248b69c1610b0e3b60e4394de8ce8feb4bf45a91ffa",
+  "handle": "codex",
+  "isol_branch": "plan-dev/p1b-3row-phaseA-isol",
+  "isol_head": "0a5e6249a68df0fbf7d8e165912228109907b417",
+  "isol_worktree": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158-p1b-isol-wt",
+  "lineage_note": "v1 (af4021f0\u2026) PRESERVE \u2014 lineage-compromised. v2 (72cdbde0\u2026) PRESERVE \u2014 premature/non-governing (cited PLAN_v15). v3 is the governing IMPLEMENT receipt under dual-accepted PLAN_v22.",
+  "next": "claude implement_gate1 (full suite + hostile probes + census/label audit + DIFF_DIGEST freeze) \u2192 co_lead implement_gate2 on frozen handoff",
+  "non_claims": [
+    "does not claim implement_gate1 or implement_gate2 PASS",
+    "does not authorize commit, push, staging, GPU Phase B, production packet mint, egress, or cleanup",
+    "v1/v2 receipts remain non-governing lineage artifacts (PRESERVE ONLY)",
+    "isol-wt tree frozen as reviewed; this receipt is authority record only"
+  ],
+  "path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v3.json",
+  "path_count": 21,
+  "path_set": [
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v1.json",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v2.json",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v3.json",
+    "calm/hrm_text_158/native_full_stack/p1b_supervisor_lib.py",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+    "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py",
+    "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py",
+    "calm/llm_computer/tests/test_p1b_marker_static_schema.py",
+    "calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py",
+    "calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py",
+    "calm/llm_computer/tests/test_p1b_phase_watchdog.py",
+    "calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py",
+    "calm/llm_computer/tests/test_p1b_supervisor_lib.py",
+    "calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py",
+    "calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py",
+    "scripts/hrm_text_158_full_sub2_runtime_readiness.py",
+    "scripts/p1b_o_excl_copy.py",
+    "scripts/p1b_phaseB_supervisor.py",
+    "scripts/p1b_phase_b_packet_mint.py",
+    "scripts/p1b_phase_watchdog.py",
+    "scripts/train_hrm_text_158.py"
+  ],
+  "per_file_actions": {
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v1.json": "PRESERVE",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v2.json": "PRESERVE",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v3.json": "CREATE",
+    "calm/hrm_text_158/native_full_stack/p1b_supervisor_lib.py": "CREATE",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "UPDATE",
+    "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py": "UPDATE",
+    "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py": "UPDATE",
+    "calm/llm_computer/tests/test_p1b_marker_static_schema.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_phase_watchdog.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_supervisor_lib.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py": "CREATE",
+    "scripts/hrm_text_158_full_sub2_runtime_readiness.py": "UPDATE",
+    "scripts/p1b_o_excl_copy.py": "CREATE",
+    "scripts/p1b_phaseB_supervisor.py": "CREATE",
+    "scripts/p1b_phase_b_packet_mint.py": "CREATE",
+    "scripts/p1b_phase_watchdog.py": "CREATE",
+    "scripts/train_hrm_text_158.py": "UPDATE"
+  },
+  "per_file_sha256": {
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v1.json": {
+      "action": "PRESERVE",
+      "bytes": 5604,
+      "lines": 95,
+      "porcelain": "??",
+      "sha256": "af4021f03199b4e21f8b02b27d4fe41ea243a4312fdc9e1066c9a37fef1f7c2c"
+    },
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v2.json": {
+      "action": "PRESERVE",
+      "bytes": 8400,
+      "lines": 177,
+      "porcelain": "??",
+      "sha256": "72cdbde06b9f8a2d297592ecc82441d20c73318368d2cf3de3e02aec2724dbbb"
+    },
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v3.json": {
+      "action": "CREATE",
+      "note": "O_EXCL self bytes; file sha256 recorded in room validation_receipt after close/fsync (not self-embedded)",
+      "sha256": "SEE_VALIDATION_RECEIPT_FILE_SHA256"
+    },
+    "calm/hrm_text_158/native_full_stack/p1b_supervisor_lib.py": {
+      "action": "CREATE",
+      "bytes": 14737,
+      "lines": 461,
+      "porcelain": "??",
+      "sha256": "4429f1dd308adae236029a72d6955a4f7309ab8935114341fd39876204ab62b4"
+    },
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": {
+      "action": "UPDATE",
+      "bytes": 146702,
+      "lines": 3249,
+      "porcelain": "M",
+      "sha256": "2c5aaef7b70d781eea1a5613344249e1670a103756abde69daf938ed82b8c93a"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py": {
+      "action": "UPDATE",
+      "bytes": 57353,
+      "lines": 1416,
+      "porcelain": "M",
+      "sha256": "7262ef28e8b05cdb5691f0dfe60994fb7fbab83acd28e9f89368748140d996cb"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py": {
+      "action": "UPDATE",
+      "bytes": 15801,
+      "lines": 450,
+      "porcelain": "M",
+      "sha256": "e198facba32cd384a157385168d7865626b418b6e79b2df970ebe28b24148429"
+    },
+    "calm/llm_computer/tests/test_p1b_marker_static_schema.py": {
+      "action": "CREATE",
+      "bytes": 2489,
+      "lines": 77,
+      "porcelain": "??",
+      "sha256": "362f2d721de8e73e89960246bd636efe2dd9f20ccf4108e5998a9bcb97586605"
+    },
+    "calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py": {
+      "action": "CREATE",
+      "bytes": 5508,
+      "lines": 151,
+      "porcelain": "??",
+      "sha256": "83b109df023cc3e5b3e8fa47d392400d77d59909db36b75cdb604e0fd3b4345e"
+    },
+    "calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py": {
+      "action": "CREATE",
+      "bytes": 10144,
+      "lines": 288,
+      "porcelain": "??",
+      "sha256": "73c504501df1a157e71634ad9fb3283edaba26cf26c4e8f11b08822f67898b40"
+    },
+    "calm/llm_computer/tests/test_p1b_phase_watchdog.py": {
+      "action": "CREATE",
+      "bytes": 11178,
+      "lines": 350,
+      "porcelain": "??",
+      "sha256": "5170f58c557b23a7428687fad80f54a03a3104a849e5328e854c432c2bedf79f"
+    },
+    "calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py": {
+      "action": "CREATE",
+      "bytes": 1347,
+      "lines": 43,
+      "porcelain": "??",
+      "sha256": "1925845f7cf8a1b0c7003ef5222439d4f48c903399c471d23f3ec86f8fa57e49"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_lib.py": {
+      "action": "CREATE",
+      "bytes": 7703,
+      "lines": 220,
+      "porcelain": "??",
+      "sha256": "be8f33207b8bcc0f67346adb860619160850a91b7f19f43ee7bbc491b590d58a"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py": {
+      "action": "CREATE",
+      "bytes": 13278,
+      "lines": 372,
+      "porcelain": "??",
+      "sha256": "07affedc21c2103c84d00af214ccca70cef6e51d46ea92b1051e8668b3371289"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py": {
+      "action": "CREATE",
+      "bytes": 2868,
+      "lines": 101,
+      "porcelain": "??",
+      "sha256": "121c97b586e1100677173101c466637de7b185c5944eef3da731b6880cf2e777"
+    },
+    "scripts/hrm_text_158_full_sub2_runtime_readiness.py": {
+      "action": "UPDATE",
+      "bytes": 7410,
+      "lines": 191,
+      "porcelain": "M",
+      "sha256": "6ab0aecf24d662ef04a37e829d8ad4148161fb20b90f054b6707195374b8e271"
+    },
+    "scripts/p1b_o_excl_copy.py": {
+      "action": "CREATE",
+      "bytes": 3537,
+      "lines": 120,
+      "porcelain": "??",
+      "sha256": "250dbdb3579dcaea1093db04d0626b1bb99f8df27218dc71dd724ac7085f2209"
+    },
+    "scripts/p1b_phaseB_supervisor.py": {
+      "action": "CREATE",
+      "bytes": 11814,
+      "lines": 301,
+      "porcelain": "??",
+      "sha256": "91f1448444d0196e5887431df08106f34b63be47d0fe30afc0dbe5d882f94acc"
+    },
+    "scripts/p1b_phase_b_packet_mint.py": {
+      "action": "CREATE",
+      "bytes": 5521,
+      "lines": 166,
+      "porcelain": "??",
+      "sha256": "378b534164bcf5e0ceda11f395ae86d9d49c2a9a44045db084e18dc1bc0b41a1"
+    },
+    "scripts/p1b_phase_watchdog.py": {
+      "action": "CREATE",
+      "bytes": 13008,
+      "lines": 366,
+      "porcelain": "??",
+      "sha256": "6a04e4f721260c02560d8209d1343ed1c602b71d8edb3f0863e2b0c32bf2b7ca"
+    },
+    "scripts/train_hrm_text_158.py": {
+      "action": "UPDATE",
+      "bytes": 152289,
+      "lines": 3185,
+      "porcelain": "M",
+      "sha256": "08b0209e4d1520e663c52a8f78f587f82a6c36a04506212e8c4b1bec2bd49eb9"
+    }
+  },
+  "plan_gate1_msg_id": "1785081372336-fb322646",
+  "plan_gate2_msg_id": "1785081444544-f70bc92d",
+  "plan_gate_labels_note": "plan_gate1_msg_id and plan_gate2_msg_id are PLAN gates (not implement gates)",
+  "plan_id": "p1b_existing_live_conversion_3row_authority_closure",
+  "plan_path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_PLAN_v22.json",
+  "plan_revision": "v22",
+  "plan_sha256": "b32c288ed83c3cf748475248b69c1610b0e3b60e4394de8ce8feb4bf45a91ffa",
+  "plus1_implement_msg_id": "1785081467836-6859bc85",
+  "schema": "p1b_implement_receipt_v3",
+  "task_id": "1785073421471-c5c9b580",
+  "tests": {
+    "command": "PYTHONPATH=. timeout 240 python3 -m pytest -q calm/llm_computer/tests/test_p1b_supervisor_lib.py calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py calm/llm_computer/tests/test_p1b_phase_watchdog.py calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py calm/llm_computer/tests/test_p1b_marker_static_schema.py calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py",
+    "count_failed": 0,
+    "count_passed": 95,
+    "count_skipped": 1,
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158-p1b-isol-wt",
+    "duration_seconds": 186.91,
+    "exit_code": 0,
+    "result": "95 passed, 1 skipped"
+  },
+  "v1_receipt_preserved": {
+    "action": "PRESERVE",
+    "path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v1.json",
+    "sha256": "af4021f03199b4e21f8b02b27d4fe41ea243a4312fdc9e1066c9a37fef1f7c2c"
+  },
+  "v2_receipt_preserved": {
+    "action": "PRESERVE",
+    "path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v2.json",
+    "sha256": "72cdbde06b9f8a2d297592ecc82441d20c73318368d2cf3de3e02aec2724dbbb"
+  },
+  "wip_guard": {
+    "bound_sha256": "d63aea4f39b70dc6eb168b4b2f5ce9ccbe10b6842ca8510c6b649300a13a83a7",
+    "observed_sha256": "d63aea4f39b70dc6eb168b4b2f5ce9ccbe10b6842ca8510c6b649300a13a83a7",
+    "path": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/scripts/train_hrm_text_158.py",
+    "result": "MATCH"
+  }
+}

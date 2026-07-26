@@ -1,0 +1,267 @@
+{
+  "schema": "p1b_implement_receipt_v4",
+  "actor": "plan-dev",
+  "handle": "codex",
+  "task_id": "1785073421471-c5c9b580",
+  "created_at": "2026-07-26T16:44:05Z",
+  "path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v4.json",
+  "governing_plan_path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_PLAN_v29.json",
+  "governing_plan_sha256": "4dae457607f8fa4480a8629ac8d8ca55f7d8c85625198ece430b634cc70c0b6c",
+  "plan_path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_PLAN_v29.json",
+  "plan_id": "p1b_existing_live_conversion_3row_authority_closure",
+  "plan_revision": "v29",
+  "plan_sha256": "4dae457607f8fa4480a8629ac8d8ca55f7d8c85625198ece430b634cc70c0b6c",
+  "plan_gate1_msg_id": "1785083732909-b7da5662",
+  "plan_gate2_msg_id": "1785083814933-d2fc8707",
+  "plan_gate_labels_note": "plan_gate1_msg_id and plan_gate2_msg_id are PLAN gates for PLAN_v29 (not implement gates)",
+  "plus1_implement_msg_id": "1785083833799-344d68ad",
+  "isol_worktree": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158-p1b-isol-wt",
+  "isol_branch": "plan-dev/p1b-3row-phaseA-isol",
+  "isol_head": "0a5e6249a68df0fbf7d8e165912228109907b417",
+  "path_count": 22,
+  "path_set": [
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v1.json",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v2.json",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v3.json",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v4.json",
+    "calm/hrm_text_158/native_full_stack/p1b_supervisor_lib.py",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+    "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py",
+    "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py",
+    "calm/llm_computer/tests/test_p1b_marker_static_schema.py",
+    "calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py",
+    "calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py",
+    "calm/llm_computer/tests/test_p1b_phase_watchdog.py",
+    "calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py",
+    "calm/llm_computer/tests/test_p1b_supervisor_lib.py",
+    "calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py",
+    "calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py",
+    "scripts/hrm_text_158_full_sub2_runtime_readiness.py",
+    "scripts/p1b_o_excl_copy.py",
+    "scripts/p1b_phaseB_supervisor.py",
+    "scripts/p1b_phase_b_packet_mint.py",
+    "scripts/p1b_phase_watchdog.py",
+    "scripts/train_hrm_text_158.py"
+  ],
+  "per_file_actions": {
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v1.json": "PRESERVE",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v2.json": "PRESERVE",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v3.json": "PRESERVE",
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v4.json": "CREATE",
+    "calm/hrm_text_158/native_full_stack/p1b_supervisor_lib.py": "CREATE",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "UPDATE",
+    "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py": "UPDATE",
+    "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py": "UPDATE",
+    "calm/llm_computer/tests/test_p1b_marker_static_schema.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_phase_watchdog.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_supervisor_lib.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py": "CREATE",
+    "calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py": "CREATE",
+    "scripts/hrm_text_158_full_sub2_runtime_readiness.py": "UPDATE",
+    "scripts/p1b_o_excl_copy.py": "CREATE",
+    "scripts/p1b_phaseB_supervisor.py": "CREATE",
+    "scripts/p1b_phase_b_packet_mint.py": "CREATE",
+    "scripts/p1b_phase_watchdog.py": "CREATE",
+    "scripts/train_hrm_text_158.py": "UPDATE"
+  },
+  "per_file_sha256": {
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v1.json": {
+      "action": "PRESERVE",
+      "sha256": "af4021f03199b4e21f8b02b27d4fe41ea243a4312fdc9e1066c9a37fef1f7c2c",
+      "bytes": 5604,
+      "lines": 95,
+      "porcelain": "??"
+    },
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v2.json": {
+      "action": "PRESERVE",
+      "sha256": "72cdbde06b9f8a2d297592ecc82441d20c73318368d2cf3de3e02aec2724dbbb",
+      "bytes": 8400,
+      "lines": 177,
+      "porcelain": "??"
+    },
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v3.json": {
+      "action": "PRESERVE",
+      "sha256": "717a4e6f6fa2b93b845348fc72fa1cd6bd693ad994b8c1ddc32e7f1a1594f794",
+      "bytes": 12386,
+      "lines": 259,
+      "porcelain": "??"
+    },
+    "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v4.json": {
+      "action": "CREATE",
+      "note": "O_EXCL self bytes; file sha256 recorded in room validation_receipt after close/fsync (not self-embedded)",
+      "sha256": "SEE_VALIDATION_RECEIPT_FILE_SHA256"
+    },
+    "calm/hrm_text_158/native_full_stack/p1b_supervisor_lib.py": {
+      "action": "CREATE",
+      "sha256": "38b0c741b9c9fc287b637d2247d4268643c9f0acb5bad2e844332f0db679549b",
+      "bytes": 15481,
+      "lines": 480,
+      "porcelain": "??"
+    },
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": {
+      "action": "UPDATE",
+      "sha256": "2c5aaef7b70d781eea1a5613344249e1670a103756abde69daf938ed82b8c93a",
+      "bytes": 146702,
+      "lines": 3249,
+      "porcelain": " M"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py": {
+      "action": "UPDATE",
+      "sha256": "7262ef28e8b05cdb5691f0dfe60994fb7fbab83acd28e9f89368748140d996cb",
+      "bytes": 57353,
+      "lines": 1416,
+      "porcelain": " M"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py": {
+      "action": "UPDATE",
+      "sha256": "e198facba32cd384a157385168d7865626b418b6e79b2df970ebe28b24148429",
+      "bytes": 15801,
+      "lines": 450,
+      "porcelain": " M"
+    },
+    "calm/llm_computer/tests/test_p1b_marker_static_schema.py": {
+      "action": "CREATE",
+      "sha256": "362f2d721de8e73e89960246bd636efe2dd9f20ccf4108e5998a9bcb97586605",
+      "bytes": 2489,
+      "lines": 77,
+      "porcelain": "??"
+    },
+    "calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py": {
+      "action": "CREATE",
+      "sha256": "83b109df023cc3e5b3e8fa47d392400d77d59909db36b75cdb604e0fd3b4345e",
+      "bytes": 5508,
+      "lines": 151,
+      "porcelain": "??"
+    },
+    "calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py": {
+      "action": "CREATE",
+      "sha256": "73c504501df1a157e71634ad9fb3283edaba26cf26c4e8f11b08822f67898b40",
+      "bytes": 10144,
+      "lines": 288,
+      "porcelain": "??"
+    },
+    "calm/llm_computer/tests/test_p1b_phase_watchdog.py": {
+      "action": "CREATE",
+      "sha256": "5170f58c557b23a7428687fad80f54a03a3104a849e5328e854c432c2bedf79f",
+      "bytes": 11178,
+      "lines": 350,
+      "porcelain": "??"
+    },
+    "calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py": {
+      "action": "CREATE",
+      "sha256": "1925845f7cf8a1b0c7003ef5222439d4f48c903399c471d23f3ec86f8fa57e49",
+      "bytes": 1347,
+      "lines": 43,
+      "porcelain": "??"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_lib.py": {
+      "action": "CREATE",
+      "sha256": "b4c933be5221822517ec45206f102fc1b39d9a2a5aaec254a485484523dcd67e",
+      "bytes": 12124,
+      "lines": 338,
+      "porcelain": "??"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py": {
+      "action": "CREATE",
+      "sha256": "12a077d69cd07db70d79ed10a55c7b820f6914f88e2374aed7bb869dd522caea",
+      "bytes": 17219,
+      "lines": 484,
+      "porcelain": "??"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py": {
+      "action": "CREATE",
+      "sha256": "2db020793b5b19951a735d388e660556ecbe5dd7062bb8cfcdf9a1489850704e",
+      "bytes": 7240,
+      "lines": 217,
+      "porcelain": "??"
+    },
+    "scripts/hrm_text_158_full_sub2_runtime_readiness.py": {
+      "action": "UPDATE",
+      "sha256": "6ab0aecf24d662ef04a37e829d8ad4148161fb20b90f054b6707195374b8e271",
+      "bytes": 7410,
+      "lines": 191,
+      "porcelain": " M"
+    },
+    "scripts/p1b_o_excl_copy.py": {
+      "action": "CREATE",
+      "sha256": "250dbdb3579dcaea1093db04d0626b1bb99f8df27218dc71dd724ac7085f2209",
+      "bytes": 3537,
+      "lines": 120,
+      "porcelain": "??"
+    },
+    "scripts/p1b_phaseB_supervisor.py": {
+      "action": "CREATE",
+      "sha256": "6c9820b1af28c4e1087c9783526e9e0f0b4e136f0d90a98a777d101be03a95ac",
+      "bytes": 13696,
+      "lines": 355,
+      "porcelain": "??"
+    },
+    "scripts/p1b_phase_b_packet_mint.py": {
+      "action": "CREATE",
+      "sha256": "378b534164bcf5e0ceda11f395ae86d9d49c2a9a44045db084e18dc1bc0b41a1",
+      "bytes": 5521,
+      "lines": 166,
+      "porcelain": "??"
+    },
+    "scripts/p1b_phase_watchdog.py": {
+      "action": "CREATE",
+      "sha256": "6a04e4f721260c02560d8209d1343ed1c602b71d8edb3f0863e2b0c32bf2b7ca",
+      "bytes": 13008,
+      "lines": 366,
+      "porcelain": "??"
+    },
+    "scripts/train_hrm_text_158.py": {
+      "action": "UPDATE",
+      "sha256": "08b0209e4d1520e663c52a8f78f587f82a6c36a04506212e8c4b1bec2bd49eb9",
+      "bytes": 152289,
+      "lines": 3185,
+      "porcelain": " M"
+    }
+  },
+  "r3_folds": {
+    "blocker_cite": "1785082053071-a66ec735",
+    "fold1_shared_pgid_guard": "terminate_children(protected_pgids) never killpg(self); PID-only on shared-PGID anomaly",
+    "fold2_fixture_containment": "test-mode write targets must resolve under fixture tmp root; canonical paths refused pre log/spawn",
+    "fold3_injected_real_supervisor_failures": "activation O_EXCL inject reaps both children; trainer0/watchdog!=0 => supervisor nonzero"
+  },
+  "tests": {
+    "command": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_p1b_*.py calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py -q",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158-p1b-isol-wt",
+    "env": "PYTHONPATH=.",
+    "result": "102 passed, 1 skipped in 163.93s",
+    "passed": 102,
+    "skipped": 1,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "wip_guard": {
+    "path": "scripts/train_hrm_text_158.py",
+    "worktree": "MAIN",
+    "expected_sha256": "d63aea4f39b70dc6eb168b4b2f5ce9ccbe10b6842ca8510c6b649300a13a83a7",
+    "observed_sha256": "d63aea4f39b70dc6eb168b4b2f5ce9ccbe10b6842ca8510c6b649300a13a83a7",
+    "result": "MATCH"
+  },
+  "non_claims": [
+    "No readiness-row interpretation beyond the P1b 3-row tuple",
+    "No full_sub2_runtime / main-ready claim",
+    "No optimizer_credit_state discharge",
+    "No production PHASE_B_PACKET mint",
+    "No science verdict from this receipt"
+  ],
+  "forbidden_statement": "no commit / no GPU / no production packet mint",
+  "forbidden_held": true,
+  "edit_freeze": "EDIT FREEZE after this receipt \u2014 awaiting claude implement_gate1",
+  "lineage_note": {
+    "v1": "PRESERVE lineage-compromised (af4021f0\u2026)",
+    "v2": "PRESERVE non-governing (72cdbde0\u2026)",
+    "v3": "PRESERVE frozen evidence under PLAN_v22 (717a4e6f\u2026)",
+    "v4": "GOVERNING O_EXCL CREATE under PLAN_v29"
+  },
+  "v1_receipt_preserved": true,
+  "v2_receipt_preserved": true,
+  "v3_receipt_preserved": true,
+  "next": "claude implement_gate1 \u2192 co_lead implement_gate2 on frozen handoff; still no commit/packet/GPU/egress"
+}

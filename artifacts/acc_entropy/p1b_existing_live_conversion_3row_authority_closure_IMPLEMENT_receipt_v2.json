@@ -1,0 +1,177 @@
+{
+  "actor": "plan-dev",
+  "amended_allowlist_count": 19,
+  "defect_cycle_dispatch_msg_id": "1785079085939-4ab2418f",
+  "edit_freeze": true,
+  "folds": {
+    "1_receipt_v2": "DONE \u2014 versioned v2; v1 untouched; plan gates correctly labeled; no implement_gate2 field",
+    "2_thin_supervisor": "DONE \u2014 p1b_supervisor_lib.py facade extracted; CLI 301 lines (target ~200 residual)",
+    "3_fail_closed_test_seam": "DONE \u2014 production refuses ambient env/overrides unless --test-mode-fixtures; test mode refuses canonical packets",
+    "4_activation_watch_wrap": "DONE \u2014 packet schema requires watch_wrap_command_exact; activation records BOTH distinct fields",
+    "5_watchdog_event_log_preexist": "DONE \u2014 refuse exit 43; retry = versioned path",
+    "6_marker_order_fail_closed": "DONE \u2014 MARKER_ORDER_MISMATCH \u2192 stack-sample + killpg + exit 51",
+    "7_receipt_mint_bracket": "DONE \u2014 receipt_mint_end only after O_EXCL success in train_hrm_text_158.py",
+    "8_supervisor_ownership_finally": "DONE \u2014 terminate_children on all escape paths; success requires both RC 0"
+  },
+  "forbidden_held": [
+    "no commit",
+    "no production packet mint",
+    "no GPU",
+    "no egress/cleanup",
+    "no original-worktree WIP mutation"
+  ],
+  "handle": "codex",
+  "implement_gate1_msg_id": "1785078824234-0914e5a1",
+  "isol_branch": "plan-dev/p1b-3row-phaseA-isol",
+  "isol_head": "0a5e6249a68df0fbf7d8e165912228109907b417",
+  "isol_worktree": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158-p1b-isol-wt",
+  "lineage_note": "v1 IMPLEMENT receipt (sha af4021f0\u2026) is lineage-compromised: it labeled plan-gate msg ids as implement_gate* and included a future implement_gate2 field. v1 bytes are PRESERVED forever at their original path; this v2 is a new O_EXCL versioned receipt.",
+  "next": "claude implement_gate1 re-freeze \u2192 co_lead implement_gate2; NO commit until separate +1 commit",
+  "per_file_sha256": {
+    "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py": {
+      "action": "UPDATE",
+      "bytes": 62219,
+      "lines": 1375,
+      "sha256": "0ecbabf1200ca6a9e001cbcc439bf6d7ba5a56f368711919e7de61a775e8f519"
+    },
+    "calm/hrm_text_158/native_full_stack/p1b_supervisor_lib.py": {
+      "action": "CREATE",
+      "bytes": 14737,
+      "lines": 461,
+      "sha256": "4429f1dd308adae236029a72d6955a4f7309ab8935114341fd39876204ab62b4"
+    },
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": {
+      "action": "UPDATE",
+      "bytes": 146702,
+      "lines": 3249,
+      "sha256": "2c5aaef7b70d781eea1a5613344249e1670a103756abde69daf938ed82b8c93a"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py": {
+      "action": "UPDATE",
+      "bytes": 57353,
+      "lines": 1416,
+      "sha256": "7262ef28e8b05cdb5691f0dfe60994fb7fbab83acd28e9f89368748140d996cb"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py": {
+      "action": "UPDATE",
+      "bytes": 15801,
+      "lines": 450,
+      "sha256": "e198facba32cd384a157385168d7865626b418b6e79b2df970ebe28b24148429"
+    },
+    "calm/llm_computer/tests/test_p1b_marker_static_schema.py": {
+      "action": "UPDATE",
+      "bytes": 2489,
+      "lines": 77,
+      "sha256": "362f2d721de8e73e89960246bd636efe2dd9f20ccf4108e5998a9bcb97586605"
+    },
+    "calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py": {
+      "action": "UPDATE",
+      "bytes": 5508,
+      "lines": 151,
+      "sha256": "83b109df023cc3e5b3e8fa47d392400d77d59909db36b75cdb604e0fd3b4345e"
+    },
+    "calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py": {
+      "action": "UPDATE",
+      "bytes": 10144,
+      "lines": 288,
+      "sha256": "73c504501df1a157e71634ad9fb3283edaba26cf26c4e8f11b08822f67898b40"
+    },
+    "calm/llm_computer/tests/test_p1b_phase_watchdog.py": {
+      "action": "UPDATE",
+      "bytes": 11178,
+      "lines": 350,
+      "sha256": "5170f58c557b23a7428687fad80f54a03a3104a849e5328e854c432c2bedf79f"
+    },
+    "calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py": {
+      "action": "CREATE",
+      "bytes": 3082,
+      "lines": 90,
+      "sha256": "f18a495047a1759fbd967aad6d81cea75b629cb70a1c932251a65c73ad4a4276"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_lib.py": {
+      "action": "CREATE",
+      "bytes": 7703,
+      "lines": 220,
+      "sha256": "be8f33207b8bcc0f67346adb860619160850a91b7f19f43ee7bbc491b590d58a"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py": {
+      "action": "UPDATE",
+      "bytes": 13278,
+      "lines": 372,
+      "sha256": "07affedc21c2103c84d00af214ccca70cef6e51d46ea92b1051e8668b3371289"
+    },
+    "calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py": {
+      "action": "UPDATE",
+      "bytes": 2868,
+      "lines": 101,
+      "sha256": "121c97b586e1100677173101c466637de7b185c5944eef3da731b6880cf2e777"
+    },
+    "scripts/hrm_text_158_full_sub2_runtime_readiness.py": {
+      "action": "UPDATE",
+      "bytes": 7410,
+      "lines": 191,
+      "sha256": "6ab0aecf24d662ef04a37e829d8ad4148161fb20b90f054b6707195374b8e271"
+    },
+    "scripts/p1b_o_excl_copy.py": {
+      "action": "UPDATE",
+      "bytes": 3537,
+      "lines": 120,
+      "sha256": "250dbdb3579dcaea1093db04d0626b1bb99f8df27218dc71dd724ac7085f2209"
+    },
+    "scripts/p1b_phaseB_supervisor.py": {
+      "action": "UPDATE",
+      "bytes": 11814,
+      "lines": 301,
+      "sha256": "91f1448444d0196e5887431df08106f34b63be47d0fe30afc0dbe5d882f94acc"
+    },
+    "scripts/p1b_phase_b_packet_mint.py": {
+      "action": "UPDATE",
+      "bytes": 5456,
+      "lines": 165,
+      "sha256": "f5c5668422ad5f22ad6b88e30094b84eac64f0fa51f8568ceda1706bd74b0057"
+    },
+    "scripts/p1b_phase_watchdog.py": {
+      "action": "UPDATE",
+      "bytes": 13008,
+      "lines": 366,
+      "sha256": "6a04e4f721260c02560d8209d1343ed1c602b71d8edb3f0863e2b0c32bf2b7ca"
+    },
+    "scripts/train_hrm_text_158.py": {
+      "action": "UPDATE",
+      "bytes": 152289,
+      "lines": 3185,
+      "sha256": "08b0209e4d1520e663c52a8f78f587f82a6c36a04506212e8c4b1bec2bd49eb9"
+    }
+  },
+  "plan_gate1_msg_id": "1785076700163-b3005b8d",
+  "plan_gate2_msg_id": "1785076781633-89e29985",
+  "plan_id": "p1b_existing_live_conversion_3row_authority_closure",
+  "plan_path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_PLAN_v15.json",
+  "plan_revision": "v15",
+  "plan_sha256": "b9c0524897b3294fcd78cd21d06286e800f4c3a053de8cca713cf89e135d2ad6",
+  "residuals": [
+    "supervisor CLI 301 lines vs ~200 target \u2014 logic lives in p1b_supervisor_lib (461); further squeeze possible post-accept if co_lead requires",
+    "test_p1b_receipt_mint_bracket.py includes a no-op first test (ordering contract covered by second test)"
+  ],
+  "schema": "p1b_implement_receipt_v2",
+  "task_id": "1785073421471-c5c9b580",
+  "v1_receipt_preserved": {
+    "path": "artifacts/acc_entropy/p1b_existing_live_conversion_3row_authority_closure_IMPLEMENT_receipt_v1.json",
+    "sha256": "af4021f03199b4e21f8b02b27d4fe41ea243a4312fdc9e1066c9a37fef1f7c2c"
+  },
+  "validation": {
+    "command": "PYTHONPATH=. timeout 200 python3 -m pytest -q calm/llm_computer/tests/test_p1b_supervisor_lib.py calm/llm_computer/tests/test_p1b_supervisor_lifecycle.py calm/llm_computer/tests/test_p1b_phase_watchdog.py calm/llm_computer/tests/test_p1b_phase_b_packet_hostile.py calm/llm_computer/tests/test_p1b_receipt_mint_bracket.py calm/llm_computer/tests/test_p1b_o_excl_copy_and_cleanup_manifest.py calm/llm_computer/tests/test_p1b_marker_static_schema.py calm/llm_computer/tests/test_p1b_supervisor_pgid_hostiles.py calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority_live_checkpoint.py calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158-p1b-isol-wt",
+    "duration_seconds": 179.6,
+    "exit_code": 0,
+    "new_audit_pin": "96 passed, 1 skipped",
+    "prior_v1_audit_pin": "85 passed, 1 skipped",
+    "result": "96 passed, 1 skipped"
+  },
+  "wip_guard": {
+    "bound_sha256": "d63aea4f39b70dc6eb168b4b2f5ce9ccbe10b6842ca8510c6b649300a13a83a7",
+    "observed_sha256": "d63aea4f39b70dc6eb168b4b2f5ce9ccbe10b6842ca8510c6b649300a13a83a7",
+    "path": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/scripts/train_hrm_text_158.py",
+    "result": "MATCH"
+  }
+}

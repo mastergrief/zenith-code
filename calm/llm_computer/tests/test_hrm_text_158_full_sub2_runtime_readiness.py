@@ -1352,3 +1352,65 @@ def test_live_r2a_applier_rejects_cpu_lossless_equiv_receipt():
         apply_live_activation_residuals_surface_overrides(
             _mint_r2a_cpu_m1_lossless_equiv_receipt()
         )
+
+
+def test_cli_json_out_o_excl_preexistence_and_second_mint(tmp_path):
+    json_out = tmp_path / "ready.json"
+    first = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            FIXTURE_CURRENT_REPO,
+            "--json-out",
+            str(json_out),
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert first.returncode == 0
+    assert json_out.is_file()
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    assert "ready_for_main_science" in payload
+
+    second = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            FIXTURE_CURRENT_REPO,
+            "--json-out",
+            str(json_out),
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert second.returncode == 3
+    assert "O_EXCL" in second.stderr or "already exists" in second.stderr
+
+
+def test_cli_json_out_reload_validates(tmp_path):
+    json_out = tmp_path / "reload.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--fixture",
+            FIXTURE_CURRENT_REPO,
+            "--json-out",
+            str(json_out),
+        ],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert result.returncode == 0
+    reloaded = json.loads(json_out.read_text(encoding="utf-8"))
+    stdout_payload = json.loads(result.stdout)
+    assert reloaded == stdout_payload
+    assert isinstance(reloaded["surfaces"], list)

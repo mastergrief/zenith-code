@@ -1203,8 +1203,12 @@ def train(
         print(f"[hrm158] Phase 2 D2.1: TERNARY BULK LINEARS ENABLED "
               f"(gqkv/o/gate_up/down → BitLinear; lm_head/embd/norms FP per D2.2)",
               flush=True)
-    hrm = HierarchicalReasoningModel(cfg)
-    m = LMHead(hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
+    print("[P1B_PHASE] model_build_start", flush=True)
+    try:
+        hrm = HierarchicalReasoningModel(cfg)
+        m = LMHead(hrm, LMHeadConfig(vocab_size=tok.vocab_size)).to(device)
+    finally:
+        print("[P1B_PHASE] model_build_end", flush=True)
     n_params = sum(p.numel() for p in m.parameters())
     print(f"[hrm158] params: {n_params:,}", flush=True)
     print(f"[hrm158] config: hidden={hidden_size} layers={n_layers} (half={half_layers}) "
@@ -1455,6 +1459,7 @@ def train(
             AUTHORIZED_P1B_SURFACE_TUPLE,
             build_trainer_sub2_authority_live_conversion_receipt,
             compute_p1_parent_parity_max_abs_diff_by_site,
+            mint_p1b_live_conversion_receipt_o_excl,
             save_trainer_sub2_live_checkpoint_envelope,
         )
 
@@ -1645,16 +1650,20 @@ def train(
         )
         receipt_json_path = os.environ.get("P1B_LIVE_CONVERSION_RECEIPT_JSON", "").strip()
         if receipt_json_path:
-            out_path = Path(receipt_json_path)
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(
-                json.dumps(receipt.to_dict(), indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
+            from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+                emit_p1b_phase,
             )
+
+            out_path = Path(receipt_json_path)
+            receipt_sha = mint_p1b_live_conversion_receipt_o_excl(out_path, receipt)
+            # receipt_mint_end ONLY after authoritative O_EXCL write (+validate) succeeds.
+            emit_p1b_phase("receipt_mint_end")
             print(
-                f"[hrm158] P1 live-conversion proof: receipt_json={out_path}",
+                f"[hrm158] P1 live-conversion proof: receipt_json={out_path} "
+                f"sha256={receipt_sha}",
                 flush=True,
             )
+        print("[P1B_PHASE] TERMINAL_OK", flush=True)
         print(
             "[hrm158] P1 live-conversion proof: EXITING before normal training",
             flush=True,

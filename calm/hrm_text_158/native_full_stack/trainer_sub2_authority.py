@@ -13,6 +13,7 @@ import inspect
 import json
 import math
 import os
+from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 import torch
@@ -2716,6 +2717,30 @@ def _p1_raw_fallback_rejected(
     return False
 
 
+def emit_p1b_phase(marker: str) -> None:
+    """Print a flushed ``[P1B_PHASE] {marker}`` line for watchdog attribution."""
+    print(f"[P1B_PHASE] {marker}", flush=True)
+
+
+def mint_p1b_live_conversion_receipt_o_excl(
+    path: str | Path,
+    receipt: TrainerSub2AuthorityLiveConversionReceipt | Mapping[str, Any],
+) -> str:
+    """Validate *receipt* and O_EXCL-write JSON; return on-disk sha256."""
+    from scripts.p1b_o_excl_copy import write_bytes_o_excl
+
+    if isinstance(receipt, TrainerSub2AuthorityLiveConversionReceipt):
+        validated = receipt
+    else:
+        validated = live_conversion_receipt_from_dict(receipt)
+    payload = validated.to_dict()
+    validate_trainer_sub2_authority_live_conversion_receipt(validated)
+    encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    return write_bytes_o_excl(out, encoded)
+
+
 def _run_live_p1_vote_carrier_subproof(
     *,
     resumed_model: torch.nn.Module,
@@ -2772,72 +2797,84 @@ def _run_live_p1_vote_carrier_subproof(
     try:
         resumed_model.zero_grad(set_to_none=True)
         resumed_model.train(True)
-        with trainer_authoritative_forward_context(
-            resumed_eligible,
-            loaded_states,
-            device=device,
-            requires_grad=True,
-        ) as handle:
-            loss = forward_loss_fn(resumed_model, batch)
-            if not isinstance(loss, torch.Tensor):
-                raise TypeError("P1b forward_loss_fn must return a torch.Tensor loss")
-            loss_to_backward = loss if loss.numel() == 1 else loss.mean()
-            loss_finite = bool(torch.isfinite(loss_to_backward.detach()).item())
-            loss_to_backward.backward()
-            for key, state in sorted(loaded_states.items()):
-                weighted_grad = handle.weighted_grad(key)
-                credit = credit_from_weighted_grad(weighted_grad)
-                moves = project_s1_gradient_to_moves(weighted_grad, state.q_levels)
-                votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
-                dense_votes_by_key[key] = votes.detach().cpu().to(torch.int16).contiguous()
-                sparse_events_by_key[key] = _sparse_vote_events(votes)
+        emit_p1b_phase("forward_backward_start")
+        try:
+            with trainer_authoritative_forward_context(
+                resumed_eligible,
+                loaded_states,
+                device=device,
+                requires_grad=True,
+            ) as handle:
+                loss = forward_loss_fn(resumed_model, batch)
+                if not isinstance(loss, torch.Tensor):
+                    raise TypeError("P1b forward_loss_fn must return a torch.Tensor loss")
+                loss_to_backward = loss if loss.numel() == 1 else loss.mean()
+                loss_finite = bool(torch.isfinite(loss_to_backward.detach()).item())
+                loss_to_backward.backward()
+                for key, state in sorted(loaded_states.items()):
+                    weighted_grad = handle.weighted_grad(key)
+                    credit = credit_from_weighted_grad(weighted_grad)
+                    moves = project_s1_gradient_to_moves(weighted_grad, state.q_levels)
+                    votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
+                    dense_votes_by_key[key] = votes.detach().cpu().to(torch.int16).contiguous()
+                    sparse_events_by_key[key] = _sparse_vote_events(votes)
+        finally:
+            emit_p1b_phase("forward_backward_end")
     finally:
         resumed_model.zero_grad(set_to_none=True)
         resumed_model.train(prior_training)
 
-    step_result = apply_bounded_delta_vote_step(
-        dict(loaded_states),
-        dense_votes_by_key,
-        vote_specs_by_key,
-        candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
-        candidate_sparse_vote_events_by_key=sparse_events_by_key,
-        candidate_oracle_control_enabled=False,
-    )
-    post_blob = build_trainer_sub2_authority_checkpoint_blob(
-        resumed_model,
-        eligible_modules=resumed_eligible,
-        tensor_states=step_result.tensor_states,
-        step=int(step) + 1,
-    )
-    payload_sha_after = str(
-        post_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"]
-    )
-    post_resume_mutated = bool(
-        payload_sha_after != str(payload_sha_before)
-        and int(step_result.global_summary.get("q_changed_count", 0)) > 0
-    )
-    post_model = fresh_model_fn().to(device=device)
-    post_eligible = select_trainer_eligible_bitlinears(
-        post_model,
-        use_ternary_bulk=use_ternary_bulk,
-        eligible_scope=eligible_scope,
-    )
-    post_loaded_states = load_trainer_sub2_authority_checkpoint_blob(
-        post_model,
-        post_blob,
-        eligible_modules=post_eligible,
-        device=device,
-    )
-    post_reblob = build_trainer_sub2_authority_checkpoint_blob(
-        post_model,
-        eligible_modules=post_eligible,
-        tensor_states=post_loaded_states,
-        step=int(step) + 1,
-    )
-    roundtrip_pass = (
-        str(post_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
-        == str(post_reblob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
-    )
+    emit_p1b_phase("vote_apply_start")
+    try:
+        step_result = apply_bounded_delta_vote_step(
+            dict(loaded_states),
+            dense_votes_by_key,
+            vote_specs_by_key,
+            candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+            candidate_sparse_vote_events_by_key=sparse_events_by_key,
+            candidate_oracle_control_enabled=False,
+        )
+    finally:
+        emit_p1b_phase("vote_apply_end")
+    emit_p1b_phase("checkpoint_roundtrip_start")
+    try:
+        post_blob = build_trainer_sub2_authority_checkpoint_blob(
+            resumed_model,
+            eligible_modules=resumed_eligible,
+            tensor_states=step_result.tensor_states,
+            step=int(step) + 1,
+        )
+        payload_sha_after = str(
+            post_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"]
+        )
+        post_resume_mutated = bool(
+            payload_sha_after != str(payload_sha_before)
+            and int(step_result.global_summary.get("q_changed_count", 0)) > 0
+        )
+        post_model = fresh_model_fn().to(device=device)
+        post_eligible = select_trainer_eligible_bitlinears(
+            post_model,
+            use_ternary_bulk=use_ternary_bulk,
+            eligible_scope=eligible_scope,
+        )
+        post_loaded_states = load_trainer_sub2_authority_checkpoint_blob(
+            post_model,
+            post_blob,
+            eligible_modules=post_eligible,
+            device=device,
+        )
+        post_reblob = build_trainer_sub2_authority_checkpoint_blob(
+            post_model,
+            eligible_modules=post_eligible,
+            tensor_states=post_loaded_states,
+            step=int(step) + 1,
+        )
+        roundtrip_pass = (
+            str(post_blob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+            == str(post_reblob["trainer_sub2_authority"]["authoritative_state_payload_sha256"])
+        )
+    finally:
+        emit_p1b_phase("checkpoint_roundtrip_end")
     shadow_free_after = all(
         state.exact_accumulator_shadow is None
         for state in step_result.tensor_states.values()
@@ -3004,6 +3041,7 @@ def build_trainer_sub2_authority_live_conversion_receipt(
         payload_sha_before=payload_sha_before,
     )
 
+    emit_p1b_phase("receipt_mint_start")
     parity_map = {str(key): float(value) for key, value in parity_max_abs_diff_by_site.items()}
     required_sites = ("cache_builder", "main_kl", "retained_fallback")
     parity_pass = all(site in parity_map for site in required_sites) and all(
@@ -3106,6 +3144,8 @@ def build_trainer_sub2_authority_live_conversion_receipt(
     )
     if pass_receipt:
         validate_trainer_sub2_authority_live_conversion_receipt(receipt)
+    # receipt_mint_end is emitted by the trainer sink AFTER the authoritative
+    # O_EXCL write (+validate) succeeds — never here (failure leaves phase open).
     return receipt
 
 
