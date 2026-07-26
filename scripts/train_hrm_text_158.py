@@ -2828,7 +2828,8 @@ def _build_ckpt_config(
 # CLI
 # ----------------------------------------------------------------------------- #
 
-if __name__ == "__main__":
+def build_arg_parser() -> argparse.ArgumentParser:
+    """CLI ArgumentParser for train_hrm_text_158 (importable for argv-contract tests)."""
     ap = argparse.ArgumentParser(
         description="HRM-Text-1.58 trainer (Phase 1 Slice 2). "
                     "Source-faithful port of sapientinc/HRM-Text SHA 056c4ec."
@@ -3085,6 +3086,18 @@ if __name__ == "__main__":
                     help="Build corpus + tokenizer + model + first batch + verify "
                          "forward pass, then exit BEFORE optimizer step. No ckpt "
                          "written. Used for Phase A receipt validation.")
+    ap.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        default=None,
+        help="Compute device. Default None selects cuda if available else cpu "
+             "(existing train() behavior). Required by P1b frozen science argv.",
+    )
+    return ap
+
+
+if __name__ == "__main__":
+    ap = build_arg_parser()
     args = ap.parse_args()
 
     # Slice B: integer-and->=1 sanity bound for --retention-anchor-repeat.
@@ -3114,6 +3127,8 @@ if __name__ == "__main__":
     import os
 
     if os.environ.get("R1L_ARGV_PARSE_PROBE") == "1":
+        import json as _json
+        print(_json.dumps({"device": args.device}), flush=True)
         raise SystemExit(0)
 
     train(
@@ -3182,4 +3197,5 @@ if __name__ == "__main__":
         activation_residuals_m1_launch_proof=args.activation_residuals_m1_launch_proof,
         legacy_loader_shuffle=args.legacy_loader_shuffle,
         dry_run=args.dry_run,
+        device=args.device,
     )
