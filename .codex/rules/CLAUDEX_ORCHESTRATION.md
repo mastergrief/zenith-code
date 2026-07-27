@@ -41,7 +41,25 @@ name is NOT a room handle. Developer executor reports through `plan-dev`.
 
 1. Read task; verify provenance + contract.
 2. Ground narrowly.
-3. Post plan; wait for persisted `+1 implement`.
+3. Post plan; wait for persisted `+1 implement`. **Fast path**: when the
+   dispatch declares a converged contract (defect cycle / mechanical re-scope),
+   NAMES why it is converged with frozen scope/acceptance/stop conditions, and
+   itself carries the `+1 implement`, skip the plan post and implement
+   directly — the dispatch is the plan. Underspecified fast-path dispatch →
+   STOP and request the plan gate. Diff gates never skipped.
+   **Mint-hold rule**: after a BLOCK, hold the remint until claude's
+   consolidated dispatch (verdict + all addendums) posts; an addendum landing
+   after mint-start folds into the NEXT version — never a partial edit.
+   **LEAN-MEASUREMENT tier** (measurement-only CPU slice, CREATE-only/bounded
+   surface, no `.pt`/banked touch; tier by claim effect — a prereg'd
+   feasibility/plumbing/parity/null read stays LEAN; a mechanism-selecting
+   branch or stability/readiness/sub-2 claim is science-verdict → HIGH):
+   expect ONE batched plan review round + ONE implementation round
+   when clean; a BLOCK/correction still takes a fresh freeze + full
+   re-review. Live resolution of operative gate records (plan/+1/go/freeze/
+   PASS) and the quality floor (spec freeze, claim-vs-execution, source
+   pinning, non-vacuous hostiles + packet dry-exec) never compress.
+   Canonical: `.claude/rules/CLAUDEX_ORCHESTRATION.md`.
 4. Verify gate (`from: claude`, non-ack, threaded). Cite gate msg id.
 5. Implement/prove within scope.
 6. Validate; post receipt to claude gate-1 ONLY.

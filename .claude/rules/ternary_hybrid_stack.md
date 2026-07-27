@@ -62,6 +62,9 @@ Always report FP-free claims as three separate ledgers; never collapse them.
   at terminal Phase-A geometry** (V4-LIVE); receipts in atlas. Does **not** close
   all event-coded/acc alternatives; no readiness/full-sub2 claim (activations/KV
   are a separate `full_sub2_runtime` surface — see below).
+- **Sparse acc route is measurement-backed, not only structural**: measured
+  acc-side information content sits orders of magnitude below both ceilings
+  (receipts in atlas arc) — a carrier-representation gap, NOT capacity.
 - **3-ledger = weight-persistent train-state accounting; activations/KV are full-sub2-runtime target surfaces with separate levers.** Activations/residuals, attention-KV buffers, and backward-saved tensors are FP today under the D2.1 BitLinear contract (weights ternarized, activations not), and remain required `full_sub2_runtime` surfaces currently blocking main science. Their path is forward/runtime activation-KV quantization or recompute/compression (separately scoped), NOT the weight vote-accumulator: activations are transient, KV has no trainable optimizer state, no persistent votes to accumulate. Do not conflate the persistent-weight drain (the dense vote-acc, now int8/W8) with total-runtime memory (activations/KV scale with batch×seqlen, distinct levers).
 - **Ternary-rotor lane** (separately-scoped; plan + screen receipts:
   `.claude/MEMORY/ternary-rotor.md`) covers those runtime surfaces via rotated
@@ -149,18 +152,18 @@ Optimize **information per GPU-minute**, not training volume. The control law:
   **N=50 or the prereg equivalent for a branch verdict.**
 - **One variable per run** unless prereg'd as a factorial (§"Research
   invariants").
-- **Tiny route patches, not architecture rewrites** — earn the rewrite with a
-  measurement first.
-- **Role routing**: command churn / thinking / context → `plan-dev`; exact-packet
-  terminal receipts → `test-operator` (`CLAUDEX_ORCHESTRATION.md`).
-- **Commit every useful null** — a clean negative shrinks the search space
-  (`workflow.md` §"Informative null results").
+- **Tiny route patches** — earn architecture rewrites with a measurement first.
+- **Role routing + ceremony**: churn/thinking → `plan-dev`; exact-packet
+  receipts → `test-operator`. Tier by claim effect: a prereg'd feasibility/
+  plumbing/parity/null read (does the carrier/path work) = LEAN-MEASUREMENT;
+  mechanism-selecting branch / stability/readiness/sub-2 claims =
+  science-verdict → HIGH (`CLAUDEX_ORCHESTRATION.md` §review-risk tier).
+- **Commit every useful null** — a clean negative shrinks the search space.
 
-Exemplar (a pattern, NOT a privileged mechanism): the lane3 shadow-prefix
-curve picks the next mechanism from one run — current low-K beats
-all/random/inverted → rate-cap/trust-region lever; random matches/beats
-current → ranking/update-law problem; inverted wins → sign/direction problem;
-no arm improves → representation-not-viable / insufficient-separation.
+Exemplar (a pattern, NOT privileged): lane3 shadow-prefix curve picks the next
+mechanism from one run — low-K beats all/random/inverted → rate-cap/trust
+lever; random ≥ current → ranking/update-law problem; inverted wins →
+sign/direction problem; no arm improves → representation-not-viable.
 
 **Sub-2-first launch gate**: no main mechanism-science launch until the
 executable `full_sub2_runtime_ready_for_science` checker passes — OR a named

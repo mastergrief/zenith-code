@@ -44,6 +44,9 @@ or break-glass reason.
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
     fixes → `plan-dev`.
+  - **Fast path**: converged-contract slices (defect cycles, mechanical
+    re-scopes) may carry plan + `+1 implement` in the dispatch itself —
+    `CLAUDEX_ORCHESTRATION.md` §Lifecycle. Diff gates never skipped.
 
 **Active codex room roster (this repo):** `codex_co_lead`, `plan-dev`,
 `test-operator` only. Retired spawnable role names (`training-dev`,
@@ -162,7 +165,8 @@ in-flight artifact review. **Passive-wait-don't-poll** at gates.
 **Gate-2 convergence:** the first gate-2 runs the full plan-derived checklist in
 one pass; re-reviews recheck prior blockers + re-run the full sweep, batching
 ALL substantiated blockers per verdict — evidence is never suppressed, PASS
-never forced. Ceremony tiers by control-plane blast radius. Full semantics:
+never forced. Ceremony tiers by control-plane blast radius (HIGH /
+LEAN-MEASUREMENT / LOW — rounds compress, depth never). Full semantics:
 `CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
 
 ## Fast Training Launch Contract
@@ -174,7 +178,9 @@ review of frozen packet; (4) claude `+1 launch/watch-to-terminal-condition`;
 only via Claude `+1` with `transition_fallback_used=true`); (6) interrupt only
 for bank/fail/criteria/liveness/deviation; (7) one terminal receipt.
 GPU-hot-loop = kernelized execution, not merely `device=cuda:0`. `.pt` not
-committed.
+committed. Sibling for measurement-only CPU slices whose claim effect is a
+feasibility/plumbing/parity/null read: **LEAN-MEASUREMENT** tier
+(`CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier").
 
 ## Commit hygiene
 

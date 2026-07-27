@@ -39,6 +39,9 @@ parallel; artifact review gates are sequential. Claude+co_lead review/audit, NOT
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
     fixes → `plan-dev`.
+  - **Fast path**: a dispatch declaring a converged contract (defect cycle /
+    mechanical re-scope) may carry plan + `+1 implement` in one step; novel
+    slices keep the full plan gate. Diff gates never skipped.
 
 **Active codex room roster (this repo):** `codex_co_lead`, `plan-dev`,
 `test-operator` only. Retired spawnable role names (`training-dev`,
@@ -109,6 +112,10 @@ One launch packet contract drafted/reviewed by `plan-dev` → one review →
 `+1 launch/watch` → `test-operator` runs + terminal receipt (break-glass
 `plan-dev` run only via Claude `+1` with `transition_fallback_used=true`).
 Interrupt only for bank/fail/criteria/liveness/deviation. `.pt` not committed.
+Sibling for measurement-only CPU slices whose claim effect is a feasibility/
+plumbing/parity/null read: **LEAN-MEASUREMENT** review tier
+(`.claude/rules/CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk
+tier") — rounds compress, depth never.
 
 ## Low-blast-radius commit+push collapse
 

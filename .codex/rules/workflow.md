@@ -93,7 +93,9 @@ transfers.
 
 **Review routing (ai-room):** thinking parallel; artifact gates sequential
 (claude gate-1 → co_lead gate-2 on frozen handoff). **Passive-wait-don't-poll**
-at gates.
+at gates. Tiered ceremony (HIGH / LEAN-MEASUREMENT / LOW):
+`.claude/rules/CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk
+tier".
 
 **Foreground only — no detach:** forbid `setsid`, `nohup`, `disown`,
 `run_in_background`, trailing `&`. Run training foreground in a dedicated
