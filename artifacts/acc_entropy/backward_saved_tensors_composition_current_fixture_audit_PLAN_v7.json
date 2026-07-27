@@ -1,0 +1,884 @@
+{
+  "plan_id": "backward_saved_tensors_composition_current_fixture_audit",
+  "plan_revision": "v7",
+  "packet_revision": "v7",
+  "task_id": "1785101377911-8bb9bce3",
+  "dispatch_msg_id": "1785101404094-32054010",
+  "mode": "planning",
+  "SIZING": "MEDIUM",
+  "risk": "high",
+  "autonomy_rung": "L3",
+  "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "repo_branch": "feature/hrm-text-1.58",
+  "repo_head_at_plan_mint": "9963f5b8fea6084d13b76b3849a90b189791c2e2",
+  "context_health": "self-measured ~42%; plan_gate2 BLOCK forces PLAN_v7 remint (B7 stale cites + B8 dep-currency closure)",
+  "provenance": {
+    "gabe_standing_auto_research_directive": true,
+    "terminal_synthesis_msg_id": "1785101345912-58ea0a4e",
+    "co_lead_concurrence_msg_id": "1785101357425",
+    "chosen": "composition/current-fixture audit via existing readiness seam (measure/classify; no seam creation)",
+    "rejected": [
+      "create missing backward seam",
+      "readiness-row flip on current_repo_scaffold",
+      "GPU/R1-L launch in this slice",
+      "new codec/rotor path"
+    ],
+    "task_dispatch_msg_id": "1785101404094-32054010",
+    "addendum_msg_id": "1785101423005-bd6dc4f7",
+    "co_lead_addendum_cite": "1785101407935",
+    "addendum_folded": [
+      "explicit fixture/backend/device bind in measurement + receipt",
+      "CPU-fixture classification does NOT generalize to CUDA/fused-SDPA; separate runtime contract required",
+      "claim ceiling aligned with ternary-rotor SDPA-saved-tensor screen-excluded invariant"
+    ],
+    "gate1_block_msg_id": "1785101602898-74d7ec12",
+    "b1_b2_b3_folded": true,
+    "b3_decision": "harness-local evidence; activation_relief.py VALIDATE_ONLY",
+    "gate2_block_folded": [
+      "B1 one runtime source of truth",
+      "B2 deep immutability",
+      "B3 exact event hash schema"
+    ],
+    "v4_implement_gate1_pass_msg_id": "1785102429673-5a9a08c2",
+    "v4_implement_gate1_void_for_authority": true,
+    "implement_gate2_block_msg_id": "1785102608816-11f5c502",
+    "co_lead_implement_gate2_block_msg_id": "1785102559901-10acfd84",
+    "claude_concession_msg_id": "1785102585019",
+    "defect_cycle_required": true,
+    "plan_authority_after_mint": "PLAN_v7; PLAN_v1..v6 VOID for authority (bytes preserved)",
+    "carried_frozen_as_verified_from_v4": [
+      "deep-freeze tuple snapshot before hash/partition",
+      "harness sole runtime owner of evidence symbols; tests import only",
+      "shape stored as immutable tuple; canonical JSON emits list[int]",
+      "exactly one helper/hook campaign (AST source-guard)",
+      "partition via analyze_saved_tensor_hook_events over frozen snapshot",
+      "claim ceiling: no readiness-row flip; CPU non-generalization to CUDA/fused-SDPA",
+      "activation_relief.py (production module) VALIDATE_ONLY",
+      "expected science BR-BST-C-FP-DENSE shippable null under CURRENT policy=None"
+    ],
+    "v5_deltas_only": [
+      "B4 device truth: helper pack_hook ADDITIVE device field; receipt device FROM observed events",
+      "B4 backend honesty: cpu_pytorch_sdpa_impl_unproven (no unproven not-fused claim)",
+      "B5 provenance: live git rev-parse HEAD fail-on-mismatch; dependency currency pins",
+      "B6 exact-int: reject bool for shape entries and numel; hostile bool-as-int tests",
+      "receipts v2 O_EXCL; v1 bytes preserved"
+    ],
+    "plan_v5_addendum_msg_id": "1785102617911-420ed2e7",
+    "co_lead_plan_v5_addendum_msg_id": "1785102595923",
+    "v6_deltas_only": [
+      "dependency-currency file list + EXPECTED HASHES frozen in PLAN bytes (not implementation-time discovery)",
+      "backend value exactly pytorch_cpu_sdpa_backend_unclassified unless replayable selector proves more",
+      "device from EVERY exact saved-tensor event; single-device census across all 180 or MEASUREMENT_INVALID; torch.get_default_device() forbidden"
+    ],
+    "v5_deltas_carried": [
+      "B4 device truth: helper pack_hook ADDITIVE device field; receipt device FROM observed events",
+      "B4 backend honesty: cpu_pytorch_sdpa_impl_unproven (no unproven not-fused claim)",
+      "B5 provenance: live git rev-parse HEAD fail-on-mismatch; dependency currency pins",
+      "B6 exact-int: reject bool for shape entries and numel; hostile bool-as-int tests",
+      "receipts v2 O_EXCL; v1 bytes preserved"
+    ],
+    "plan_gate2_block_msg_id": "1785103051806-5e053932",
+    "co_lead_plan_gate2_block_msg_id": "1785103015954-0ca7e657",
+    "claude_plan_gate2_concession_msg_id": "1785103036698",
+    "v7_deltas_only": [
+      "B7: full-artifact citation sweep — runtime-driving PLAN_v5/v6 refs updated to PLAN_v7; lineage only in supersedes/provenance/history",
+      "B8: dependency_currency_freeze expanded to 7 files (transformer/config/__init__/activation_relief + prior 3); closure rationale in plan bytes"
+    ],
+    "v6_deltas_carried": [
+      "dependency-currency file list + EXPECTED HASHES frozen in PLAN bytes (not implementation-time discovery)",
+      "backend value exactly pytorch_cpu_sdpa_backend_unclassified unless replayable selector proves more",
+      "device from EVERY exact saved-tensor event; single-device census across all 180 or MEASUREMENT_INVALID; torch.get_default_device() forbidden"
+    ]
+  },
+  "decision_contract": {
+    "intent": "Read-only classify backward_saved_tensors composition under CURRENT CPU fixture with observed device/backend honesty + live HEAD provenance; shippable null if FP-dense; never authorize readiness-row flip; never claim CUDA/fused-SDPA generalization; never emit literal runtime-identity fields",
+    "authority": "Gabe standing auto-research + plan_gate2 BLOCK 1785103051806 (co_lead 1785103015954; concession 1785103036698); peer gates plan->+1 implement->implement->commit->push; full dual plan gate REQUIRED (authority-semantics change)",
+    "executor": "codex (plan-dev) plan+bounded build after +1; claude gates; codex_co_lead gate-2",
+    "validation_proof": "frozen governing CPU command; observed-vs-literal on runtime-identity fields; evidence-seam object-identity; canonical hashes; preregistered classifier; O_EXCL v2 receipts; exact pytest",
+    "escalation_rule": "readiness/sub2 claim, GPU/.pt/trainer touch, seam-creation drift, literal runtime-identity field, underspecified measurement -> STOP to claude",
+    "receipt_sink": "claude gate-1 ONLY; co_lead gate-2 on frozen handoff",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation",
+      "commit",
+      "push"
+    ],
+    "fast_path_forbidden": "authority-semantics change (B7/B8) => NOT a fast-path defect fix; full dual plan gate repeats"
+  },
+  "anchor_verification": {
+    "status": "VERIFIED_LIVE_AT_PLAN_MINT",
+    "anchors": [
+      {
+        "id": "A1_current_repo_missing_row",
+        "file": "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "lines": "658-664",
+        "sha256": "0ecbabf1200ca6a9e001cbcc439bf6d7ba5a56f368711919e7de61a775e8f519",
+        "fact": "current_repo_scaffold_surfaces classifies SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS as RUNTIME_CLASS_MISSING with reason 'no dedicated backward saved-tensor/transient sub2 proof seam is present in Step 1'",
+        "live_check": "fixture_full_sub2_runtime_ready_for_science(current_repo_scaffold) → classification=missing; missing_surface_names includes backward_saved_tensors_transients; ready_for_main_science=false"
+      },
+      {
+        "id": "A2_existing_gated_flip_seam",
+        "file": "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "lines": "742-763",
+        "sha256": "0ecbabf1200ca6a9e001cbcc439bf6d7ba5a56f368711919e7de61a775e8f519",
+        "fact": "gated_sub2_checkpoint_path_backward_recompute_surfaces EXISTS and can mark the row sub2 under GATED_LOSSLESS_RECOMPUTE_REASON — this is the existing proof seam cited by the task; it is NOT current_repo_scaffold and does NOT authorize a current_repo row flip in this slice"
+      },
+      {
+        "id": "A3_saved_tensor_receipt_builder",
+        "file": "calm/hrm_text_158/native_full_stack/activation_relief.py",
+        "lines": "415-511",
+        "sha256": "107d73ec52b885669146aa3b38e4a47c20923329aed8d010fb35b9b945571333",
+        "fact": "build_backward_recompute_saved_tensor_receipt consumes saved_tensors_hooks proof and asserts no_extra_internal_payload; default_runtime_sub2_claim=False"
+      },
+      {
+        "id": "A4_hook_event_analyzer",
+        "file": "calm/hrm_text_158/native_full_stack/activation_relief.py",
+        "lines": "2482-2512",
+        "sha256": "107d73ec52b885669146aa3b38e4a47c20923329aed8d010fb35b9b945571333",
+        "fact": "analyze_saved_tensor_hook_events partitions by shape/dtype only — additive event.device is compatible (analyzer ignores unknown keys)"
+      },
+      {
+        "id": "A5_checker_cli",
+        "file": "scripts/hrm_text_158_full_sub2_runtime_readiness.py",
+        "lines": "72-164",
+        "sha256": "033b2459d33f474819e99ad488fe445a2849a894b8f90c60913c4fc5e869a457",
+        "fact": "read-only --fixture current_repo_scaffold emit path exists; used for gap-map reproduction only"
+      },
+      {
+        "id": "A6_helper_pack_hook_pre_edit",
+        "file": "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py",
+        "lines": "114-147",
+        "sha256_pre_edit": "cda9ba755c51639f086136a92ce80acb175358968ec90c1d6d0c6f348915cc47",
+        "sha256_post_edit_expected": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54",
+        "fact": "pack_hook currently emits 4 fields; this plan family requires ADDITIVE device:str(tensor.device) only"
+      }
+    ],
+    "stop_if_anchor_fail": true
+  },
+  "folds": {
+    "A_composition_measure": {
+      "in_scope": true,
+      "description": "CPU-only measurement: run a frozen tiny fixture under torch.autograd.graph.saved_tensors_hooks; capture exact hook events; partition via analyze_saved_tensor_hook_events (or evidence wrapper returning the EXACT event list + partition counts).",
+      "must_not": [
+        "GPU",
+        "trainer loop",
+        "create new readiness flip path",
+        "mutate current_repo_scaffold_surfaces classification",
+        "literal runtime-identity fields"
+      ]
+    },
+    "B_classify": {
+      "in_scope": true,
+      "depends_on": "A",
+      "description": "Apply preregistered branch taxonomy to measured evidence; mint O_EXCL audit receipt bound to evidence object (no hand-authored counts)."
+    },
+    "C_scaffold_wording_note": {
+      "in_scope": true,
+      "description": "Secondary observation only: current_repo reason text still says Step-1 'no dedicated seam' while A2/A3 seams exist on gated/default-off paths. Record as wording/debt note in receipt; do NOT rewrite readiness surfaces in this slice unless the +1 allowlist explicitly names a one-line reason-string UPDATE — default OUT.",
+      "default": "OUT of write surface (observation in receipt only)"
+    },
+    "D_gpu_r1l": {
+      "in_scope": false,
+      "description": "R1-L GPU launch / live_r1_backward_launch fixture / readiness-row flip — OUT. Separate follow-on if composition warrants."
+    },
+    "B4_device_backend_truth": {
+      "in_scope": true,
+      "description": "Device from EVERY exact saved-tensor event (all 180); single-device census or BR-BST-C-MEASUREMENT_INVALID. torch.get_default_device() forbidden. Backend exactly 'pytorch_cpu_sdpa_backend_unclassified' unless replayable selector proves more. Non-generalization ceiling stays regardless."
+    },
+    "B5_provenance": {
+      "in_scope": true,
+      "description": "Harness computes live git rev-parse HEAD at execution and FAILS on mismatch. Dependency-currency file list + EXPECTED HASHES are frozen in PLAN bytes (dependency_currency_freeze, 7 files) — not implementation-time discovery. Literal repo_head without live check = STOP."
+    },
+    "B6_exact_int": {
+      "in_scope": true,
+      "description": "validate_event_schema_exact rejects bool for shape entries and numel (type(x) is int / explicit bool-reject); hostile bool-as-int tests for both"
+    },
+    "B7_citation_authority": {
+      "in_scope": true,
+      "description": "Runtime-driving fields must cite PLAN_v7 (not stale superseded revisions). Full-artifact citation sweep required; superseded lineage allowed ONLY in supersedes/provenance/history fields."
+    },
+    "B8_dependency_currency_closure": {
+      "in_scope": true,
+      "description": "dependency_currency_freeze.files has exactly 7 pinned paths with PLAN-frozen expected hashes covering the HRM import closure (layers/hrm/transformer/config/__init__/activation_relief/helper)."
+    }
+  },
+  "branch_taxonomy_preregistered": {
+    "PENDING_forbidden_as_terminal": true,
+    "branches": [
+      {
+        "id": "BR-BST-C-FP-DENSE",
+        "predicate": "Under the frozen CURRENT-fixture CPU measurement, observed_internal_payload_tensor_count > 0 OR saved events include FP-dense families beyond boundary+checkpoint-dummy partition (dtype float*/complex*; shapes not in the declared boundary/dummy sets).",
+        "meaning": "Composition is FP-dense as expected for default/current path — shippable null; readiness row remains non-sub2; no flip authorized.",
+        "honest_expected": true
+      },
+      {
+        "id": "BR-BST-C-BOUNDARY-ONLY",
+        "predicate": "internal_payload_tensor_count == 0 AND events partition exclusively into boundary_tensor_shape/dtype + (0,) dummies under the frozen fixture.",
+        "meaning": "Composition looks recompute-clean on the measured fixture — still NOT a current_repo_scaffold row flip (gated seam A2 is separate; flip requires its own authorized packet).",
+        "honest_expected": false
+      },
+      {
+        "id": "BR-BST-C-MEASUREMENT-INVALID",
+        "predicate": "hooks do not fire / evidence seam broken / hash disagreement / fixture bind fail / HEAD mismatch / observed-device disagreement across the full event census / torch.get_default_device used as device source / PENDING attempted as terminal / literal runtime-identity field / dependency-currency hash drift.",
+        "meaning": "fail-closed; no science claim."
+      }
+    ],
+    "expected_branch_for_seeded_fixture": "BR-BST-C-FP-DENSE",
+    "expected_branch_honesty_note": "Live mint probe under policy=None/seed=1701/bp_steps=5 WITH planned additive device field: saved=180, boundary=30, dummy=0, internal=150 (all float32; all device=cpu). FP-DENSE is the honest shippable null.",
+    "live_probe_counts": {
+      "saved_tensor_count": 180,
+      "observed_boundary_tensor_count": 30,
+      "observed_checkpoint_dummy_tensor_count": 0,
+      "observed_internal_payload_tensor_count": 150,
+      "dtype_census": {
+        "torch.float32": 180
+      },
+      "boundary_tensor_shape": [
+        2,
+        16,
+        32
+      ],
+      "boundary_tensor_dtype": "torch.float32",
+      "device_census": {
+        "cpu": 180
+      },
+      "observed_device_uniform": "cpu"
+    }
+  },
+  "measurement_provenance": {
+    "standing_axis": "input → command → exact observed object/evidence seam → receipt",
+    "governing_runtime": "NOT pytest alone — frozen CPU harness command constructs fixture, runs forward+backward under saved_tensors_hooks, returns structured evidence, classifies, O_EXCL-mints receipt_v2; live HEAD check + dependency currency bind",
+    "probe_mode_exact": "saved_tensors_hooks_instrumented",
+    "probe_mode_note": "Single probe. static_codepath_audit alone cannot satisfy audit_observation_complete for composition.",
+    "fixture_recipe": {
+      "name": "bst_composition_cpu_tiny_v1",
+      "helper_module": "calm.llm_computer.tests.test_hrm_text_158_activation_relief",
+      "helper_qualname": "test_hrm_text_158_activation_relief._hrm_forward_saved_tensor_events",
+      "helper_path": "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py",
+      "helper_lineno": 114,
+      "helper_sha256": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54",
+      "construction": "Call _hrm_forward_saved_tensor_events(activation_relief_policy=None, bp_steps=5) from the pinned helper AFTER the additive device edit. Helper is REAL (torch.autograd.graph.saved_tensors_hooks over HierarchicalReasoningModel(_tiny_config())). Do NOT invent a new model stack.",
+      "activation_relief_policy": null,
+      "activation_relief_policy_rationale": "Frozen to None = CURRENT/default path. MODE_LOSSLESS_RECOMPUTE is the gated recompute path and would flip the expected branch to BOUNDARY-ONLY; out of scope for this composition audit of the CURRENT fixture.",
+      "seed": 1701,
+      "seed_semantics": "ADOPT the helper hardcoded torch.manual_seed(1701). Plan seed 158 from v1/v2 is VOID — it conflicted with the live helper and could not be satisfied without a reseeded wrapper. No reseeded wrapper in this slice.",
+      "bp_steps": 5,
+      "input_shapes": {
+        "x": [
+          2,
+          16,
+          32
+        ],
+        "sep_positions": [
+          5,
+          7
+        ],
+        "position_ids": "arange(16).unsqueeze(0).expand(2,-1)",
+        "dtype_x": "torch.float32"
+      },
+      "binding_required_on_receipt": [
+        "fixture_name",
+        "device",
+        "device_binding_mode",
+        "device_census",
+        "backend",
+        "backend_binding_mode",
+        "seed",
+        "activation_relief_policy",
+        "bp_steps",
+        "helper_qualname",
+        "helper_sha256",
+        "repo_head",
+        "repo_head_binding_mode",
+        "dependency_currency"
+      ],
+      "forbidden": [
+        "cuda",
+        "real trainer CLI",
+        "live_r1_backward_launch",
+        "MODE_LOSSLESS_RECOMPUTE in governing measurement",
+        "literal runtime-identity fields (device/repo_head/backend-as-proven without observation)"
+      ],
+      "live_probe_at_plan_mint": {
+        "status": "EXECUTED_EPHEMERAL_POST_EDIT_SEMANTICS",
+        "command_note": "PYTHONPATH=. python3 — reconstruct helper with ADDITIVE device in pack_hook (file NOT mutated during plan phase); events=helper(policy=None,bp_steps=5); analyze_saved_tensor_hook_events(...); device_census",
+        "result": {
+          "saved_tensor_count": 180,
+          "observed_boundary_tensor_count": 30,
+          "observed_checkpoint_dummy_tensor_count": 0,
+          "observed_internal_payload_tensor_count": 150,
+          "dtype_census": {
+            "torch.float32": 180
+          },
+          "device_census": {
+            "cpu": 180
+          },
+          "observed_device_uniform": "cpu",
+          "boundary_tensor_shape": [
+            2,
+            16,
+            32
+          ],
+          "boundary_tensor_dtype": "torch.float32"
+        },
+        "honest_expected_branch": "BR-BST-C-FP-DENSE",
+        "honesty_evidence": "observed_internal_payload_tensor_count=150 > 0 under frozen CURRENT policy=None; all event devices=cpu"
+      },
+      "helper_sha256_pre_edit": "cda9ba755c51639f086136a92ce80acb175358968ec90c1d6d0c6f348915cc47",
+      "helper_sha256_semantics": "POST-EDIT expected sha after ADDITIVE pack_hook device field only. Plan pins NEW expected sha. Pre-edit sha recorded for audit trail.",
+      "helper_edit_spec": {
+        "file": "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py",
+        "scope": "ADDITIVE ONLY inside _hrm_forward_saved_tensor_events.pack_hook event dict",
+        "add": "device: str(tensor.device)",
+        "forbidden_in_that_file": "any other edit (logic, seeds, shapes, other helpers, test bodies)"
+      },
+      "adjacent_proof_tests_compatibility": {
+        "verified_at_plan_mint": true,
+        "note": "_saved_tensor_proof and related event consumers read event['shape'] / event['dtype'] only (and residual family path elsewhere). Additive device key must keep those suites green — state this in IMPLEMENT receipt."
+      },
+      "device": {
+        "binding_mode": "OBSERVED_FROM_EVERY_EVENT",
+        "plan_time_live_probe_uniform_device": "cpu",
+        "expected_event_count": 180,
+        "rule": "Receipt device fields MUST be derived from EVERY exact saved-tensor event's device field in the deep-frozen snapshot (all 180). Single-device census across all events required; any disagreement => BR-BST-C-MEASUREMENT-INVALID. torch.get_default_device() is NOT acceptable as a device source. A literal device='cpu' without per-event observation = STOP.",
+        "forbidden_sources": [
+          "torch.get_default_device()",
+          "hardcoded literal without event census",
+          "partial census / sampled subset of events"
+        ]
+      },
+      "backend": {
+        "value": "pytorch_cpu_sdpa_backend_unclassified",
+        "binding_mode": "HONEST_UNCLASSIFIED_LABEL",
+        "exact_string_required": "pytorch_cpu_sdpa_backend_unclassified",
+        "rule": "Receipt backend field MUST be exactly 'pytorch_cpu_sdpa_backend_unclassified' unless a replayable selector observation proves a more specific SDPA implementation. NO 'not fused-SDPA' / 'eager implies not fused' claim without that observation. Non-generalization ceiling remains regardless of this label.",
+        "alternative_if_observation_added": "If implement adds a replayable SDPA-impl selector observation, receipt may bind that observed label instead — still must not claim CUDA/fused generalization."
+      },
+      "dependency_currency_pins_at_plan_mint": {
+        "source_of_truth": "plan.dependency_currency_freeze",
+        "pinned_file_count": 7,
+        "files": {
+          "calm/hrm_text_158/layers.py": "bae47480c31b5f9865ea7383febc26c70ad60891c12a71b2441531388e74517d",
+          "calm/hrm_text_158/hrm.py": "ec703218b79b18f21582136c36a1a198aea1e95a568d48dd1f2f692730f5d3cd",
+          "calm/hrm_text_158/transformer.py": "7e403a89c8a82ca45bc29d466231f6722fb989d71d46fd4ab17b24a9ddea7512",
+          "calm/hrm_text_158/config.py": "c56318f96cd57fd5faa5d79453c50b54a295bae5a03f80560b5cf59c2012c2e7",
+          "calm/hrm_text_158/__init__.py": "57790db112cb24891a761a8f531ef8acf47631a53e68dd0328d4b900a005f632",
+          "calm/hrm_text_158/native_full_stack/activation_relief.py": "107d73ec52b885669146aa3b38e4a47c20923329aed8d010fb35b9b945571333",
+          "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54"
+        },
+        "helper_post_edit_expected": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54",
+        "rule": "Harness MUST verify live sha256 of each of the seven listed files against these PLAN-frozen expected hashes at governing execution (helper uses post-edit expected_sha256). Drift => STOP / plan remint. Implementation MUST NOT discover or invent the file list.",
+        "closure_rationale": "Import closure for the frozen fixture helper: (1) helper imports HierarchicalReasoningModel/config via calm.hrm_text_158 package facade (__init__.py); (2) hrm.py directly imports config/transformer/layers + activation_relief surfaces used by the fixture path; (3) transformer.py imports config/layers. Therefore live-vs-frozen currency must cover layers.py, hrm.py, transformer.py, config.py, __init__.py, activation_relief.py, and the helper file (post-edit sha). Harness validates ALL seven at governing execution; mismatch STOP applies to the expanded list."
+      }
+    },
+    "frozen_governing_command_template": "cd <repo> && PYTHONPATH=. timeout 300 python3 scripts/backward_saved_tensors_composition_audit_run.py --plan artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v7.json --out artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v2.json",
+    "receipt_binding_required_fields": [
+      "plan_id",
+      "plan_revision",
+      "plan_sha256",
+      "repo_head",
+      "repo_head_binding_mode",
+      "repo_head_live_matched",
+      "dependency_currency",
+      "fixture_name",
+      "device",
+      "device_binding_mode",
+      "device_census",
+      "backend",
+      "backend_binding_mode",
+      "seed",
+      "activation_relief_policy",
+      "bp_steps",
+      "helper_qualname",
+      "helper_sha256",
+      "non_generalization_clause",
+      "probe_mode",
+      "hook_event_count",
+      "observed_boundary_tensor_count",
+      "observed_checkpoint_dummy_tensor_count",
+      "observed_internal_payload_tensor_count",
+      "events_sha256",
+      "partition_sha256",
+      "evidence_to_receipt_field_equality_validated",
+      "sourced_from_evidence_not_recomputed",
+      "audit_branch_id",
+      "current_repo_backward_classification_at_mint",
+      "claim_ceiling",
+      "no_readiness_row_flip",
+      "events_container_type",
+      "deep_frozen_snapshot"
+    ],
+    "fixture_backend_device_binding": {
+      "required": true,
+      "fixture": "bst_composition_cpu_tiny_v1",
+      "device_binding_mode": "OBSERVED_FROM_EVERY_EVENT",
+      "backend": "pytorch_cpu_sdpa_backend_unclassified",
+      "backend_binding_mode": "HONEST_UNCLASSIFIED_LABEL",
+      "addendum_authority": "1785101423005-bd6dc4f7",
+      "co_lead_cite": "1785101407935",
+      "implement_gate2_block_cite": "1785102559901-10acfd84",
+      "plan_v5_addendum_cite": "1785102595923",
+      "rule": "A CPU-fixture classification does NOT generalize to CUDA or fused-SDPA backward surfaces; any such generalization requires a SEPARATE runtime contract. Backend honesty: exact string 'pytorch_cpu_sdpa_backend_unclassified' unless replayable selector proves more. Device from every event; torch.get_default_device() forbidden."
+    }
+  },
+  "observation_evidence_seam": {
+    "type_name": "BackwardSavedTensorCompositionEvidence",
+    "immutable": true,
+    "must_carry": [
+      "events: tuple[SavedTensorEventEvidence, ...] (deep-frozen snapshot — NOT the helper mutable list)",
+      "probe_mode == saved_tensors_hooks_instrumented",
+      "partition counts computed from THAT snapshot via analyze_saved_tensor_hook_events (or equivalent over frozen records)",
+      "boundary_tensor_shape",
+      "boundary_tensor_dtype",
+      "device_census / observed uniform device derived from event.device",
+      "events_sha256 (from frozen snapshot; schema includes device)",
+      "partition_sha256 (from frozen snapshot)"
+    ],
+    "receipt_rule": "Receipt fields MUST be copied from returned evidence snapshot; recomputing partition from a second hook run, mutating helper list after freeze, hand-authored counts, OR literal device/repo_head = STOP / hostile REJECT",
+    "reuse": "Harness factory calls activation_relief.analyze_saved_tensor_hook_events on a view derived from the frozen snapshot (or equivalent); wrap into harness-owned immutable BackwardSavedTensorCompositionEvidence",
+    "location": "scripts/backward_saved_tensors_composition_audit_run.py (runtime owner); tests import only",
+    "owner_module": "scripts/backward_saved_tensors_composition_audit_run.py",
+    "owner_rule": "The governing harness OWNS BackwardSavedTensorCompositionEvidence + its single factory + hash/partition/equality validators. The new test module MUST IMPORT those exact runtime symbols. A second test-local implementation is FORBIDDEN.",
+    "forbidden": [
+      "test-local duplicate evidence class",
+      "test-local duplicate factory",
+      "test-local duplicate validators",
+      "literal runtime-identity fields"
+    ],
+    "hostile_symbol_identity_tests_required": [
+      "assert test-imported BackwardSavedTensorCompositionEvidence is harness.BackwardSavedTensorCompositionEvidence",
+      "assert test-imported factory/validators are the harness objects (identity check)"
+    ],
+    "deep_immutability": {
+      "required": true,
+      "factory_boundary": "Single evidence factory freezes helper events ONCE into tuple[SavedTensorEventEvidence, ...]; each SavedTensorEventEvidence has typed immutable fields only (shape:tuple[int,...], device:str, ...). Partition counts + events_sha256 + partition_sha256 + device_census computed from THAT snapshot BEFORE return.",
+      "event_record_type": "SavedTensorEventEvidence",
+      "events_container": "tuple[SavedTensorEventEvidence, ...]",
+      "post_return_invariant": "no mutable list or dict reachable from evidence",
+      "shape_storage": "immutable tuple; canonical JSON emits list[int]"
+    }
+  },
+  "canonical_hash_contract": {
+    "algo": "sha256 lowercase hex",
+    "events_sha256": "canonical JSON array preserving hook order; each element EXACTLY {'dtype':str,'shape':list[int],'numel':int,'requires_grad':bool,'device':str}; sorted keys, separators (',',':'), utf-8, sha256 lowercase hex",
+    "partition_sha256": "canonical JSON object of the three observed_* counts + saved_tensor_count from the deep-frozen snapshot, sorted keys, (',',':'), utf-8, sha256 lowercase hex",
+    "tensor_note": "If individual tensor digests are needed, use contiguous CPU bytes + dtype + shape envelope (same JSON-envelope pattern as the 3C frozen_envelope); length-prefixed DEAD",
+    "validators_required": [
+      "validate_events_sha256",
+      "validate_partition_sha256",
+      "validate_evidence_receipt_field_equality",
+      "validate_event_schema_exact",
+      "validate_live_repo_head_matches_claim",
+      "validate_observed_device_uniformity",
+      "validate_dependency_currency_against_plan_pins",
+      "validate_device_census_covers_every_event"
+    ],
+    "hostile_tests_required": [
+      "event_order_drift",
+      "dtype_drift",
+      "shape_drift",
+      "numel_drift",
+      "requires_grad_drift",
+      "device_drift",
+      "missing_field",
+      "extra_field",
+      "hand_authored_partition",
+      "recompute_from_second_hook_run",
+      "test_local_duplicate_evidence_symbol_forbidden",
+      "bool_as_int_in_shape",
+      "bool_as_int_in_numel",
+      "literal_device_rejected",
+      "head_mismatch_rejected",
+      "default_device_source_rejected",
+      "partial_device_census_rejected",
+      "dependency_currency_drift_rejected"
+    ],
+    "event_schema_exact": {
+      "dtype": "str",
+      "shape": "list[int] in canonical JSON / tuple[int,...] in storage; each entry type(x) is int (bool REJECTED)",
+      "numel": "int with type(x) is int (bool REJECTED)",
+      "requires_grad": "bool",
+      "device": "str",
+      "extra_fields": "FORBIDDEN",
+      "missing_fields": "FORBIDDEN",
+      "exact_int_rule": "validate_event_schema_exact MUST reject bool for shape entries and numel via type(x) is int or explicit bool-reject"
+    }
+  },
+  "claim_ceiling": {
+    "may_claim": [
+      "CPU measurement-bound composition observations under the frozen fixture+observed-device+honest-backend binding",
+      "terminal taxonomy branch for the seeded CURRENT CPU fixture only",
+      "current_repo_scaffold still reports backward row as missing (gap-map fact)"
+    ],
+    "must_not_claim": [
+      "full_sub2_runtime_ready_for_science",
+      "current_repo_scaffold backward row flip to sub2",
+      "learning/acquisition/retention/throughput",
+      "GPU residency / R1-L launch proof",
+      "optimizer_credit_state discharge",
+      "generalization of this CPU-fixture classification to CUDA backward surfaces",
+      "generalization to fused-SDPA / memory-efficient / flash attention saved-tensor surfaces",
+      "authorization of saved-tensor swaps for attention precision (ternary-rotor: SDPA-saved q/k/v are screen-excluded; attention precision goes through quantize-then-compute kernels, never saved-tensor swaps)",
+      "that the selected SDPA backend is classified/proven beyond pytorch_cpu_sdpa_backend_unclassified without a replayable selector observation",
+      "device identity sourced from torch.get_default_device() or any non-per-event source"
+    ],
+    "no_readiness_row_flip": true,
+    "scope": "CURRENT CPU fixture saved-tensor composition ONLY (fixture+observed-device+honest-backend+policy=None bound; seed=1701)",
+    "non_generalization": {
+      "cpu_fixture_does_not_generalize_to_cuda_or_fused_sdpa": true,
+      "separate_runtime_contract_required_for_cuda_or_fused_sdpa": true,
+      "ternary_rotor_alignment": "SDPA-saved q/k/v screen-excluded; attention precision via quantize-then-compute kernels; never saved-tensor swaps",
+      "addendum_msg_id": "1785101423005-bd6dc4f7",
+      "gate1_block_cite": "1785101602898-74d7ec12",
+      "implement_gate2_block_cite": "1785102559901-10acfd84"
+    }
+  },
+  "frozen_write_surface": {
+    "plan_phase_source_edits": false,
+    "post_plus1_implement": {
+      "CREATE": [
+        "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v2.json",
+        "artifacts/acc_entropy/backward_saved_tensors_composition_IMPLEMENT_receipt_v2.json"
+      ],
+      "UPDATE": [
+        "scripts/backward_saved_tensors_composition_audit_run.py",
+        "calm/llm_computer/tests/test_hrm_text_158_backward_saved_tensors_composition_audit.py",
+        "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py"
+      ],
+      "UPDATE_notes": {
+        "scripts/backward_saved_tensors_composition_audit_run.py": "Widen evidence schema to 5 fields; observed device/backend honesty; live HEAD fail-on-mismatch; dependency currency vs PLAN-frozen 7-file pins; exact-int bool reject; governing CLI targets PLAN_v7 + receipt_v2; forbid torch.get_default_device as device source",
+        "calm/llm_computer/tests/test_hrm_text_158_backward_saved_tensors_composition_audit.py": "Import harness only; add B4/B5/B6/B7/B8 hostiles (device drift, bool-as-int shape/numel, literal device, HEAD mismatch, dependency-currency drift across all 7 pins); keep symbol-identity + single-campaign guard",
+        "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py": "ADDITIVE ONLY: pack_hook event dicts gain device: str(tensor.device); NOTHING ELSE in that file"
+      },
+      "VALIDATE_ONLY": [
+        "calm/hrm_text_158/native_full_stack/activation_relief.py",
+        "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py",
+        "scripts/hrm_text_158_full_sub2_runtime_readiness.py",
+        "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "calm/hrm_text_158/layers.py",
+        "calm/hrm_text_158/hrm.py",
+        "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v1.json",
+        "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v2.json",
+        "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v3.json",
+        "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v4.json",
+        "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v1.json",
+        "artifacts/acc_entropy/backward_saved_tensors_composition_IMPLEMENT_receipt_v1.json",
+        "calm/hrm_text_158/transformer.py",
+        "calm/hrm_text_158/config.py",
+        "calm/hrm_text_158/__init__.py"
+      ],
+      "OUT": [
+        "activation_relief.py (production module) edits",
+        "current_repo_scaffold_surfaces classification changes",
+        "apply_live_r1_launch_runtime_surface_overrides / live_r1_backward_launch",
+        "GPU scripts",
+        "trainer CLI",
+        ".pt",
+        "unrelated dirty worktree drift",
+        "MODE_LOSSLESS_RECOMPUTE governing measurement",
+        "non-additive edits to test_hrm_text_158_activation_relief.py"
+      ],
+      "v1_bytes_preserved": {
+        "audit_receipt_v1": "731cc4aca75a3eb3cfd5628a3852947395effcfee5c79635b363289e513602ab",
+        "implement_receipt_v1": "b3caf65f30e78e555e760a380e4f223f6501f37e6d1686e50ab68efb64bd48c6",
+        "rule": "Do NOT overwrite v1 receipts; mint v2 O_EXCL only"
+      }
+    }
+  },
+  "DEVELOPER_STEPS": [
+    {
+      "id": "S1_helper_device_additive",
+      "actions": [
+        "UPDATE calm/llm_computer/tests/test_hrm_text_158_activation_relief.py — ADDITIVE ONLY: pack_hook gains device: str(tensor.device)",
+        "Verify helper sha256 == c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54",
+        "Run activation_relief pytest; confirm adjacent proofs stay green (shape/dtype-only consumers)"
+      ],
+      "assertions": {
+        "types": "event dicts now exact 5-field",
+        "tests": "activation_relief suite green",
+        "runtime": "none yet",
+        "data": "helper sha matches plan pin"
+      }
+    },
+    {
+      "id": "S2_harness_tests_widen",
+      "actions": [
+        "UPDATE harness: 5-field schema; device census over EVERY event (fail MEASUREMENT_INVALID on non-uniform); backend exactly pytorch_cpu_sdpa_backend_unclassified; live git rev-parse HEAD fail-on-mismatch; dependency currency vs PLAN-frozen 7 expected hashes; exact-int bool reject; CLI -> PLAN_v7 + receipt_v2; forbid torch.get_default_device as device source",
+        "UPDATE test module: hostiles for device/bool-as-int/literal-device/HEAD-mismatch/default-device-source/partial-census/dep-currency-drift; keep symbol-identity + single-campaign guard"
+      ],
+      "assertions": {
+        "types": "deep-frozen; shape tuple storage; device str; no mutable containers",
+        "tests": "full hostile set green incl B4/B5/B6",
+        "runtime": "CPU only",
+        "data": "no production receipt yet"
+      }
+    },
+    {
+      "id": "S3_execute_governing",
+      "actions": [
+        "Execute frozen governing command (timeout 300) minting receipt_v2 O_EXCL"
+      ],
+      "assertions": {
+        "types": "full binding census incl device_census/device_binding_mode/backend honesty/repo_head_live_matched/dependency_currency",
+        "tests": "VALIDATE_ONLY readiness filter green; gap map backward row still missing",
+        "runtime": "expected BR-BST-C-FP-DENSE; PENDING forbidden",
+        "data": "O_EXCL receipt_v2; evidence equality true; v1 bytes preserved"
+      }
+    },
+    {
+      "id": "S4_implement_receipt",
+      "actions": [
+        "CREATE IMPLEMENT_receipt_v2 porcelain-truthful -> claude gate-1 ONLY; cite PLAN_v7 sha; note adjacent-proof green + additive-only helper edit + 7-file dep-currency"
+      ],
+      "assertions": {
+        "types": "plan_sha bound; no implement_gate* future facts",
+        "tests": "pytest counts pinned",
+        "runtime": "none",
+        "data": "no readiness flip; no commit/push"
+      }
+    }
+  ],
+  "validation_plan": {
+    "plan_phase": "O_EXCL PLAN_v7; PLAN_v1..v6 bytes preserved (VOID for authority)",
+    "post_plus1": {
+      "pytest_commands": [
+        "cd <repo> && PYTHONPATH=. timeout 300 python3 -m pytest -q calm/llm_computer/tests/test_hrm_text_158_backward_saved_tensors_composition_audit.py",
+        "cd <repo> && PYTHONPATH=. timeout 300 python3 -m pytest -q calm/llm_computer/tests/test_hrm_text_158_activation_relief.py",
+        "cd <repo> && PYTHONPATH=. timeout 300 python3 -m pytest -q calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py -k 'backward or missing_required or current_repo'"
+      ],
+      "gap_map_command": "cd <repo> && PYTHONPATH=. timeout 120 python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture current_repo_scaffold",
+      "governing_command": "cd <repo> && PYTHONPATH=. timeout 300 python3 scripts/backward_saved_tensors_composition_audit_run.py --plan artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v7.json --out artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v2.json"
+    }
+  },
+  "stop_conditions": [
+    "Anchor cite fail → STOP",
+    "Mutation outside frozen_write_surface → STOP",
+    "GPU / .pt / trainer loop / live_r1_backward_launch → STOP",
+    "Readiness-row flip proposal or current_repo_scaffold classification rewrite without explicit allowlist → STOP",
+    "PENDING as terminal result → STOP",
+    "Hand-authored partition counts / second-hook recompute for receipt fields → STOP",
+    "Fixture helper turns out synthetic-only with no real saved_tensors_hooks → STOP + plan remint",
+    "Underspecified measurement input→command→evidence→receipt chain → STOP",
+    "Stage/commit/push without separate gates → STOP",
+    "CUDA device in governing measurement -> STOP",
+    "Receipt missing fixture/backend/device binding fields → STOP",
+    "Claim or receipt language generalizing CPU-fixture classification to CUDA/fused-SDPA → STOP",
+    "Proposal to authorize attention precision via saved-tensor swaps (violates ternary-rotor invariant) → STOP",
+    "Helper/import/policy/seed/bp_steps/shapes deviate from frozen fixture_recipe → STOP",
+    "Governing measurement uses MODE_LOSSLESS_RECOMPUTE or non-None policy → STOP",
+    "Seed 158 used instead of frozen helper seed 1701 → STOP",
+    "Test-local duplicate evidence class/factory/validators → STOP",
+    "Mutable list/dict reachable from evidence after factory return → STOP",
+    "events_sha256 not computed from deep-frozen snapshot → STOP",
+    "activation_relief.py (production) modified in this slice -> STOP",
+    "Non-additive edit to test_hrm_text_158_activation_relief.py -> STOP",
+    "Receipt missing fixture/backend/device/policy/seed/helper/HEAD/dependency binding fields -> STOP",
+    "Event schema with optional/missing/extra fields (requires_grad must be exact bool; device required) -> STOP",
+    "Literal runtime-identity field (device/repo_head/backend-as-proven) without observation/live check -> STOP",
+    "Observed-device disagreement (non-uniform event.device or receipt device != observed census) -> STOP",
+    "Live git rev-parse HEAD mismatches receipt/plan claim -> STOP",
+    "bool accepted as shape entry or numel -> STOP",
+    "Overwrite of receipt_v1 / IMPLEMENT_v1 -> STOP",
+    "Backend value other than pytorch_cpu_sdpa_backend_unclassified without replayable selector observation -> STOP",
+    "Device sourced from torch.get_default_device() or any non-per-event source -> STOP",
+    "Device census not computed over EVERY saved-tensor event (expected 180) -> STOP",
+    "Dependency-currency file list or expected hashes discovered at implementation time instead of PLAN-frozen -> STOP",
+    "Dependency-currency live sha mismatch vs PLAN-frozen expected hashes (all 7 pinned files) -> STOP",
+    "Dependency-currency live sha mismatch vs any of the 7 PLAN-frozen expected hashes -> STOP",
+    "Runtime-driving field cites a superseded plan revision or sha instead of PLAN_v7 after this remint -> STOP"
+  ],
+  "standing_plan_axes": [
+    "input -> command -> exact observed object/evidence seam -> receipt",
+    "object-identity on every cross-object edge",
+    "any *_validated=true requires field-census verification",
+    "measurement cannot authorize readiness-row flip alone",
+    "observed-vs-literal on every runtime-identity receipt field",
+    "fixture/observed-device/honest-backend bound; CPU classification non-generalizing to CUDA/fused-SDPA",
+    "fixture provenance frozen at plan time (helper/policy/seed/shapes + live probe + dependency currency)",
+    "definite write allowlist (no conditional UPDATE)"
+  ],
+  "two_phase_shape": {
+    "PHASE_A": {
+      "requires": "plan_gate1 -> plan_gate2 dual accept -> persisted +1 implement citing PLAN_v7 sha -> bounded defect-cycle build S1-S4 -> implement_gate1 -> implement_gate2",
+      "note": "Full dual plan gate REQUIRED (authority-semantics change B7/B8). Default: plan-dev runs frozen governing command during S3."
+    },
+    "PHASE_B": {
+      "requires": "OUT — no GPU packet in this slice"
+    }
+  },
+  "edit_freeze": {
+    "status": "EDIT_FREEZE outside this plan artifact",
+    "this_dispatch_creates_only": "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v7.json",
+    "no_source_edits_until": "dual plan accept + persisted +1 implement citing PLAN_v7 sha"
+  },
+  "plan_phase_source_edits": false,
+  "addendum_msg_id": "1785101423005-bd6dc4f7",
+  "supersedes": {
+    "void_for_authority": [
+      {
+        "rev": "v1",
+        "sha256": "dd0072a873d0a440da6a34ab679a49a9c9c85f4de05722765459bfdb4c7628ab",
+        "bytes_preserved": true
+      },
+      {
+        "rev": "v2",
+        "sha256": "3b3f75018367d08f310c927e694382f5daf704f7271482dbd9fe445b8c07a5da",
+        "bytes_preserved": true
+      },
+      {
+        "rev": "v3",
+        "sha256": "6bd9a45abf1210c60d9db53daa14f5519e9a910359d4cc16b29aaf85539a8530",
+        "bytes_preserved": true
+      },
+      {
+        "rev": "v4",
+        "sha256": "3e4843b1984fb792caf0652e2c0c1bf04fc61fe1d632922c0be0e2e78d12cae6",
+        "bytes_preserved": true,
+        "note": "v4 implement_gate1 PASS VOID for authority after gate-2 BLOCK on observed-vs-literal runtime-identity fields"
+      },
+      {
+        "rev": "v5",
+        "sha256": "629f2518e6c5c7f6ade370e68188e04026aa012af1b577adefbb3fb0a1135d69",
+        "bytes_preserved": true,
+        "note": "PLAN_v5 addendum fold required exact backend string + every-event device + plan-frozen dependency hashes before plan_gate1"
+      },
+      {
+        "rev": "v6",
+        "sha256": "58d936544e33c0e33d69283a691a76ae97d1df0b3f5009f3992dbc1fc507792c",
+        "bytes_preserved": true,
+        "note": "plan_gate2 BLOCK: B7 stale v5 authority in runtime-driving fields; B8 incomplete dependency-currency import closure"
+      }
+    ],
+    "reason": "plan_gate2 BLOCK (co_lead 1785103015954 / Claude 1785103051806): B7 citation sweep to PLAN_v7; B8 expand dependency_currency_freeze to 7-file import closure"
+  },
+  "gate1_block_msg_id": "1785101602898-74d7ec12",
+  "self_check_at_mint": {
+    "carried_v4_through_v6_frozen_verified": true,
+    "b7_citation_sweep_runtime_driving_to_v7": true,
+    "b8_dependency_currency_seven_files": true,
+    "backend_exact_string": "pytorch_cpu_sdpa_backend_unclassified",
+    "device_from_every_event": true,
+    "torch_get_default_device_forbidden": true,
+    "receipts_v2_o_excl_v1_preserved": true,
+    "full_dual_plan_gate_required": true,
+    "live_probe_180_30_0_150_all_cpu": true,
+    "post_edit_helper_sha_pinned": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54",
+    "new_pins_live_reverified": true
+  },
+  "gate2_block_msg_id": "1785101926254-456441f6",
+  "co_lead_block_msg_id": "1785101887564-5e53ba42",
+  "claude_concession_msg_id": "1785102585019",
+  "implement_gate2_block_msg_id": "1785102608816-11f5c502",
+  "co_lead_implement_gate2_block_msg_id": "1785102559901-10acfd84",
+  "dependency_currency_freeze": {
+    "binding_mode": "PLAN_BYTES_FROZEN_EXPECTED_HASHES",
+    "not_implementation_time_discovery": true,
+    "pinned_file_count": 7,
+    "files": [
+      {
+        "path": "calm/hrm_text_158/layers.py",
+        "expected_sha256": "bae47480c31b5f9865ea7383febc26c70ad60891c12a71b2441531388e74517d"
+      },
+      {
+        "path": "calm/hrm_text_158/hrm.py",
+        "expected_sha256": "ec703218b79b18f21582136c36a1a198aea1e95a568d48dd1f2f692730f5d3cd"
+      },
+      {
+        "path": "calm/hrm_text_158/transformer.py",
+        "expected_sha256": "7e403a89c8a82ca45bc29d466231f6722fb989d71d46fd4ab17b24a9ddea7512"
+      },
+      {
+        "path": "calm/hrm_text_158/config.py",
+        "expected_sha256": "c56318f96cd57fd5faa5d79453c50b54a295bae5a03f80560b5cf59c2012c2e7"
+      },
+      {
+        "path": "calm/hrm_text_158/__init__.py",
+        "expected_sha256": "57790db112cb24891a761a8f531ef8acf47631a53e68dd0328d4b900a005f632"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/activation_relief.py",
+        "expected_sha256": "107d73ec52b885669146aa3b38e4a47c20923329aed8d010fb35b9b945571333",
+        "note": "VALIDATE_ONLY for edits; PINNED for dependency-currency live-vs-frozen check"
+      },
+      {
+        "path": "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py",
+        "expected_sha256_pre_edit": "cda9ba755c51639f086136a92ce80acb175358968ec90c1d6d0c6f348915cc47",
+        "expected_sha256": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54",
+        "note": "post-edit (ADDITIVE device field) is the load-bearing pin at governing execution"
+      }
+    ],
+    "closure_rationale": "Import closure for the frozen fixture helper: (1) helper imports HierarchicalReasoningModel/config via calm.hrm_text_158 package facade (__init__.py); (2) hrm.py directly imports config/transformer/layers + activation_relief surfaces used by the fixture path; (3) transformer.py imports config/layers. Therefore live-vs-frozen currency must cover layers.py, hrm.py, transformer.py, config.py, __init__.py, activation_relief.py, and the helper file (post-edit sha). Harness validates ALL seven at governing execution; mismatch STOP applies to the expanded list.",
+    "rule": "Harness MUST verify live sha256 of each of the seven listed files against these PLAN-frozen expected hashes at governing execution (helper uses post-edit expected_sha256). Drift => STOP / plan remint. Implementation MUST NOT discover or invent the file list.",
+    "live_reverify_at_plan_mint": {
+      "status": "EXECUTED",
+      "results": [
+        {
+          "path": "calm/hrm_text_158/layers.py",
+          "status": "match",
+          "sha256": "bae47480c31b5f9865ea7383febc26c70ad60891c12a71b2441531388e74517d"
+        },
+        {
+          "path": "calm/hrm_text_158/hrm.py",
+          "status": "match",
+          "sha256": "ec703218b79b18f21582136c36a1a198aea1e95a568d48dd1f2f692730f5d3cd"
+        },
+        {
+          "path": "calm/hrm_text_158/transformer.py",
+          "status": "match",
+          "sha256": "7e403a89c8a82ca45bc29d466231f6722fb989d71d46fd4ab17b24a9ddea7512"
+        },
+        {
+          "path": "calm/hrm_text_158/config.py",
+          "status": "match",
+          "sha256": "c56318f96cd57fd5faa5d79453c50b54a295bae5a03f80560b5cf59c2012c2e7"
+        },
+        {
+          "path": "calm/hrm_text_158/__init__.py",
+          "status": "match",
+          "sha256": "57790db112cb24891a761a8f531ef8acf47631a53e68dd0328d4b900a005f632"
+        },
+        {
+          "path": "calm/hrm_text_158/native_full_stack/activation_relief.py",
+          "status": "match",
+          "sha256": "107d73ec52b885669146aa3b38e4a47c20923329aed8d010fb35b9b945571333"
+        },
+        {
+          "path": "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py",
+          "status": "pre_edit_match",
+          "sha256": "cda9ba755c51639f086136a92ce80acb175358968ec90c1d6d0c6f348915cc47"
+        }
+      ],
+      "helper_note": "helper file still UNMUTATED at plan mint (pre-edit sha); post-edit expected_sha256 remains the governing pin"
+    }
+  },
+  "plan_v5_addendum_msg_id": "1785102617911-420ed2e7",
+  "co_lead_plan_v5_addendum_msg_id": "1785102595923",
+  "plan_gate2_block_msg_id": "1785103051806-5e053932",
+  "co_lead_plan_gate2_block_msg_id": "1785103015954-0ca7e657",
+  "claude_plan_gate2_concession_msg_id": "1785103036698",
+  "b7_citation_sweep_at_mint": {
+    "status": "EXECUTED",
+    "co_lead_cited_runtime_hits_fixed": [
+      {
+        "path": "frozen_write_surface.post_plus1_implement.UPDATE_notes.scripts/backward_saved_tensors_composition_audit_run.py",
+        "label": "PLAN_v5",
+        "snippet": "governing CLI targets PLAN_v5 + receipt_v2"
+      },
+      {
+        "path": "DEVELOPER_STEPS.S4_implement_receipt.actions",
+        "label": "PLAN_v5",
+        "snippet": "cite PLAN_v5 sha"
+      }
+    ],
+    "runtime_driving_stale_hits_after_fix": [],
+    "history_lineage_hits_allowed": 4,
+    "also_rewrote_non_authority_false_positives": [
+      "anchor_verification.anchors[A6].fact (PLAN_v5 -> this plan family)",
+      "canonical_hash_contract.tensor_note (3C PLAN_v5 -> 3C frozen_envelope)",
+      "stop_conditions stale-cite STOP reworded to 'superseded plan revision' without embedding PLAN_v5/v6 tokens"
+    ],
+    "rule": "superseded lineage allowed ONLY inside supersedes/provenance/history fields",
+    "result": "PASS"
+  }
+}

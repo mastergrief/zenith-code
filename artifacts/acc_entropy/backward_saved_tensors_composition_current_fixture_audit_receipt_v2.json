@@ -1,0 +1,79 @@
+{
+  "activation_relief_policy": null,
+  "argv": [
+    "scripts/backward_saved_tensors_composition_audit_run.py",
+    "--plan",
+    "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v7.json",
+    "--out",
+    "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v2.json"
+  ],
+  "audit_branch_id": "BR-BST-C-FP-DENSE",
+  "backend": "pytorch_cpu_sdpa_backend_unclassified",
+  "backend_binding_mode": "HONEST_UNCLASSIFIED_LABEL",
+  "bp_steps": 5,
+  "claim_ceiling": {
+    "no_cuda_fused_sdpa_generalization": true,
+    "no_readiness_row_flip": true,
+    "scope": "CURRENT CPU fixture composition only"
+  },
+  "current_repo_backward_classification_at_mint": "missing",
+  "deep_frozen_snapshot": true,
+  "dependency_currency": {
+    "calm/hrm_text_158/__init__.py": "57790db112cb24891a761a8f531ef8acf47631a53e68dd0328d4b900a005f632",
+    "calm/hrm_text_158/config.py": "c56318f96cd57fd5faa5d79453c50b54a295bae5a03f80560b5cf59c2012c2e7",
+    "calm/hrm_text_158/hrm.py": "ec703218b79b18f21582136c36a1a198aea1e95a568d48dd1f2f692730f5d3cd",
+    "calm/hrm_text_158/layers.py": "bae47480c31b5f9865ea7383febc26c70ad60891c12a71b2441531388e74517d",
+    "calm/hrm_text_158/native_full_stack/activation_relief.py": "107d73ec52b885669146aa3b38e4a47c20923329aed8d010fb35b9b945571333",
+    "calm/hrm_text_158/transformer.py": "7e403a89c8a82ca45bc29d466231f6722fb989d71d46fd4ab17b24a9ddea7512",
+    "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54"
+  },
+  "device": "cpu",
+  "device_binding_mode": "OBSERVED_FROM_EVERY_EVENT",
+  "device_census": {
+    "cpu": 180
+  },
+  "events_container_type": "tuple[SavedTensorEventEvidence, ...]",
+  "events_sha256": "4372d7edee644a5a47dfe68cf04e895a3643c893d36b9660d875166bf2e83deb",
+  "evidence_to_receipt_field_equality_validated": true,
+  "fixture_name": "bst_composition_cpu_tiny_v1",
+  "helper_qualname": "test_hrm_text_158_activation_relief._hrm_forward_saved_tensor_events",
+  "helper_sha256": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54",
+  "hook_event_count": 180,
+  "no_readiness_row_flip": true,
+  "non_generalization_clause": "CPU-fixture classification does NOT generalize to CUDA or fused-SDPA/memory-efficient/flash backward surfaces; separate runtime contract required. ternary-rotor: SDPA-saved q/k/v screen-excluded; attention precision via quantize-then-compute kernels, never saved-tensor swaps. Backend label is unclassified unless a replayable selector observation is bound.",
+  "observed_boundary_tensor_count": 30,
+  "observed_checkpoint_dummy_tensor_count": 0,
+  "observed_internal_payload_tensor_count": 150,
+  "partition_sha256": "6c268a34948f8aca9b509af0211457d55ed8b774921e0b072d7f7495c95736c8",
+  "plan_id": "backward_saved_tensors_composition_current_fixture_audit",
+  "plan_revision": "v7",
+  "plan_sha256": "ebbc5ecd413ad5c6d895e2e43dd16e8f9087a9eb8bac2efa83f1b3895a2b8fa2",
+  "probe_mode": "saved_tensors_hooks_instrumented",
+  "repo_head": "9963f5b8fea6084d13b76b3849a90b189791c2e2",
+  "repo_head_binding_mode": "LIVE_GIT_REV_PARSE",
+  "repo_head_live_matched": true,
+  "required_tokens": [
+    "EVIDENCE_SEAM_PRESENT",
+    "EVIDENCE_RECEIPT_EQUALITY",
+    "DEEP_FROZEN_SNAPSHOT",
+    "SINGLE_HELPER_CAMPAIGN",
+    "CANONICAL_HASH_CONTRACT",
+    "NO_READINESS_ROW_FLIP",
+    "OBSERVED_DEVICE_EVERY_EVENT",
+    "DEPENDENCY_CURRENCY_PINNED",
+    "LIVE_REPO_HEAD_MATCHED"
+  ],
+  "seed": 1701,
+  "sourced_from_evidence_not_recomputed": true,
+  "tokens": {
+    "CANONICAL_HASH_CONTRACT": true,
+    "DEEP_FROZEN_SNAPSHOT": true,
+    "DEPENDENCY_CURRENCY_PINNED": true,
+    "EVIDENCE_RECEIPT_EQUALITY": true,
+    "EVIDENCE_SEAM_PRESENT": true,
+    "LIVE_REPO_HEAD_MATCHED": true,
+    "NO_READINESS_ROW_FLIP": true,
+    "OBSERVED_DEVICE_EVERY_EVENT": true,
+    "SINGLE_HELPER_CAMPAIGN": true
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "actions": [
+    {
+      "action": "UPDATE",
+      "note": "ADDITIVE ONLY: pack_hook device field; post-edit sha matches plan pin",
+      "path": "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py",
+      "sha256": "c74ee97510d943bafb2c421003ddff73aa9ca61c56c0e78a61e5afec437bab54"
+    },
+    {
+      "action": "UPDATE",
+      "path": "scripts/backward_saved_tensors_composition_audit_run.py",
+      "sha256": "7bbdd5db3818145b7af08cb594873d2979e275af234f6d78488a0ce7f96c3090"
+    },
+    {
+      "action": "UPDATE",
+      "path": "calm/llm_computer/tests/test_hrm_text_158_backward_saved_tensors_composition_audit.py",
+      "sha256": "bdf33e7a9cd9b42b0fae4a67fa030aaedb8f412e747fb4582e62ad75f83902d7"
+    },
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v2.json",
+      "sha256": "dcc4997f514eb29cbcd9bec9e9caac0f4f818b36dbc950928bbd42104158de14"
+    }
+  ],
+  "adjacent_proof_tests": {
+    "activation_relief": "12 passed (shape/dtype consumers; additive device compatible)",
+    "note": "helper edit ADDITIVE ONLY inside _hrm_forward_saved_tensor_events.pack_hook"
+  },
+  "claim_ceiling": {
+    "authorizes_readiness_row_flip": false,
+    "current_repo_backward_stays_missing": true,
+    "no_cuda_fused_sdpa_generalization": true
+  },
+  "co_lead_diff_gate_folds_into_build": {
+    "every_receipt_identity_field_observed_not_literal": true,
+    "helper_diff_exactly_additive_sha_c74ee975": true,
+    "plans_v1_through_v6_rehash_exact": true,
+    "runtime_source_no_superseded_plan_authority": true
+  },
+  "expected_branch": "BR-BST-C-FP-DENSE",
+  "minted_at_utc": "2026-07-26T22:05:17Z",
+  "no_commit_push": true,
+  "observed_branch": "BR-BST-C-FP-DENSE",
+  "plan_gate1_msg_id": "1785103236833-6fc5ce1d",
+  "plan_gate2_msg_id": "1785103322488-e6c10536",
+  "plan_path": "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v7.json",
+  "plan_sha256": "ebbc5ecd413ad5c6d895e2e43dd16e8f9087a9eb8bac2efa83f1b3895a2b8fa2",
+  "plans_v1_through_v6_rehash": {
+    "v1": "dd0072a873d0a440da6a34ab679a49a9c9c85f4de05722765459bfdb4c7628ab",
+    "v2": "3b3f75018367d08f310c927e694382f5daf704f7271482dbd9fe445b8c07a5da",
+    "v3": "6bd9a45abf1210c60d9db53daa14f5519e9a910359d4cc16b29aaf85539a8530",
+    "v4": "3e4843b1984fb792caf0652e2c0c1bf04fc61fe1d632922c0be0e2e78d12cae6",
+    "v5": "629f2518e6c5c7f6ade370e68188e04026aa012af1b577adefbb3fb0a1135d69",
+    "v6": "58d936544e33c0e33d69283a691a76ae97d1df0b3f5009f3992dbc1fc507792c"
+  },
+  "plus1_implement_msg_id": "1785103346213-75903a41",
+  "porcelain_truth": {
+    "allowlisted_paths_only_claimed": true,
+    "claimed_paths": [
+      "calm/llm_computer/tests/test_hrm_text_158_activation_relief.py",
+      "scripts/backward_saved_tensors_composition_audit_run.py",
+      "calm/llm_computer/tests/test_hrm_text_158_backward_saved_tensors_composition_audit.py",
+      "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v2.json",
+      "artifacts/acc_entropy/backward_saved_tensors_composition_IMPLEMENT_receipt_v2.json"
+    ],
+    "no_commit_push": true,
+    "unrelated_dirty_worktree_present": true
+  },
+  "repo_head": "9963f5b8fea6084d13b76b3849a90b189791c2e2",
+  "routed_to": "claude plan_gate1 / implement gate-1 ONLY",
+  "schema": "hrm_text_158_backward_saved_tensors_composition_IMPLEMENT_receipt/v2",
+  "shippable_null": true,
+  "supersedes_implement_v1_sha256": "b3caf65f30e78e555e760a380e4f223f6501f37e6d1686e50ab68efb64bd48c6",
+  "task_id": "1785101377911-8bb9bce3",
+  "v1_bytes_preserved": {
+    "audit_receipt_v1": "731cc4aca75a3eb3cfd5628a3852947395effcfee5c79635b363289e513602ab",
+    "implement_receipt_v1": "b3caf65f30e78e555e760a380e4f223f6501f37e6d1686e50ab68efb64bd48c6"
+  },
+  "validation": {
+    "audit_receipt_sha256": "dcc4997f514eb29cbcd9bec9e9caac0f4f818b36dbc950928bbd42104158de14",
+    "gap_map": {
+      "backward_saved_tensors_transients": "missing",
+      "command": "PYTHONPATH=. timeout 120 python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture current_repo_scaffold"
+    },
+    "governing_command": "cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158 && PYTHONPATH=. timeout 300 python3 scripts/backward_saved_tensors_composition_audit_run.py --plan artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v7.json --out artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v2.json",
+    "governing_result": "exit 0; BR-BST-C-FP-DENSE; hook=180; device_census={cpu:180}; backend=pytorch_cpu_sdpa_backend_unclassified; repo_head_live_matched; dependency_currency=7; PENDING not observed",
+    "pytest": [
+      {
+        "result": "27 passed",
+        "suites": "test_hrm_text_158_backward_saved_tensors_composition_audit.py"
+      },
+      {
+        "result": "12 passed",
+        "suites": "test_hrm_text_158_activation_relief.py (VALIDATE_ONLY adjacent)"
+      },
+      {
+        "result": "9 passed, 32 deselected",
+        "suites": "test_hrm_text_158_full_sub2_runtime_readiness.py -k filter (VALIDATE_ONLY)"
+      }
+    ]
+  }
+}

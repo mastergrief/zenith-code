@@ -1,0 +1,76 @@
+{
+  "actions": [
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "scripts/backward_saved_tensors_composition_audit_run.py",
+      "sha256": "f9455a50cb9840b6560fefd5453fc713cff673be0e6f80157e422f6e89b7c218"
+    },
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "calm/llm_computer/tests/test_hrm_text_158_backward_saved_tensors_composition_audit.py",
+      "sha256": "5f2bd0a22b7edf2c120fd921ab5bdfb1b504e636bc09fccfb2800459170b5a28"
+    },
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v1.json",
+      "sha256": "731cc4aca75a3eb3cfd5628a3852947395effcfee5c79635b363289e513602ab"
+    }
+  ],
+  "claim_ceiling": {
+    "authorizes_readiness_row_flip": false,
+    "current_repo_backward_stays_missing": true,
+    "no_cuda_fused_sdpa_generalization": true
+  },
+  "expected_branch": "BR-BST-C-FP-DENSE",
+  "gate2_folds_into_build": {
+    "shape_stored_as_immutable_tuple": true,
+    "single_helper_campaign_source_guard": true
+  },
+  "minted_at_utc": "2026-07-26T21:44:46Z",
+  "no_commit_push": true,
+  "observed_branch": "BR-BST-C-FP-DENSE",
+  "plan_gate1_msg_id": "1785102004588-8e6d6d16",
+  "plan_gate2_msg_id": "1785102084843-a1109446",
+  "plan_path": "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v4.json",
+  "plan_sha256": "3e4843b1984fb792caf0652e2c0c1bf04fc61fe1d632922c0be0e2e78d12cae6",
+  "plus1_implement_msg_id": "1785102105683-2b8c6db1",
+  "porcelain_truth": {
+    "allowlisted_paths_only_claimed": true,
+    "claimed_paths": [
+      "scripts/backward_saved_tensors_composition_audit_run.py",
+      "calm/llm_computer/tests/test_hrm_text_158_backward_saved_tensors_composition_audit.py",
+      "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v1.json",
+      "artifacts/acc_entropy/backward_saved_tensors_composition_IMPLEMENT_receipt_v1.json"
+    ],
+    "no_commit_push": true,
+    "unrelated_dirty_worktree_present": true
+  },
+  "repo_head": "9963f5b8fea6084d13b76b3849a90b189791c2e2",
+  "routed_to": "claude plan_gate1 / implement gate-1 ONLY",
+  "schema": "hrm_text_158_backward_saved_tensors_composition_IMPLEMENT_receipt/v1",
+  "shippable_null": true,
+  "task_id": "1785101377911-8bb9bce3",
+  "validation": {
+    "audit_receipt_sha256": "731cc4aca75a3eb3cfd5628a3852947395effcfee5c79635b363289e513602ab",
+    "gap_map": {
+      "backward_saved_tensors_transients": "missing",
+      "command": "PYTHONPATH=. timeout 120 python3 scripts/hrm_text_158_full_sub2_runtime_readiness.py --fixture current_repo_scaffold"
+    },
+    "governing_command": "cd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158 && PYTHONPATH=. timeout 300 python3 scripts/backward_saved_tensors_composition_audit_run.py --plan artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v4.json --out artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v1.json",
+    "governing_result": "exit 0; BR-BST-C-FP-DENSE; hook_event_count=180; internal=150; boundary=30; dummy=0; deep_frozen_snapshot=true; events_container_type=tuple[SavedTensorEventEvidence, ...]; PENDING forbidden (not observed)",
+    "pytest": [
+      {
+        "result": "16 passed",
+        "suites": "test_hrm_text_158_backward_saved_tensors_composition_audit.py"
+      },
+      {
+        "result": "12 passed",
+        "suites": "test_hrm_text_158_activation_relief.py (VALIDATE_ONLY)"
+      },
+      {
+        "result": "9 passed, 32 deselected",
+        "suites": "test_hrm_text_158_full_sub2_runtime_readiness.py -k 'backward or missing_required or current_repo' (VALIDATE_ONLY)"
+      }
+    ]
+  }
+}

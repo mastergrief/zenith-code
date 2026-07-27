@@ -127,6 +127,7 @@ def _hrm_forward_saved_tensor_events(*, activation_relief_policy=None, bp_steps:
                 "numel": int(tensor.numel()),
                 "dtype": str(tensor.dtype),
                 "requires_grad": bool(tensor.requires_grad),
+                "device": str(tensor.device),
             }
         )
         return tensor

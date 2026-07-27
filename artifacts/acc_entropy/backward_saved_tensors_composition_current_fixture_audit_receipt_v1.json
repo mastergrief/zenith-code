@@ -1,0 +1,57 @@
+{
+  "activation_relief_policy": null,
+  "argv": [
+    "scripts/backward_saved_tensors_composition_audit_run.py",
+    "--plan",
+    "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_PLAN_v4.json",
+    "--out",
+    "artifacts/acc_entropy/backward_saved_tensors_composition_current_fixture_audit_receipt_v1.json"
+  ],
+  "audit_branch_id": "BR-BST-C-FP-DENSE",
+  "backend": "pytorch_eager_cpu",
+  "bp_steps": 5,
+  "claim_ceiling": {
+    "no_cuda_fused_sdpa_generalization": true,
+    "no_readiness_row_flip": true,
+    "scope": "CURRENT CPU fixture composition only"
+  },
+  "current_repo_backward_classification_at_mint": "missing",
+  "deep_frozen_snapshot": true,
+  "device": "cpu",
+  "events_container_type": "tuple[SavedTensorEventEvidence, ...]",
+  "events_sha256": "0d6a539f4aea036a6f382fa8dfc3f88936bd5cd456f92ceaa39ee869cdb71d4f",
+  "evidence_to_receipt_field_equality_validated": true,
+  "fixture_name": "bst_composition_cpu_tiny_v1",
+  "helper_qualname": "test_hrm_text_158_activation_relief._hrm_forward_saved_tensor_events",
+  "helper_sha256": "cda9ba755c51639f086136a92ce80acb175358968ec90c1d6d0c6f348915cc47",
+  "hook_event_count": 180,
+  "no_readiness_row_flip": true,
+  "non_generalization_clause": "CPU-fixture classification does NOT generalize to CUDA or fused-SDPA/memory-efficient/flash backward surfaces; separate runtime contract required. ternary-rotor: SDPA-saved q/k/v screen-excluded; attention precision via quantize-then-compute kernels, never saved-tensor swaps.",
+  "observed_boundary_tensor_count": 30,
+  "observed_checkpoint_dummy_tensor_count": 0,
+  "observed_internal_payload_tensor_count": 150,
+  "partition_sha256": "6c268a34948f8aca9b509af0211457d55ed8b774921e0b072d7f7495c95736c8",
+  "plan_id": "backward_saved_tensors_composition_current_fixture_audit",
+  "plan_revision": "v4",
+  "plan_sha256": "3e4843b1984fb792caf0652e2c0c1bf04fc61fe1d632922c0be0e2e78d12cae6",
+  "probe_mode": "saved_tensors_hooks_instrumented",
+  "repo_head": "9963f5b8fea6084d13b76b3849a90b189791c2e2",
+  "required_tokens": [
+    "EVIDENCE_SEAM_PRESENT",
+    "EVIDENCE_RECEIPT_EQUALITY",
+    "DEEP_FROZEN_SNAPSHOT",
+    "SINGLE_HELPER_CAMPAIGN",
+    "CANONICAL_HASH_CONTRACT",
+    "NO_READINESS_ROW_FLIP"
+  ],
+  "seed": 1701,
+  "sourced_from_evidence_not_recomputed": true,
+  "tokens": {
+    "CANONICAL_HASH_CONTRACT": true,
+    "DEEP_FROZEN_SNAPSHOT": true,
+    "EVIDENCE_RECEIPT_EQUALITY": true,
+    "EVIDENCE_SEAM_PRESENT": true,
+    "NO_READINESS_ROW_FLIP": true,
+    "SINGLE_HELPER_CAMPAIGN": true
+  }
+}
