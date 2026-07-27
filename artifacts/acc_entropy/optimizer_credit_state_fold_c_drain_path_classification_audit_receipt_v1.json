@@ -1,0 +1,94 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_fold_c_drain_path_audit/v1",
+  "plan_path": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v3.json",
+  "plan_sha256": "b5c6409cf0a566f54395b6452c867f6de2a84ab9292096e7fb3e3b9d2630bcbe",
+  "plan_revision": "v3",
+  "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+  "parity_fixture_descriptor_sha256": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+  "weighted_grad_sha256": "333f90cd26351a7a0ef346a98402d007e0be3c149cd9f3dc9fcf487d4e325521",
+  "weighted_grad_dtype": "torch.float32",
+  "weighted_grad_shape": [
+    2,
+    3
+  ],
+  "weighted_grad_numel": 6,
+  "credit_sha256": "691cbfba02d8574bcba4b334073a0b84c5bd3cbf595b2beb32d35e02c6400321",
+  "credit_dtype": "torch.float32",
+  "credit_shape": [
+    2,
+    3
+  ],
+  "credit_numel": 6,
+  "credit_scheme": "full_magnitude_ceiling",
+  "fp_moves_sha256": "d17f385da2a698f26fbfb6d3a716622804409538e8fd8a9d54674edfab7c79e3",
+  "integer_moves_sha256": "d17f385da2a698f26fbfb6d3a716622804409538e8fd8a9d54674edfab7c79e3",
+  "mismatch_count": 0,
+  "mismatch_frac": 0.0,
+  "observed_dense_surfaces": [
+    "projected_moves"
+  ],
+  "observed_surfaces_sha256": "419bcfc632e77cd085f56b3ebd8cff3c168384a7f77a669e9565a7a3b20683e1",
+  "probe_mode": "fold_c_drain_path_cpu_projection",
+  "repo_head_sha": "566346aa3b4dac59d168bfeee49cd61dd866b1f1",
+  "observed_device": "cpu",
+  "observed_devices_per_tensor": {
+    "credit": "cpu",
+    "fp_moves": "cpu",
+    "integer_moves": "cpu",
+    "weighted_grad": "cpu"
+  },
+  "audit_branch_id": "BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS",
+  "recommended_next_slice": "dense-surface elimination / re-carriering measurement contract (NOT rotor ride-along; NOT flip)",
+  "observation_evidence_type": "FoldCDrainPathEvidence",
+  "backend": {
+    "field_type": "declared_contract",
+    "value": "pytorch_eager_cpu"
+  },
+  "runtime_command_argv": [
+    "python",
+    "scripts/optimizer_credit_state_fold_c_drain_path_audit_run.py",
+    "--plan",
+    "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v3.json",
+    "--out",
+    "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_receipt_v1.json"
+  ],
+  "runtime_command_sha256": "5ded5b78ad1482f84bb9adf8a3daddcd17a2c00e85800dc35d0acb898c605df5",
+  "expected_branch_seed158": "BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS",
+  "transient_fp_debt_remains": true,
+  "claim_ceiling": {
+    "may_claim": [
+      "CPU measurement-bound drain-path classification under the frozen fixture+credit-constructor+projection entrypoints",
+      "terminal taxonomy branch from that measurement (expected BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS)",
+      "non-binding recommended_next_slice routing string",
+      "that optimizer_credit_state remains classified transient_fp_debt under the conjunctive flip bar"
+    ],
+    "must_not_claim": [
+      "readiness-row flip / optimizer_credit_state_resolved=true / full_sub2_runtime_ready_for_science",
+      "sub2 / ready_to_flip / GPU receipt present",
+      "discharge of dense debt objects / drain fix implemented",
+      "AUDIT_PASS_CPU / optimizer_state_eligible_exclusion_proven as success criteria of THIS slice",
+      "generalization of this CPU fixture classification to CUDA / trainer / RACC drain-lever arms",
+      "activations/KV ternary-rotor progress",
+      "that hardcoded real_native_integer_*_present=false fields are a measurement of native-path absence"
+    ],
+    "transient_fp_debt_remains": true,
+    "no_readiness_row_flip": true,
+    "authorizes_readiness_row_flip": false,
+    "authorizes_sub2_or_resolved": false
+  },
+  "required_tokens": [
+    "FOLD_C_DRAIN_PATH_MEASUREMENT_ONLY",
+    "OBSERVED_DEVICE_FROM_BOUND_TENSORS",
+    "BACKEND_DECLARED_CONTRACT",
+    "PENDING_FORBIDDEN_AS_TERMINAL",
+    "TRANSIENT_FP_DEBT_REMAINS",
+    "NO_READINESS_ROW_FLIP",
+    "EVIDENCE_SEAM_PRESENT",
+    "EVIDENCE_RECEIPT_EQUALITY",
+    "HOSTILE_LITERAL_DEVICE_REJECT",
+    "HOSTILE_RECOMPUTE_REJECT",
+    "UPDATE_EMPTY",
+    "CREDITDIR_WRITES_OUT"
+  ],
+  "evidence_to_receipt_field_equality_validated": true
+}

@@ -1,0 +1,629 @@
+{
+  "plan_id": "optimizer_credit_state_fold_c_drain_path_classification_audit",
+  "plan_revision": "v3",
+  "packet_revision": "v3",
+  "mode": "planning",
+  "SIZING": "MEDIUM",
+  "autonomy_rung": "L2",
+  "risk": "high",
+  "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "repo_branch": "feature/hrm-text-1.58",
+  "repo_head_at_plan_mint": "566346aa3b4dac59d168bfeee49cd61dd866b1f1",
+  "parent_sha_anchor": "566346aa3b4dac59d168bfeee49cd61dd866b1f1",
+  "predecessor_commits": {
+    "3C_BR-3C-C-DENSE-LEAK": "9963f5b8fea6084d13b76b3849a90b189791c2e2",
+    "BST_BR-BST-C-FP-DENSE": "566346aa3b4dac59d168bfeee49cd61dd866b1f1"
+  },
+  "task_id": "1785138376642-83f78a6e",
+  "dispatch_msg_id": "1785138397583-b2a70498",
+  "dual_co_lead_concur_msg_ids": {
+    "plan_dev_take": "1785138254115-b9108fb3",
+    "co_lead_concur_counter": "1785138340603-5fc4e1dc",
+    "co_lead_ack_to_plan_dev": "1785138359534-481520bd"
+  },
+  "3C_terminal_synthesis_msg_id": "1785101345912-58ea0a4e",
+  "decision_contract": {
+    "intent": "MEASUREMENT-ONLY classify the optimizer_credit_state \u2192 transient_fp_debt drain path under a frozen CPU fixture after banked 3C DENSE-LEAK + BST FP-DENSE; emit mechanism recommendation (update-law vs re-carriering) without minting readiness/sub2",
+    "authority": "Gabe standing auto-research directive (verbatim in dispatch) + dual co-lead Fold C concur; peer gates plan\u2192+1 implement\u2192diff/validation\u2192commit\u2192push",
+    "executor": "plan-dev (codex) plan + bounded implementation after +1 implement",
+    "mode": "planning",
+    "risk": "high",
+    "confidence": "high",
+    "receipt_sink": "claude gate-1 ONLY; co_lead gate-2 on frozen handoff",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation",
+      "commit",
+      "push"
+    ],
+    "escalation_rule": "STOP on trainer/GPU/.pt/production-readiness surfaces unless break-glass +1 with transition_fallback_used=true; underspecified drain-path surface \u2192 STOP to claude (never @gabe)",
+    "validation_proof": "evidence-seam replay + preregistered branch taxonomy + exhaustive receipt field census",
+    "autonomy_rung": "L2"
+  },
+  "provenance": {
+    "gabe_standing_auto_research_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science\u2026",
+    "chosen": "Fold C measurement contract (optimizer_credit_state \u2192 transient_fp_debt drain-path classification)",
+    "rejected": [
+      "activations/KV ternary-rotor lane as ride-along inside Fold C",
+      "drain-fix / readiness flip / sub2 upgrade in the same slice",
+      "using hardcoded real_native_integer_*_present=false as Fold C trigger",
+      "invoking creditdir RACC drain-lever GPU/train runs as this slice's governing measurement"
+    ]
+  },
+  "frozen_preconditions": {
+    "P1_measurement_not_remediation": "Measurement-contract first, NOT remediation \u2014 no drain fix, no readiness flip, no sub2 upgrade in this slice.",
+    "P2_claim_ceiling": "Claim ceiling pre-registered: transient_fp_debt remains until a separately gated flip bar clears; no readiness/sub2 claim from this slice.",
+    "P3_write_surface_allowlist": "Credit-tree / HRM write-surface allowlist exact; STOP on trainer/GPU/.pt/production-readiness unless break-glass +1 with transition_fallback_used=true.",
+    "P4_branch_taxonomy_evidence_seam": "Preregistered branch taxonomy with honest expected branch incl. shippable-null + evidence-seam object-identity binding (3C banked checklist).",
+    "P5_non_merge_rotor": "Explicit non-merge: activations/KV rotor lane must not ride along inside Fold C scope."
+  },
+  "claim_ceiling": {
+    "may_claim": [
+      "CPU measurement-bound drain-path classification under the frozen fixture+credit-constructor+projection entrypoints",
+      "terminal taxonomy branch from that measurement (expected BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS)",
+      "non-binding recommended_next_slice routing string",
+      "that optimizer_credit_state remains classified transient_fp_debt under the conjunctive flip bar"
+    ],
+    "must_not_claim": [
+      "readiness-row flip / optimizer_credit_state_resolved=true / full_sub2_runtime_ready_for_science",
+      "sub2 / ready_to_flip / GPU receipt present",
+      "discharge of dense debt objects / drain fix implemented",
+      "AUDIT_PASS_CPU / optimizer_state_eligible_exclusion_proven as success criteria of THIS slice",
+      "generalization of this CPU fixture classification to CUDA / trainer / RACC drain-lever arms",
+      "activations/KV ternary-rotor progress",
+      "that hardcoded real_native_integer_*_present=false fields are a measurement of native-path absence"
+    ],
+    "transient_fp_debt_remains": true,
+    "no_readiness_row_flip": true
+  },
+  "standing_plan_axes": [
+    "input -> command -> exact observed object/evidence seam -> receipt",
+    "object-identity on every cross-object edge",
+    "any *_validated=true requires field-census verification",
+    "measurement cannot authorize readiness-row flip alone",
+    "observed-vs-literal on every runtime-identity receipt field",
+    "deep-immutable evidence; canonical hash schema with NO optional fields",
+    "bool-rejecting exact-int checks",
+    "dependency-currency freeze with import-closure",
+    "definite write allowlist (no conditional UPDATE)",
+    "hardcoded real_native_integer_*_present=false MUST NOT gate Fold C",
+    "observed_device from bound tensors (not plan declaration)",
+    "backend is declared_contract not measurement"
+  ],
+  "folds": {
+    "A_drain_path_measure": {
+      "in_scope": true,
+      "description": "CPU-only: reuse frozen 3C_C1_dry_run_fixture_seed158; reconstruct weighted_grad via bounded_delta_learner.weighted_grad_from_captures; credit via credit_from_weighted_grad(scheme=full_magnitude_ceiling); project via credit_bridge project_fp_gradient_to_moves vs project_integer_credit_to_moves; bind exact tensors into immutable FoldCDrainPathEvidence; also bind banked 3C observed_dense_surfaces identity (must include projected_moves) from the SAME fixture observation call.",
+      "must_not": [
+        "GPU",
+        "trainer loop",
+        "creditdir RACC drain-lever launch",
+        "readiness-row flip",
+        "use hardcoded real_native_integer_*_present fields as native-path measurement",
+        "recompute receipt hashes from a second projection call",
+        "literal device / torch.get_default_device as observed_device source",
+        "presenting backend as an observed measurement"
+      ]
+    },
+    "B_classify": {
+      "in_scope": true,
+      "depends_on": "A",
+      "description": "Apply preregistered Fold C branch taxonomy to FoldCDrainPathEvidence; mint O_EXCL audit receipt bound to evidence object."
+    },
+    "C_drain_fix_or_remediation": {
+      "in_scope": false,
+      "deferred": true,
+      "forbidden": "any drain implementation / update-law code change / readiness flip"
+    },
+    "D_activations_kv_ternary_rotor": {
+      "in_scope": false,
+      "explicit_non_merge": true
+    },
+    "E_gpu_runtime_receipt": {
+      "in_scope": false
+    }
+  },
+  "branch_taxonomy_preregistered": {
+    "PENDING_forbidden_as_terminal": true,
+    "governing_expected_branch": "BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS",
+    "governing_expected_branch_rationale": "LIVE PROBE at plan mint on frozen seed-158 fixture: weighted_grad_from_captures \u2192 credit_from_weighted_grad(full_magnitude_ceiling) \u2192 project_fp vs project_integer mismatch_count=0/6 (frac=0.0); banked 3C observation on same fixture still surfaces projected_moves dense (BR-3C-C-DENSE-LEAK). Therefore parity holds AND dense debt remains \u2192 shippable null recommending re-carriering/dense-surface elimination as next mechanism route; update-law pivot is NOT forced by fractional collision on this fixture; transient_fp_debt remains; NO flip.",
+    "shippable_nulls": [
+      "BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS",
+      "BR-FOLD-C-MEASUREMENT-INVALID"
+    ],
+    "branches": [
+      {
+        "id": "BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS",
+        "predicate": "mismatch_count==0 AND banked_or_fresh_observed_dense_surfaces includes projected_moves (or other required dense debt surface) under frozen fixture",
+        "meaning": "Credit projection parity holds; dense transient debt remains \u2014 recommend re-carriering / dense-surface elimination follow-on; NOT a readiness flip.",
+        "honest_expected": true,
+        "recommended_next_slice_seed": "dense-surface elimination / re-carriering measurement contract (NOT rotor ride-along; NOT flip)"
+      },
+      {
+        "id": "BR-FOLD-C-FRACTIONAL-COLLISION",
+        "predicate": "mismatch_count>0 under frozen credit constructor + projection pair",
+        "meaning": "FP vs integer credit projection disagree \u2014 recommend update-law pivot measurement follow-on; still NOT a readiness flip.",
+        "honest_expected": false,
+        "recommended_next_slice_seed": "update-law pivot measurement contract (credit_ranking_update_law_pivot_deferred debt anchor)"
+      },
+      {
+        "id": "BR-FOLD-C-MEASUREMENT-INVALID",
+        "predicate": "evidence seam broken / hash disagreement / fixture bind fail / HEAD mismatch / bool-as-int / missing required identity fields",
+        "meaning": "Do not classify mechanism; remint or repair measurement.",
+        "honest_expected": false
+      },
+      {
+        "id": "BR-FOLD-C-NATIVE-PATH-SIGNAL-INCOMPLETE",
+        "predicate": "measurement observes incomplete native-integer path signals without satisfying conjunctive flip bar",
+        "meaning": "Incomplete proof \u2014 MEASUREMENT_INVALID-adjacent named branch; do not invent discharge.",
+        "honest_expected": false
+      }
+    ],
+    "non_authorizing_note": "No Fold C branch authorizes readiness-row flip; conjunctive future_proof_gate at optimizer_credit_state.py:388-393 still blocks"
+  },
+  "measurement_provenance": {
+    "axis": "measurement_input \u2192 runtime_command \u2192 exact_observed_object_evidence_seam \u2192 receipt_binding",
+    "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+    "fixture_reuse": "scripts/optimizer_credit_state_3C_readonly_audit_run.py::_dry_run_fixture (seed=158, BitLinear 3\u21922, q zeros, x=[[1,-2,3]], target=[[2,-1]])",
+    "parity_fixture_descriptor_sha256": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+    "credit_constructor_frozen": {
+      "module": "calm.hrm_text_158.native_full_stack.bounded_delta_learner",
+      "weighted_grad": "weighted_grad_from_captures(inputs, grad_outputs, weight_shape=...)",
+      "credit": "credit_from_weighted_grad(weighted_grad, scheme='full_magnitude_ceiling')",
+      "scheme_alternates_out_of_governing": [
+        "pow2_bucket",
+        "strict_sign_credit",
+        "pow2_bucket_credit"
+      ]
+    },
+    "projection_entrypoints_frozen": {
+      "module": "scripts/hrm_text_158_credit_bridge.py",
+      "fp": "project_fp_gradient_to_moves",
+      "integer": "project_integer_credit_to_moves",
+      "gpu_null_parity_paths": "OUT of governing measurement"
+    },
+    "dense_debt_binding": {
+      "source": "SAME fixture via run_integer_path_dense_surface_observation_with_alloc_guard \u2192 observed_surfaces identity",
+      "banked_3C_receipt": "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v2.json",
+      "banked_branch": "BR-3C-C-DENSE-LEAK",
+      "banked_observed_dense_surfaces": [
+        "projected_moves"
+      ]
+    },
+    "live_probe_at_plan_mint": {
+      "repo_head": "566346aa3b4dac59d168bfeee49cd61dd866b1f1",
+      "weighted_grad": [
+        [
+          -2.0,
+          4.0,
+          -6.0
+        ],
+        [
+          1.0,
+          -2.0,
+          3.0
+        ]
+      ],
+      "credit_full_magnitude_ceiling": [
+        [
+          2.0,
+          -4.0,
+          6.0
+        ],
+        [
+          -1.0,
+          2.0,
+          -3.0
+        ]
+      ],
+      "fp_moves": [
+        1,
+        -1,
+        1,
+        -1,
+        1,
+        -1
+      ],
+      "integer_moves": [
+        1,
+        -1,
+        1,
+        -1,
+        1,
+        -1
+      ],
+      "mismatch_count": 0,
+      "mismatch_frac": 0.0,
+      "observed_dense_surfaces": [
+        "projected_moves"
+      ],
+      "honest_expected_terminal_branch": "BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS",
+      "note": "Also checked strict_sign_credit and pow2_bucket_credit \u2192 mismatch 0/6 on this fixture; governing scheme remains full_magnitude_ceiling only.",
+      "observed_device_uniform": "cpu",
+      "observed_devices_per_tensor": {
+        "weighted_grad": "cpu",
+        "credit": "cpu",
+        "fp_moves": "cpu",
+        "integer_moves": "cpu"
+      }
+    },
+    "device": {
+      "plan_mint_note_only": "cpu",
+      "receipt_rule": "MUST NOT copy this declaration into receipt.observed_device; receipt uses observed_device from bound tensors"
+    },
+    "backend": {
+      "field_type": "declared_contract",
+      "value": "pytorch_eager_cpu",
+      "honesty": "BST honest-label pattern \u2014 NOT a measurement; never presented as observed backend selection proof; no SDPA/fused backend claim"
+    }
+  },
+  "observation_evidence_seam": {
+    "type_name": "FoldCDrainPathEvidence",
+    "immutable": true,
+    "must_carry": [
+      "fixture_recipe_name",
+      "parity_fixture_descriptor_sha256",
+      "weighted_grad_sha256 + dtype/shape/numel (exact tensor from weighted_grad_from_captures)",
+      "credit_sha256 + dtype/shape/numel + credit_scheme==full_magnitude_ceiling (exact tensor from credit_from_weighted_grad)",
+      "fp_moves_sha256 + integer_moves_sha256 + mismatch_count (exact int) + mismatch_frac",
+      "observed_dense_surfaces tuple + observed_surfaces_sha256 from SAME alloc-guard observation",
+      "probe_mode == fold_c_drain_path_cpu_projection",
+      "repo_head_sha observed at measurement time",
+      "observed_device: str derived from EXACT bound tensors (weighted_grad/credit/fp_moves/integer_moves); uniformity-checked across all four \u2014 disagreement \u2192 MEASUREMENT_INVALID; literal torch.get_default_device / plan-declared device FORBIDDEN as source"
+    ],
+    "receipt_rule": "Receipt fields MUST be copied from returned evidence snapshot; second projection recompute / hand-authored mismatch_count / literal repo_head = STOP / hostile REJECT",
+    "identity_edges": [
+      "fixture model/captures \u2192 weighted_grad",
+      "weighted_grad \u2192 credit (scheme pin)",
+      "credit+q_levels \u2192 integer_moves",
+      "weighted_grad+q_levels \u2192 fp_moves",
+      "same captures \u2192 observed_dense_surfaces",
+      "evidence \u2192 receipt field equality census",
+      "bound tensors \u2192 observed_device (uniformity)"
+    ],
+    "device_binding": {
+      "observed_device_source": "per-tensor .device of the EXACT bound weighted_grad, credit, fp_moves, integer_moves tensors (string form e.g. cpu / cuda:0)",
+      "uniformity_rule": "all four must agree; else BR-FOLD-C-MEASUREMENT-INVALID",
+      "forbidden_sources": [
+        "torch.get_default_device()",
+        "plan measurement_provenance.device declaration copied into receipt",
+        "hardcoded literal \"cpu\""
+      ],
+      "live_probe_observed_device_uniform": "cpu"
+    }
+  },
+  "canonical_hash_contract": {
+    "algo": "sha256 lowercase hex",
+    "tensor_envelope": "contiguous CPU bytes + dtype + shape JSON envelope (3C frozen_envelope pattern); no optional fields",
+    "mismatch_count": "exact int; bool rejected",
+    "validators_required": [
+      "validate_evidence_receipt_field_equality",
+      "validate_live_repo_head_matches_claim",
+      "validate_dependency_currency_against_plan_pins",
+      "validate_credit_scheme_exact",
+      "validate_mismatch_count_exact_int",
+      "validate_observed_dense_surfaces_sha256",
+      "validate_observed_device_uniformity",
+      "validate_observed_device_from_bound_tensors_not_literal"
+    ],
+    "hostile_tests_required": [
+      "recompute_projection_for_receipt_fields",
+      "hand_authored_mismatch_zero",
+      "bool_as_mismatch_count",
+      "credit_scheme_drift",
+      "literal_repo_head",
+      "observed_surfaces_order_drift",
+      "HEAD_mismatch",
+      "dependency_currency_drift",
+      "literal_device",
+      "device_nonuniformity"
+    ]
+  },
+  "anchor_verification": {
+    "status": "VERIFIED_LIVE_AT_V1_MINT",
+    "anchors": [
+      {
+        "id": "A1_conjunctive_flip_bar",
+        "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "lines": "388-393",
+        "file_sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230",
+        "claim": "future_proof_gate requires native attribution+ranking+no_hidden+gpu receipt; measurement alone cannot flip",
+        "result": "PASS"
+      },
+      {
+        "id": "A2_update_law_debt_anchor",
+        "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "lines": "68",
+        "file_sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230",
+        "claim": "credit_ranking_update_law_pivot_deferred remains a required debt anchor",
+        "result": "PASS"
+      },
+      {
+        "id": "A3_weighted_grad_credit_constructors",
+        "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "lines": "559,728",
+        "file_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+        "claim": "weighted_grad_from_captures + credit_from_weighted_grad(full_magnitude_ceiling) live",
+        "result": "PASS"
+      },
+      {
+        "id": "A4_projection_entrypoints",
+        "path": "scripts/hrm_text_158_credit_bridge.py",
+        "lines": "360,370",
+        "file_sha256": "3846a0754083daa92e195a087bc53ec90ea2868d8685e1af714d9adf86b235ac",
+        "claim": "project_fp_gradient_to_moves + project_integer_credit_to_moves live; GPU null-parity paths not governing",
+        "result": "PASS"
+      },
+      {
+        "id": "A5_banked_3C_receipt",
+        "path": "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v2.json",
+        "file_sha256": "37ba0e827e46df420be8905aceadf872e4292cae6c7be49f4465da627bd748df",
+        "claim": "BR-3C-C-DENSE-LEAK / projected_moves / fold_C_deferred=true banked",
+        "result": "PASS"
+      },
+      {
+        "id": "A6_readiness_transient_fp_debt_class",
+        "path": "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "lines": "60,82",
+        "file_sha256": "0ecbabf1200ca6a9e001cbcc439bf6d7ba5a56f368711919e7de61a775e8f519",
+        "claim": "optimizer_credit_state is a named surface; RUNTIME_CLASS_TRANSIENT_FP_DEBT live",
+        "result": "PASS"
+      }
+    ]
+  },
+  "dependency_currency_freeze": {
+    "binding_mode": "PLAN_BYTES_FROZEN_EXPECTED_HASHES",
+    "not_implementation_time_discovery": true,
+    "pinned_file_count": 7,
+    "files": [
+      {
+        "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "expected_sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230",
+        "role": "VALIDATE_ONLY"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state_no_hidden_fp_audit.py",
+        "expected_sha256": "a16e259dc01962669cb83156654fc0520b4ab352ac109335caadcee0729ba28e",
+        "role": "VALIDATE_ONLY"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "expected_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+        "role": "VALIDATE_ONLY"
+      },
+      {
+        "path": "scripts/hrm_text_158_credit_bridge.py",
+        "expected_sha256": "3846a0754083daa92e195a087bc53ec90ea2868d8685e1af714d9adf86b235ac",
+        "role": "VALIDATE_ONLY \u2014 import projection helpers only; no GPU null-parity invocation"
+      },
+      {
+        "path": "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+        "expected_sha256": "d8a8f99e964f83d0d2b9026c7c61d88df739848817f4c32c4a01a8da541b95ed",
+        "role": "VALIDATE_ONLY \u2014 reuse _dry_run_fixture"
+      },
+      {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v2.json",
+        "expected_sha256": "37ba0e827e46df420be8905aceadf872e4292cae6c7be49f4465da627bd748df",
+        "role": "VALIDATE_ONLY banked prior"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "expected_sha256": "0ecbabf1200ca6a9e001cbcc439bf6d7ba5a56f368711919e7de61a775e8f519",
+        "role": "VALIDATE_ONLY"
+      }
+    ]
+  },
+  "frozen_write_surface": {
+    "rule": "every path is IN with an action OR OUT \u2014 no ambiguous write-surface entries",
+    "plan_phase_source_edits": false,
+    "this_plan_phase": {
+      "CREATE": [
+        "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v3.json"
+      ],
+      "PRESERVE": [
+        "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v1.json",
+        "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v2.json"
+      ],
+      "UPDATE": [],
+      "OUT": [
+        "/home/gabe/claw-code-creditdir/transient_fp_credit/** (science tree grounding only; no writes this slice)",
+        "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "scripts/hrm_text_158_credit_bridge.py",
+        "scripts/train_hrm_text_158.py",
+        "any .pt / trainer / GPU launch packet"
+      ]
+    },
+    "post_plus1_implement": {
+      "CREATE": [
+        "scripts/optimizer_credit_state_fold_c_drain_path_audit_run.py",
+        "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_fold_c_drain_path_audit.py",
+        "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_receipt_v1.json",
+        "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_IMPLEMENT_receipt_v1.json"
+      ],
+      "UPDATE": [],
+      "VALIDATE_ONLY": [
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "calm/hrm_text_158/native_full_stack/optimizer_credit_state_no_hidden_fp_audit.py",
+        "scripts/hrm_text_158_credit_bridge.py",
+        "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+        "artifacts/acc_entropy/optimizer_credit_state_3C_readonly_classification_audit_receipt_v2.json",
+        "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py"
+      ],
+      "OUT": [
+        "/home/gabe/claw-code-creditdir/transient_fp_credit/** writes",
+        "readiness-row / scaffold classification rewrites",
+        "activations/KV rotor files",
+        "trainer loop / .pt / GPU packets"
+      ]
+    },
+    "edit_freeze_note": "EDIT FREEZE outside PLAN_v3; v1+v2 bytes preserved"
+  },
+  "DEVELOPER_STEPS": [
+    {
+      "id": "S1_harness_evidence_type",
+      "actions": [
+        "CREATE scripts/optimizer_credit_state_fold_c_drain_path_audit_run.py with FoldCDrainPathEvidence + governing CLI"
+      ],
+      "assertions": [
+        "types: immutable evidence; mismatch_count exact int; scheme pin",
+        "tests: hostile suite green",
+        "runtime: CPU-static",
+        "data: no .pt"
+      ]
+    },
+    {
+      "id": "S2_tests",
+      "actions": [
+        "CREATE calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_fold_c_drain_path_audit.py"
+      ],
+      "assertions": [
+        "taxonomy + binding hostiles green",
+        "PENDING forbidden as terminal"
+      ]
+    },
+    {
+      "id": "S3_execute_governing_and_bind",
+      "actions": [
+        "EXECUTE frozen governing_runtime_command",
+        "CREATE_O_EXCL audit receipt"
+      ],
+      "assertions": [
+        "expected BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS for seed-158",
+        "evidence\u2194receipt equality",
+        "claim ceiling restated; transient_fp_debt_remains=true"
+      ]
+    },
+    {
+      "id": "S4_implement_receipt",
+      "actions": [
+        "CREATE_O_EXCL IMPLEMENT receipt"
+      ],
+      "assertions": [
+        "cites PLAN_v3 sha; porcelain-truthful; no creditdir writes"
+      ]
+    }
+  ],
+  "governing_runtime_command": {
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "argv": [
+      "python",
+      "scripts/optimizer_credit_state_fold_c_drain_path_audit_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v3.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_receipt_v1.json"
+    ],
+    "note": "Command shape frozen; executable only after +1 implement creates the harness. Operative plan authority = PLAN_v3 sha. Plan-phase does NOT run it."
+  },
+  "stop_conditions": [
+    "Anchor cite fail \u2192 STOP",
+    "Mutation outside frozen_write_surface \u2192 STOP",
+    "GPU / .pt / trainer loop / creditdir RACC launch \u2192 STOP",
+    "Readiness-row flip proposal \u2192 STOP",
+    "PENDING as terminal \u2192 STOP",
+    "Hand-authored mismatch_count / second projection recompute \u2192 STOP",
+    "Using hardcoded real_native_integer_*_present=false as Fold C gate \u2192 STOP",
+    "Activations/KV rotor ride-along \u2192 STOP",
+    "Credit constructor / scheme drift from full_magnitude_ceiling \u2192 STOP",
+    "Underspecified drain-path surface \u2192 STOP and bubble to claude",
+    "Context >80% \u2192 request recycle",
+    "Receipt observed_device sourced from plan declaration or torch.get_default_device \u2192 STOP",
+    "Device non-uniform across bound tensors \u2192 MEASUREMENT_INVALID / STOP",
+    "Backend presented as observed measurement rather than declared_contract \u2192 STOP"
+  ],
+  "named_risk": {
+    "id": "R1_fixture_may_not_surface_fractional_collision",
+    "statement": "Frozen seed-158 / q_levels=0 fixture yields mismatch_count=0 under full_magnitude_ceiling (and checked alternates). If co-leads require fractional-collision discrimination as the primary Fold C axis, fixture must be reminted with non-integer magnitudes and/or non-zero q \u2014 do NOT silently broaden the fixture after +1.",
+    "mitigation_in_plan": "Honest expected branch is PARITY-HOLDS-DENSE-REMAINS (shippable null). FRACTIONAL-COLLISION remains a preregistered alternate branch, not the design target."
+  },
+  "edit_freeze": {
+    "status": "EDIT_FREEZE outside this plan artifact",
+    "this_dispatch_creates_only": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v3.json",
+    "preserves": [
+      "PLAN_v1 a80f915fc25af08dba83b5730ab5aa2e0f259ca00903c9b99df96b7bbbebd514 byte-exact",
+      "PLAN_v2 0297317ef889dbe213e8eb68eeeeead120de5a40391283ab07ea3753ed63706e byte-exact"
+    ],
+    "no_source_edits_until": "dual plan accept + persisted +1 implement citing PLAN_v3 sha"
+  },
+  "context_health": "self-measured ~55%; B2-only remint (operative citation currency); v1+v2 preserved; no source edits",
+  "self_check_at_mint": {
+    "v1_bytes_preserved_exact": true,
+    "v2_bytes_preserved_exact": true,
+    "b1_carried": true,
+    "b2_operative_citation_sweep_complete": true,
+    "s4_cites_PLAN_v3": true,
+    "governing_argv_cites_PLAN_v3": true,
+    "no_other_semantic_changes": true,
+    "r1_no_fixture_remint": true,
+    "full_dual_plan_gate_required": true
+  },
+  "supersedes": {
+    "PLAN_v1_path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v1.json",
+    "PLAN_v1_sha256": "a80f915fc25af08dba83b5730ab5aa2e0f259ca00903c9b99df96b7bbbebd514",
+    "PLAN_v2_path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v2.json",
+    "PLAN_v2_sha256": "0297317ef889dbe213e8eb68eeeeead120de5a40391283ab07ea3753ed63706e",
+    "byte_preserved": true,
+    "gate1_block_msg_id_v1": "1785139191020-64acb1f1",
+    "gate1_block_axis_v1": "B1_observed_device_binding",
+    "gate2_block_msg_id_v2": "1785139556417-d8c3d48b",
+    "gate2_block_axis_v2": "B2_stale_operative_PLAN_v1_citation_in_S4",
+    "claude_concession_msg_id": "1785139576945-2a477128",
+    "remint_dispatch_msg_id": "1785139591573-c9fae4fc"
+  },
+  "gate1_block_msg_id": "1785139191020-64acb1f1",
+  "gate1_block_on_v1": {
+    "msg_id": "1785139191020-64acb1f1",
+    "axis": "B1_observed_device_binding",
+    "status": "CLOSED_IN_V2",
+    "verified_clean_carried": [
+      "PLAN_v1 sha + HEAD match",
+      "7/7 dependency pins",
+      "independent live-probe replay byte-exact",
+      "P1-P5 + claim ceiling + write surface + PENDING-forbidden + stops + R1",
+      "R1 stance: PARITY-HOLDS-DENSE-REMAINS accepted; no fixture remint"
+    ]
+  },
+  "blocker_closures_v2_B1_observed_device": {
+    "B1_observed_device_binding": "CLOSED \u2014 must_carry gains observed_device from EXACT bound tensors with uniformity check; hostile literal_device added; backend retyped as declared_contract (BST honest-label), never presented as measurement",
+    "status": "CARRIED_VERIFIED"
+  },
+  "receipt_device_backend_fields": {
+    "observed_device": "REQUIRED \u2014 from bound tensors; uniformity-checked",
+    "backend": "OPTIONAL receipt mirror of declared_contract only if labeled field_type=declared_contract; MUST NOT be named observed_backend"
+  },
+  "gate2_block_msg_id": "1785139556417-d8c3d48b",
+  "gate2_block_on_v2": {
+    "msg_id": "1785139556417-d8c3d48b",
+    "axis": "B2_stale_operative_PLAN_v1_citation_in_S4",
+    "class": "BST-B7_stale_operative_authority",
+    "status": "CLOSED_IN_V3",
+    "pre_mortem": "IMPLEMENT receipt citing v1 under a v2 run \u2192 authority split at diff gate / commit hook"
+  },
+  "blocker_closures_v3_B2_operative_authority": {
+    "B2_S4_and_full_operative_citation_sweep": "CLOSED \u2014 every operative step/command/gate/receipt-requirement cites PLAN_v3 authority; historical lineage refs to v1/v2 preserved as supersedes only",
+    "status": "NEW"
+  },
+  "operative_authority_citation_sweep_v3": {
+    "authority": "PLAN_v3",
+    "method": "full walk of steps/commands/gates/receipt-requirement strings; not sampling",
+    "operative_fields_updated": [
+      "DEVELOPER_STEPS[S4].assertions[0]",
+      "governing_runtime_command.argv --plan",
+      "governing_runtime_command.note",
+      "frozen_write_surface.this_plan_phase.CREATE",
+      "frozen_write_surface.edit_freeze_note",
+      "edit_freeze.this_dispatch_creates_only",
+      "edit_freeze.no_source_edits_until"
+    ],
+    "historical_lineage_only_not_operative": [
+      "supersedes.PLAN_v1_*",
+      "supersedes.PLAN_v2_*",
+      "gate1_block_on_v1.*",
+      "gate2_block_on_v2.*",
+      "blocker_closures_v2_B1_observed_device"
+    ]
+  }
+}

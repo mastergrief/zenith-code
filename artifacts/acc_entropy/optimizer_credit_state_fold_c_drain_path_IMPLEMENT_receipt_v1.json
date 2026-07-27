@@ -1,0 +1,90 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_fold_c_drain_path_IMPLEMENT_receipt/v1",
+  "plan_path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v3.json",
+  "plan_sha256": "b5c6409cf0a566f54395b6452c867f6de2a84ab9292096e7fb3e3b9d2630bcbe",
+  "plan_revision": "v3",
+  "plus1_implement_msg_id": "1785139813945-27fe5bfb",
+  "gate1_freeze_msg_id": "1785139701185-db55aaf3",
+  "gate2_pass_msg_id": "1785139798142-16c7d4cc",
+  "task_id": "1785138376642-83f78a6e",
+  "minted_at_utc": "2026-07-27T08:14:05Z",
+  "repo_head_sha": "566346aa3b4dac59d168bfeee49cd61dd866b1f1",
+  "expected_branch": "BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS",
+  "observed_branch": "BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS",
+  "governing_command": {
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "argv": [
+      "python3",
+      "scripts/optimizer_credit_state_fold_c_drain_path_audit_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v3.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_receipt_v1.json"
+    ],
+    "exit_code": 0
+  },
+  "validation": {
+    "pytest_command": "python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_fold_c_drain_path_audit.py -q",
+    "pytest_result": "14 passed",
+    "exit_code": 0
+  },
+  "actions": [
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v1.json",
+      "sha256": "a80f915fc25af08dba83b5730ab5aa2e0f259ca00903c9b99df96b7bbbebd514"
+    },
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v2.json",
+      "sha256": "0297317ef889dbe213e8eb68eeeeead120de5a40391283ab07ea3753ed63706e"
+    },
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_PLAN_v3.json",
+      "sha256": "b5c6409cf0a566f54395b6452c867f6de2a84ab9292096e7fb3e3b9d2630bcbe"
+    },
+    {
+      "action": "CREATE",
+      "path": "scripts/optimizer_credit_state_fold_c_drain_path_audit_run.py",
+      "sha256": "d621050c51611987081e6a2a96e181ed7f18f82a40b7b13928f0017b0a407c6a"
+    },
+    {
+      "action": "CREATE",
+      "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_fold_c_drain_path_audit.py",
+      "sha256": "93727c3a766f46101ee40eb0a70923c618d1f7a103988948b2c4f804eb007469"
+    },
+    {
+      "action": "CREATE_O_EXCL",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_receipt_v1.json",
+      "sha256": "7c94fb98b3806d5a28b155837503545abe0ca35fae660ba7a4d1690f5bc13235"
+    }
+  ],
+  "UPDATE": [],
+  "creditdir_writes": [],
+  "porcelain_truthful": {
+    "UPDATE_empty": true,
+    "creditdir_writes_out": true,
+    "only_create_paths_in_allowlist": true
+  },
+  "co_lead_residual_diff_gate_checks_folded": {
+    "1_observed_device_from_bound_tensors": true,
+    "2_implement_receipt_cites_PLAN_v3_sha": true,
+    "3_UPDATE_empty_creditdir_out": true,
+    "4_transient_fp_debt_remains_true": true
+  },
+  "claim_ceiling": {
+    "authorizes_readiness_row_flip": false,
+    "authorizes_sub2_or_resolved": false,
+    "transient_fp_debt_remains": true
+  },
+  "audit_receipt_sha256": "7c94fb98b3806d5a28b155837503545abe0ca35fae660ba7a4d1690f5bc13235",
+  "audit_receipt_highlights": {
+    "mismatch_count": 0,
+    "observed_device": "cpu",
+    "observed_dense_surfaces": [
+      "projected_moves"
+    ],
+    "transient_fp_debt_remains": true
+  }
+}
