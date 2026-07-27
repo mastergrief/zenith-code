@@ -312,6 +312,69 @@ worst-case sub-2 claim).
 
 **Non-claims:** no science/run authority from this append; no winner; no GPU; no full-sub2/bank/readiness; no eager-tier rules mutation; pre-existing mirror-line-count drift left untouched.
 
+### 2026-07-26 — Phase B acc-carrier analysis: encoding floor measured (design-routing)
+
+Terminal dual-accepted branch `A_measured_within_bounds` (reason
+`measured_within_bounds`), production receipt
+`arm3_sparse_hot_F3_phaseB_analysis_ns12_receipt_v1.json` sha
+`9ad9dffc326e50e9e50b2eff1ee31ca532821ef6120ef21b03bad068092e1f6e` (see board
+for gate ids; analysis module `phaseb_acc_carrier_analysis.py` 009d45cd…):
+- M1 = 0.004742817198551902, M2 = 0.00896387785450888,
+  acc_side_scale_bits_bpw = 0.0, **B_acc = 0.013706695053060783 bpw**,
+  B_total_saved = 1.6137415722852038, n_nonzero_final = 8022,
+  n_eligible = 29360128 (ns12 inputs: summary 79d987ef…, snapshots 1c7be187…).
+- Reading: ~29× below the 0.4 north-star acc ceiling (~66× below 0.9 working
+  bar) — the dense int8 live acc stores ~600× more bits than the state it
+  encodes. `design_routing_NOT_science_bank=true`.
+- co_lead load-bearing correction carried: this measured the ENCODING lower
+  surface; the physical LIVE carrier remains dense int8 q + int8 W8 acc
+  ≈16 bpw — acc term still the dominator. Encoding ≠ carrier.
+- Rule delta (both mirrors, 2026-07-26): one bullet — sparse acc route is now
+  measurement-backed, not only structural (W-series bounded-ness was the prior
+  by-construction argument).
+
+### 2026-07-27 — Step-B recarry closure LANDED: dense-transient debt parity-eliminable (BR-RECARRY-SPARSE-HOLDS-AB)
+
+Terminal dual-accepted science result committed at work-repo
+`claw-code-hrm-text-158` commit `449d06576ebf14412e51e2bc131153b474875d08`
+(feature/hrm-text-1.58, 96 files, pushed FF ed4932b→449d065, HEAD==remote):
+- **Result**: A (BDL rank core) + B (TSA) dense-transient credit re-carried as
+  sparse integer attribution at bit parity — `events_equal=true`,
+  `compositional_reduction_holds=true`; C/D already sparse. LEAN CPU parity;
+  must_not_claim: byte_savings / density_win / gpu / production / sub2 /
+  readiness / acquisition / bank. Canonical audit `783f2799…` unchanged.
+- **Meaning**: converts the sub-2 persistent route (event-coded/sparse carrier
+  for the acc term) from measurement-backed to PARITY-PROVEN feasible for the
+  dense-transient debt — feasibility ONLY, under the frozen A+B CPU fixture
+  (six dense moves → six fused events; production TSA/IOC paths NOT
+  rewritten); `transient_fp_debt` closure = production landing of the sparse
+  byte-level live carrier, including TSA B-site integration to the fused
+  sparse producer (the receipt's named next slice). No ledger movement (LIVE
+  still ~16 bpw).
+- **What landed**: hardened recarry validators+evidence (00435afa/b82d30ff —
+  self-reference gaps F1-F3, mode-aware lifecycle grammar F4, registry
+  membership, six-list manifest schema, status-aware surface discovery),
+  harness v34 rebind (d53526f6), 4-test rebind (77e89ccf, pytest 128),
+  PLAN_v34 truthful-parent successor (0a47d255) curing PLAN_v33's adjudicated
+  false parent by supersession, honest v33→v34 DIFF MANIFEST
+  (bcf830ff/0bb08cec, unmapped=[]), IMPLEMENT_receipt_v20 (c4e9be8a) +
+  publication-provenance ADDENDUM (a28714ff, transcript-backed O_EXCL
+  primitives), full immutable plan-request/receipt lineage (34 measurement
+  plans, 19 stepB plan-requests, 10 hardening plans).
+- **Gate chain (persisted)**: stepB plan-request v14→v19 refinement (six
+  review cycles; axes minted: validator-schema conformance, effective-set
+  disjointness, copy-substitute payload freeze, free-form reference
+  resolution, lifecycle status truth via validator-discovery simulation) →
+  v19 dual accept (1785182705135 + 1785182882746) → +1 implement
+  1785182909987 → implementation gate-1 1785184202194 → co_lead
+  publication-provenance BLOCK 1785184402646 → two-phase evidence/addendum
+  cure (1785184639341/1785184741110/1785184791194) → addendum dual accept →
+  commit-scope PASS 1785185200764 + hook-format re-echo 1785185338480 →
+  commit+push. Terminal receipt 1785185415198.
+- Rule delta (both mirrors, this date): sparse-route bullet upgraded
+  "measurement-backed" → "measurement-backed AND parity-proven"; remaining
+  transient_fp_debt work named as carrier-landing, not feasibility.
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,

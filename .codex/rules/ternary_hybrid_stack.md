@@ -63,9 +63,9 @@ Always report FP-free claims as three separate ledgers; never collapse them.
   at terminal Phase-A geometry** (V4-LIVE); receipts in atlas. Does **not** close
   all event-coded/acc alternatives; no readiness/full-sub2 claim (activations/KV
   are a separate `full_sub2_runtime` surface — see below).
-- **Sparse acc route is measurement-backed, not only structural**: measured
-  acc-side information content sits orders of magnitude below both ceilings
-  (receipts in atlas arc) — a carrier-representation gap, NOT capacity.
+- **Sparse acc route: measurement-backed AND parity-proven (feasibility only)** — acc info content far below both ceilings;
+  dense-transient credit (BDL core + TSA) re-carries as sparse integer attribution at bit parity under the frozen A+B CPU fixture (no density/byte-savings/GPU/production/readiness claim);
+  remaining `transient_fp_debt` closure = production landing of the sparse byte-level live carrier, incl. TSA B-site integration.
 - **3-ledger = weight-persistent train-state accounting; activations/KV are full-sub2-runtime target surfaces with separate levers.** Activations/residuals, attention-KV buffers, and backward-saved tensors are FP today under the D2.1 BitLinear contract (weights ternarized, activations not), and remain required `full_sub2_runtime` surfaces currently blocking main science. Their path is forward/runtime activation-KV quantization or recompute/compression (separately scoped), NOT the weight vote-accumulator: activations are transient, KV has no trainable optimizer state, no persistent votes to accumulate. Do not conflate the persistent-weight drain (the dense vote-acc, now int8/W8) with total-runtime memory (activations/KV scale with batch×seqlen, distinct levers).
 - **Ternary-rotor lane** (separately-scoped; plan + screen receipts:
   `.claude/MEMORY/ternary-rotor.md`) covers those runtime surfaces via rotated
