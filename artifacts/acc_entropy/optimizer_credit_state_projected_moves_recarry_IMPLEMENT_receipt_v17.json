@@ -1,0 +1,84 @@
+{
+  "kind": "IMPLEMENT_receipt_v17",
+  "authority": {
+    "dispatch_msg_id": "1785162832443-e53d58be",
+    "gate2_block_msg_id": "1785162792135-87f21461",
+    "plan": "PLAN_v31",
+    "plan_sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+    "fast_path": true,
+    "covers_only": [
+      "R1_OUT_exactness",
+      "R2_strict_chronology_grammar",
+      "harness_tests_rebind",
+      "pytest",
+      "dry_exec"
+    ],
+    "does_not_cover": [
+      "S3",
+      "S4b",
+      "staging",
+      "commit",
+      "push"
+    ],
+    "S3_fields_present": false,
+    "authorizes_S3": false
+  },
+  "artifacts": {
+    "PLAN_v31": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+      "sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba"
+    },
+    "argv_template_sha256": "c5096a82c856a033a42b229f7db43f8eee9731e2531b7eeb640b170871c5cc1e",
+    "validators": {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "sha256": "f3865b8ef6e92c9a21b7dfd1bcbbb80e9b0315dd6415780d37f46c7a6f31a685"
+    },
+    "evidence": {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "unchanged": true
+    },
+    "harness": {
+      "path": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "sha256": "c60f903e1b6582f8b47ff40eb41f4f65c8198bc993c4c952212f7705b8445351"
+    },
+    "tests": {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "sha256": "6412e6faac7c0b7d69da1685f76fbca431eda4388d8cde7fe61220c5822e6275"
+    },
+    "baselines_pre_v31": {
+      "harness_pre_v31": "9ddb64e125e8f28f0b2c6f02ed23267f6e855a77c08d79e89023b7183de61439",
+      "validators_pre_v31": "8fcf0aacc8f8b3ac6e381e67839512482d21c9d48732cc5363686f4cfdee5899",
+      "tests_pre_v31": "cf40420f8bcc66b0dfe41b9b9b839def20fd8a09802d69ed9ed2455d0cb920ed",
+      "evidence_pre_v31": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0"
+    }
+  },
+  "repairs": {
+    "R1": "OUT joins _canonical_action_class_map exactness; missing/extra/absent OUT REJECT; live surfaces mirrored 7-entry OUT",
+    "R2": "strict grammar allowlist via _lifecycle_authority_grammar; synonyms/extra text/wrong N|id REJECT; historical leaves regenerated"
+  },
+  "validation": {
+    "pytest_command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "pytest_result": "89 passed",
+    "dry_exec": {
+      "mode": "--dry-exec-out scratch",
+      "canonical_out": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "canonical_absent_before": true,
+      "canonical_absent_after": true,
+      "exit_code": 0,
+      "dry_exec": true,
+      "authority_verification": "gate_pending",
+      "s3_go_msg_id_key_absent": true,
+      "harness_file_sha256": "c60f903e1b6582f8b47ff40eb41f4f65c8198bc993c4c952212f7705b8445351",
+      "preview_non_authoritative": {
+        "audit_branch_id": "BR-RECARRY-SPARSE-HOLDS-AB",
+        "events_equal": true
+      }
+    }
+  },
+  "preserved_bytes": {
+    "PLAN_v30": "624eefd5c388d4147e4c576dc7984df03eb521cf1235a260d7e14b90ea555297",
+    "receipt_v16": "f9b702f18da44393f9c3de28aabdd5a3e8cb2d09da9c838d179aa7d2ee7adc31"
+  },
+  "minted_at": "2026-07-27T14:43:17.699793+00:00"
+}

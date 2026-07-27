@@ -1,0 +1,82 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt/v2",
+  "plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v17.json",
+  "plan_sha256": "b1ca9229427823c6bc7da800faf74a69c660b48754ff31cc564679798aea6f95",
+  "plan_revision": "v17",
+  "plus1_implement_msg_id": "1785151751821-a7d4ca2d",
+  "gate1_plan_freeze_msg_id": "1785151597530-40a2ff19",
+  "gate2_plan_pass_msg_id": "1785151729377-affa1f11",
+  "covers_only": [
+    "S1_harness_evidence_type",
+    "S2_tests",
+    "S2b_focused_pytest"
+  ],
+  "does_not_cover": [
+    "S3_terminal_audit_receipt",
+    "S4b_FINALIZE_receipt"
+  ],
+  "S3_fields_present": false,
+  "authorizes_S3": false,
+  "write_surface": {
+    "UPDATE": [
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+    ],
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v2.json"
+    ],
+    "PRESERVE_BYTES": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v1.json"
+    ]
+  },
+  "artifacts": {
+    "harness": {
+      "path": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "sha256": "110543deee0c4250d283895f5990159cda27b3bea7ee48eaf208092718cd7cb4",
+      "action": "UPDATE"
+    },
+    "tests": {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "sha256": "0eca9933371aeeb4758dac1719e5404130fdccb8196cac62036628f255018fcd",
+      "action": "UPDATE"
+    },
+    "implement_receipt_v1_preserved": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v1.json",
+      "sha256": "67be3fdead20f9d255595ecb47a5f94ba8e62f628c5facda837ffad46b2f5391",
+      "action": "PRESERVE_BYTES"
+    }
+  },
+  "focused_pytest": {
+    "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "exit_code": 0,
+    "summary": "51 passed in 43.36s",
+    "order": "BEFORE O_EXCL governing output mint"
+  },
+  "correction_axes_closed": {
+    "cli_flag_s3_authority_anchor_msg_id": true,
+    "s3_go_msg_id_key_absent_from_evidence_and_audit": true,
+    "authority_verification_gate_pending": true,
+    "oexcl_open_x": true,
+    "HEAD_vs_pinned_at_plan_mint_head": true,
+    "fail_closed_is_not_True": true,
+    "no_caller_supplied_resolution_mapping": true,
+    "no_vacuous_or_True_hostiles": true,
+    "output_exclusion_validator_and_hostile": true,
+    "id_bind_on_s3_review_records": true
+  },
+  "repo_head_sha": "ed4932b9eef0fb547970019edf55e02ab57cb32a",
+  "porcelain_truthful": {
+    "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py": "??",
+    "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py": "??",
+    "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v1.json": "??",
+    "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v2.json": "??",
+    "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py": "M",
+    "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py": "M"
+  },
+  "event_coded_dirty_noted": true,
+  "no_S3_anchor_go_mint": true,
+  "no_S3_execution": true,
+  "no_S4b": true,
+  "no_staging_commit_push": true
+}

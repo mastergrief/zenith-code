@@ -1,0 +1,200 @@
+{
+  "claim_ceiling": {
+    "may_claim": [
+      "validators REJECT the three deferred vacuity/hide/prose-skip bypasses",
+      "frozen PLAN_v31 + existing dry-exec/formal audit still PASS under hardened validators",
+      "pytest suite green including new hostiles"
+    ],
+    "must_not_claim": [
+      "science claim change",
+      "density_win",
+      "byte_savings",
+      "gpu",
+      "production",
+      "sub2",
+      "readiness",
+      "acquisition",
+      "bank",
+      "PLAN_family_remint",
+      "S3 re-run required"
+    ]
+  },
+  "decision_contract": {
+    "NOT_fast_path": true,
+    "authority": "dispatch 1785165043747-d0f1642f; follow-up task 1785163855817-03f00155; scope PASS deferral 1785163827126-a5aa2b3b; Gabe standing auto-research directive",
+    "executor": "plan-dev (codex)",
+    "intent": "Close three deferred v31 structural-validator gaps so the recarry slice can gain commit-quality without a PLAN-family remint that relies on defective v31 validators.",
+    "mode": "planning",
+    "reason_not_fast_path": "novel predicate design; refutation cheapest at plan gate",
+    "receipt_sink": "claude gate-1 ONLY",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation"
+    ]
+  },
+  "dispatch_msg_id": "1785165043747-d0f1642f",
+  "dry_exec_compatibility": {
+    "note": "Historical superseded lifecycle leaves already carry exact grammar text; F3 makes version-addressable notes mandatory \u2014 PLAN_v31 already satisfies that for bounded_v*/active_phase/lifecycle notes observed at plan mint.",
+    "proof_commands": [
+      "python3 -c 'load PLAN_v31; validate_single_action_class_per_path(plan); validate_lifecycle_authority_cites_dispatch(plan)'",
+      "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+      "python3 scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py --plan ...PLAN_v31.json --out <canonical> --s3-authority-anchor-msg-id <scratch> --dry-exec-out /tmp/... (canonical absent before+after)"
+    ],
+    "requirement": "Hardened validators MUST ACCEPT immutable PLAN_v31 bytes and still allow harness dry-exec / formal audit invariants to hold."
+  },
+  "exception_context": {
+    "FROZEN_V31_CURRENT_BYTES_ONLY_EXCEPTION": "still active until THIS task dual-accepts",
+    "S4b_dual_accept_ref": "1785164965163-c4e4e465",
+    "no_PLAN_family_remint_relying_on_v31_validators": true
+  },
+  "findings": [
+    {
+      "defect": "Missing OUT becomes sentinel __OUT_LIST_ABSENT__; if ALL operative surfaces lack OUT, every map equals the same sentinel map \u2192 exact-equality PASS (vacuity).",
+      "file_line_anchors": [
+        "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py:_canonical_action_class_map",
+        "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py:validate_single_action_class_per_path"
+      ],
+      "hostile_fixtures": [
+        {
+          "mutate": "delete OUT key from active_write_manifest and every operative surface",
+          "name": "hostile_remove_OUT_from_all_surfaces",
+          "new_behavior": "REJECT match=canonical_manifest_missing_required_list|required_list_absent|OUT",
+          "old_behavior": "PASS (vacuity)"
+        },
+        {
+          "mutate": "set active_write_manifest.OUT to a string",
+          "name": "hostile_OUT_wrong_type_on_canonical",
+          "new_behavior": "REJECT match=required_list_not_list:OUT"
+        }
+      ],
+      "id": "F1_sentinel_equality_vacuity",
+      "mechanism": {
+        "keep": "Cross-surface exact equality of the six lists after absolute schema check; IN\u2194OUT conflict; plan/receipt identity checks.",
+        "remove": "Delete __OUT_LIST_ABSENT__/__OUT_LIST_NOT_LIST__ sentinel equality path for cross-surface compare.",
+        "replace": "Before cross-surface equality, ABSOLUTE schema-validate the canonical active_write_manifest AND every required operative surface: each of UPDATE/CREATE/CREATE_THEN_PRESERVE/PRESERVE_BYTES/VALIDATE_ONLY/OUT MUST be present as a list (type-checked). Missing key \u2192 REJECT (e.g. canonical_manifest_missing_required_list:OUT). Empty list is allowed only when semantically empty; absence is never encoded as a comparable sentinel."
+      },
+      "surface": "validate_single_action_class_per_path / _canonical_action_class_map"
+    },
+    {
+      "defect": "Surfaces are discovered only when class fields are present in content; erasing UPDATE/CREATE/.../OUT from a required ACTIVE surface hides it from validation.",
+      "file_line_anchors": [
+        "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py:_iter_operative_action_manifests"
+      ],
+      "hostile_fixtures": [
+        {
+          "mutate": "delete UPDATE/CREATE/CREATE_THEN_PRESERVE/PRESERVE_BYTES/VALIDATE_ONLY/OUT from frozen_write_surface.this_plan_phase",
+          "name": "hostile_erase_this_plan_phase_class_fields",
+          "new_behavior": "REJECT match=required_operative_surface_absent|this_plan_phase|required_list_absent",
+          "old_behavior": "PASS (surface hidden)"
+        },
+        {
+          "mutate": "delete frozen_preconditions.P4_write_surface_active_phase_v{N}",
+          "name": "hostile_delete_required_active_phase_block",
+          "new_behavior": "REJECT match=required_operative_surface_absent:active_phase"
+        }
+      ],
+      "id": "F2_content_dependent_surface_discovery",
+      "mechanism": {
+        "PLAN_v31_compatibility": "For PLAN_v31 the derived required set MUST equal the surfaces observed today under healthy bytes: active_write_manifest, frozen_preconditions.P4_write_surface_v31_lifecycle.manifest, frozen_preconditions.P4_write_surface_active_phase_v31, frozen_write_surface.this_plan_phase, frozen_write_surface.post_plus1_implement_bounded_v31_correction.",
+        "registry_source": "plan-local constant function required_operative_surfaces(plan_revision:str)->list[str] in validators.py (pure); optionally cross-check against plan['required_operative_manifest_surfaces'] if present, but validators must not require a new plan remint \u2014 default structural derivation from PLAN_REVISION is sufficient for dry-exec of immutable PLAN_v31.",
+        "replace": "Introduce an EXPLICIT required-operative-surface registry derived structurally from plan_revision (fail-closed). Minimum fixed set for current generation N: active_write_manifest; frozen_preconditions.P4_write_surface_active_phase_v{N}; frozen_preconditions.P4_write_surface_v{N}_lifecycle.manifest (if that key exists OR is required by registry); frozen_write_surface.this_plan_phase; frozen_write_surface.post_plus1_implement_bounded_v{N}_correction. Discovery MUST NOT depend on presence of the action-class fields being validated. Missing required surface path \u2192 REJECT (required_operative_surface_absent). Extra ACTIVE surfaces with class fields still validated if present (additive), but required set is never optional."
+      },
+      "surface": "_iter_operative_action_manifests"
+    },
+    {
+      "defect": "Candidate selection uses prose/keyword matching on leaf values; a version-addressable note under write_surface/active_phase/bounded_vN can be set to 'ok' and skipped.",
+      "file_line_anchors": [
+        "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py:validate_lifecycle_authority_cites_dispatch"
+      ],
+      "hostile_fixtures": [
+        {
+          "mutate": "set frozen_preconditions.P4_write_surface_active_phase_v25.note (or any versioned active_phase note) to 'ok'",
+          "name": "hostile_active_phase_note_to_ok",
+          "new_behavior": "REJECT match=lifecycle_grammar_mismatch|lifecycle_authority_cite_invalid",
+          "old_behavior": "PASS (prose-skip)"
+        },
+        {
+          "mutate": "set frozen_write_surface.post_plus1_implement_bounded_v20_correction.note to 'ok'",
+          "name": "hostile_bounded_vN_note_to_ok",
+          "new_behavior": "REJECT match=lifecycle_grammar_mismatch|lifecycle_authority_cite_invalid",
+          "old_behavior": "PASS"
+        }
+      ],
+      "id": "F3_prose_triggered_chronology_candidates",
+      "mechanism": {
+        "keep": "Strict allowlist grammar equality; per-generation registry exact id bind; synonym/extra-text classification.",
+        "replace": "Candidate selection STRUCTURAL-PATH-ONLY: any leaf whose path is version-addressable via _path_generation(path) AND whose leaf name is in {active_after, note} AND whose path is under frozen_preconditions/frozen_write_surface write-surface/lifecycle/P4_/bounded_v* structural namespaces MUST be grammar-validated. DELETE the value-token chronology gate (minted under / fast-path / dual accept / etc.). Non-version-addressable notes remain out of scope."
+      },
+      "surface": "validate_lifecycle_authority_cites_dispatch"
+    }
+  ],
+  "frozen_baseline": {
+    "PLAN_v31_sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+    "evidence_sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+    "harness_sha256": "c60f903e1b6582f8b47ff40eb41f4f65c8198bc993c4c952212f7705b8445351",
+    "note": "tests sha filled at mint after live recompute",
+    "tests_sha256_at_plan_mint": "6412e6faac7c0b7d69da1685f76fbca431eda4388d8cde7fe61220c5822e6275",
+    "validators_sha256": "f3865b8ef6e92c9a21b7dfd1bcbbb80e9b0315dd6415780d37f46c7a6f31a685"
+  },
+  "kind": "PLAN_REQUEST",
+  "minted_at": "2026-07-27T15:12:55Z",
+  "packet_revision": "v1",
+  "parent_slice_task_id": "1785141831989-47a1370d",
+  "plan_revision": "v1",
+  "probe_reproduction_at_plan_mint": {
+    "F1_remove_OUT_from_all_surfaces": "ACCEPTED (sentinel-equality vacuity confirmed)",
+    "F2_erase_this_plan_phase_class_fields": "ACCEPTED (surface disappears from _iter_operative_action_manifests)",
+    "F3_active_phase_or_bounded_note_to_ok": "ACCEPTED (prose-trigger skip on version-addressable note leaves without 'lifecycle' in path)",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158"
+  },
+  "repo_root": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "schema_version": "recarry_validator_hardening_plan_v1",
+  "stop_conditions": [
+    "Ambiguity in required-surface registry for PLAN_v31 \u2192 STOP and ask claude",
+    "Any need to edit harness/evidence/PLAN_v31 \u2192 STOP (scope expansion)",
+    "Hardened validators REJECT clean PLAN_v31 \u2192 STOP (compatibility break)",
+    "Temptation to remint PLAN_v* \u2192 STOP (forbidden under FROZEN_V31_CURRENT_BYTES_ONLY_EXCEPTION until this task dual-accepts \u2014 and this task itself must not remint)",
+    "No stage/commit/push/.pt"
+  ],
+  "task_id": "1785163855817-03f00155",
+  "validation_plan": {
+    "baselines": "copy validators+tests to artifacts/acc_entropy/baselines/*.pre_validator_hardening_v1 BEFORE edits",
+    "expected": "prior suite still green + >=6 new hostiles (2 per finding) REJECT with stated tags",
+    "focused_pytest": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "receipt": "O_EXCL IMPLEMENT_receipt_v1 with before/after shas, hostile names, pytest count, dry-exec proof, PLAN_v31 still PASS proof"
+  },
+  "workflow": [
+    "Plan gate-1 (claude) \u2192 gate-2 (co_lead) \u2192 +1 implement",
+    "Baselines \u2192 UPDATE validators+tests \u2192 pytest \u2192 PLAN_v31 validator PASS proof \u2192 dry-exec \u2192 IMPLEMENT receipt",
+    "Implementation dual-accept \u2192 then deferred ONE-COMMIT scope gate for whole recarry slice (validators now includable)"
+  ],
+  "write_surface": {
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v1.json"
+    ],
+    "CREATE_THEN_PRESERVE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v1.json"
+    ],
+    "OUT": [
+      "PLAN_family remint of measurement PLAN_v*",
+      "S3 re-execution",
+      "harness/evidence edits unless forced by signature change (not expected)",
+      "stage/commit/push",
+      ".pt",
+      "credit-tree / GPU"
+    ],
+    "PRESERVE_BYTES": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_FINALIZE_receipt_v2.json"
+    ],
+    "UPDATE": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+    ],
+    "harness_call_site_expectation": "No signature change expected \u2014 validate_single_action_class_per_path / validate_lifecycle_authority_cites_dispatch keep (plan)->None. If a new helper must be invoked from harness, STOP and request scope expansion; default = internalize inside existing validators so harness:145-146 unchanged."
+  }
+}

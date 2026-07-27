@@ -1,0 +1,92 @@
+{
+  "acceptance": {
+    "canonical_sha_unchanged": true,
+    "clean_PLAN_v31_direct_validate_ACCEPT": true,
+    "container_probes_REJECT": [
+      "note={}",
+      "note=[]",
+      "note={text:ok}"
+    ],
+    "governing_dry_exec_as_acceptance": false,
+    "new_hostiles": [
+      "test_hostile_active_phase_note_empty_dict",
+      "test_hostile_bounded_vN_note_empty_list",
+      "test_hostile_active_phase_note_nonempty_dict",
+      "test_scope_preserve_nongoverned_container_note_accept"
+    ],
+    "py_compile_ok": true,
+    "pytest_command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "pytest_floor": ">=100",
+    "pytest_passed": 102,
+    "scalar_type_boundary_REJECT": [
+      "None",
+      "int",
+      "bool",
+      "float"
+    ],
+    "scope_preserve_nongoverned_container_ACCEPT": true
+  },
+  "after_shas": {
+    "tests": "f2ee6a814369789539683c4423c5e1f5a87f7307c2a524bcadff04171cc17a6c",
+    "validators": "324ecdba39a31cf750edbbcb6f1e0fc4cd6d43eb6d4ac6332e47e4b39002157b"
+  },
+  "artifact_class": "validator_hardening_IMPLEMENT_receipt_v3",
+  "authority": {
+    "kind": "bounded_stage1_F3_container_key_correction_fast_path",
+    "plan_v5_gate1_freeze_msg_id": "1785166275304-b46454cd",
+    "plan_v5_gate2_pass_msg_id": "1785166345145-2fe643b5",
+    "plus1_implement_folded_in_block_msg_id": "1785167757144-7f2ce086",
+    "prior_correction_dispatch_msg_id": "1785167404273-a9254568",
+    "prior_correction_receipt_v2_sha256": "145188152167154e4ef877f8945c2ce499cdd62d60b1e843f76a43ff5b75df94"
+  },
+  "authority_verification": "gate_pending",
+  "authorizes_stage2_or_commit": false,
+  "baselines_tmp": {
+    "tests_path": "/tmp/recarry_hardening_baselines/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py.pre_hardening_v5",
+    "tests_sha256": "6412e6faac7c0b7d69da1685f76fbca431eda4388d8cde7fe61220c5822e6275",
+    "validators_path": "/tmp/recarry_hardening_baselines/recarry_measurement_validators.py.pre_hardening_v5",
+    "validators_sha256": "f3865b8ef6e92c9a21b7dfd1bcbbb80e9b0315dd6415780d37f46c7a6f31a685"
+  },
+  "defect_closed": {
+    "id": "F3_container_typed_governed_leaf_escape",
+    "reject_tag": "lifecycle_leaf_not_string:<path>:type=<typename>",
+    "repair": "_walk_governed_lifecycle_key_candidates yields note/active_after at CONTAINER-KEY level without recursing into value; any non-str \u2192 lifecycle_leaf_not_string",
+    "root_cause": "_walk_plan_leaves recurses into dict/list and yields only scalars; governed note={}/[] never presents as leaf named note"
+  },
+  "plan_identity": {
+    "expected_sha256": "699e9ed7a508eb31c119547455e5ae2b1f22a73a80006d47712ed914a0756d2d",
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v5.json",
+    "plan_revision": "v5",
+    "sha256": "699e9ed7a508eb31c119547455e5ae2b1f22a73a80006d47712ed914a0756d2d"
+  },
+  "preserve_verified": {
+    "IMPLEMENT_receipt_v1": "b858f51ae90646eb97ecbdfbdaf381834329d33231df228d7d79e1c068a39b5e",
+    "IMPLEMENT_receipt_v1_expected": "b858f51ae90646eb97ecbdfbdaf381834329d33231df228d7d79e1c068a39b5e",
+    "IMPLEMENT_receipt_v2": "145188152167154e4ef877f8945c2ce499cdd62d60b1e843f76a43ff5b75df94",
+    "IMPLEMENT_receipt_v2_expected": "145188152167154e4ef877f8945c2ce499cdd62d60b1e843f76a43ff5b75df94",
+    "canonical_audit": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+    "canonical_audit_expected": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+  },
+  "schema_version": "recarry_validator_hardening_implement_receipt_v3",
+  "scope": {
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v3.json"
+    ],
+    "OUT": [
+      "Stage-2",
+      "PLAN_v31 pins",
+      "harness",
+      "stage",
+      "commit",
+      "S3"
+    ],
+    "PRESERVE_BYTES": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v2.json"
+    ],
+    "UPDATE": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+    ]
+  }
+}

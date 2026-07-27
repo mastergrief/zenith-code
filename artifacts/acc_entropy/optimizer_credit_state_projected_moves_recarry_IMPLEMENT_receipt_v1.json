@@ -1,0 +1,64 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT/v1",
+  "receipt_kind": "S4a_IMPLEMENT_pre_S3",
+  "covers_only": [
+    "S1_harness_evidence_type",
+    "S2_tests",
+    "S2b_focused_pytest"
+  ],
+  "does_not_cover": [
+    "S3_terminal_audit_receipt",
+    "S4b_FINALIZE_receipt"
+  ],
+  "plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v10.json",
+  "plan_sha256": "0ba1290399da4bec734c9569faab722fda5c7b53e34bb0fc1e2f9b97ac342938",
+  "plan_revision": "v10",
+  "plus1_implement_msg_id": "1785146878340-26a45d5c",
+  "gate1_freeze_msg_id": "1785146322099-bee1afec",
+  "gate2_pass_msg_id": "1785146849607-e5595279",
+  "task_id": "1785141831989-47a1370d",
+  "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "repo_head_sha": "ed4932b9eef0fb547970019edf55e02ab57cb32a",
+  "frozen_write_surface": {
+    "UPDATE": [],
+    "CREATE": [
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v1.json"
+    ],
+    "OUT_honored": true
+  },
+  "S1": {
+    "path": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+    "sha256": "6bf7019a6f16da88a2b0af4994c65cab2e666c1c57b591dfc47d8bddd96eeb04",
+    "evidence_type": "ProjectedMovesRecarryMeasurementEvidence"
+  },
+  "S2": {
+    "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+    "sha256": "9ec8f1913d107f90610c756be428d9fa67e81f6757133b133e55dca5f3ad1443"
+  },
+  "focused_pytest": {
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "-q"
+    ],
+    "wrapped": "timeout 600 python3 -m pytest ... -q",
+    "exit_code": 0,
+    "summary": "40 passed in 23.63s",
+    "order": "BEFORE O_EXCL governing output mint",
+    "governing_receipt_minted": false
+  },
+  "porcelain_truthful": {
+    "note": "event_coded_* remain M; new CREATE files untracked/added as observed",
+    "git_status_porcelain": " M calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py\n M calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py\n?? calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py\n?? scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py\n"
+  },
+  "creditdir_writes": false,
+  "S3_fields_present": false,
+  "authorizes_S3": false,
+  "note": "S4a dual-accept covers S1/S2/S2b ONLY. Implementation dual-accept alone does NOT authorize S3. S3 requires distinct claude go record after this dual-accept.",
+  "minted_at_utc": "2026-07-27T10:13:40Z"
+}

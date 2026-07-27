@@ -1,0 +1,100 @@
+{
+  "schema_version": "recarry_validator_hardening_implement_receipt_v1",
+  "kind": "IMPLEMENT_RECEIPT",
+  "receipt_revision": "v1",
+  "minted_at": "2026-07-27T15:41:05Z",
+  "task_id": "1785163855817-03f00155",
+  "plus1_implement_msg_id": "1785166359652-effbff79",
+  "gate1_pass_freeze_msg_id": "1785166275304-b46454cd",
+  "gate2_pass_msg_id": "1785166345145-2fe643b5",
+  "stage": "1",
+  "self_identity": {
+    "governing_plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v5.json",
+    "governing_plan_sha256": "699e9ed7a508eb31c119547455e5ae2b1f22a73a80006d47712ed914a0756d2d",
+    "plan_revision": "v5",
+    "developer_step_id": "S0_v5_stage1_hardening_one_sequential_step",
+    "validation_plan_self_identity_check_bound": true
+  },
+  "scope": {
+    "UPDATE_only": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+    ],
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v1.json"
+    ],
+    "OUT": [
+      "Stage 2 closure-pin/harness rebind",
+      "PLAN_v31/harness/evidence/audit/FINALIZE edits",
+      "stage/commit/push",
+      "S3 re-exec",
+      ".pt",
+      "governing dry-exec as acceptance",
+      "artifacts/acc_entropy/baselines/**"
+    ]
+  },
+  "findings_closed": [
+    "F1_sentinel_equality_vacuity",
+    "F2_content_dependent_surface_discovery",
+    "F3_prose_triggered_chronology_candidates"
+  ],
+  "baselines_tmp": {
+    "dir": "/tmp/recarry_hardening_baselines",
+    "validators_pre_hardening_v5_sha256": "f3865b8ef6e92c9a21b7dfd1bcbbb80e9b0315dd6415780d37f46c7a6f31a685",
+    "tests_pre_hardening_v5_sha256": "6412e6faac7c0b7d69da1685f76fbca431eda4388d8cde7fe61220c5822e6275"
+  },
+  "after_shas": {
+    "validators_sha256": "3d73e91b1365dec689ac646c5daa7d468c2605ffcad2428600be2357f159212a",
+    "tests_sha256": "bfe1bb720026d559d6a19a8ff13a8b2f1103797d0a7cabf6777a6b57c9e2f3fe"
+  },
+  "direct_PLAN_v31_validation": {
+    "plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+    "plan_sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+    "validate_single_action_class_per_path": "ACCEPT",
+    "validate_lifecycle_authority_cites_dispatch": "ACCEPT",
+    "accepted": true
+  },
+  "focused_pytest": {
+    "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "result": "95 passed",
+    "floor": "89 prior + >=6 new hostiles",
+    "passed_count": 95,
+    "new_hostiles": [
+      "test_hostile_remove_OUT_from_all_surfaces",
+      "test_hostile_OUT_wrong_type_on_canonical",
+      "test_hostile_erase_this_plan_phase_class_fields",
+      "test_hostile_delete_required_active_phase_block",
+      "test_hostile_active_phase_note_to_ok",
+      "test_hostile_bounded_vN_note_to_ok"
+    ],
+    "stage1_test_local_pin_rebind_note": "autouse fixture rebinds validators import-closure pin in-memory for evidence/harness paths; disk PLAN_v31 pin f3865b8e… unchanged pending Stage 2"
+  },
+  "canonical_invariant": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+    "sha256_before": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+    "sha256_after": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+    "unchanged": true
+  },
+  "governing_dry_exec": {
+    "ran": true,
+    "role_in_acceptance": "NONE",
+    "classification": "EXPECTED-FAIL(import_closure_pin_drift)",
+    "error": "import_closure_pin_drift on calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py: expected=f3865b8ef6e92c9a21b7dfd1bcbbb80e9b0315dd6415780d37f46c7a6f31a685 actual=3d73e91b1365dec689ac646c5daa7d468c2605ffcad2428600be2357f159212a",
+    "matched_import_closure_pin_drift": true
+  },
+  "untouched_assert": {
+    "PLAN_v31_sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+    "harness_sha256": "c60f903e1b6582f8b47ff40eb41f4f65c8198bc993c4c952212f7705b8445351",
+    "evidence_sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+    "canonical_audit_sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+  },
+  "mechanisms": {
+    "F1": "absolute required-list schema before cross-surface equality; sentinel OUT path removed",
+    "F2": "required_operative_surfaces(plan_revision) fail-closed registry; additive extras still validated",
+    "F3": "structural-path-only chronology candidates; prose token gate deleted; historical leaves bind path-gen registry"
+  },
+  "stage2_handoff": {
+    "authorized_here": false,
+    "next": "remint PLAN_v31 execution_import_closure_freeze validators pin to after_shas.validators_sha256; then dry-exec with canonical unchanged"
+  }
+}

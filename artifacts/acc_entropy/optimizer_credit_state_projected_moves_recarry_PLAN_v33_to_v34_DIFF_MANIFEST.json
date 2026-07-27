@@ -1,0 +1,1076 @@
+{
+  "category_counts": {
+    "a_current_generation_identity_substitutions": 13,
+    "b_supersedes_append": 7,
+    "c_lifecycle_registry_and_v34_surfaces": 8,
+    "e_governing_runtime_template": 4,
+    "f_exact_v34_active_ids_and_receipt_fields": 20,
+    "g_adjudication_lineage_additions": 25,
+    "h_parent_identity_repair": 4,
+    "i_current_generation_self_check_regeneration": 16,
+    "j_successor_write_action_map_restructuring": 105,
+    "k_prior_phase_status_supersession": 7
+  },
+  "counts": {
+    "added": 161,
+    "changed": 41,
+    "removed": 7,
+    "total_deltas": 209
+  },
+  "from_plan": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+    "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e"
+  },
+  "rows": [
+    {
+      "category": "k_prior_phase_status_supersession",
+      "kind": "changed",
+      "path": "$.DEVELOPER_STEPS[57].status"
+    },
+    {
+      "category": "k_prior_phase_status_supersession",
+      "kind": "changed",
+      "path": "$.DEVELOPER_STEPS[58].status"
+    },
+    {
+      "category": "k_prior_phase_status_supersession",
+      "kind": "changed",
+      "path": "$.DEVELOPER_STEPS[59].status"
+    },
+    {
+      "category": "k_prior_phase_status_supersession",
+      "kind": "changed",
+      "path": "$.DEVELOPER_STEPS[60].status"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[61].covers"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[61].id"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[61].status"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[62].covers"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[62].id"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[62].status"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[63].covers"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[63].id"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[63].status"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[64].covers"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[64].id"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.DEVELOPER_STEPS[64].status"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "changed",
+      "path": "$.active_id_registry[0]"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "changed",
+      "path": "$.active_id_registry[1]"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "changed",
+      "path": "$.active_id_registry[2]"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "changed",
+      "path": "$.active_id_registry[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.active_write_manifest.CREATE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.active_write_manifest.CREATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.active_write_manifest.CREATE_THEN_PRESERVE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.active_write_manifest.PRESERVE_BYTES[13]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.active_write_manifest.PRESERVE_BYTES[14]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.active_write_manifest.PRESERVE_BYTES[2]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.active_write_manifest.PRESERVE_BYTES[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.active_write_manifest.UPDATE[1]"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.impl_gate2_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[0].impl_gate2_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[0].v11_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[1].gate1_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[1].v12_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[2].gate2_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[2].v13_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[3].gate2_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[3].v14_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[4].gate2_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[4].v15_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[5].gate1_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[5].v16_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[6].gate2_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[6].v17_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[7].gate1_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[7].v18_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[8].gate2_BLOCK"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[8].v19_dispatch"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[9].plus1_implement"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.lineage_additions[9].role"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.plan_request_v19_sha256"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.plus1_implement"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.role"
+    },
+    {
+      "category": "g_adjudication_lineage_additions",
+      "kind": "added",
+      "path": "$.blocker_closures_v34_successor.v11_dispatch"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.exact_active_set_v34[0]"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.exact_active_set_v34[1]"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.exact_active_set_v34[2]"
+    },
+    {
+      "category": "f_exact_v34_active_ids_and_receipt_fields",
+      "kind": "added",
+      "path": "$.exact_active_set_v34[3]"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.executor_split.phase_boundary_S3.required_s3_authority_anchor.must_cite"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.executor_split.phase_boundary_S3.required_s3_go_record.must_cite"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.executor_split.phase_boundary_S3.required_s3_go_record.must_cite_precision[0]"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.executor_split.phase_boundary_S3.sequence[3]"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.executor_split.phase_boundary_S3.sequence[5]"
+    },
+    {
+      "category": "k_prior_phase_status_supersession",
+      "kind": "changed",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v33.status"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.CREATE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.CREATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.CREATE_THEN_PRESERVE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.OUT[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.OUT[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.OUT[2]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.OUT[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.OUT[4]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.OUT[5]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.OUT[6]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[10]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[11]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[12]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[13]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[14]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[2]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[4]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[5]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[6]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[7]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[8]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.PRESERVE_BYTES[9]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.UPDATE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.UPDATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.VALIDATE_ONLY"
+    },
+    {
+      "category": "c_lifecycle_registry_and_v34_surfaces",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.active_after"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.note"
+    },
+    {
+      "category": "c_lifecycle_registry_and_v34_surfaces",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_active_phase_v34.status"
+    },
+    {
+      "category": "k_prior_phase_status_supersession",
+      "kind": "changed",
+      "path": "$.frozen_preconditions.P4_write_surface_v33_lifecycle.status"
+    },
+    {
+      "category": "c_lifecycle_registry_and_v34_surfaces",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.active_after"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.CREATE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.CREATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.CREATE_THEN_PRESERVE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.OUT[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.OUT[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.OUT[2]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.OUT[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.OUT[4]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.OUT[5]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.OUT[6]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[10]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[11]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[12]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[13]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[14]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[2]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[4]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[5]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[6]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[7]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[8]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.PRESERVE_BYTES[9]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.UPDATE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.UPDATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.manifest.VALIDATE_ONLY"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.note"
+    },
+    {
+      "category": "c_lifecycle_registry_and_v34_surfaces",
+      "kind": "added",
+      "path": "$.frozen_preconditions.P4_write_surface_v34_lifecycle.status"
+    },
+    {
+      "category": "k_prior_phase_status_supersession",
+      "kind": "changed",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v33_correction.status"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.CREATE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.CREATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.CREATE_THEN_PRESERVE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.OUT[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.OUT[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.OUT[2]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.OUT[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.OUT[4]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.OUT[5]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.OUT[6]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[10]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[11]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[12]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[13]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[14]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[2]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[4]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[5]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[6]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[7]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[8]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.PRESERVE_BYTES[9]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.UPDATE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.UPDATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.VALIDATE_ONLY"
+    },
+    {
+      "category": "c_lifecycle_registry_and_v34_surfaces",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.active_after"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.note"
+    },
+    {
+      "category": "c_lifecycle_registry_and_v34_surfaces",
+      "kind": "added",
+      "path": "$.frozen_write_surface.post_plus1_implement_bounded_v34_correction.status"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.frozen_write_surface.this_plan_phase.CREATE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.this_plan_phase.CREATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.frozen_write_surface.this_plan_phase.CREATE_THEN_PRESERVE[0]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.this_plan_phase.PRESERVE_BYTES[13]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.this_plan_phase.PRESERVE_BYTES[14]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.frozen_write_surface.this_plan_phase.PRESERVE_BYTES[2]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.frozen_write_surface.this_plan_phase.PRESERVE_BYTES[3]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "added",
+      "path": "$.frozen_write_surface.this_plan_phase.UPDATE[1]"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.frozen_write_surface.this_plan_phase.active_after"
+    },
+    {
+      "category": "j_successor_write_action_map_restructuring",
+      "kind": "changed",
+      "path": "$.frozen_write_surface.this_plan_phase.note"
+    },
+    {
+      "category": "e_governing_runtime_template",
+      "kind": "changed",
+      "path": "$.governing_runtime_command.argv_template[3]"
+    },
+    {
+      "category": "e_governing_runtime_template",
+      "kind": "changed",
+      "path": "$.governing_runtime_command.argv_template_sha256"
+    },
+    {
+      "category": "e_governing_runtime_template",
+      "kind": "changed",
+      "path": "$.governing_runtime_command.authorization.requires[1]"
+    },
+    {
+      "category": "e_governing_runtime_template",
+      "kind": "changed",
+      "path": "$.governing_runtime_command.authorization.requires[2]"
+    },
+    {
+      "category": "c_lifecycle_registry_and_v34_surfaces",
+      "kind": "added",
+      "path": "$.lifecycle_dispatch_id_registry.v34.id"
+    },
+    {
+      "category": "c_lifecycle_registry_and_v34_surfaces",
+      "kind": "added",
+      "path": "$.lifecycle_dispatch_id_registry.v34.mode"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.observation_evidence_seam.must_carry[36]"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.observation_evidence_seam.must_carry[37]"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.packet_revision"
+    },
+    {
+      "category": "h_parent_identity_repair",
+      "kind": "added",
+      "path": "$.parent_plan.plan_request_v19_sha256"
+    },
+    {
+      "category": "h_parent_identity_repair",
+      "kind": "removed",
+      "path": "$.parent_plan.plan_request_v8_sha256"
+    },
+    {
+      "category": "h_parent_identity_repair",
+      "kind": "changed",
+      "path": "$.parent_plan.plus1_implement"
+    },
+    {
+      "category": "h_parent_identity_repair",
+      "kind": "changed",
+      "path": "$.parent_plan.sha256"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.phase_dag_self_check.text_vs_dag_edge_consistency.edges[5].B_operative_preconditions[0]"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.phase_dag_self_check.text_vs_dag_edge_consistency.edges[7].B_operative_preconditions[0]"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.plan_revision"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.s3_two_record_go_topology.steps[0].cites"
+    },
+    {
+      "category": "a_current_generation_identity_substitutions",
+      "kind": "changed",
+      "path": "$.s3_two_record_go_topology.steps[2].cites"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "removed",
+      "path": "$.self_check.active_ids_exact_four_including_S0b_v19"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.active_ids_exact_four_including_S0b_v20"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.argv_template_sha256_5a1faff4"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "removed",
+      "path": "$.self_check.argv_template_sha256_e3d58ef4"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.k_supersedes_exactly_7_old_leaves"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.parent_plan_truthful_v33_hash_match"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "removed",
+      "path": "$.self_check.plan_revision_v33"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.plan_revision_v34"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "removed",
+      "path": "$.self_check.receipt_identity_v19_N_minus_14"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.receipt_identity_v20_N_minus_14"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "removed",
+      "path": "$.self_check.registry_v33_full_plan_gate"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.registry_v34_full_plan_gate"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "removed",
+      "path": "$.self_check.supersedes_contiguous_1_to_32"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.supersedes_contiguous_1_to_33"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.this_plan_phase_status_stays_ACTIVE"
+    },
+    {
+      "category": "i_current_generation_self_check_regeneration",
+      "kind": "added",
+      "path": "$.self_check.three_v34_surface_statuses_ACTIVE"
+    },
+    {
+      "category": "b_supersedes_append",
+      "kind": "changed",
+      "path": "$.supersedes.note"
+    },
+    {
+      "category": "b_supersedes_append",
+      "kind": "added",
+      "path": "$.supersedes.plans[32].blocked_by"
+    },
+    {
+      "category": "b_supersedes_append",
+      "kind": "added",
+      "path": "$.supersedes.plans[32].defects[0]"
+    },
+    {
+      "category": "b_supersedes_append",
+      "kind": "added",
+      "path": "$.supersedes.plans[32].defects[1]"
+    },
+    {
+      "category": "b_supersedes_append",
+      "kind": "added",
+      "path": "$.supersedes.plans[32].preserved_bytes"
+    },
+    {
+      "category": "b_supersedes_append",
+      "kind": "added",
+      "path": "$.supersedes.plans[32].rev"
+    },
+    {
+      "category": "b_supersedes_append",
+      "kind": "added",
+      "path": "$.supersedes.plans[32].sha256"
+    }
+  ],
+  "schema": "recarry_plan_diff_manifest_v1",
+  "semantic_digest_sha256": "0bb08cece5309fbc6c5543f7bc988c4fa9947550f9e38a837f6652146ebf30fa",
+  "to_plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v34.json",
+  "to_plan_sha256": "0a47d2550b85cc1a26153e3439da38d08d45fb559665ce7b248ef1e6c736efee",
+  "unmapped_paths": []
+}

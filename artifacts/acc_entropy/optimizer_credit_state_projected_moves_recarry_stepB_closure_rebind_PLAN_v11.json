@@ -1,0 +1,1008 @@
+{
+  "schema": "recarry_stepB_closure_rebind_plan_v11",
+  "kind": "PLAN_REQUEST",
+  "mode": "full_plan_gate",
+  "tier": "HIGH",
+  "sizing": "MEDIUM",
+  "plan_revision": "v11",
+  "packet_revision": "v11",
+  "dispatch_msg_id": "1785178242635-d16e6ffc",
+  "task_id": "1785163855817-03f00155",
+  "report_to": [
+    "claude"
+  ],
+  "cross_thread_required": true,
+  "minted_at": "2026-07-27T18:53:54Z",
+  "parent_plan": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v10.json",
+    "sha256": "e7711c460989bcf2d48e15e4a5f0d64c50ac06ed61f5d85b755d7de701547da5",
+    "note": "v10 was dual-ACCEPTED and its residual EXECUTED cleanly (receipt_v19 stands as truthful record of that residual). This gate-2 BLOCK is on the v8-era PLAN_v33 precondition (false parent_identity + manifest category-a misclassification), not on v10 authorship. impl_gate2_BLOCK=1785178150818-fdd9d2fd",
+    "parent_identity_hash_check": {
+      "requirement": "sha256(bytes at parent_plan.path) MUST equal parent_plan.sha256",
+      "proved_this_mint": true
+    }
+  },
+  "supersedes": {
+    "note": "v1–v10 byte-preserved; append-only; never restructured. v10 entry has NO blocked_by (dual-accepted; residual executed). PLAN_v33 precondition defect is carried in adjudication_plan_v33_precondition_defects + category g — not by falsely blocking v10.",
+    "plans": [
+      {
+        "preserved_bytes": true,
+        "revision": "v1",
+        "sha256": "4815bb7ea90a78fb133f2095439c9a5a8d50d223b640782d348caa2ccd43d8ec"
+      },
+      {
+        "preserved_bytes": true,
+        "revision": "v2",
+        "sha256": "d501a89daadfbf7b241f718ebb88aa3c7f2d34bdc423ddd3955e0853ad737de1"
+      },
+      {
+        "preserved_bytes": true,
+        "revision": "v3",
+        "sha256": "4fdee014492d0f034fd8b1462106e277f8b1713a2a7e98288d50c7af555a7475"
+      },
+      {
+        "preserved_bytes": true,
+        "revision": "v4",
+        "sha256": "5e02d872a82fe0a42a2dceccf147f5f555c50c324c76251722f0d16fcb9179b3"
+      },
+      {
+        "blocked_by": "1785174252588-4b05e1fc",
+        "preserved_bytes": true,
+        "revision": "v5",
+        "sha256": "82b4f2e569cb469ac17543623832fa02c1092a1ff18279949eb8d8b7e757c5df"
+      },
+      {
+        "blocked_by": "1785174437193-d056a23b",
+        "preserved_bytes": true,
+        "revision": "v6",
+        "sha256": "162c2f6841c1670f7e41430615e6b422e3e136437dac95123afb3f8db7024f86"
+      },
+      {
+        "blocked_by": "1785174929231-69d77e8c",
+        "preserved_bytes": true,
+        "revision": "v7",
+        "sha256": "ae65e502465df1259c5fe921760b999e9e76ba0ad613e0d4a0c4c34f2a465877"
+      },
+      {
+        "blocked_by": "1785176217295-f965b231",
+        "preserved_bytes": true,
+        "revision": "v8",
+        "sha256": "b368454fd4413a8d8c0c170968f53c818a6c728f26f855e81aa5a668d7244ab8"
+      },
+      {
+        "revision": "v9",
+        "sha256": "576dbbcf708da5f43e22bd913e73df055e68c5dc1c905fbb851a7875eeb327f5",
+        "preserved_bytes": true,
+        "blocked_by": "1785176781982-2c45529a"
+      },
+      {
+        "revision": "v10",
+        "sha256": "e7711c460989bcf2d48e15e4a5f0d64c50ac06ed61f5d85b755d7de701547da5",
+        "preserved_bytes": true,
+        "dual_accepted": true,
+        "residual_executed": true,
+        "implement_receipt_v19_sha256": "0576d8c4103b6ce3742b1f2e229d66d815713ac07712fff042e6acf429336f5b"
+      }
+    ]
+  },
+  "adjudication_plan_v33_precondition_defects": {
+    "impl_gate2_BLOCK": "1785178150818-fdd9d2fd",
+    "v11_dispatch": "1785178242635-d16e6ffc",
+    "immutable_adjudicated_artifacts": {
+      "PLAN_v33": {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+        "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+        "cure": "supersession via PLAN_v34 — NEVER edit in place"
+      },
+      "DIFF_MANIFEST_v32_to_v33": {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json",
+        "file_sha256": "e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84",
+        "diff_digest_sha256": "f800063a10192380be1546c20abbeb49d668f4233f53f37c8423afb7e5a9d420",
+        "cure": "referenced as defective lineage; new DIFF MANIFEST v33→v34; NEVER rewrite"
+      },
+      "IMPLEMENT_receipt_v19": {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v19.json",
+        "sha256": "0576d8c4103b6ce3742b1f2e229d66d815713ac07712fff042e6acf429336f5b",
+        "stands_as": "truthful record of v10 residual work",
+        "superseded_as": "Step-B closure claim (completion blocked until v34 successor lands)"
+      }
+    },
+    "defects": [
+      {
+        "id": "false_parent_identity",
+        "evidence": {
+          "PLAN_v33.parent_plan.path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+          "PLAN_v33.parent_plan.sha256_declared": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+          "sha256_of_bytes_at_declared_path": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+          "mismatch": true,
+          "diagnosis": "path points at SELF (v33) while sha256 is v32 — false provenance"
+        }
+      },
+      {
+        "id": "manifest_category_a_misclassification",
+        "evidence": {
+          "manifest": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json",
+          "co_lead_findings_preregistered_category_a_abuse": [
+            "self_check removals labeled category-a",
+            "schema addition labeled category-a",
+            "PRESERVE_BYTES restructuring labeled category-a",
+            "status transitions labeled category-a"
+          ],
+          "rule": "category-a is strictly literal generation-identity substitution only; structural changes must be classified structurally — no shelter"
+        }
+      }
+    ],
+    "route": "SUCCESSOR_GENERATION_PLAN_v34",
+    "banked_axes": [
+      "implementation_gate1_checklist_derived_from_plus1_dispatch_text_executed_in_full_before_freeze",
+      "every_minted_plan_parent_plan_path_bytes_MUST_hash_match_parent_plan_sha256",
+      "stop_conditions_rederived_against_current_write_surface_every_remint",
+      "schema_token_matches_current_generation",
+      "proof_obligation_simulation_at_plan_gate_including_four_test_v34_cascade_and_receipt_v20",
+      "honest_per_path_semantic_classification_in_allowed_diff_no_category_a_shelter"
+    ],
+    "validator_executable_parent_identity_check": "FOLLOW_UP_HARDENING_AFTER_THIS_SLICE — do not cascade closure-pin now"
+  },
+  "decision_contract": {
+    "intent": "Step B v11 FULL plan-gate: successor-generation correction — mint PLAN_v34 with truthful parent_identity + honest v33→v34 DIFF MANIFEST; rebind harness+4 tests to v34; prove; O_EXCL IMPLEMENT_receipt_v20. PLAN_v33/defective manifest/receipt_v19 byte-immutable.",
+    "form_choice": "Side-family plan-request v11 (this artifact). Implement ONLY after dual accept + persisted +1 citing THIS v11 sha. Novel re-scope — no fast path.",
+    "form_justification": "Impl gate-2 BLOCK 1785178150818-fdd9d2fd verified PLAN_v33.parent_plan false provenance (path=self/v33, sha=v32) and v32→v33 DIFF MANIFEST category-a abuse. Artifacts are immutable; cure is supersession via PLAN_v34 (same route used for PLAN_v32 false lifecycle text). v10 residual (4-test rebind + receipt_v19) remains a truthful executed record and is NOT blocked_by-tagged. Authority target = THIS v11 sha. Receipt identity = IMPLEMENT_receipt_v20 per N−14 (34−14=20).",
+    "executor": "plan-dev (codex) after claude+co_lead dual accept + fresh +1 citing THIS v11 sha",
+    "step_A_dual_accept": {
+      "gate1": "1785171861101-f2df9e36",
+      "gate2": "1785172122490-652f34a9",
+      "tests_frozen": "4e6ecb5d5f26c5b8a452a8b21947c08ccd975e3f8aba3ce71ecf8c84fc5faa98",
+      "validators_frozen": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae"
+    },
+    "v10_residual_record": {
+      "plan_request_sha256": "e7711c460989bcf2d48e15e4a5f0d64c50ac06ed61f5d85b755d7de701547da5",
+      "implement_receipt_v19_sha256": "0576d8c4103b6ce3742b1f2e229d66d815713ac07712fff042e6acf429336f5b",
+      "status": "executed_cleanly_under_dual_accept_not_blocked"
+    }
+  },
+  "claim_ceiling": {
+    "may_claim": [
+      "successor_generation_PLAN_v34",
+      "truthful_parent_identity",
+      "honest_diff_manifest_v33_to_v34",
+      "harness_binds_PLAN_v34",
+      "bounded_tests_generation_rebind_v34",
+      "dry_exec_green_under_v34"
+    ],
+    "must_not_claim": [
+      "S3_reexec",
+      "science_remint",
+      "readiness",
+      "sub2",
+      "density_win",
+      "byte_savings",
+      "acquisition",
+      "bank",
+      "A+B_result_change",
+      "in_place_edit_of_PLAN_v33_or_defective_manifest",
+      "StepB_complete_before_v34_dual_implement_accept"
+    ],
+    "A_B_result": "remains bound to existing S3/FINALIZE receipts; no remint of science claim"
+  },
+  "parent_identity_invariant": {
+    "rule": "For EVERY minted measurement plan referenced operatively: sha256(open(parent_plan.path).read()) == parent_plan.sha256",
+    "applies_at": [
+      "plan_gate",
+      "implement",
+      "implementation_gate1",
+      "implementation_gate2"
+    ],
+    "PLAN_v34_required_parent": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "forbidden": "self-path; foreign-generation sha; path/sha mismatch"
+    },
+    "PLAN_v33_known_violation": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "declared_sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+      "actual_sha256_at_path": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "adjudicated": true
+    }
+  },
+  "plan_v34_mint_contract": {
+    "status": "AUTHORIZED_AFTER_DUAL_ACCEPT_AND_PLUS1",
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v34.json",
+    "plan_revision": "v34",
+    "packet_revision": "v34",
+    "publish_primitive": "final_path_O_EXCL_direct_open (no_clobber)",
+    "v34_path_absent_pre_mint_required": true,
+    "parent_plan_truthful": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "parent_identity_hash_check_required_at_mint": true
+    },
+    "supersedes_append_v33": {
+      "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "blocked_by": "1785178150818-fdd9d2fd",
+      "defects": [
+        "false_parent_identity",
+        "manifest_category_a_misclassification"
+      ],
+      "append_only": true,
+      "v32_and_priors_carried": true
+    },
+    "lifecycle_registry": {
+      "registry_keys_exact": "contiguous {v19..v34}",
+      "registry_v19_v33": "byte-carried from PLAN_v33 (incl. v33 object entry)",
+      "registry_v34": {
+        "id": "1785178242635-d16e6ffc",
+        "mode": "full_plan_gate"
+      },
+      "two_way_set_equality": "registry gens == governed lifecycle gens == {v19..v34}"
+    },
+    "active_ids_exact": [
+      "S0_v34_successor_generation_rebind",
+      "S0_v34_harness_rebind_and_dry_exec_prove",
+      "S0b_v34_implement_receipt_v20",
+      "S0_v34_deferred_one_commit_scope_gate"
+    ],
+    "receipt_arithmetic": {
+      "IMPLEMENT_receipt": "v20",
+      "rule": "N−14",
+      "check": "34−14=20",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v20.json"
+    },
+    "byte_carry": "ALL other v33 operative content byte-carried except declared v33→v34 deltas in allowed_diff_contract_v33_to_v34",
+    "must_pass_hardened_validators": true,
+    "untruthful_mode_or_text": "hard STOP"
+  },
+  "allowed_diff_contract_v33_to_v34": {
+    "basis": "PLAN_v33 sha 0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e is the sole byte-baseline for the remint diff",
+    "normalization": "JSON load both plans; compare leaf paths; generation-token substitutions counted as declared category (a) ONLY when strictly literal identity substitution; structural changes MUST be classified in structural categories — no category-a shelter",
+    "explicit_byte_carry_assertion": "Every leaf not enumerated under allowed_changed_categories must be byte-identical v33→v34",
+    "honest_classification_rules": {
+      "category_a_strict": "literal current-generation identity substitutions only (plan_revision, packet_revision, workflow PLAN_vN tokens, argv --plan path, S0 id renames per exact active set, must_cite generation tokens where governing)",
+      "category_a_FORBID_shelter": [
+        "self_check additions/removals/rewrites",
+        "schema token additions/changes beyond declared schema identity row",
+        "PRESERVE_BYTES / write-surface restructuring",
+        "status transitions (ACTIVE/COMPLETE/etc.)",
+        "parent_plan path/sha repairs",
+        "container/structural key add/remove/reorder beyond declared structural categories"
+      ],
+      "parent_plan_repair_category": "structural (dedicated category h_parent_identity_repair) — NOT category-a",
+      "lessons_from_defective_v32_to_v33_manifest": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json misclassified structural edits as category-a; v33→v34 must not repeat"
+    },
+    "allowed_changed_categories": {
+      "a_current_generation_identity_substitutions": {
+        "description": "Strictly literal v33→v34 identity field substitutions only",
+        "examples": [
+          "plan_revision",
+          "packet_revision",
+          "governing_runtime_command.argv_template[--plan] path v33→v34",
+          "operative note/active_after generation tokens naming PLAN_v34",
+          "S0 step ids renamed per exact_active_set_v34"
+        ]
+      },
+      "b_supersedes_append": {
+        "description": "supersedes.plans += v33 entry sha 0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e blocked_by 1785178150818-fdd9d2fd defects [false_parent_identity, manifest_category_a_misclassification]; priors byte-carried"
+      },
+      "c_lifecycle_registry_and_v34_surfaces": {
+        "registry_add": {
+          "v34": {
+            "id": "1785178242635-d16e6ffc",
+            "mode": "full_plan_gate"
+          }
+        },
+        "registry_keys_exact": "contiguous {v19..v34}",
+        "new_governed_surfaces": "v34 lifecycle active_after/note surfaces with exact full_plan_gate text",
+        "governed_leaf_text_exact": "PLAN_v34 minted under full-plan-gate dispatch 1785178242635-d16e6ffc; implementation authority arrives only via post-dual-accept persisted +1 implement."
+      },
+      "d_no_closure_pin_change": {
+        "description": "validators/evidence pins UNCHANGED this generation (00435afa… / b82d30ff…); zero category-d pin edits",
+        "validators_sha256": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae",
+        "evidence_sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0"
+      },
+      "e_governing_runtime_template": {
+        "argv_template": [
+          "python3",
+          "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+          "--plan",
+          "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v34.json",
+          "--out",
+          "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+          "--s3-authority-anchor-msg-id",
+          "<S3_AUTHORITY_ANCHOR_MSG_ID>"
+        ],
+        "argv_template_sha256": "5a1faff46d7fa3dc2b69a9aa2be4e66abdad1c16656fce00845569778d8d2d24",
+        "argv_template_sha_method": "sha256(json.dumps(argv_template, separators=(',', ':')))",
+        "precomputed_confirmed_this_plan_mint": true
+      },
+      "f_exact_v34_active_ids_and_receipt_fields": {
+        "ACTIVE_DEVELOPER_STEPS_ids": [
+          "S0_v34_successor_generation_rebind",
+          "S0_v34_harness_rebind_and_dry_exec_prove",
+          "S0b_v34_implement_receipt_v20",
+          "S0_v34_deferred_one_commit_scope_gate"
+        ],
+        "active_id_registry": [
+          "S0_v34_successor_generation_rebind",
+          "S0_v34_harness_rebind_and_dry_exec_prove",
+          "S0b_v34_implement_receipt_v20",
+          "S0_v34_deferred_one_commit_scope_gate"
+        ],
+        "receipt_generation_fields": "IMPLEMENT_receipt_v20 bindings / self-identity fields naming v34 (N−14: 34−14=20)"
+      },
+      "g_adjudication_lineage_additions": {
+        "add": [
+          {
+            "impl_gate2_BLOCK": "1785178150818-fdd9d2fd",
+            "role": "plan_v33_false_parent_and_manifest_misclassification_successor_v34_route",
+            "v11_dispatch": "1785178242635-d16e6ffc"
+          }
+        ],
+        "location": "blocker_closures_* / supersedes / adjudication blocks only"
+      },
+      "h_parent_identity_repair": {
+        "description": "STRUCTURAL — replace false PLAN_v33 parent_plan with truthful parent pointing at PLAN_v33 path+sha",
+        "from_defective_v33_shape": {
+          "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+          "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+        },
+        "to_truthful_v34_parent": {
+          "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+          "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e"
+        },
+        "NOT_category_a": true
+      }
+    },
+    "implement_receipt_v20_must_bind": {
+      "final_v34_sha": true,
+      "diff_manifest_v33_to_v34": "path + file sha + semantic digest",
+      "diff_digest_method": "sha256 of canonical-JSON bytes excluding embedded digest field",
+      "note": "binding final v34 sha alone is insufficient",
+      "receipt_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v20.json"
+    },
+    "defective_prior_manifest_reference_only": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json",
+      "file_sha256": "e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84",
+      "immutable": true,
+      "do_not_rewrite": true
+    }
+  },
+  "allowed_diff_contract_v32_to_v33_HISTORICAL_ADJUDICATED": {
+    "allowed_changed_categories": {
+      "a_current_generation_identity_substitutions": {
+        "description": "Named current-generation identity fields v32→v33 (plan_revision, packet_revision, workflow tokens naming PLAN_v33, operative note/active_after on current surfaces, argv --plan path, CREATE/this_plan_phase plan path strings, S0 step ids renamed per exact active set)",
+        "examples": [
+          "plan_revision",
+          "packet_revision",
+          "governing_runtime_command.argv_template[--plan]",
+          "frozen_write_surface.this_plan_phase note/active_after",
+          "executor_split.phase_boundary_S3.required_s3_authority_anchor.must_cite",
+          "executor_split.phase_boundary_S3.required_s3_go_record.must_cite"
+        ],
+        "explicit_named_rows": [
+          {
+            "basis": "literal identity substitution; satisfies validate_plan_anchor_go_citations_carry_harness_sha / anchor_go_citation_stale_generation",
+            "from": "PLAN_v32 sha + argv_template_sha256 + harness_file_sha256",
+            "path": "$.executor_split.phase_boundary_S3.required_s3_authority_anchor.must_cite",
+            "to": "PLAN_v33 sha + argv_template_sha256 + harness_file_sha256"
+          },
+          {
+            "basis": "literal identity substitution on generation token in go must_cite",
+            "from_prefix": "PLAN_v32 sha +",
+            "path": "$.executor_split.phase_boundary_S3.required_s3_go_record.must_cite",
+            "to_prefix": "PLAN_v33 sha +"
+          },
+          {
+            "basis": "literal PLAN_vN token substitution only where the cited generation is the governing plan",
+            "from": "PLAN_v32",
+            "path": "$.executor_split.phase_boundary_S3.required_s3_go_record.must_cite_precision (and any parallel must_cite* strings naming PLAN_v32)",
+            "to": "PLAN_v33"
+          }
+        ]
+      },
+      "b_supersedes_append": {
+        "description": "supersedes.plans += structured entry for v32 with exact sha 55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7; prior v1..v31 entries byte-carried"
+      },
+      "c_lifecycle_registry_and_v33_surfaces": {
+        "governed_leaf_text_exact": "PLAN_v33 minted under full-plan-gate dispatch 1785172156936-8fc4d796; implementation authority arrives only via post-dual-accept persisted +1 implement.",
+        "new_governed_surfaces_exact": [
+          "frozen_preconditions.P4_write_surface_active_phase_v33.active_after",
+          "frozen_preconditions.P4_write_surface_active_phase_v33.note",
+          "frozen_preconditions.P4_write_surface_v33_lifecycle.active_after",
+          "frozen_preconditions.P4_write_surface_v33_lifecycle.note",
+          "frozen_write_surface.post_plus1_implement_bounded_v33_correction.active_after",
+          "frozen_write_surface.post_plus1_implement_bounded_v33_correction.note"
+        ],
+        "registry_add": {
+          "v33": {
+            "id": "1785172156936-8fc4d796",
+            "mode": "full_plan_gate"
+          }
+        },
+        "registry_keys_exact": "contiguous {v19..v33}",
+        "registry_v19_v32": "byte-carried plain-string entries from v32",
+        "this_plan_phase_leaves": "active_after/note updated to exact full_plan_gate text (category a + c overlap acknowledged)"
+      },
+      "d_closure_pin_single": {
+        "from": "324ecdba39a31cf750edbbcb6f1e0fc4cd6d43eb6d4ac6332e47e4b39002157b",
+        "other_99": "byte-identical to v32 pins",
+        "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+        "to": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae"
+      },
+      "e_governing_runtime_template": {
+        "argv_template": [
+          "python3",
+          "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+          "--plan",
+          "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+          "--out",
+          "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+          "--s3-authority-anchor-msg-id",
+          "<S3_AUTHORITY_ANCHOR_MSG_ID>"
+        ],
+        "argv_template_sha256": "e3d58ef4a060a97c8d7d6c8891879a754240a18829b507cb53659a3e9caaf60c",
+        "plan_path_v32_to_v33": true
+      },
+      "f_exact_v33_active_ids_and_receipt_fields": {
+        "ACTIVE_DEVELOPER_STEPS_ids": [
+          "S0_v33_stage2_closure_rebind",
+          "S0_v33_harness_rebind_and_dry_exec_prove",
+          "S0b_v33_implement_receipt_v19",
+          "S0_v33_deferred_one_commit_scope_gate"
+        ],
+        "active_id_registry": [
+          "S0_v33_stage2_closure_rebind",
+          "S0_v33_harness_rebind_and_dry_exec_prove",
+          "S0b_v33_implement_receipt_v19",
+          "S0_v33_deferred_one_commit_scope_gate"
+        ],
+        "receipt_generation_fields": "IMPLEMENT_receipt_v19 bindings / self-identity fields naming v33 (validator N−14: 33−14=19)"
+      },
+      "g_adjudication_lineage_additions": {
+        "add": [
+          {
+            "BLOCK": "1785172566705-7647fe94",
+            "dispatch": "1785172601870-93e57a8a"
+          },
+          {
+            "gate2": "1785172122490-652f34a9",
+            "stepA_dual_accept_gate1": "1785171861101-f2df9e36"
+          },
+          {
+            "stepB_dispatch": "1785172156936-8fc4d796"
+          },
+          {
+            "BLOCK": "1785172956520-dd5f9eae",
+            "role": "v2_gate1_BLOCK_and_consolidated_v3_remint_dispatch"
+          },
+          {
+            "gate2_BLOCK": "1785173217985-db35c6df",
+            "role": "v3_gate2_BLOCK_upheld_consolidated_v4_remint",
+            "v4_dispatch": "1785173296044-8b185620"
+          },
+          {
+            "implement_BLOCKER": "1785173863453-b4866fd3",
+            "rescinded_plus1": "1785173654455-7dcb7834",
+            "role": "receipt_N_minus_14_arithmetic_defect_cycle",
+            "v5_dispatch": "1785174028200-4c7035f9"
+          },
+          {
+            "gate1_BLOCK": "1785174252588-4b05e1fc",
+            "role": "v5_gate1_BLOCK_historical_record_rewrite_consolidated_v6_remint",
+            "v6_dispatch": "1785174252588-4b05e1fc"
+          },
+          {
+            "gate1_BLOCK": "1785174437193-d056a23b",
+            "role": "v6_gate1_BLOCK_g_lineage_gap_consolidated_v7_remint",
+            "v7_dispatch": "1785174437193-d056a23b"
+          },
+          {
+            "gate2_BLOCK": "1785174929231-69d77e8c",
+            "role": "v7_gate2_BLOCK_supersedes_lineage_deletion_consolidated_v8_remint",
+            "v8_dispatch": "1785174983376-8bacf61a"
+          },
+          {
+            "implement_BLOCKER": "1785176217295-f965b231",
+            "role": "v8_proof_contradiction_tests_generation_binding_consolidated_v9_remint",
+            "v9_dispatch": "1785176318287-cdc5a4d9"
+          },
+          {
+            "gate2_BLOCK": "1785176781982-2c45529a",
+            "role": "v9_amendment_selfstop_and_verifier_gap_consolidated_v10_remint",
+            "v10_dispatch": "1785176828993-10baaf8d"
+          },
+          {
+            "impl_gate2_BLOCK": "1785178150818-fdd9d2fd",
+            "role": "plan_v33_false_parent_and_manifest_misclassification_successor_v34_route",
+            "v11_dispatch": "1785178242635-d16e6ffc"
+          }
+        ],
+        "location": "blocker_closures_* / supersedes / lineage blocks only — not silent rewrite of historical closures",
+        "note": "Must include every adjudication event that shaped the governing plan-request through its CURRENT generation's authoring dispatch; each remint appends its own BLOCK/dispatch pair; terminal gate-1 freeze + gate-2 PASS records bind in IMPLEMENT_receipt_v19, not here."
+      }
+    },
+    "basis": "PLAN_v32 sha 55417cff… is the sole byte-baseline for the remint diff",
+    "explicit_byte_carry_assertion": {
+      "MUST_remain_byte_equivalent_after_declared_substitutions": [
+        "claim_ceiling (may_claim / must_not_claim content — no silent widen/narrow)",
+        "DAG / phase ordering (phase_dag_self_check edges/nodes topology)",
+        "write/action maps structure (action classes + OUT membership semantics beyond declared path renames)",
+        "executor_split topology (roles/boundaries; generation tokens only where declared)",
+        "dependency/source pins other than the single validators closure pin",
+        "receipt schemas / evidence must_carry schemas",
+        "authority topology (anchor/go/two-record rules; S3 authorization shape)",
+        "forbidden_actions / stop_conditions classes (except additive STOP rows named in this v2 for no-clobber + allowed-diff violations)",
+        "parity_binding_set / rank_spec_frozen / import-closure method metadata",
+        "all other fields not enumerated in allowed_changed_categories a–g"
+      ],
+      "violation": "any undeclared path change → STOP + report in DIFF MANIFEST"
+    },
+    "implement_receipt_v19_must_bind": {
+      "diff_digest": "sha256 over canonical JSON of the diff_manifest",
+      "diff_manifest": "normalized enumeration of every changed leaf path v32→v33 with category tag a–g",
+      "final_v33_sha": true,
+      "note": "binding final v33 sha alone is insufficient; receipt path = artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v19.json per validators N−14"
+    },
+    "normalization": "JSON load both plans; compare leaf paths; generation-token substitutions counted as declared category (a), not silent drift"
+  },
+  "diff_manifest_v33_to_v34_contract": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v33_to_v34_DIFF_MANIFEST.json",
+    "requirements": [
+      "canonical leaf census of every changed leaf path v33→v34",
+      "honest per-path category tag using allowed_diff_contract_v33_to_v34 categories",
+      "semantic digest method carried (canonical-JSON excluding embedded digest field)",
+      "counts: added/removed/changed/total_deltas"
+    ],
+    "defective_v32_to_v33_manifest": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json",
+      "file_sha256": "e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84",
+      "status": "immutable_adjudicated_defect_referenced_in_lineage"
+    }
+  },
+  "harness_rebind_contract": {
+    "status": "AUTHORIZED_AFTER_DUAL_ACCEPT_AND_PLUS1",
+    "file": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+    "before_sha256": "6b3d6555ded2d85c1d969eb32e586ebe36c31638ebfe34836c7cc007cd166452",
+    "after_sha256": "<bind in IMPLEMENT_receipt_v20 after 3-constant rebind>",
+    "edits_exactly_3_constants": true,
+    "edits_beyond_3_constants": "STOP",
+    "after_constants": {
+      "PLAN_REVISION": "v34",
+      "PLAN_SHA256_EXPECTED": "<sha256 of minted PLAN_v34 bytes — bind in receipt_v20>",
+      "ARGV_TEMPLATE_SHA256_EXPECTED": "5a1faff46d7fa3dc2b69a9aa2be4e66abdad1c16656fce00845569778d8d2d24"
+    },
+    "argv_template": [
+      "python3",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v34.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "--s3-authority-anchor-msg-id",
+      "<S3_AUTHORITY_ANCHOR_MSG_ID>"
+    ],
+    "argv_template_sha256": "5a1faff46d7fa3dc2b69a9aa2be4e66abdad1c16656fce00845569778d8d2d24",
+    "argv_template_sha_method": "sha256(json.dumps(argv_template, separators=(',', ':')))",
+    "argv_precomputed_confirmed_at_plan_mint": true,
+    "current_state_pre_implement": {
+      "PLAN_REVISION": "v33",
+      "PLAN_SHA256_EXPECTED": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "ARGV_TEMPLATE_SHA256_EXPECTED": "e3d58ef4a060a97c8d7d6c8891879a754240a18829b507cb53659a3e9caaf60c",
+      "file_sha256": "6b3d6555ded2d85c1d969eb32e586ebe36c31638ebfe34836c7cc007cd166452"
+    },
+    "no_validator_or_tests_sha_constants": true
+  },
+  "bounded_tests_update_v11": {
+    "file": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+    "before_sha256": "17526238d8f134529ca3004e11cca733802a3efa723974224cf0ad17b066f6b5",
+    "after_sha256": "<bind in IMPLEMENT_receipt_v20 after edit>",
+    "tests_exactly": [
+      "test_governing_receipt_anchor_only_excludes_go_id",
+      "test_hostile_argv_template_deviation",
+      "test_harness_file_sha256_embedded_and_matches_runtime",
+      "test_dry_exec_out_scratch_path_cli"
+    ],
+    "allowed_change": "GOVERNING-PLAN fixture rebind v33→v34 ONLY inside the four named test function bodies (path + sha of minted PLAN_v34 + plan_revision asserts → \"v34\" + embedded harness sha asserts → harness after-sha where asserted). Assertion LOGIC unchanged. Rebind-only.",
+    "hard_stop": "any test-file byte outside the named 4-test function-body generation bindings → STOP",
+    "source_diff_verifier": {
+      "baseline_freeze": {
+        "copy_to": "/tmp/optimizer_credit_state_projected_moves_recarry_measurement_tests_baseline_17526238.py",
+        "sha256": "17526238d8f134529ca3004e11cca733802a3efa723974224cf0ad17b066f6b5",
+        "requirement": "freeze pre-edit source to /tmp baseline at sha 17526238… BEFORE any edit"
+      },
+      "allowed_edit": "function-scoped hunks WITHIN exactly the four named test function bodies (generation bindings only)",
+      "verifier_procedure": "AST-identify the four functions on baseline and after; split into outside-spans vs inside bodies; REQUIRE byte equality of concatenated outside-spans; inside spans generation bindings only",
+      "explicitly_OUTSIDE_edit_surface": [
+        "module constant PLAN_V30 (and PLAN_V31 alias)",
+        "pytest plan fixture",
+        "_anchor_argv helper",
+        "all other tests"
+      ],
+      "proof_note": "pytest alone does NOT prove frozen-lane boundary — outside-span byte comparison is the proof",
+      "receipt_must_bind": [
+        "tests_before_sha256",
+        "tests_after_sha256",
+        "unified_diff_of_the_four_hunks",
+        "outside_span_bytes_equal=true"
+      ]
+    }
+  },
+  "exact_active_set_v11": {
+    "frozen_active_ids": [
+      "S0_v11_mint_plan_v34_and_diff_manifest",
+      "S0_v11_harness_and_bounded_tests_rebind",
+      "S0_v11_prove_direct_pytest_dry_exec",
+      "S0b_v11_implement_receipt_v20",
+      "S0_v11_deferred_one_commit_scope_gate"
+    ],
+    "set_equality": "both directions",
+    "note": "CURRENT side-family plan-request generation (v11) exact active ids"
+  },
+  "exact_active_set_v34": {
+    "frozen_active_ids": [
+      "S0_v34_successor_generation_rebind",
+      "S0_v34_harness_rebind_and_dry_exec_prove",
+      "S0b_v34_implement_receipt_v20",
+      "S0_v34_deferred_one_commit_scope_gate"
+    ],
+    "ACTIVE_DEVELOPER_STEPS_must_equal": [
+      "S0_v34_successor_generation_rebind",
+      "S0_v34_harness_rebind_and_dry_exec_prove",
+      "S0b_v34_implement_receipt_v20",
+      "S0_v34_deferred_one_commit_scope_gate"
+    ],
+    "active_id_registry_must_equal": [
+      "S0_v34_successor_generation_rebind",
+      "S0_v34_harness_rebind_and_dry_exec_prove",
+      "S0b_v34_implement_receipt_v20",
+      "S0_v34_deferred_one_commit_scope_gate"
+    ],
+    "set_equality": "both directions — missing or extra ACTIVE id → STOP",
+    "rejects_wildcard": true,
+    "zero_v33_ids_in_operative_ACTIVE_context": true,
+    "v33_ids_allowed_only_in": [
+      "supersedes",
+      "historical blocker_closures",
+      "adjudication",
+      "parent/lineage"
+    ]
+  },
+  "active_id_registry": [
+    "S0_v11_mint_plan_v34_and_diff_manifest",
+    "S0_v11_harness_and_bounded_tests_rebind",
+    "S0_v11_prove_direct_pytest_dry_exec",
+    "S0b_v11_implement_receipt_v20",
+    "S0_v11_deferred_one_commit_scope_gate"
+  ],
+  "DEVELOPER_STEPS": [
+    {
+      "id": "S0_v11_mint_plan_v34_and_diff_manifest",
+      "status": "ACTIVE",
+      "covers": "O_EXCL mint PLAN_v34 with truthful parent_identity + supersedes v33 defects + registry v34; NEW DIFF MANIFEST v33→v34 honest classification + leaf census + digest"
+    },
+    {
+      "id": "S0_v11_harness_and_bounded_tests_rebind",
+      "status": "ACTIVE",
+      "covers": "Harness 3-constant rebind → v34; four integration tests function-body rebind v33→v34 under source-diff verifier (baseline 17526238…)"
+    },
+    {
+      "id": "S0_v11_prove_direct_pytest_dry_exec",
+      "status": "ACTIVE",
+      "covers": "DIRECT ACCEPT v31/v32/v33/v34; pytest ≥128 ALL-PASS; dry-exec exit 0; canonical 783f2799… unchanged; events_equal=true"
+    },
+    {
+      "id": "S0b_v11_implement_receipt_v20",
+      "status": "ACTIVE",
+      "covers": "O_EXCL IMPLEMENT_receipt_v20 binding PLAN_v34 sha + new DIFF MANIFEST + harness before/after + tests before/after + verifier + transcripts + primitive_used + parent_identity proof"
+    },
+    {
+      "id": "S0_v11_deferred_one_commit_scope_gate",
+      "status": "ACTIVE",
+      "covers": "Placeholder — ONE-commit scope gate ONLY after Step-B implement dual accept; no commit in this plan"
+    }
+  ],
+  "implement_phase_write_surface": {
+    "note": "Active only after PLAN_v11 dual-accept + fresh +1 citing THIS v11 sha",
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v34.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v33_to_v34_DIFF_MANIFEST.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v20.json"
+    ],
+    "UPDATE": [
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py  # exactly 3 constants → v34",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py  # BOUNDED: 4 function-body generation bindings v33→v34 ONLY"
+    ],
+    "OUT": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json  # mutation hard STOP (immutable adjudicated)",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json  # mutation hard STOP (immutable adjudicated)",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v19.json  # mutation hard STOP (truthful residual record)",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v1.json … _v10.json",
+      "any test-file byte outside the four named test function-body generation bindings",
+      "harness edits beyond 3 constants",
+      "S3",
+      "stage",
+      "commit",
+      "push",
+      ".pt"
+    ],
+    "PRESERVE_BYTES": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json@0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json@e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v19.json@0576d8c4103b6ce3742b1f2e229d66d815713ac07712fff042e6acf429336f5b",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json@69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json@55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json@783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py@00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py@b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v10.json@e7711c460989bcf2d48e15e4a5f0d64c50ac06ed61f5d85b755d7de701547da5",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v1.json@4815bb7ea90a78fb133f2095439c9a5a8d50d223b640782d348caa2ccd43d8ec",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v2.json@d501a89daadfbf7b241f718ebb88aa3c7f2d34bdc423ddd3955e0853ad737de1",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v3.json@4fdee014492d0f034fd8b1462106e277f8b1713a2a7e98288d50c7af555a7475",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v4.json@5e02d872a82fe0a42a2dceccf147f5f555c50c324c76251722f0d16fcb9179b3",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v5.json@82b4f2e569cb469ac17543623832fa02c1092a1ff18279949eb8d8b7e757c5df",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v6.json@162c2f6841c1670f7e41430615e6b422e3e136437dac95123afb3f8db7024f86",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v7.json@ae65e502465df1259c5fe921760b999e9e76ba0ad613e0d4a0c4c34f2a465877",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v8.json@b368454fd4413a8d8c0c170968f53c818a6c728f26f855e81aa5a668d7244ab8",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v9.json@576dbbcf708da5f43e22bd913e73df055e68c5dc1c905fbb851a7875eeb327f5",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py@6b3d6555ded2d85c1d969eb32e586ebe36c31638ebfe34836c7cc007cd166452  # before-sha; after rebound under +1",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py@17526238d8f134529ca3004e11cca733802a3efa723974224cf0ad17b066f6b5  # before-sha baseline for v11 source-diff verifier"
+    ]
+  },
+  "no_clobber_publish_primitive": {
+    "allowed_primitives": [
+      {
+        "name": "final_path_O_EXCL_direct_open",
+        "spec": "os.open(final_path, O_CREAT|O_EXCL|O_WRONLY); write; close; on failure unlink partial if created",
+        "target_exists": "STOP + no partial left (cleanup-on-failure)"
+      },
+      {
+        "name": "temp_plus_no_replace_publish",
+        "spec": "write temp in same dir; publish via os.link(temp, final) OR renameat2(RENAME_NOREPLACE); never os.replace",
+        "target_exists": "STOP + temp cleanup"
+      }
+    ],
+    "forbidden": "check-then-os.replace (TOCTOU / overwrite semantics) — named FORBIDDEN",
+    "os_replace_to_final": "FORBIDDEN",
+    "receipt_must_state": [
+      "primitive_used",
+      "v33_path_absent_pre_mint=true (proved)"
+    ]
+  },
+  "validation_plan": {
+    "direct_validate": [
+      "PLAN_v31 ACCEPT",
+      "PLAN_v32 ACCEPT",
+      "PLAN_v33 ACCEPT",
+      "PLAN_v34 ACCEPT"
+    ],
+    "parent_identity_checks": [
+      "PLAN_v34.parent_plan.path bytes hash-match PLAN_v34.parent_plan.sha256",
+      "PLAN_v33 defect remains visible (adjudicated) but PLAN_v34 must not repeat it",
+      "this plan-request parent_plan.path bytes hash-match parent_plan.sha256"
+    ],
+    "pytest": {
+      "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+      "floor": 128,
+      "requirement": "ALL-PASS post-amendment (0 failed)"
+    },
+    "dry_exec": {
+      "mode": "--dry-exec-out <scratch>",
+      "canonical_out_in_argv": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "canonical_invariant": "EXISTS unchanged sha 783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f before AND after",
+      "parity_guard": "events_equal=true in scratch artifact",
+      "delete_rename_canonical": "hard STOP"
+    },
+    "source_diff_verifier": "see bounded_tests_update_v11.source_diff_verifier",
+    "proof_obligation_simulation_at_plan_gate": "After PLAN_v34 mint + harness→v34 + 4-test in-body rebind: those 4 tests pass under v34; evidence-lane tests remain on PLAN_v31 and keep passing; outside-span bytes equal baseline 17526238…; DIRECT ACCEPT includes v34; receipt_v20 path uses N−14=20; parent_identity holds",
+    "receipt": "O_EXCL artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v20.json binding PLAN_v34 sha + DIFF MANIFEST v33→v34 file sha + digest + harness before 6b3d6555…/after + tests before 17526238…/after + four-hunk diff + outside_span_bytes_equal + parent_identity proof + transcripts + primitive_used + v34_path_absent_pre_mint",
+    "implementation_gate1_checklist_source": "DERIVE FROM THE +1 DISPATCH TEXT and execute EVERY promised check before freeze (incl. enumerate every category-a path literally + replay leaf census on PLAN_v33→v34)"
+  },
+  "workflow": [
+    "PLAN_v11 → claude gate-1 (all axes + parent-identity checks + honest-classification review) → co_lead gate-2 HIGH → fresh +1 citing THIS v11 sha",
+    "Implement: mint PLAN_v34 + DIFF MANIFEST v33→v34 + harness 3-constant rebind + 4-test rebind + proofs + O_EXCL IMPLEMENT_receipt_v20",
+    "Implementation gate-1 checklist derived from +1 text, executed in full → co_lead implementation gate-2",
+    "THEN deferred ONE-commit scope gate (separate)",
+    "PLAN_v33 / defective v32→v33 manifest / receipt_v19 / validators / evidence mutation → hard STOP"
+  ],
+  "stop_conditions": [
+    "validators/evidence edit → STOP",
+    "test-file edit outside bounded_tests_update_v11 (the four named generation bindings) → STOP",
+    "PLAN_v31 or PLAN_v32 byte change → hard STOP",
+    "PLAN_v33 byte change → hard STOP (immutable adjudicated; cure by supersession only)",
+    "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json mutation → hard STOP",
+    "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v19.json mutation → hard STOP",
+    "canonical audit mutation/delete/rename → hard STOP",
+    "hardened validators REJECT minted PLAN_v34 → STOP (report, do not weaken)",
+    "PLAN_v34.parent_plan path/sha mismatch or self-path → hard STOP",
+    "untruthful mode/text (fast_path text under full_plan_gate or wrong dispatch id) → hard STOP",
+    "harness edits beyond exactly 3 constants → STOP",
+    "category-a shelter of structural changes in DIFF MANIFEST v33→v34 → STOP",
+    "ACTIVE set ≠ exact v11 ids (side-family registry/DEVELOPER_STEPS) → STOP",
+    "PLAN_v34 ACTIVE set ≠ exact four v34 ids → STOP",
+    "check-then-os.replace or os.replace to final PLAN_v34 / receipt_v20 path → hard STOP",
+    "target PLAN_v34 or IMPLEMENT_receipt_v20 exists at publish → STOP + temp cleanup",
+    "IMPLEMENT_receipt_v20 missing DIFF MANIFEST v33→v34 or parent_identity proof → REJECT",
+    "v1–v10 stepB plan-request byte mutation → hard STOP",
+    "S3 / stage / commit / push / .pt → STOP"
+  ],
+  "post_dual_accept_next": "after implement dual accept: deferred ONE-COMMIT scope gate for whole recarry slice (exact allowed-file manifest; unrelated drift excluded) — separate gate",
+  "blocker_closures_v11_impl_gate2_successor": {
+    "block_msg_id": "1785178150818-fdd9d2fd",
+    "dispatch_msg_id": "1785178242635-d16e6ffc",
+    "route": "SUCCESSOR_GENERATION_PLAN_v34",
+    "defects": [
+      "false_parent_identity",
+      "manifest_category_a_misclassification"
+    ],
+    "v10_status": "dual_accepted_residual_executed_NOT_blocked_by",
+    "enumerated_closure_block_keys_present_in_this_artifact": [
+      "blocker_closures_v2_gate2",
+      "blocker_closures_v3_gate1",
+      "blocker_closures_v4_gate2",
+      "blocker_closures_v5_implement_arithmetic",
+      "blocker_closures_v6_gate1",
+      "blocker_closures_v7_gate1",
+      "blocker_closures_v8_gate2",
+      "blocker_closures_v9_proof_contradiction",
+      "blocker_closures_v10_gate2_amendment",
+      "blocker_closures_v11_impl_gate2_successor",
+      "adjudication_plan_v33_precondition_defects"
+    ]
+  },
+  "blocker_closures_v2_gate2": {
+    "block_msg_id": "1785172566705-7647fe94",
+    "dispatch_msg_id": "1785172601870-93e57a8a",
+    "holes_closed": [
+      "complete_allowed_diff_contract_with_byte_carry_assertion_and_diff_manifest_digest",
+      "exact_active_set_four_ids_including_S0b_no_wildcard",
+      "no_clobber_publish_primitive_final_path_O_EXCL_or_NOREPLACE_os_replace_forbidden"
+    ]
+  },
+  "blocker_closures_v3_gate1": {
+    "block_msg_id": "1785172956520-dd5f9eae",
+    "exact_ids": [
+      "S0_v33_stage2_closure_rebind",
+      "S0_v33_harness_rebind_and_dry_exec_prove",
+      "S0b_v33_implement_receipt_v18",
+      "S0_v33_deferred_one_commit_scope_gate"
+    ],
+    "hole_closed": "plan_v33_mint_contract.self_identity.operative_step_ids wildcard → exact 4-id list byte-equal to active_id_registry / category f",
+    "superseded_note": "S0b id later renamed S0b_v33_implement_receipt_v18→S0b_v33_implement_receipt_v19 by implement-blocker adjudication 1785173863453-b4866fd3 (validator N−14 rule); current operative set = category f / active_id_registry (v19)."
+  },
+  "blocker_closures_v4_gate2": {
+    "block_msg_id": "1785173217985-db35c6df",
+    "dispatch_msg_id": "1785173296044-8b185620",
+    "holes_closed": [
+      "decision_contract_generation_self_identity_v4_THIS_v4_sha",
+      "category_g_includes_1785172956520-dd5f9eae_and_v4_lineage"
+    ]
+  },
+  "blocker_closures_v5_implement_arithmetic": {
+    "holes_closed": [
+      "receipt_v18_to_v19_everywhere_operative",
+      "S0b_id_implement_receipt_v19",
+      "category_a_explicit_must_cite_PLAN_v32_to_v33",
+      "category_g_defect_cycle_lineage"
+    ],
+    "implement_blocker_msg_id": "1785173863453-b4866fd3",
+    "rescinded_plus1_msg_id": "1785173654455-7dcb7834",
+    "v5_dispatch_msg_id": "1785174028200-4c7035f9",
+    "validator_rule": {
+      "for_v33": "IMPLEMENT_receipt_v19",
+      "rule": "IMPLEMENT_receipt_v{plan_revision_n - 14}",
+      "source": "validate_single_action_class_per_path (approx lines 1098–1101)",
+      "validators_sha256": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae"
+    }
+  },
+  "blocker_closures_v6_gate1": {
+    "block_msg_id": "1785174252588-4b05e1fc",
+    "historical_record_byte_true_vs_v3_v4": true,
+    "hole_closed": "blocker_closures_v3_gate1.exact_ids[2] restored to S0b_v33_implement_receipt_v18; rename expressed only via additive superseded_note"
+  },
+  "blocker_closures_v7_gate1": {
+    "block_msg_id": "1785174437193-d056a23b",
+    "g_closed_through_current_generation": true,
+    "hole_closed": "g_adjudication_lineage_additions += v5_gate1/v6_remint + v6_gate1/v7_remint; note generation-neutral through CURRENT generation"
+  },
+  "blocker_closures_v8_gate2": {
+    "block_msg_id": "1785174929231-69d77e8c",
+    "hole_closed": "supersedes.plans append-only restored: v5 blocked_by byte-exact vs v6; v7 entry appended with blocked_by gate2; g += gate2 cycle",
+    "supersedes_append_only_byte_true": true,
+    "v8_dispatch_msg_id": "1785174983376-8bacf61a"
+  },
+  "blocker_closures_v9_proof_contradiction": {
+    "block_msg_id": "1785176217295-f965b231",
+    "decision": "A",
+    "defect": "v8 required {harness→v33, pytest≥128, tests byte-frozen} — contradictory; 4 harness-integration tests generation-track PLAN_v31",
+    "dispatch_msg_id": "1785176318287-cdc5a4d9",
+    "pytest_evidence": "4 failed, 124 passed under harness 6b3d6555… + tests 4e6ecb5d…",
+    "repair": "bounded tests UPDATE for exactly those 4 tests; PLAN_v33/harness/DIFF = precondition state; fresh +1 for residual proofs+receipt"
+  },
+  "blocker_closures_v10_gate2_amendment": {
+    "block_msg_id": "1785176781982-2c45529a",
+    "dispatch_msg_id": "1785176828993-10baaf8d",
+    "upheld_defects_8": [
+      {
+        "id": 1,
+        "closure": "stop_conditions row \"validator/tests/evidence edit → STOP\" → \"validators/evidence edit → STOP; test-file edit outside bounded_tests_update (the four named generation bindings) → STOP\""
+      },
+      {
+        "id": 2,
+        "closure": "stop_conditions ACTIVE-set row → CURRENT side-family generation exact active ids (v10), not carried v33-era ids"
+      },
+      {
+        "id": 3,
+        "closure": "schema token → recarry_stepB_closure_rebind_plan_v10"
+      },
+      {
+        "id": 4,
+        "closure": "decision_contract.form_justification rewritten for residual scope: PLAN_v33+harness COMPLETED preconditions; residual = 4-test rebind + dry-exec + receipt_v19"
+      },
+      {
+        "id": 5,
+        "closure": "harness_rebind_contract restructured as completed-precondition record (before c60f903e… → after 6b3d6555…; live constants; no placeholders)"
+      },
+      {
+        "id": 6,
+        "closure": "DIFF MANIFEST byte protection: PRESERVE_BYTES += artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json@e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84; OUT mutation hard-STOP; retain semantic digest f800063a…"
+      },
+      {
+        "id": 7,
+        "closure": "SOURCE-DIFF VERIFIER for tests file replaces undefined JSON leaf census; outside-span byte equality is the frozen-lane proof"
+      },
+      {
+        "id": 8,
+        "closure": "supersedes.note current-generation text; supersedes += v9 {576dbbcf…, blocked_by 1785176781982-2c45529a}"
+      }
+    ],
+    "enumerated_closure_block_keys_present_in_this_artifact": [
+      "blocker_closures_v2_gate2",
+      "blocker_closures_v3_gate1",
+      "blocker_closures_v4_gate2",
+      "blocker_closures_v5_implement_arithmetic",
+      "blocker_closures_v6_gate1",
+      "blocker_closures_v7_gate1",
+      "blocker_closures_v8_gate2",
+      "blocker_closures_v9_proof_contradiction",
+      "blocker_closures_v10_gate2_amendment"
+    ]
+  },
+  "observed_closure_drift_sweep": {
+    "all_other_99_pins": "byte-match live disk at plan-request time",
+    "basis_plan": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+    "basis_plan_sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+    "closure_entries": 100,
+    "drifted_entry": {
+      "live_disk": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae",
+      "note": "Dispatch guessed f3865b8e→00435afa; observed truth is v32 pin = Stage-1 sha 324ecdba (pre-Step-A) → live Step-A sha 00435afa. Exactly one drift; tests not in closure.",
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "pinned_in_v32": "324ecdba39a31cf750edbbcb6f1e0fc4cd6d43eb6d4ac6332e47e4b39002157b"
+    },
+    "mismatches": 1,
+    "missing": 0,
+    "tests_file_in_closure": false
+  },
+  "self_check": {
+    "plan_revision_v11": true,
+    "schema_token_recarry_stepB_closure_rebind_plan_v11": true,
+    "mode_full_plan_gate": true,
+    "decision_contract_names_THIS_v11_sha": true,
+    "argv_template_sha_precomputed_confirmed_5a1faff4": true,
+    "parent_plan_v10_hash_match": true,
+    "supersedes_v10_append_WITHOUT_blocked_by": true,
+    "adjudication_block_carries_v33_defects": true,
+    "category_g_includes_impl_gate2_BLOCK_v11_dispatch": true,
+    "allowed_diff_v33_to_v34_has_honest_h_parent_identity_repair": true,
+    "category_a_forbids_shelter": true,
+    "active_ids_v11_and_v34_distinct_and_exact": true,
+    "receipt_arithmetic_N_minus_14_equals_v20": true,
+    "PRESERVE_BYTES_includes_v33_defective_manifest_receipt_v19": true,
+    "stop_conditions_name_v11_ACTIVE_and_v33_immutable": true,
+    "v1_through_v10_byte_preserved_required": true,
+    "closure_block_keys_enumerated_not_name_guessed": true,
+    "proof_obligation_includes_four_test_v34_cascade": true
+  }
+}

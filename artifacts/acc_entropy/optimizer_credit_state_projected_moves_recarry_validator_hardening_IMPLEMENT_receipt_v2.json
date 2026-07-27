@@ -1,0 +1,82 @@
+{
+  "acceptance": {
+    "canonical_sha_unchanged": true,
+    "clean_PLAN_v31_direct_validate_ACCEPT": true,
+    "co_lead_three_mutations_REJECT": [
+      "active_phase_v25.note=None \u2192 lifecycle_leaf_not_string",
+      "bounded_v20.note=7 \u2192 lifecycle_leaf_not_string",
+      "v24_lifecycle.active_after=None \u2192 lifecycle_leaf_not_string"
+    ],
+    "governing_dry_exec_as_acceptance": false,
+    "new_hostiles": [
+      "test_hostile_active_phase_note_none",
+      "test_hostile_bounded_vN_note_int",
+      "test_hostile_lifecycle_active_after_none"
+    ],
+    "py_compile_ok": true,
+    "pytest_command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "pytest_floor": ">=97 (95 prior + >=2 non-string hostiles)",
+    "pytest_passed": 98
+  },
+  "after_shas": {
+    "tests": "5387187af94f615bd05525dc16c31deee6bb43384252f969720cdc3605988d24",
+    "validators": "3f9fd9c08eb1c46a7ac597b376e555fe3360c90e916bdd76d89f2db40b812f35"
+  },
+  "artifact_class": "validator_hardening_IMPLEMENT_receipt_v2",
+  "authority": {
+    "gate2_block_msg_id": "1785167338645-b23fe72a",
+    "kind": "bounded_stage1_F3_type_boundary_correction_fast_path",
+    "plan_v5_gate1_freeze_msg_id": "1785166275304-b46454cd",
+    "plan_v5_gate2_pass_msg_id": "1785166345145-2fe643b5",
+    "plus1_implement_dispatch_msg_id": "1785167404273-a9254568",
+    "stage1_gate1_freeze_msg_id": "1785167076164-2fa314a3"
+  },
+  "authority_verification": "gate_pending",
+  "authorizes_stage2_or_commit": false,
+  "baselines_tmp": {
+    "note": "exact /tmp baseline paths per co_lead finding 3; pre-hardening Stage-1 freeze values",
+    "tests_path": "/tmp/recarry_hardening_baselines/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py.pre_hardening_v5",
+    "tests_sha256": "6412e6faac7c0b7d69da1685f76fbca431eda4388d8cde7fe61220c5822e6275",
+    "validators_path": "/tmp/recarry_hardening_baselines/recarry_measurement_validators.py.pre_hardening_v5",
+    "validators_sha256": "f3865b8ef6e92c9a21b7dfd1bcbbb80e9b0315dd6415780d37f46c7a6f31a685"
+  },
+  "defect_closed": {
+    "id": "F3_type_boundary_non_string_continue",
+    "reject_tag": "lifecycle_leaf_not_string:<path>:type=<typename>",
+    "repair": "selection order: structural filter \u2192 metadata exclude \u2192 path-generation \u2192 type check fail-closed \u2192 grammar",
+    "root_cause": "isinstance(value,str) continue before _path_generation left non-string version-addressable leaves out of candidate set"
+  },
+  "plan_identity": {
+    "expected_sha256": "699e9ed7a508eb31c119547455e5ae2b1f22a73a80006d47712ed914a0756d2d",
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v5.json",
+    "plan_revision": "v5",
+    "sha256": "699e9ed7a508eb31c119547455e5ae2b1f22a73a80006d47712ed914a0756d2d"
+  },
+  "preserve_verified": {
+    "IMPLEMENT_receipt_v1": "b858f51ae90646eb97ecbdfbdaf381834329d33231df228d7d79e1c068a39b5e",
+    "IMPLEMENT_receipt_v1_expected": "b858f51ae90646eb97ecbdfbdaf381834329d33231df228d7d79e1c068a39b5e",
+    "canonical_audit": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+    "canonical_audit_expected": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+  },
+  "schema_version": "recarry_validator_hardening_implement_receipt_v2",
+  "scope": {
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v2.json"
+    ],
+    "OUT": [
+      "Stage-2",
+      "PLAN_v31 pins",
+      "harness",
+      "stage",
+      "commit",
+      "S3"
+    ],
+    "PRESERVE_BYTES": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v1.json"
+    ],
+    "UPDATE": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+    ]
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt/v13",
+  "receipt_kind": "S4a_IMPLEMENT_receipt_v13",
+  "covers_only": [
+    "S1_plan_v27",
+    "S2_validators_tests_G1_G2",
+    "S2b_focused_pytest",
+    "dry_exec_prove"
+  ],
+  "does_not_cover": [
+    "S3_terminal_audit_receipt",
+    "S4b_FINALIZE",
+    "staging",
+    "commit",
+    "push"
+  ],
+  "S3_fields_present": false,
+  "authorizes_S3": false,
+  "authority": {
+    "dispatch_msg_id": "1785160463536-84ff0bf9",
+    "plus1_implement": "1785160463536-84ff0bf9",
+    "gate1_r26_block_msg_id": "1785160463536-84ff0bf9",
+    "plan": "PLAN_v27",
+    "plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v27.json",
+    "plan_sha256": "37bc8f9084c43bce1d25ef6d0d01059d6a54b4da5665b773b716111cb496b8eb",
+    "argv_template_sha256": "0889dc8fa6d544123874dc496ba680b0dae906441de3e3d376afcbc0f196dd6d",
+    "fast_path": true,
+    "task_id": "1785141831989-47a1370d"
+  },
+  "repairs": {
+    "G1": "lifecycle exact path-derived per-generation dispatch bind (not registry membership); hostile real-id-wrong-generation",
+    "G2": "supersedes contiguous 1..(current-1); hostiles gap + entry>=current"
+  },
+  "artifacts": {
+    "PLAN_v27": {
+      "sha256": "37bc8f9084c43bce1d25ef6d0d01059d6a54b4da5665b773b716111cb496b8eb"
+    },
+    "validators": {
+      "sha256": "8f9331c0d21b21bbf492fb64006bd6954ce7c539d52b47374b5878c8d6ebf742",
+      "pure": true
+    },
+    "evidence": {
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "unchanged": true
+    },
+    "harness": {
+      "sha256": "4261bb964d7a4baf4af13efd6d205c448ba54108fa9383759b62dad00a1a96ab"
+    },
+    "tests": {
+      "sha256": "c5e94b29d19e8017bd49e0ab387ed3e71c023f0a0b4005add2bd23a046241227"
+    }
+  },
+  "baselines_pre_v27": {
+    "harness": "4b4f75d7ccc81fef2eaba94057e68a335edc109326bc140735e918c64a0381d9",
+    "validators": "aeb7ef4b10a3675c3d0857dcfd94534272a540930cc3ed63d8f86a04e31489f6",
+    "tests": "a40a78683341f983ad5e480e20185ca393b656b6df5fe686c02db91e8ffe2fdb"
+  },
+  "preserve_bytes": {
+    "PLAN_v26": "c12718601bcbca1be4a09e622447781adc4d916168a81e0208187aaabdb27f39",
+    "IMPLEMENT_receipt_v12": "b799fb4e9180301526355587b832d58aeb46e7d96618a8f51b19b8574a38525a"
+  },
+  "focused_pytest": {
+    "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "exit_code": 0,
+    "summary": "71 passed in 33.50s",
+    "order": "BEFORE O_EXCL IMPLEMENT_receipt_v13 mint",
+    "delta_vs_v26": "68 -> 71 (+G1/G2 hostiles)"
+  },
+  "dry_execution": {
+    "command": [
+      "python3",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v27.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "--s3-authority-anchor-msg-id",
+      "DRYEXEC-V27-SCRATCH-ANCHOR",
+      "--dry-exec-out",
+      "artifacts/acc_entropy/_dry_exec_scratch_v27_recarry.json"
+    ],
+    "exit_code": 0,
+    "dry_exec": true,
+    "authority_verification": "gate_pending",
+    "audit_branch_id": "BR-RECARRY-SPARSE-HOLDS-AB",
+    "events_equal": true,
+    "compositional_reduction_holds": true,
+    "harness_file_sha256": "4261bb964d7a4baf4af13efd6d205c448ba54108fa9383759b62dad00a1a96ab",
+    "plan_sha256": "37bc8f9084c43bce1d25ef6d0d01059d6a54b4da5665b773b716111cb496b8eb",
+    "s3_go_msg_id_absent": true,
+    "canonical_out_absent_before_after": true,
+    "science_preview_non_authoritative": true
+  },
+  "edit_freeze": true,
+  "context_health": "self-measured; S3 HOLD"
+}

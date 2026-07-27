@@ -1,0 +1,834 @@
+{
+  "plan_id": "optimizer_credit_state_projected_moves_recarry_measurement",
+  "plan_revision": "v3",
+  "packet_revision": "v3",
+  "mode": "planning",
+  "O_EXCL": true,
+  "SIZING": "MEDIUM",
+  "autonomy_rung": "L2",
+  "risk": "high",
+  "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "repo_branch": "feature/hrm-text-1.58",
+  "repo_head_at_plan_mint": "ed4932b9eef0fb547970019edf55e02ab57cb32a",
+  "parent_sha_anchor": "ed4932b9eef0fb547970019edf55e02ab57cb32a",
+  "predecessor_commits": {
+    "3C_BR-3C-C-DENSE-LEAK": "9963f5b8fea6084d13b76b3849a90b189791c2e2",
+    "BST_BR-BST-C-FP-DENSE": "566346aa3b4dac59d168bfeee49cd61dd866b1f1",
+    "FOLD_C_BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS": "ed4932b9eef0fb547970019edf55e02ab57cb32a"
+  },
+  "task_id": "1785141831989-47a1370d",
+  "dispatch_msg_id": "1785141850032-ca5cfa41",
+  "intake_receipt_msg_ids": {
+    "consumer_trace_r1": "1785142156499-6d44e42b",
+    "consumer_trace_r2": "1785142473879-f1cc0c84",
+    "intake_gate1_clear": "1785142516404-e101dc63"
+  },
+  "dual_co_lead_concur_msg_ids": {
+    "claude_synthesis": "1785141747798-86cefe92",
+    "co_lead_concur": "1785141793549-b55e68c8"
+  },
+  "decision_contract": {
+    "intent": "MEASUREMENT-ONLY feasibility: can the projected_moves dense transient be re-carried sparse/event-coded/int with decision parity under EXACT live consumers (A+B+C+D), without changing decisions — the carrier/representation route all three nulls point at",
+    "authority": "Gabe standing auto-research directive (verbatim in dispatch) + co-lead convergence (claude synthesis 1785141747798 + co_lead concur 1785141793549) + intake CLEAR 1785142516404",
+    "executor": "plan-dev (codex) plan + bounded implementation after +1 implement",
+    "mode": "planning",
+    "risk": "high",
+    "confidence": "high",
+    "receipt_sink": "claude gate-1 ONLY; co_lead gate-2 on frozen handoff",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation",
+      "commit",
+      "push"
+    ],
+    "escalation_rule": "STOP on trainer/GPU/.pt/creditdir/production-readiness unless break-glass +1 with transition_fallback_used=true; producer-signature change without adjacency disposition → STOP; fixture-local reimpl of consumers → REJECT; never @gabe",
+    "validation_proof": "consumer-trace-bound parity (r1+r2) + evidence-seam replay + preregistered branch taxonomy + exhaustive receipt field census",
+    "autonomy_rung": "L2"
+  },
+  "provenance": {
+    "gabe_standing_auto_research_directive_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science…",
+    "chosen": "dense-surface elimination / re-carriering measurement contract for the projected_moves transient",
+    "rejected": [
+      "activations/KV ternary-rotor lane (named alternative, NOT ride-along)",
+      "update-law rewrite (parity nulls rule it un-forced)",
+      "any drain remediation / readiness / sub2 flip in this slice",
+      "fixture-local re-implementation of live consumers for parity"
+    ]
+  },
+  "frozen_preconditions": {
+    "P1_measurement_not_remediation_claim_ceiling": "Measurement-not-remediation + explicit claim ceiling — no readiness/sub2 flip, no update-law rewrite, no production wire rewrite that removes dense projected_moves from TSA/IOC paths.",
+    "P2_consumer_trace_bound_parity": "Parity checks bind to EXACT live decision consumers from intake (A BDL rank core + B TSA sites + C ISRV + D IOC wire). Fixture-local reimpl = preregistered REJECT.",
+    "P3_branch_taxonomy_shippable_nulls": "Preregistered branch taxonomy incl. honest shippable-nulls: re-carry infeasible / parity fails under live consumers / sparse re-carry holds (+ measurement-invalid).",
+    "P4_write_surface_create_only": "Credit-tree / trainer / GPU / .pt OUT unless break-glass; CREATE allowlist only; UPDATE=[].",
+    "P5_rotor_named_alternative": "Rotor lane = named alternative, never silent scope expand / ride-along."
+  },
+  "intake_findings_mandatory_in_plan_bytes": {
+    "IF1_screen_acc_adjacency_clause": {
+      "adjacent_callers_enumerated": [
+        "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_loop_bridge.py:276 (project_credit_shared)",
+        "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_selection_derisk.py:150 (project_and_update_acc_episode)",
+        "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_selection_derisk.py:175 (cpu_oracle_project_and_update)",
+        "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py:430 (_compute_baseline_votes)"
+      ],
+      "out_of_primary_parity_bind": true,
+      "disposition": "UNCHANGED_PRODUCER_CONSTRAINT",
+      "disposition_detail": "This measurement uses EXISTING producers side-by-side (dense project_s1_gradient_to_moves baseline vs already-present sparse_rank_bucketed_int16_vote_events_from_weighted_grad / integer projected_moves_from_integer_attribution). It does NOT change project_s1_gradient_to_moves signature/contract. Adjacent screen/derisk callers therefore remain unaffected. Silent omission of these names = REJECT. Promoting them into primary parity bind requires SCOPE EXPANSION + fresh +1.",
+      "silent_omission": "REJECT"
+    },
+    "IF2_producer_sweep_blind_spot_acknowledgment": {
+      "producer_sweep_cmd": "rg -n 'project_s1_gradient_to_moves|projected_moves_from_integer_attribution' calm scripts --glob '*.py'",
+      "producer_sweep_hit_count": 97,
+      "producer_sweep_receipt": "1785142473879-f1cc0c84",
+      "producer_sweep_sees": "live producer call sites B (TSA :1762/:2089/:2790) + D (IOC :124) plus imports/probes/screens/design",
+      "producer_sweep_blind_spot": "A (BDL rank core) and C (ISRV vote multiply) receive projected_moves as VALUES; they do not call the two producer symbols.",
+      "a_c_evidence_source": "DIRECT call-site evidence from consumer-trace r1 1785142156499-6d44e42b (not the producer sweep)",
+      "both_evidence_sources_required_in_receipt": true
+    }
+  },
+  "claim_ceiling": {
+    "may_claim": [
+      "CPU measurement-bound sparse-vs-dense vote-event parity under frozen fixture using LIVE consumer symbols (rank_bucketed / sparse fused / ISRV multiply path as applicable)",
+      "terminal taxonomy branch from that measurement",
+      "observed carrier density metrics (dense moves bytes vs sparse event count) as secondary fields",
+      "non-binding recommended_next_slice routing string",
+      "that optimizer_credit_state / projected_moves dense transient remains classified debt (no discharge)"
+    ],
+    "must_not_claim": [
+      "readiness-row flip / optimizer_credit_state_resolved=true / full_sub2_runtime_ready_for_science",
+      "sub2 / ready_to_flip / GPU receipt present",
+      "production TSA/IOC path rewritten to drop dense projected_moves",
+      "update-law rewrite forced or discharged",
+      "activations/KV ternary-rotor progress",
+      "screen-acc path parity (out of primary bind under UNCHANGED_PRODUCER_CONSTRAINT)",
+      "generalization of this CPU fixture to CUDA trainer / creditdir RACC arms",
+      "byte-savings proof on seed-158 alone when all lanes are nonzero (fixture may show parity without density win)"
+    ],
+    "transient_fp_debt_remains": true,
+    "no_readiness_row_flip": true,
+    "no_update_law_rewrite": true,
+    "no_production_wire_rewrite": true
+  },
+  "standing_plan_axes": [
+    "input -> command -> exact observed object/evidence seam -> receipt",
+    "object-identity on every cross-object edge",
+    "any *_validated=true requires field-census verification",
+    "measurement cannot authorize readiness-row flip alone",
+    "observed-vs-literal on every runtime-identity receipt field",
+    "deep-immutable evidence; canonical hash schema with NO optional fields",
+    "bool-rejecting exact-int checks",
+    "dependency-currency freeze with import-closure",
+    "definite write allowlist (no conditional UPDATE)",
+    "exclusions enumerated never class-asserted",
+    "full operative citation sweep on every remint"
+  ],
+  "parity_binding_set": {
+    "primary_live_decision_consumers": {
+      "A_bdl_rank_core": {
+        "evidence_source": "consumer_trace_r1_direct_call_sites",
+        "symbols": [
+          "bounded_delta_learner._compute_rank_bucketed_candidate_votes:414",
+          "bounded_delta_learner._dense_int16_votes_from_candidates:440",
+          "bounded_delta_learner.rank_bucketed_int16_votes:530",
+          "bounded_delta_learner.rank_bucketed_int16_votes_and_sparse_events:453",
+          "bounded_delta_learner.sparse_rank_bucketed_int16_vote_events:479"
+        ]
+      },
+      "B_trainer_sites": {
+        "evidence_source": "consumer_trace_r2_producer_sweep_live_hits",
+        "symbols": [
+          "trainer_sub2_authority.build_trainer_sub2_authority_local_update_receipt:1762",
+          "trainer_sub2_authority.build_trainer_sub2_authority_roundtrip_receipt:2089",
+          "trainer_sub2_authority._run_live_p1_vote_carrier_subproof:2790"
+        ],
+        "pattern": "project_s1_gradient_to_moves -> rank_bucketed_int16_votes -> apply_bounded_delta_vote_step"
+      },
+      "C_isrv_sparse_vote_core": {
+        "evidence_source": "consumer_trace_r1_direct_call_sites",
+        "symbols": [
+          "integer_sparse_rank_votes.sparse_rank_bucketed_vote_events_from_integer_credit:131",
+          "integer_sparse_rank_votes.sparse_rank_votes_from_attribution_events:166",
+          "integer_sparse_rank_votes._assign_bins_and_votes:533",
+          "integer_sparse_rank_votes.strict_integer_sparse_rank_bucketed_vote_events_from_credit:565"
+        ]
+      },
+      "D_ioc_wire": {
+        "evidence_source": "consumer_trace_r2_producer_sweep_live_hits",
+        "symbols": [
+          "integer_optimizer_credit_path.emit_integer_sparse_vote_events_from_trainer_handle:102/:124/:128",
+          "integer_optimizer_credit_path.apply_integer_optimizer_credit_path_step:138"
+        ]
+      }
+    },
+    "E_gpu_s4": {
+      "in_primary_bind": false,
+      "reason": "P4 GPU OUT; include only via SCOPE EXPANSION + break-glass",
+      "symbols_if_expanded": [
+        "integer_credit_axis_gpu_kernel._launch_s4_native_triton:629",
+        "integer_credit_axis_gpu_kernel._launch_s4_torch_sort_reference:676"
+      ]
+    },
+    "fixture_local_reimpl": "REJECT"
+  },
+  "folds": {
+    "A_measure_dense_baseline_vs_sparse_fused": {
+      "in_scope": true,
+      "description": "CPU-only on frozen 3C_C1_dry_run_fixture_seed158: build weighted_grad via weighted_grad_from_captures; dense baseline = project_s1_gradient_to_moves + sparse_rank_bucketed_int16_vote_events (LIVE A symbols); sparse fused = sparse_rank_bucketed_int16_vote_events_from_weighted_grad (existing no-full-numel-moves producer). Compare SparseVoteEvents.to_dict() bit-identity. Bind immutable RecarryMeasurementEvidence. Governing RankVoteSpec FROZEN to default_dry_run_rank_vote_spec (TSA B-site consumer-trace justification :1736/:2064/:2765).",
+      "must_not": [
+        "GPU",
+        "trainer loop",
+        "change project_s1_gradient_to_moves signature",
+        "UPDATE TSA/IOC production call sites",
+        "readiness-row flip",
+        "fixture-local reimpl of rank_bucketed",
+        "use canonical_acquisition_rank_vote_spec (or any other) as governing measurement law"
+      ]
+    },
+    "B_classify": {
+      "in_scope": true,
+      "depends_on": "A",
+      "description": "Apply preregistered re-carry branch taxonomy; mint O_EXCL audit receipt bound to evidence object; restate claim ceiling + adjacency disposition + both evidence sources."
+    },
+    "C_production_recarry_remediation": {
+      "in_scope": false,
+      "deferred": true,
+      "forbidden": "rewriting TSA/IOC to drop dense projected_moves; any drain/readiness flip"
+    },
+    "D_activations_kv_ternary_rotor": {
+      "in_scope": false,
+      "explicit_non_merge": true,
+      "named_alternative_only": true
+    },
+    "E_gpu_s4_parity": {
+      "in_scope": false
+    },
+    "F_screen_acc_parity": {
+      "in_scope": false,
+      "enumerated_adjacent_only": true,
+      "disposition": "UNCHANGED_PRODUCER_CONSTRAINT"
+    }
+  },
+  "branch_taxonomy_preregistered": {
+    "PENDING_forbidden_as_terminal": true,
+    "governing_expected_branch": "BR-RECARRY-SPARSE-HOLDS",
+    "governing_expected_branch_rationale": "LIVE PROBE at plan mint on frozen seed-158: dense sparse_rank_bucketed_int16_vote_events.to_dict() == sparse_rank_bucketed_int16_vote_events_from_weighted_grad.to_dict() (events_equal=True; dict {0:4,1:-4,2:4,3:-1,4:4,5:-4}). Dense projected_moves still materializes on baseline (6 int8). Therefore sparse re-carry holds under live A consumer symbols on this fixture — shippable feasibility null recommending a separately gated remediation/follow-on; NOT a readiness flip; NOT production rewrite in this slice. Note: all 6 lanes nonzero so density win is not demonstrated on this fixture; parity is governing.",
+    "shippable_nulls": [
+      "BR-RECARRY-SPARSE-HOLDS",
+      "BR-RECARRY-PARITY-FAIL",
+      "BR-RECARRY-INFEASIBLE",
+      "BR-RECARRY-MEASUREMENT-INVALID"
+    ],
+    "branches": [
+      {
+        "id": "BR-RECARRY-SPARSE-HOLDS",
+        "predicate": "dense_baseline SparseVoteEvents.to_dict() == sparse_fused SparseVoteEvents.to_dict() under frozen fixture using LIVE A symbols; evidence seam intact; producer contract unchanged",
+        "meaning": "Sparse re-carry is decision-parity feasible under live consumers on this fixture. Dense debt still exists on baseline path. Recommend separately gated remediation follow-on. NOT a flip.",
+        "honest_expected": true,
+        "recommended_next_slice_seed": "bounded remediation: switch TSA B sites to fused sparse producer under dual accept (still measurement-gated; UPDATE allowlist would be required — OUT of THIS CREATE-only slice)"
+      },
+      {
+        "id": "BR-RECARRY-PARITY-FAIL",
+        "predicate": "dense_baseline vs sparse_fused vote-event dict mismatch under frozen fixture / live A symbols",
+        "meaning": "Re-carry changes decisions under live consumers — do NOT remediate; classify and split/protect.",
+        "honest_expected": false,
+        "recommended_next_slice_seed": "parity-fail mechanism diagnosis (smaller fixture split); not update-law rewrite by default"
+      },
+      {
+        "id": "BR-RECARRY-INFEASIBLE",
+        "predicate": "measurement shows re-carry requires producer signature/contract change that would affect enumerated adjacent screen/derisk callers under UNCHANGED_PRODUCER_CONSTRAINT, OR no existing sparse producer can bind to live consumers",
+        "meaning": "Re-carry infeasible without adjacency SCOPE EXPANSION. Shippable null.",
+        "honest_expected": false,
+        "recommended_next_slice_seed": "adjacency-aware producer redesign plan OR accept dense projected_moves as standing debt"
+      },
+      {
+        "id": "BR-RECARRY-MEASUREMENT-INVALID",
+        "predicate": "evidence seam broken / hash disagreement / HEAD mismatch / bool-as-int / missing identity fields / fixture-local consumer reimpl detected",
+        "meaning": "Do not classify mechanism; remint or repair measurement.",
+        "honest_expected": false
+      }
+    ],
+    "non_authorizing_note": "No re-carry branch authorizes readiness-row flip, update-law rewrite, TSA/IOC production rewrite, or rotor progress."
+  },
+  "measurement_provenance": {
+    "axis": "measurement_input -> runtime_command -> exact_observed_object_evidence_seam -> receipt_binding",
+    "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+    "fixture_reuse": "scripts/optimizer_credit_state_3C_readonly_audit_run.py::_dry_run_fixture",
+    "parity_fixture_descriptor_sha256": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+    "dense_baseline_frozen": {
+      "module": "calm.hrm_text_158.native_full_stack.bounded_delta_learner",
+      "weighted_grad": "weighted_grad_from_captures",
+      "moves_producer": "project_s1_gradient_to_moves",
+      "live_consumer": "sparse_rank_bucketed_int16_vote_events (A)",
+      "note": "Uses LIVE A symbol — not a fixture-local reimpl",
+      "rank_spec": "default_dry_run_rank_vote_spec"
+    },
+    "sparse_fused_frozen": {
+      "module": "calm.hrm_text_158.native_full_stack.bounded_delta_learner",
+      "symbol": "sparse_rank_bucketed_int16_vote_events_from_weighted_grad",
+      "lines": "499",
+      "note": "Existing fused grad->sparse votes; no full-numel moves/credit tensors",
+      "rank_spec": "default_dry_run_rank_vote_spec"
+    },
+    "parity_object": "SparseVoteEvents.to_dict() bit-identity (exact dict[int,int])",
+    "secondary_observed_fields": [
+      "dense_projected_moves_numel",
+      "dense_projected_moves_bytes",
+      "sparse_fused_event_count",
+      "events_equal bool ONLY as derived from dict equality after census — not hand-authored"
+    ],
+    "live_probe_at_plan_mint": {
+      "repo_head": "ed4932b9eef0fb547970019edf55e02ab57cb32a",
+      "dense_moves": [
+        1,
+        -1,
+        1,
+        -1,
+        1,
+        -1
+      ],
+      "dense_events": {
+        "0": 4,
+        "1": -4,
+        "2": 4,
+        "3": -1,
+        "4": 4,
+        "5": -4
+      },
+      "fused_events": {
+        "0": 4,
+        "1": -4,
+        "2": 4,
+        "3": -1,
+        "4": 4,
+        "5": -4
+      },
+      "events_equal": true,
+      "dense_moves_numel": 6,
+      "dense_moves_bytes": 6,
+      "fused_candidate_count": 6,
+      "honest_expected_terminal_branch": "BR-RECARRY-SPARSE-HOLDS",
+      "density_note": "All lanes nonzero on seed-158 — parity holds without demonstrating byte savings; density is secondary.",
+      "rank_spec_symbol": "default_dry_run_rank_vote_spec",
+      "rank_spec_to_live_dict_canonical_sha256": "6c109e0482292edf72d3cc4ada6bda0840e67e8dbfac4ad7fd64d353602806a5"
+    },
+    "device": "cpu",
+    "backend": "pytorch_eager_cpu",
+    "rank_spec_frozen": {
+      "rank_spec_symbol": "default_dry_run_rank_vote_spec",
+      "module": "calm.hrm_text_158.native_full_stack.bounded_delta_learner",
+      "definition_line": 225,
+      "consumer_trace_justification": {
+        "evidence": "all three live TSA B-sites construct rank_spec = default_dry_run_rank_vote_spec()",
+        "cites": [
+          "trainer_sub2_authority.py:1736",
+          "trainer_sub2_authority.py:2064",
+          "trainer_sub2_authority.py:2765"
+        ],
+        "file_sha256": "99bd6d543407dbb91fee8dba10e110de4d7d839e9e43b63ad36fc04d6806dbf8"
+      },
+      "constructed_spec_identity": {
+        "mode": "ported_s1_rank_bucketed_integer_votes",
+        "rank_method": "grouped_bisect_right",
+        "rank_bins": [
+          {
+            "lo_inclusive": 0.0,
+            "hi_exclusive": 0.5,
+            "vote_abs": 1,
+            "include_hi": false
+          },
+          {
+            "lo_inclusive": 0.5,
+            "hi_exclusive": 1.0,
+            "vote_abs": 4,
+            "include_hi": true
+          }
+        ],
+        "to_live_dict_canonical_sha256": "6c109e0482292edf72d3cc4ada6bda0840e67e8dbfac4ad7fd64d353602806a5",
+        "digest_method": "sha256(json.dumps(to_live_dict(), sort_keys=True, separators=(comma, colon), ensure_ascii=True))"
+      },
+      "alternate_specs_out_of_governing": [
+        {
+          "symbol": "canonical_acquisition_rank_vote_spec",
+          "definition_line": 236,
+          "to_live_dict_canonical_sha256": "894bc5450987f498219a4d334b4e63a1874c1391b01837668f27f21776d3aa88",
+          "role": "OPTIONAL secondary non-governing observation only; running measurement under this spec is rank_spec_drift hostile"
+        }
+      ]
+    },
+    "optional_secondary_non_governing": {
+      "enabled_in_harness": true,
+      "label": "canonical_acquisition_rank_vote_spec_parity_secondary",
+      "rank_spec_symbol": "canonical_acquisition_rank_vote_spec",
+      "governing": false,
+      "note": "Record events_equal under acquisition spec as labeled secondary field only; MUST NOT drive branch taxonomy / terminal classification."
+    }
+  },
+  "observation_evidence_seam": {
+    "type_name": "ProjectedMovesRecarryMeasurementEvidence",
+    "immutable": true,
+    "must_carry": [
+      "fixture_recipe_name",
+      "parity_fixture_descriptor_sha256",
+      "weighted_grad_sha256 + dtype/shape/numel",
+      "dense_projected_moves_sha256 + numel + bytes (exact ints)",
+      "dense_events_canonical_sha256 (from SparseVoteEvents.to_dict canonical JSON)",
+      "fused_events_canonical_sha256",
+      "events_equal derived from dict equality (not hand-authored)",
+      "parity_binding_set_ids ['A','B','C','D'] cited",
+      "evidence_sources {r1_msg_id, r2_msg_id, producer_sweep_hit_count=97}",
+      "screen_acc_adjacency_disposition == UNCHANGED_PRODUCER_CONSTRAINT",
+      "adjacent_caller_paths tuple (enumerated)",
+      "probe_mode == projected_moves_recarry_cpu_measurement",
+      "repo_head_sha observed at measurement time",
+      "producer_contract_unchanged == true",
+      "rank_spec_symbol == default_dry_run_rank_vote_spec (exact string)",
+      "rank_spec_to_live_dict_canonical_sha256 (exact; matches plan pin 6c109e0482292edf72d3cc4ada6bda0840e67e8dbfac4ad7fd64d353602806a5)",
+      "rank_spec_mode + rank_spec_rank_method + rank_spec_bins (observed constructed identity; deep-immutable)"
+    ],
+    "receipt_rule": "Receipt fields MUST be copied from returned evidence snapshot; second consumer reimpl / hand-authored events_equal / literal repo_head = STOP / hostile REJECT",
+    "identity_edges": [
+      "fixture captures -> weighted_grad",
+      "weighted_grad+q -> dense_moves via project_s1",
+      "credit+dense_moves -> dense_events via LIVE sparse_rank_bucketed_int16_vote_events",
+      "weighted_grad+q -> fused_events via LIVE sparse_rank_bucketed_int16_vote_events_from_weighted_grad",
+      "dense_events dict == fused_events dict -> events_equal",
+      "evidence -> receipt field equality census",
+      "default_dry_run_rank_vote_spec() constructed bins/mode/rank_method -> rank_spec digest -> both dense and fused vote paths"
+    ]
+  },
+  "canonical_hash_contract": {
+    "algo": "sha256 lowercase hex",
+    "tensor_envelope": "contiguous CPU bytes + dtype + shape JSON envelope (3C frozen_envelope pattern); no optional fields",
+    "events_dict": "canonical JSON object with sorted stringified int keys; no optional fields",
+    "exact_ints": [
+      "dense_projected_moves_numel",
+      "dense_projected_moves_bytes",
+      "fused_event_count",
+      "producer_sweep_hit_count"
+    ],
+    "bool_rejecting_exact_int": true,
+    "validators_required": [
+      "validate_evidence_receipt_field_equality",
+      "validate_live_repo_head_matches_claim",
+      "validate_dependency_currency_against_plan_pins",
+      "validate_events_equal_derived_not_hand_authored",
+      "validate_parity_uses_live_consumer_symbols_not_reimpl",
+      "validate_producer_contract_unchanged",
+      "validate_adjacency_disposition_present",
+      "validate_both_evidence_sources_cited",
+      "validate_rank_spec_identity_matches_plan_pin"
+    ],
+    "hostile_tests_required": [
+      "fixture_local_rank_bucket_reimpl",
+      "hand_authored_events_equal_true",
+      "bool_as_numel",
+      "omit_adjacency_clause",
+      "omit_r1_or_r2_evidence_source",
+      "literal_repo_head",
+      "HEAD_mismatch",
+      "dependency_currency_drift",
+      "change_project_s1_signature_in_harness",
+      "PENDING_as_terminal",
+      "rank_spec_drift"
+    ]
+  },
+  "anchor_verification": {
+    "status": "VERIFIED_LIVE_AT_V1_MINT",
+    "anchors": [
+      {
+        "id": "A1_dense_producer",
+        "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "lines": "317",
+        "file_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+        "claim": "project_s1_gradient_to_moves dense full-shape producer live",
+        "result": "PASS"
+      },
+      {
+        "id": "A2_sparse_fused_producer",
+        "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "lines": "499",
+        "file_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+        "claim": "sparse_rank_bucketed_int16_vote_events_from_weighted_grad live (no full-numel moves)",
+        "result": "PASS"
+      },
+      {
+        "id": "A3_live_consumer_A",
+        "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "lines": "414,479,530",
+        "file_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+        "claim": "rank_bucketed / sparse_rank_bucketed live decision consumers",
+        "result": "PASS"
+      },
+      {
+        "id": "A4_live_consumer_B_TSA",
+        "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+        "lines": "1762,2089,2790",
+        "file_sha256": "99bd6d543407dbb91fee8dba10e110de4d7d839e9e43b63ad36fc04d6806dbf8",
+        "claim": "three TSA live sites project_s1->rank_bucketed->apply",
+        "result": "PASS"
+      },
+      {
+        "id": "A5_live_consumer_C_ISRV",
+        "path": "calm/hrm_text_158/native_full_stack/integer_sparse_rank_votes.py",
+        "lines": "131,162",
+        "file_sha256": "4623927c7ef3dc88a82a54d43df9e5f600b1c5131027c23d26a18360e96cb913",
+        "claim": "ISRV votes=moves*vote_abs live",
+        "result": "PASS"
+      },
+      {
+        "id": "A6_live_consumer_D_IOC",
+        "path": "calm/hrm_text_158/native_full_stack/integer_optimizer_credit_path.py",
+        "lines": "102,124,138",
+        "file_sha256": "40462a4a7bdb2407d86322d2f74b37b9e78359e9fccda065e62d06c2210b65a4",
+        "claim": "IOC emit wire live",
+        "result": "PASS"
+      },
+      {
+        "id": "A7_adjacency_pressure_bridge",
+        "path": "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_loop_bridge.py",
+        "lines": "276",
+        "file_sha256": "54de0ba7bd5aeef225766639e73b0ba8a3f0a9c9d1dc79588f2dcceae0c656c6",
+        "claim": "adjacent screen caller enumerated; out of primary bind",
+        "result": "PASS"
+      },
+      {
+        "id": "A8_adjacency_derisk",
+        "path": "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_selection_derisk.py",
+        "lines": "150,175",
+        "file_sha256": "358e1912a6892d394bdd4051a3a4de251e234ec1cc0a91c0f997cfb4dd8654bb",
+        "claim": "adjacent derisk callers enumerated; out of primary bind",
+        "result": "PASS"
+      },
+      {
+        "id": "A9_adjacency_oracle_screen",
+        "path": "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py",
+        "lines": "430",
+        "file_sha256": "5f41568dd7ca8d18d7b70003afd467734b10dacebd17d6fdceb378b47489b0b3",
+        "claim": "adjacent oracle screen baseline enumerated; out of primary bind",
+        "result": "PASS"
+      },
+      {
+        "id": "A10_banked_fold_c_receipt",
+        "path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_receipt_v1.json",
+        "file_sha256": "7c94fb98b3806d5a28b155837503545abe0ca35fae660ba7a4d1690f5bc13235",
+        "claim": "Fold C shippable null BR-FOLD-C-PARITY-HOLDS-DENSE-REMAINS banked; dense projected_moves remains",
+        "result": "PASS"
+      },
+      {
+        "id": "A11_conjunctive_flip_bar",
+        "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "lines": "388-393",
+        "file_sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230",
+        "claim": "future_proof_gate still blocks readiness flip from measurement alone",
+        "result": "PASS"
+      },
+      {
+        "id": "A12_governing_rank_spec_default_dry_run",
+        "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "lines": "225",
+        "file_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+        "claim": "default_dry_run_rank_vote_spec is governing decision law; TSA B-sites :1736/:2064/:2765 construct it",
+        "result": "PASS"
+      },
+      {
+        "id": "A13_tsa_rank_spec_construction_cites",
+        "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+        "lines": "1736,2064,2765",
+        "file_sha256": "99bd6d543407dbb91fee8dba10e110de4d7d839e9e43b63ad36fc04d6806dbf8",
+        "claim": "consumer-trace justification: all three live B-sites use default_dry_run_rank_vote_spec()",
+        "result": "PASS"
+      }
+    ]
+  },
+  "dependency_currency_freeze": {
+    "binding_mode": "PLAN_BYTES_FROZEN_EXPECTED_HASHES",
+    "not_implementation_time_discovery": true,
+    "pinned_file_count": 12,
+    "files": [
+      {
+        "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "expected_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+        "role": "VALIDATE_ONLY — dense producer + sparse fused + live A consumers"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+        "expected_sha256": "99bd6d543407dbb91fee8dba10e110de4d7d839e9e43b63ad36fc04d6806dbf8",
+        "role": "VALIDATE_ONLY — live B sites (cite only; no UPDATE)"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/integer_sparse_rank_votes.py",
+        "expected_sha256": "4623927c7ef3dc88a82a54d43df9e5f600b1c5131027c23d26a18360e96cb913",
+        "role": "VALIDATE_ONLY — live C"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/integer_optimizer_credit_path.py",
+        "expected_sha256": "40462a4a7bdb2407d86322d2f74b37b9e78359e9fccda065e62d06c2210b65a4",
+        "role": "VALIDATE_ONLY — live D"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/integer_marginal_attribution.py",
+        "expected_sha256": "ee4ae5e1b651f3bef148570177212bb5aca9e30cd2b241e87b570300a933a169",
+        "role": "VALIDATE_ONLY — integer moves producer"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "expected_sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230",
+        "role": "VALIDATE_ONLY — flip bar / debt anchors"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "expected_sha256": "0ecbabf1200ca6a9e001cbcc439bf6d7ba5a56f368711919e7de61a775e8f519",
+        "role": "VALIDATE_ONLY"
+      },
+      {
+        "path": "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+        "expected_sha256": "d8a8f99e964f83d0d2b9026c7c61d88df739848817f4c32c4a01a8da541b95ed",
+        "role": "VALIDATE_ONLY — reuse _dry_run_fixture"
+      },
+      {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_receipt_v1.json",
+        "expected_sha256": "7c94fb98b3806d5a28b155837503545abe0ca35fae660ba7a4d1690f5bc13235",
+        "role": "VALIDATE_ONLY banked prior"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_loop_bridge.py",
+        "expected_sha256": "54de0ba7bd5aeef225766639e73b0ba8a3f0a9c9d1dc79588f2dcceae0c656c6",
+        "role": "VALIDATE_ONLY adjacency enumerate"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_selection_derisk.py",
+        "expected_sha256": "358e1912a6892d394bdd4051a3a4de251e234ec1cc0a91c0f997cfb4dd8654bb",
+        "role": "VALIDATE_ONLY adjacency enumerate"
+      },
+      {
+        "path": "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py",
+        "expected_sha256": "5f41568dd7ca8d18d7b70003afd467734b10dacebd17d6fdceb378b47489b0b3",
+        "role": "VALIDATE_ONLY adjacency enumerate"
+      }
+    ]
+  },
+  "frozen_write_surface": {
+    "rule": "every path is IN with an action OR OUT — no ambiguous write-surface entries",
+    "plan_phase_source_edits": false,
+    "this_plan_phase": {
+      "CREATE": [
+        "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v3.json"
+      ],
+      "UPDATE": [],
+      "OUT": [
+        "/home/gabe/claw-code-creditdir/transient_fp_credit/**",
+        "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+        "calm/hrm_text_158/native_full_stack/integer_optimizer_credit_path.py",
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_loop_bridge.py",
+        "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_selection_derisk.py",
+        "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py",
+        "any .pt / trainer / GPU launch packet",
+        "activations/KV rotor files"
+      ]
+    },
+    "post_plus1_implement": {
+      "CREATE": [
+        "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+        "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+        "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+        "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v1.json"
+      ],
+      "UPDATE": [],
+      "VALIDATE_ONLY": [
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+        "calm/hrm_text_158/native_full_stack/integer_sparse_rank_votes.py",
+        "calm/hrm_text_158/native_full_stack/integer_optimizer_credit_path.py",
+        "calm/hrm_text_158/native_full_stack/integer_marginal_attribution.py",
+        "scripts/optimizer_credit_state_3C_readonly_audit_run.py",
+        "artifacts/acc_entropy/optimizer_credit_state_fold_c_drain_path_classification_audit_receipt_v1.json",
+        "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+        "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+        "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_loop_bridge.py",
+        "calm/hrm_text_158/native_full_stack/pressure_metric_gpu_selection_derisk.py",
+        "calm/hrm_text_158/native_full_stack/oracle_screen_runner.py"
+      ],
+      "OUT": [
+        "/home/gabe/claw-code-creditdir/transient_fp_credit/** writes",
+        "TSA/IOC/BDL production rewrites",
+        "readiness-row / scaffold classification rewrites",
+        "activations/KV rotor files",
+        "trainer loop / .pt / GPU packets",
+        "screen/derisk/oracle production edits"
+      ]
+    }
+  },
+  "DEVELOPER_STEPS": [
+    {
+      "id": "S1_harness_evidence_type",
+      "actions": [
+        "CREATE scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py with ProjectedMovesRecarryMeasurementEvidence + governing CLI"
+      ],
+      "assertions": [
+        "immutable evidence; exact ints; live A symbols imported (not reimplemented)",
+        "adjacency disposition + both evidence sources required fields",
+        "producer_contract_unchanged asserted",
+        "CPU-static; no .pt",
+        "rank_spec_symbol pin + digest pin enforced; rank_spec_drift hostile present"
+      ]
+    },
+    {
+      "id": "S2_tests",
+      "actions": [
+        "CREATE calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+      ],
+      "assertions": [
+        "taxonomy + binding hostiles green",
+        "PENDING forbidden as terminal",
+        "omit_adjacency / omit_evidence_source / fixture_local_reimpl hostiles fail closed",
+        "rank_spec_drift hostile fails closed"
+      ]
+    },
+    {
+      "id": "S3_execute_governing_and_bind",
+      "actions": [
+        "EXECUTE frozen governing_runtime_command",
+        "CREATE_O_EXCL audit receipt"
+      ],
+      "assertions": [
+        "expected BR-RECARRY-SPARSE-HOLDS for seed-158",
+        "evidence↔receipt equality",
+        "claim ceiling restated; transient_fp_debt_remains=true; producer_contract_unchanged=true"
+      ]
+    },
+    {
+      "id": "S4_implement_receipt",
+      "actions": [
+        "CREATE_O_EXCL IMPLEMENT receipt"
+      ],
+      "assertions": [
+        "cites PLAN_v3 sha; porcelain-truthful; UPDATE=[]; no creditdir writes; dirty unrelated worktree preserved"
+      ]
+    }
+  ],
+  "governing_runtime_command": {
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "argv": [
+      "python",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v3.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json"
+    ],
+    "note": "Command shape frozen; executable only after +1 implement creates the harness. Operative plan authority = PLAN_v3 sha. Plan-phase does NOT run it (live probe was plan-mint grounding only)."
+  },
+  "stop_conditions": [
+    "Anchor cite fail → STOP",
+    "Mutation outside frozen_write_surface → STOP",
+    "GPU / .pt / trainer loop / creditdir RACC launch → STOP",
+    "Readiness-row flip / update-law rewrite / TSA-IOC production rewrite → STOP",
+    "PENDING as terminal → STOP",
+    "Fixture-local consumer reimpl → STOP / REJECT",
+    "Producer signature/contract change → STOP (violates UNCHANGED_PRODUCER_CONSTRAINT)",
+    "Silent omission of screen-acc adjacency names → REJECT",
+    "Omitting r1 or r2 evidence source → REJECT",
+    "Activations/KV rotor ride-along → STOP",
+    "Context >80% → request recycle",
+    "Governing run under any RankVoteSpec other than default_dry_run_rank_vote_spec → STOP (rank_spec_drift)"
+  ],
+  "named_risks": [
+    {
+      "id": "R1_fixture_no_density_win",
+      "statement": "Seed-158 has all-nonzero moves; parity may hold without byte-savings signal.",
+      "mitigation_in_plan": "Parity is governing; density fields secondary; claim ceiling forbids byte-savings proof from this fixture alone."
+    },
+    {
+      "id": "R2_adjacency_if_producer_changes",
+      "statement": "Any future remediation that changes project_s1 contract affects screen/derisk/oracle adjacent callers.",
+      "mitigation_in_plan": "This slice locks UNCHANGED_PRODUCER_CONSTRAINT; remediation follow-on must re-open adjacency as SCOPE EXPANSION."
+    }
+  ],
+  "edit_freeze": {
+    "status": "EDIT_FREEZE outside this plan artifact",
+    "this_dispatch_creates_only": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v3.json",
+    "no_source_edits_until": "dual plan accept + persisted +1 implement citing PLAN_v3 sha"
+  },
+  "context_health": "self-measured ~58%; PLAN_v3 remint B2-only; dirty unrelated HRM worktree preserved; no source edits beyond CREATE plan artifact",
+  "self_check_at_mint": {
+    "five_frozen_preconditions_in_bytes": true,
+    "intake_IF1_adjacency_in_bytes": true,
+    "intake_IF2_blind_spot_in_bytes": true,
+    "B1_rank_spec_frozen_carried_from_v2": true,
+    "B2_S4_cites_PLAN_v3_sha": true,
+    "B2_operative_authority_citation_sweep_performed": true,
+    "B2_operative_fields_updated_enumerated_in_plan_bytes": true,
+    "v1_bytes_preserved": true,
+    "v2_bytes_preserved": true,
+    "live_probe_events_equal_true": true,
+    "UPDATE_empty": true,
+    "claim_ceiling_transient_fp_debt_remains": true,
+    "full_dual_plan_gate_required": true
+  },
+  "parent_plan": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v2.json",
+    "sha256": "208b130b158107ee8aaa58203314d46920800026502acd0dc2240cca6f7f0a30",
+    "preserved_bytes": true,
+    "remint_reason": "gate-1 r2 BLOCK B2: stale operative PLAN_v1 citation in S4 + false full_operative_citation_sweep self-check",
+    "block_msg_id": "1785143109765-a9faa33a"
+  },
+  "gate1_block_closed": {
+    "axis": "B1_governing_rank_vote_spec_unfrozen",
+    "resolution": "freeze rank_spec_symbol=default_dry_run_rank_vote_spec with TSA consumer-trace cites; evidence must_carry spec identity; hostile rank_spec_drift; optional secondary canonical_acquisition observation labeled non-governing"
+  },
+  "supersedes": {
+    "PLAN_v1_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v1.json",
+    "PLAN_v1_sha256": "fa0a98d35be43cfcccad4e3291aff43457ceb684a588930111f5af2da6173903",
+    "PLAN_v1_preserved_bytes": true,
+    "PLAN_v2_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v2.json",
+    "PLAN_v2_sha256": "208b130b158107ee8aaa58203314d46920800026502acd0dc2240cca6f7f0a30",
+    "PLAN_v2_preserved_bytes": true
+  },
+  "gate1_block_on_v2": {
+    "msg_id": "1785143109765-a9faa33a",
+    "axis": "B2_stale_operative_PLAN_v1_citation_in_S4",
+    "class": "FoldC-B2_BST-B7_stale_operative_authority",
+    "status": "CLOSED_IN_V3",
+    "pre_mortem": "IMPLEMENT receipt citing v1 under a v2 run → authority split at diff gate / commit hook",
+    "aggravating": "self_check_at_mint.full_operative_citation_sweep_on_remint=true was a FALSE self-report on v2"
+  },
+  "blocker_closures_v3_B2_operative_authority": {
+    "B2_S4_and_full_operative_citation_sweep": "CLOSED — every operative step/command/gate/receipt-requirement cites PLAN_v3 authority; historical lineage refs to v1/v2 preserved as supersedes only",
+    "status": "NEW"
+  },
+  "blocker_closures_v2_B1_rank_spec": {
+    "status": "CARRIED_VERIFIED_FROM_V2",
+    "axis": "B1_governing_rank_vote_spec_frozen",
+    "closed_in": "PLAN_v2",
+    "plan_v2_sha256": "208b130b158107ee8aaa58203314d46920800026502acd0dc2240cca6f7f0a30"
+  },
+  "operative_authority_citation_sweep_v3": {
+    "authority": "PLAN_v3",
+    "method": "full walk of steps/commands/gates/receipt-requirement strings; not sampling; performed BEFORE self_check_at_mint written",
+    "block_msg_id": "1785143109765-a9faa33a",
+    "operative_fields_updated": [
+      "DEVELOPER_STEPS[S4].assertions[0]",
+      "context_health",
+      "edit_freeze.no_source_edits_until",
+      "edit_freeze.this_dispatch_creates_only",
+      "frozen_write_surface.this_plan_phase.CREATE",
+      "governing_runtime_command.argv --plan",
+      "governing_runtime_command.note",
+      "self_check_at_mint"
+    ],
+    "historical_lineage_only_not_operative": [
+      "supersedes.PLAN_v1_*",
+      "supersedes.PLAN_v2_*",
+      "parent_plan.* (points at v2 as remint parent)",
+      "gate1_block_on_v2.*",
+      "gate1_block_closed.* (B1 closure carried from v2)",
+      "blocker_closures_v2_B1_rank_spec.*",
+      "blocker_closures_v3_B2_operative_authority.* (closure narrative may name v1/v2 as supersedes only)"
+    ],
+    "sweep_hit_count_pre_update": 7,
+    "remaining_operative_after_update": 0
+  }
+}

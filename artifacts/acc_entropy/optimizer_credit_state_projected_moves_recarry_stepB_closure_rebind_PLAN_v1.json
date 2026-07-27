@@ -1,0 +1,222 @@
+{
+  "DEVELOPER_STEPS": [
+    {
+      "bound_order": [
+        "1_/tmp_baselines_harness_only_hashed",
+        "2_mint_PLAN_v33_O_EXCL_atomic_temp_rename",
+        "3_DIRECT_validate_lifecycle_ACCEPT_v31_v32_v33",
+        "4_UPDATE_harness_3_constants_only",
+        "5_pytest_floor_128",
+        "6_dry_exec_scratch_out_canonical_sha_unchanged_events_equal_true",
+        "7_O_EXCL_measurement_IMPLEMENT_receipt_v18"
+      ],
+      "id": "S0_v1_stepB_mint_v33_harness_rebind_prove",
+      "mechanical_assertions": {
+        "data": "only PLAN_v33 CREATE + harness UPDATE + receipt_v18 CREATE + /tmp baselines; no validator/tests/evidence/v31/v32/canonical edits",
+        "runtime": "dry-exec exit 0; dry_exec:true on scratch; canonical EXISTS sha 783f2799\u2026 before+after; events_equal=true in scratch; s3_go_msg_id KEY-ABSENT; authority_verification=gate_pending",
+        "tests": "pytest >=128 passed",
+        "types": "py_compile/import clean on harness; validators/tests/evidence untouched (sha-pinned)"
+      },
+      "status": "ACTIVE"
+    }
+  ],
+  "claim_ceiling": {
+    "A_B_result": "remains bound to existing S3/FINALIZE receipts; no remint of science claim",
+    "may_claim": [
+      "plumbing_authority_rebind",
+      "closure_pin_current",
+      "harness_binds_PLAN_v33",
+      "dry_exec_green_under_v33"
+    ],
+    "must_not_claim": [
+      "S3_reexec",
+      "science_remint",
+      "readiness",
+      "sub2",
+      "density_win",
+      "byte_savings",
+      "acquisition",
+      "bank",
+      "A+B_result_change"
+    ]
+  },
+  "cross_thread_required": true,
+  "decision_contract": {
+    "form_choice": "Side-family plan-request (this artifact). Measurement PLAN_v33 is minted ONLY in the implement phase after dual accept + persisted +1 citing THIS plan-request sha \u2014 not during plan-request.",
+    "form_justification": "Dispatch workflow: plan-request \u2192 gates \u2192 +1 \u2192 implement(mint v33 + harness rebind + proofs + measurement IMPLEMENT_receipt_v18). Minting v33 before +1 would invert the gate. Governing --plan for dry-exec becomes PLAN_v33 only after implement.",
+    "intent": "Step B: mint truthful measurement PLAN_v33 (closure pin validators\u219200435afa\u2026 + full_plan_gate lifecycle) and rebind harness 3 constants only \u2014 plumbing/authority only; no S3 re-exec; no science remint.",
+    "step_A_dual_accept": {
+      "gate1": "1785171861101-f2df9e36",
+      "gate2": "1785172122490-652f34a9",
+      "tests_frozen": "4e6ecb5d5f26c5b8a452a8b21947c08ccd975e3f8aba3ce71ecf8c84fc5faa98",
+      "validators_frozen": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae"
+    }
+  },
+  "dispatch_msg_id": "1785172156936-8fc4d796",
+  "harness_rebind_contract": {
+    "after": {
+      "ARGV_TEMPLATE_SHA256_EXPECTED": "e3d58ef4a060a97c8d7d6c8891879a754240a18829b507cb53659a3e9caaf60c",
+      "PLAN_REVISION": "v33",
+      "PLAN_SHA256_EXPECTED": "<sha256 of minted PLAN_v33 bytes \u2014 bind in IMPLEMENT_receipt_v18>"
+    },
+    "argv_template": [
+      "python3",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "--s3-authority-anchor-msg-id",
+      "<S3_AUTHORITY_ANCHOR_MSG_ID>"
+    ],
+    "argv_template_sha256": "e3d58ef4a060a97c8d7d6c8891879a754240a18829b507cb53659a3e9caaf60c",
+    "argv_template_sha_method": "sha256(json.dumps(argv_template, separators=(',', ':')))",
+    "current_state": {
+      "ARGV_TEMPLATE_SHA256_EXPECTED": "c5096a82c856a033a42b229f7db43f8eee9731e2531b7eeb640b170871c5cc1e",
+      "PLAN_REVISION": "v31",
+      "PLAN_SHA256_EXPECTED": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+      "note": "Harness never rebound to v32 (v32 implement blocked by grammar gap). Step B rebinds v31\u2192v33 directly."
+    },
+    "edits_beyond_3_constants": "STOP",
+    "file": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+    "no_validator_or_tests_sha_constants": true
+  },
+  "implement_phase_write_surface": {
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v18.json"
+    ],
+    "OUT": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "S3",
+      "stage",
+      "commit",
+      "push",
+      ".pt"
+    ],
+    "PRESERVE_BYTES": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json@69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json@55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json@783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py@00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py@4e6ecb5d5f26c5b8a452a8b21947c08ccd975e3f8aba3ce71ecf8c84fc5faa98",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py@b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "hardening PLANs v1-v10 + IMPLEMENT receipts v1-v3+v5 + FINALIZE v1/v2"
+    ],
+    "UPDATE": [
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py"
+    ],
+    "UPDATE_scope": "exactly 3 constants: PLAN_SHA256_EXPECTED, PLAN_REVISION, ARGV_TEMPLATE_SHA256_EXPECTED \u2014 nothing else"
+  },
+  "kind": "PLAN_REQUEST",
+  "minted_at": "2026-07-27T17:11:21.684337+00:00",
+  "mode": "full_plan_gate",
+  "observed_closure_drift_sweep": {
+    "all_other_99_pins": "byte-match live disk at plan-request time",
+    "basis_plan": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+    "basis_plan_sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+    "closure_entries": 100,
+    "drifted_entry": {
+      "live_disk": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae",
+      "note": "Dispatch guessed f3865b8e\u219200435afa; observed truth is v32 pin = Stage-1 sha 324ecdba (pre-Step-A) \u2192 live Step-A sha 00435afa. Exactly one drift; tests not in closure.",
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "pinned_in_v32": "324ecdba39a31cf750edbbcb6f1e0fc4cd6d43eb6d4ac6332e47e4b39002157b"
+    },
+    "mismatches": 1,
+    "missing": 0,
+    "tests_file_in_closure": false
+  },
+  "packet_revision": "v1",
+  "plan_revision": "v1",
+  "plan_v33_mint_contract": {
+    "closure_rebind": {
+      "carry": "other 99 pins byte-identical to v32",
+      "change": "exactly one pin: recarry_measurement_validators.py 324ecdba\u2026 \u2192 00435afa\u2026",
+      "entries": 100,
+      "tests_in_closure": false
+    },
+    "lifecycle": {
+      "governed_leaf_surfaces": [
+        "frozen_preconditions.P4_write_surface_active_phase_v33.{active_after,note}",
+        "frozen_preconditions.P4_write_surface_v33_lifecycle.{active_after,note}",
+        "frozen_write_surface.post_plus1_implement_bounded_v33_correction.{active_after,note}",
+        "frozen_write_surface.this_plan_phase.{active_after,note}"
+      ],
+      "governed_leaf_text_exact": "PLAN_v33 minted under full-plan-gate dispatch 1785172156936-8fc4d796; implementation authority arrives only via post-dual-accept persisted +1 implement.",
+      "mode_declaration": "THIS dispatch is FULL_PLAN_GATE",
+      "must_pass_hardened_validators": true,
+      "registry_keys": "exactly contiguous {v19..v33}",
+      "registry_v19_v32": "legacy plain-string entries byte-carried from PLAN_v32",
+      "registry_v33": {
+        "id": "1785172156936-8fc4d796",
+        "mode": "full_plan_gate"
+      },
+      "two_way_set_equality": "registry gens == governed lifecycle gens == {v19..v33}",
+      "untruthful_mode_or_text": "hard STOP"
+    },
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+    "plan_revision": "v33",
+    "self_identity": {
+      "operative_step_ids": "S0_v33_* only ACTIVE for this generation",
+      "packet_revision": "v33",
+      "plan_revision": "v33",
+      "workflow_names_PLAN_v33": true
+    },
+    "supersedes": "contiguous v1..v32 (append v32 entry; preserve all prior hashes); PLAN_v31/v32 byte-immutable on disk"
+  },
+  "post_dual_accept_next": "deferred ONE-COMMIT scope gate for whole recarry slice (exact allowed-file manifest; unrelated drift excluded) \u2014 separate gate, not this plan",
+  "report_to": [
+    "claude"
+  ],
+  "schema": "recarry_stepB_closure_rebind_plan_v1",
+  "self_check": {
+    "PLAN_v33_not_minted_at_plan_request": true,
+    "argv_template_sha256_named": true,
+    "mode_full_plan_gate_declared": true,
+    "no_implement_before_plus1": true,
+    "registry_v33_shape_specified": true,
+    "single_drift_documented_with_observed_pins": true
+  },
+  "sizing": "MEDIUM",
+  "stop_conditions": [
+    "validator/tests/evidence edit \u2192 STOP",
+    "PLAN_v31 or PLAN_v32 byte change \u2192 hard STOP",
+    "canonical audit mutation/delete/rename \u2192 hard STOP",
+    "hardened validators REJECT minted PLAN_v33 \u2192 STOP (report, don't weaken)",
+    "untruthful mode/text (fast_path text under full_plan_gate or wrong dispatch id) \u2192 hard STOP",
+    "harness edits beyond 3 constants \u2192 STOP",
+    "hidden closure drift beyond the one validators pin \u2192 STOP and report",
+    "S3 / stage / commit / push / .pt \u2192 STOP"
+  ],
+  "task_id": "1785163855817-03f00155",
+  "tier": "HIGH",
+  "validation_plan": {
+    "direct_validate": [
+      "PLAN_v31 ACCEPT",
+      "PLAN_v32 ACCEPT",
+      "PLAN_v33 ACCEPT via hardened validate_lifecycle_authority_cites_dispatch + import_closure pins"
+    ],
+    "dry_exec": {
+      "canonical_invariant": "EXISTS unchanged sha 783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f before AND after",
+      "canonical_out_in_argv": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "delete_rename_canonical": "hard STOP",
+      "mode": "--dry-exec-out <scratch>",
+      "parity_guard": "events_equal=true in scratch artifact"
+    },
+    "pytest": {
+      "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+      "floor": 128
+    },
+    "receipt": "O_EXCL artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v18.json binding PLAN_v33 sha + argv_template_sha256 + harness after-sha + dry-exec transcript + invariants"
+  },
+  "workflow": [
+    "This PLAN_v1 plan-request \u2192 claude gate-1 \u2192 co_lead gate-2 HIGH \u2192 +1 implement citing this plan-request sha",
+    "Implement: mint PLAN_v33 + harness 3-constant rebind + proofs + IMPLEMENT_receipt_v18",
+    "Fresh implement gate-1/gate-2 \u2192 commit-scope gate"
+  ]
+}

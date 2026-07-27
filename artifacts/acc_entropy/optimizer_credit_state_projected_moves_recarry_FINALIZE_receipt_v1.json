@@ -1,0 +1,102 @@
+{
+  "S3_fields_present_in_this_receipt": true,
+  "argv_sha256": "cce118f142e11bb5b1ffe7464c68b1ca48bc0f861e6c8302d7a518661a936b4e",
+  "artifact_class": "recarry_finalize_receipt_v1",
+  "audit_artifact": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+    "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+  },
+  "authority_verification": "gate_pending",
+  "authorizes_staging_or_commit": false,
+  "claim": {
+    "C_D_classification": "REFERENCE_ALREADY_SPARSE_INTEGER_ATTRIBUTION",
+    "audit_branch_id": "BR-RECARRY-SPARSE-HOLDS-AB",
+    "binding_set": "A+B ONLY",
+    "compositional_reduction_holds": true,
+    "events_equal": true,
+    "mode": "LEAN CPU parity/feasibility",
+    "must_not_claim": [
+      "byte_savings",
+      "density_win",
+      "gpu",
+      "production",
+      "sub2",
+      "readiness",
+      "acquisition",
+      "bank"
+    ]
+  },
+  "covers_only": [
+    "S4b_FINALIZE_binding"
+  ],
+  "dispatch_msg_id": "1785164304059-9f344049",
+  "does_not_cover": [
+    "staging",
+    "commit",
+    "push",
+    "validator_universality",
+    "PLAN_family_remint"
+  ],
+  "exception": {
+    "active": true,
+    "follow_up_task_id": "1785163855817-03f00155",
+    "name": "FROZEN_V31_CURRENT_BYTES_ONLY_EXCEPTION",
+    "no_PLAN_family_remint_on_v31_validators_before_follow_up": true,
+    "v31_validator_implementation_commit_blocked_until_follow_up_dual_accept": true
+  },
+  "harness_file_sha256": "c60f903e1b6582f8b47ff40eb41f4f65c8198bc993c4c952212f7705b8445351",
+  "kind": "S4b_FINALIZE_receipt",
+  "minted_at": "2026-07-27T14:59:51Z",
+  "plan": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+    "plan_revision": "v31",
+    "sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba"
+  },
+  "room_bindings": {
+    "follow_up_task_id": "1785163855817-03f00155",
+    "s3_authority_anchor_msg_id": "1785163896506-3008f452",
+    "s3_go_msg_id": "1785163922897-55deb710",
+    "s3_terminal_gate2_pass_msg_id": "1785164093996-6ddcd77c",
+    "s3_terminal_receipt_msg_id": "1785163988602-1a35858e",
+    "scope_pass_msg_id": "1785163827126-a5aa2b3b"
+  },
+  "room_bindings_resolution": {
+    "follow_up_task_id": {
+      "from": "claude",
+      "kind": "task",
+      "resolved": true,
+      "status": "open"
+    },
+    "s3_authority_anchor_msg_id": {
+      "from": "claude",
+      "kind": "msg",
+      "resolved": true
+    },
+    "s3_go_msg_id": {
+      "from": "claude",
+      "kind": "msg",
+      "resolved": true
+    },
+    "s3_terminal_gate2_pass_msg_id": {
+      "from": "codex_co_lead",
+      "kind": "validation_receipt",
+      "reply_to": "1785163988602-1a35858e",
+      "resolved": true,
+      "verdict": "PASS"
+    },
+    "s3_terminal_receipt_msg_id": {
+      "from": "claude",
+      "kind": "validation_receipt",
+      "resolved": true
+    },
+    "scope_pass_msg_id": {
+      "from": "codex_co_lead",
+      "kind": "design_proposal",
+      "resolved": true,
+      "verdict": "SCOPE REVIEW: PASS"
+    }
+  },
+  "runtime_command_sha256": "cce118f142e11bb5b1ffe7464c68b1ca48bc0f861e6c8302d7a518661a936b4e",
+  "schema_version": "recarry_finalize_receipt_v1",
+  "task_id": "1785141831989-47a1370d"
+}

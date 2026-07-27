@@ -1,0 +1,91 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt/v15",
+  "receipt_kind": "S4a_IMPLEMENT_receipt_v15",
+  "covers_only": [
+    "S1_plan_v29",
+    "S2_validators_tests_I1_all_operative_manifests",
+    "S2b_focused_pytest",
+    "dry_exec_prove"
+  ],
+  "does_not_cover": [
+    "S3_terminal_audit_receipt",
+    "S4b_FINALIZE",
+    "staging",
+    "commit",
+    "push"
+  ],
+  "S3_fields_present": false,
+  "authorizes_S3": false,
+  "authority": {
+    "dispatch_msg_id": "1785161183439-a7f232dc",
+    "plus1_implement": "1785161183439-a7f232dc",
+    "gate1_r28_block_msg_id": "1785161183439-a7f232dc",
+    "plan": "PLAN_v29",
+    "plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v29.json",
+    "plan_sha256": "eb152fa33a7ee05e15238d08f9b577d69396c1b764f6881508cb81fe77d35a1c",
+    "argv_template_sha256": "8294876e5f42e26c6f7ae6099ae6747381227b102959aa8dca454eaf806ac7f1",
+    "fast_path": true,
+    "task_id": "1785141831989-47a1370d"
+  },
+  "repairs": {
+    "I1": "validate_single_action_class_per_path enumerates ALL operative manifests (active_write_manifest, ACTIVE frozen_preconditions, this_plan_phase, ACTIVE frozen_write_surface corrections); within-list dedupe + cross-class + plan-file-once per surface; CROSS-SURFACE CONSISTENCY (divergence \u2192 REJECT). Hostiles: this_plan_phase UPDATE dup; cross-surface class divergence."
+  },
+  "artifacts": {
+    "PLAN_v29": {
+      "sha256": "eb152fa33a7ee05e15238d08f9b577d69396c1b764f6881508cb81fe77d35a1c"
+    },
+    "validators": {
+      "sha256": "1db111e0401187d923442a7a1869504305d05dfe9b63fb9a3cb58787c85753d2",
+      "pure": true
+    },
+    "evidence": {
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "unchanged": true
+    },
+    "harness": {
+      "sha256": "915e63b7c294d3b50f67fdb283c20b33751b980d625a935b2e4c8ef801069ce3"
+    },
+    "tests": {
+      "sha256": "54ef9f6ba557ee345db5532fad8dd474cc3132f16ec3dde2519355722f4a1d9a"
+    }
+  },
+  "baselines_pre_v29": {
+    "harness": "9e96b57897c736c994f60c549d6c074e9bb86c076efebe9e7fab2783eef8fcab",
+    "validators": "240c23009e287f82aea15912edd136fbad808250e56602befb173c104a6f7aa7",
+    "tests": "28f990b59e639c73a53d7b0d9ef49811a907afd2b63fa68e1b9080617cea3a14"
+  },
+  "preserve_bytes": {
+    "PLAN_v28": "d929b6abdf7ccd487404db5a9efc37f8dff56593ccdaea0abf51b08c5e59a22e",
+    "IMPLEMENT_receipt_v14": "c38d39528f22c68833264945bb778f03122753d633aa8a3a49ee2c6552351b91"
+  },
+  "focused_pytest": {
+    "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "exit_code": 0,
+    "summary": "76 passed in 29.55s",
+    "order": "BEFORE O_EXCL IMPLEMENT_receipt_v15 mint",
+    "delta_vs_v28": "74 -> 76 (+I1 this_plan_phase dup + cross-surface divergence hostiles)"
+  },
+  "dry_execution": {
+    "command": [
+      "python3",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v29.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "--s3-authority-anchor-msg-id",
+      "DRYEXEC-V29-SCRATCH-ANCHOR",
+      "--dry-exec-out",
+      "artifacts/acc_entropy/_dry_exec_scratch_v29_recarry.json"
+    ],
+    "exit_code": 0,
+    "canonical_out_absent": true,
+    "scratch_sha256": "aa6ea0791260aae68ca0afbb5b6de22b935e5fc2292aaa2a9954824c52d6be6d",
+    "runtime_harness_sha256": "915e63b7c294d3b50f67fdb283c20b33751b980d625a935b2e4c8ef801069ce3",
+    "preview_branch": "BR-RECARRY-SPARSE-HOLDS-AB",
+    "non_authoritative": true
+  },
+  "edit_freeze": true,
+  "context_health": "self-measured; PLAN_v29 remint I1 all-surface action-class; S3 HOLD until dual accept + fresh v29 +1 (S3 auth only)"
+}

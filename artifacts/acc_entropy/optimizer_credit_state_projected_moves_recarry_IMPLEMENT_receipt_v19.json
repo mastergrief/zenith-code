@@ -1,0 +1,276 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt/v19",
+  "receipt_kind": "StepB_residual_IMPLEMENT_receipt_v19",
+  "minted_at": "2026-07-27T18:40:27Z",
+  "authority": {
+    "task_id": "1785163855817-03f00155",
+    "plus1_implement": "1785177265663-86c9e120",
+    "plan_request": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v10.json",
+    "plan_request_sha256": "e7711c460989bcf2d48e15e4a5f0d64c50ac06ed61f5d85b755d7de701547da5",
+    "gate1_PASS_FREEZE": "1785177106122-709530f5",
+    "gate2_PASS": "1785177244194-749289ec",
+    "suspended_void_authorities": [
+      "1785175283022-02f79965_v8_remaining_dry_exec_receipt",
+      "v9_never_granted_implement"
+    ],
+    "governing_measurement_plan": "PLAN_v33",
+    "governing_measurement_plan_sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e"
+  },
+  "covers_only": [
+    "S0_v10_bounded_tests_generation_rebind",
+    "S0_v10_dry_exec_and_pytest_prove",
+    "S0b_v10_implement_receipt_v19"
+  ],
+  "does_not_cover": [
+    "S0_v10_deferred_one_commit_scope_gate",
+    "PLAN_v33_remint",
+    "harness_reedit",
+    "DIFF_MANIFEST_mutation",
+    "S3",
+    "stage",
+    "commit",
+    "push"
+  ],
+  "authorizes_S3": false,
+  "S3_fields_present": false,
+  "precondition_state": {
+    "PLAN_v33": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "primitive_used_at_mint": "final_path_O_EXCL_direct_open",
+      "v33_path_absent_pre_mint": true,
+      "completed_under_plus1": "1785175283022-02f79965",
+      "remint_this_turn": false
+    },
+    "DIFF_MANIFEST": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json",
+      "file_sha256": "e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84",
+      "diff_digest_sha256": "f800063a10192380be1546c20abbeb49d668f4233f53f37c8423afb7e5a9d420",
+      "diff_digest_method": "sha256 of canonical-JSON bytes excluding embedded digest field",
+      "mutation_this_turn": false
+    },
+    "harness": {
+      "path": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "before_sha256": "c60f903e1b6582f8b47ff40eb41f4f65c8198bc993c4c952212f7705b8445351",
+      "after_sha256": "6b3d6555ded2d85c1d969eb32e586ebe36c31638ebfe34836c7cc007cd166452",
+      "constants_live": {
+        "PLAN_REVISION": "v33",
+        "PLAN_SHA256_EXPECTED": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+        "ARGV_TEMPLATE_SHA256_EXPECTED": "e3d58ef4a060a97c8d7d6c8891879a754240a18829b507cb53659a3e9caaf60c"
+      },
+      "reedit_this_turn": false
+    }
+  },
+  "bounded_tests_update": {
+    "file": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+    "tests_exactly": [
+      "test_governing_receipt_anchor_only_excludes_go_id",
+      "test_hostile_argv_template_deviation",
+      "test_harness_file_sha256_embedded_and_matches_runtime",
+      "test_dry_exec_out_scratch_path_cli"
+    ],
+    "before_sha256": "4e6ecb5d5f26c5b8a452a8b21947c08ccd975e3f8aba3ce71ecf8c84fc5faa98",
+    "after_sha256": "17526238d8f134529ca3004e11cca733802a3efa723974224cf0ad17b066f6b5",
+    "baseline_freeze": {
+      "path": "/tmp/optimizer_credit_state_projected_moves_recarry_measurement_tests_baseline_4e6ecb5d.py",
+      "sha256": "4e6ecb5d5f26c5b8a452a8b21947c08ccd975e3f8aba3ce71ecf8c84fc5faa98",
+      "proved_before_any_edit": true
+    },
+    "change_class": "generation_bindings_only_inside_four_function_bodies",
+    "assertion_logic_unchanged": true,
+    "shared_fixtures_untouched": [
+      "PLAN_V30",
+      "PLAN_V31_alias",
+      "plan_fixture",
+      "_anchor_argv",
+      "other_124_tests"
+    ]
+  },
+  "source_diff_verifier": {
+    "procedure_executed": true,
+    "outside_span_bytes_equal": true,
+    "outside_span_sha256": "08b6a8d7e3e2f9a6773a3ddcce3ef085622abc8e9a47cc593f436be99e561259",
+    "function_extents_baseline": {
+      "test_governing_receipt_anchor_only_excludes_go_id": "609-624",
+      "test_hostile_argv_template_deviation": "627-633",
+      "test_harness_file_sha256_embedded_and_matches_runtime": "641-650",
+      "test_dry_exec_out_scratch_path_cli": "715-742"
+    },
+    "function_extents_after": {
+      "test_governing_receipt_anchor_only_excludes_go_id": "609-625",
+      "test_hostile_argv_template_deviation": "628-634",
+      "test_harness_file_sha256_embedded_and_matches_runtime": "642-652",
+      "test_dry_exec_out_scratch_path_cli": "717-744"
+    },
+    "four_hunk_unified_diff": "--- a/test_governing_receipt_anchor_only_excludes_go_id\n+++ b/test_governing_receipt_anchor_only_excludes_go_id\n@@ -1,7 +1,8 @@\n def test_governing_receipt_anchor_only_excludes_go_id(h):\n     argv = _anchor_argv(\"test-only-anchor-id-not-a-launch\")\n+    argv[3] = argv[3].replace(\"v31\", \"v33\")\n     receipt = h.build_governing_receipt(\n-        plan_path=PLAN_V30,\n+        plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v33\")),\n         argv=argv,\n         s3_authority_anchor_msg_id=\"test-only-anchor-id-not-a-launch\",\n     )\n@@ -11,6 +12,6 @@\n     assert receipt[\"authority_verification\"] == \"gate_pending\"\n     assert \"s3_go_msg_id\" not in receipt\n     assert receipt[\"plan_sha256\"] == h.PLAN_SHA256_EXPECTED\n-    assert receipt[\"plan_revision\"] == \"v31\"\n+    assert receipt[\"plan_revision\"] == \"v33\"\n     assert receipt[\"evidence_to_receipt_field_equality_validated\"] is True\n     assert receipt[\"transient_fp_debt_remains\"] is True\n\n--- a/test_hostile_argv_template_deviation\n+++ b/test_hostile_argv_template_deviation\n@@ -3,5 +3,5 @@\n     argv[3] = \"artifacts/acc_entropy/wrong_plan.json\"\n     with pytest.raises(ValueError, match=\"argv_template_deviation\"):\n         h.build_governing_receipt(\n-            plan_path=PLAN_V30, argv=argv, s3_authority_anchor_msg_id=\"anchor\"\n+            plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v33\")), argv=argv, s3_authority_anchor_msg_id=\"anchor\"\n         )\n\n--- a/test_harness_file_sha256_embedded_and_matches_runtime\n+++ b/test_harness_file_sha256_embedded_and_matches_runtime\n@@ -1,7 +1,8 @@\n def test_harness_file_sha256_embedded_and_matches_runtime(h):\n     argv = _anchor_argv(\"test-only-anchor-id-not-a-launch\")\n+    argv[3] = argv[3].replace(\"v31\", \"v33\")\n     receipt = h.build_governing_receipt(\n-        plan_path=PLAN_V30,\n+        plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v33\")),\n         argv=argv,\n         s3_authority_anchor_msg_id=\"test-only-anchor-id-not-a-launch\",\n     )\n\n--- a/test_dry_exec_out_scratch_path_cli\n+++ b/test_dry_exec_out_scratch_path_cli\n@@ -10,7 +10,7 @@\n     rc = h.main(\n         [\n             \"--plan\",\n-            str(PLAN_V30.relative_to(REPO_ROOT)),\n+            str(PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v33\")).relative_to(REPO_ROOT)),\n             \"--out\",\n             \"artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json\",\n             \"--s3-authority-anchor-msg-id\",\n",
+    "four_hunk_unified_diff_sha256": "0cfc86a1841c0999557fcce44f086c13c7b0ac127f6ba25a914866c5ddf6d6ed",
+    "proof_note": "pytest alone does not prove frozen-lane boundary; outside-span byte equality is the proof"
+  },
+  "validation": {
+    "pytest": {
+      "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "exit_code": 0,
+      "summary": "128 passed in 74.20s (0:01:14)",
+      "floor": 128,
+      "ALL_PASS": true,
+      "transcript_path": "/tmp/optimizer_credit_state_projected_moves_recarry_v10_pytest.txt"
+    },
+    "direct_validate": {
+      "result": "ACCEPT",
+      "plans": {
+        "v31": {
+          "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+          "sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+          "DIRECT": "ACCEPT",
+          "validators_run": [
+            "validate_phase_dag_acyclic",
+            "validate_text_vs_dag_edge_consistency",
+            "validate_per_receipt_gate_rows_present",
+            "validate_plan_anchor_go_citations_carry_harness_sha",
+            "validate_no_false_complete_s3_s4b_status",
+            "validate_developer_steps_ids_unique",
+            "validate_active_ids_exactly_current_generation",
+            "validate_lifecycle_authority_cites_dispatch",
+            "validate_single_action_class_per_path",
+            "validate_supersedes_schema"
+          ]
+        },
+        "v32": {
+          "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+          "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+          "DIRECT": "ACCEPT",
+          "validators_run": [
+            "validate_phase_dag_acyclic",
+            "validate_text_vs_dag_edge_consistency",
+            "validate_per_receipt_gate_rows_present",
+            "validate_plan_anchor_go_citations_carry_harness_sha",
+            "validate_no_false_complete_s3_s4b_status",
+            "validate_developer_steps_ids_unique",
+            "validate_active_ids_exactly_current_generation",
+            "validate_lifecycle_authority_cites_dispatch",
+            "validate_single_action_class_per_path",
+            "validate_supersedes_schema"
+          ]
+        },
+        "v33": {
+          "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+          "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+          "DIRECT": "ACCEPT",
+          "validators_run": [
+            "validate_phase_dag_acyclic",
+            "validate_text_vs_dag_edge_consistency",
+            "validate_per_receipt_gate_rows_present",
+            "validate_plan_anchor_go_citations_carry_harness_sha",
+            "validate_no_false_complete_s3_s4b_status",
+            "validate_developer_steps_ids_unique",
+            "validate_active_ids_exactly_current_generation",
+            "validate_lifecycle_authority_cites_dispatch",
+            "validate_single_action_class_per_path",
+            "validate_supersedes_schema"
+          ]
+        }
+      },
+      "validator_count_per_plan": 10
+    },
+    "dry_exec": {
+      "exit_code": 0,
+      "mode": "--dry-exec-out scratch",
+      "command": [
+        "python3",
+        "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+        "--plan",
+        "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+        "--out",
+        "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+        "--s3-authority-anchor-msg-id",
+        "dry-exec-v10-residual-anchor",
+        "--dry-exec-out",
+        "/tmp/optimizer_credit_state_projected_moves_recarry_v10_dry_exec_scratch.json"
+      ],
+      "scratch_path": "/tmp/optimizer_credit_state_projected_moves_recarry_v10_dry_exec_scratch.json",
+      "scratch_sha256": "8b9d889145c6066ebcf2c49de6efe65d96a4ac3bb1fbd16c6f50cc8f8e5f1154",
+      "dry_exec": true,
+      "events_equal": true,
+      "plan_sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "plan_revision": "v33",
+      "harness_file_sha256": "6b3d6555ded2d85c1d969eb32e586ebe36c31638ebfe34836c7cc007cd166452",
+      "s3_go_msg_id_absent": true,
+      "canonical_out": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "canonical_sha256_before": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "canonical_sha256_after": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "canonical_unchanged": true,
+      "transcript_preview": {
+        "audit_branch_id": "BR-RECARRY-SPARSE-HOLDS-AB",
+        "authority_verification": "gate_pending",
+        "events_equal": true,
+        "dry_exec": true
+      }
+    }
+  },
+  "protected_surfaces_rehash_proof": {
+    "PLAN_v31": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+      "sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+      "unchanged": true
+    },
+    "PLAN_v32": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+      "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+      "unchanged": true
+    },
+    "PLAN_v33": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "unchanged": true
+    },
+    "DIFF_MANIFEST": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json",
+      "sha256": "e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84",
+      "unchanged": true
+    },
+    "harness": {
+      "path": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "sha256": "6b3d6555ded2d85c1d969eb32e586ebe36c31638ebfe34836c7cc007cd166452",
+      "unchanged": true
+    },
+    "validators": {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "sha256": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae",
+      "unchanged": true
+    },
+    "evidence": {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "unchanged": true
+    },
+    "canonical_audit_receipt_v1": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "unchanged": true
+    },
+    "stepB_plan_request_v10": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v10.json",
+      "sha256": "e7711c460989bcf2d48e15e4a5f0d64c50ac06ed61f5d85b755d7de701547da5",
+      "unchanged": true
+    },
+    "stepB_plan_request_v9": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v9.json",
+      "sha256": "576dbbcf708da5f43e22bd913e73df055e68c5dc1c905fbb851a7875eeb327f5",
+      "unchanged": true
+    },
+    "stepB_plan_request_v8": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v8.json",
+      "sha256": "b368454fd4413a8d8c0c170968f53c818a6c728f26f855e81aa5a668d7244ab8",
+      "unchanged": true
+    }
+  },
+  "primitive_used": {
+    "this_receipt": "final_path_O_EXCL_direct_open",
+    "PLAN_v33_prior": "final_path_O_EXCL_direct_open",
+    "v33_path_absent_pre_mint": true,
+    "receipt_path_absent_pre_mint": true
+  },
+  "edit_freeze": true,
+  "context_health": "Step-B residual under dual-accepted v10; 4-test generation rebind + source-diff verifier + pytest≥128 + DIRECT ACCEPT + dry-exec; commit authority deferred to ONE-commit scope gate"
+}

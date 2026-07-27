@@ -1,0 +1,302 @@
+{
+  "after": {
+    "tests_path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+    "tests_sha256": "4e6ecb5d5f26c5b8a452a8b21947c08ccd975e3f8aba3ce71ecf8c84fc5faa98",
+    "validators_path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+    "validators_sha256": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae"
+  },
+  "artifact_class": "validator_hardening_stepA_implement_receipt",
+  "authority": {
+    "gate1_freeze_msg_id": "1785170923798-8abb9815",
+    "gate2_pass_msg_id": "1785171105468-858cbcb5",
+    "not_authorized": [
+      "Step_B",
+      "PLAN_v33",
+      "harness_edits",
+      "closure_pin_edits",
+      "v32_rewrite",
+      "canonical_mutation",
+      "dry_exec_acceptance",
+      "stage",
+      "commit",
+      "push",
+      "S3",
+      ".pt"
+    ],
+    "plus1_implement_msg_id": "1785171120714-3ccd9924",
+    "stage": "Step_A_only",
+    "task_id": "1785163855817-03f00155"
+  },
+  "authority_verification": "gate_pending",
+  "baselines": {
+    "dir": "/tmp/recarry_hardening_baselines_v10",
+    "note": "/tmp only; NEVER artifacts/acc_entropy/baselines/",
+    "tests_path": "/tmp/recarry_hardening_baselines_v10/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py.pre_stepA_v10",
+    "tests_sha256": "f2ee6a814369789539683c4423c5e1f5a87f7307c2a524bcadff04171cc17a6c",
+    "validators_path": "/tmp/recarry_hardening_baselines_v10/recarry_measurement_validators.py.pre_stepA_v10",
+    "validators_sha256": "324ecdba39a31cf750edbbcb6f1e0fc4cd6d43eb6d4ac6332e47e4b39002157b"
+  },
+  "byte_invariants": {
+    "canonical_audit_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+    "canonical_audit_sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+    "canonical_unchanged_before_and_after": true,
+    "plan_v32_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+    "plan_v32_sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+    "plan_v32_unchanged_before_and_after": true
+  },
+  "claim_ceiling": {
+    "may_claim": [
+      "Step_A_mode_aware_lifecycle_grammar_implemented",
+      "registry_wide_fail_closure",
+      "canonical_membership_v19_to_vN"
+    ],
+    "must_not_claim": [
+      "Step_B_complete",
+      "PLAN_v33",
+      "dry_exec_PASS",
+      "commit_coherence",
+      "S3",
+      "science_claim_change"
+    ]
+  },
+  "direct_validation": {
+    "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+    "plan_v31": {
+      "outcome": "ACCEPT",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json"
+    },
+    "plan_v32": {
+      "outcome": "ACCEPT",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json"
+    }
+  },
+  "dispatch_msg_id": "1785171120714-3ccd9924",
+  "fixture_matrix": {
+    "accept": 4,
+    "reject": 22,
+    "total": 26
+  },
+  "fixture_outcomes": [
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_fast_path_text_under_full_plan_gate_mode",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_full_plan_text_under_fast_path_mode",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_unknown_lifecycle_mode",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_v33_plain_string",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_entry_non_mapping_non_string",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_mapping_missing_id",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_mapping_missing_mode",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_id_empty",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_id_non_string",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_id_malformed_shape",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_mode_empty_or_non_string",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_unknown_mode",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_extra_key",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_unreferenced_registry_entry_non_string",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_unreferenced_registry_entry_malformed_string_id",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_malformed_key_shape",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_legacy_plain_string_malformed_id_shape",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_unreferenced_wellformed_registry_v99_mapping",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_leading_zero_alias_v031",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_generation_missing_required",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_registry_only_generation_vs_governed",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "REJECT",
+      "helper_only": false,
+      "name": "hostile_governed_only_generation_vs_registry",
+      "observed": "REJECT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "ACCEPT",
+      "helper_only": false,
+      "name": "accept_full_plan_gate_mode_with_exact_full_plan_text",
+      "observed": "ACCEPT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "ACCEPT",
+      "helper_only": false,
+      "name": "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+      "observed": "ACCEPT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "ACCEPT",
+      "helper_only": false,
+      "name": "hostile_compat_plain_string_v31_still_accepts",
+      "observed": "ACCEPT"
+    },
+    {
+      "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+      "expected": "ACCEPT",
+      "helper_only": false,
+      "name": "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar",
+      "observed": "ACCEPT"
+    }
+  ],
+  "kind": "IMPLEMENT_receipt",
+  "minted_at": "2026-07-27T17:02:10.932269+00:00",
+  "plan": {
+    "packet_revision": "v10",
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v10.json",
+    "plan_revision": "v10",
+    "sha256": "1861df22fcb68a6412806dbfa9063dd03c6d73210a7162803079411cc4a00a1e",
+    "step_id": "S0_v10_stepA_mode_grammar_extension"
+  },
+  "public_entrypoint_integration_proof": {
+    "all_26_fixtures_use_public_entrypoint": true,
+    "entrypoint": "validate_lifecycle_authority_cites_dispatch",
+    "helper_only_tests_forbidden": true,
+    "positive_mode_fixtures_use_same_public_path": true,
+    "registry_structure_invoked_before_leaf_matching": true
+  },
+  "py_compile": {
+    "tests": "ok",
+    "validators": "ok"
+  },
+  "pytest": {
+    "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "exit_code": 0,
+    "floor": "102 prior + 26 F4 = 128",
+    "summary": "128 passed in 45.63s",
+    "test_f4_count": 26
+  },
+  "receipt_lineage_note": {
+    "active_implement_receipt": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v5.json",
+    "preserve_bytes": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v2.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v3.json"
+    ],
+    "reason": "IMPLEMENT_receipt_v4 was reserved by superseded PLAN_v6 write_surface but never minted (PLAN_v6 frozen then superseded before +1). PLAN_v7/v8 advance active receipt to v5; gap documented in PLAN_v10.receipt_lineage_note. O_EXCL on v5 prevents collision.",
+    "skipped_never_minted": "IMPLEMENT_receipt_v4"
+  },
+  "schema": "recarry_validator_hardening_implement_receipt_v5"
+}

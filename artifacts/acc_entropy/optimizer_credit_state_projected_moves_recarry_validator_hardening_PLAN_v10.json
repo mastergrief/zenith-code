@@ -1,0 +1,1218 @@
+{
+  "DEVELOPER_STEPS": [
+    {
+      "bound_order": [
+        "1_tmp_baseline_capture_hashed",
+        "2_edit_validators_and_tests_only",
+        "3_direct_validate_lifecycle_ACCEPT_PLAN_v31_and_PLAN_v32",
+        "4_positive_mode_ACCEPT_fixtures_both_pairs",
+        "5_registry_wide_schema_membership_and_bijection_hostiles_REJECT",
+        "6_focused_pytest_floor_102_plus_exact_F4_26_fixtures",
+        "7_assert_PLAN_v32_and_canonical_sha_unchanged",
+        "8_O_EXCL_IMPLEMENT_receipt_v5_binding_all_26_fixture_names"
+      ],
+      "count": "ONE",
+      "id": "S0_v10_stepA_mode_grammar_extension",
+      "mechanical_assertions": {
+        "data": "only validators+tests+IMPLEMENT_receipt_v5+/tmp baselines; no v32 rewrite; no harness/closure/PLAN_v33",
+        "runtime": "DIRECT validate_* ACCEPT on PLAN_v31+v32; positive-mode ACCEPTs; missing-generation + both mismatch directions + v99/v031 REJECT",
+        "tests": "exact F4 matrix 4 ACCEPT + 22 REJECT; prior 102 green; no approximations; bijection complete",
+        "types": "py_compile + import clean"
+      },
+      "size": "MEDIUM",
+      "status": "ACTIVE"
+    }
+  ],
+  "SIZING": "MEDIUM",
+  "artifact_class": "validator_hardening_PLAN_v10",
+  "autonomy_rung": "HIGH",
+  "blocker_closures_v10": {
+    "block_msg_id": "1785170737238-03d0e1a7",
+    "dispatch_msg_id": "1785170761810-568b43d3",
+    "holes_closed": [
+      "dedicated_lifecycle_registry_generation_missing_fixture",
+      "per_direction_governed_set_mismatch_fixtures",
+      "spec_class_fixture_bijection_table",
+      "matrix_26_exact_prior_24_minus_1_plus_3"
+    ],
+    "replaced_fixture": "hostile_registry_governed_set_mismatch",
+    "replacement_fixtures": [
+      "hostile_registry_generation_missing_required",
+      "hostile_registry_only_generation_vs_governed",
+      "hostile_governed_only_generation_vs_registry"
+    ]
+  },
+  "blocker_closures_v7": {
+    "block_msg_id": "1785169578453-81e776e3",
+    "dispatch_msg_id": "1785169606289-b9708135",
+    "holes_closed": [
+      "positive_new_mode_ACCEPT_both_pairs",
+      "frozen_legacy_plain_string_cutoff_v19_v32",
+      "frozen_mapping_schema_per_branch_tests"
+    ]
+  },
+  "blocker_closures_v8": {
+    "block_msg_id": "1785169938438-e28cc695",
+    "dispatch_msg_id": "1785169987288-c3a5fc32",
+    "holes_closed": [
+      "receipt_identity_IMPLEMENT_receipt_v5_everywhere_plus_skipped_v4_note_in_plan",
+      "exact_fixture_counts_21_no_approximations",
+      "registry_wide_fail_closure_unreferenced_entries",
+      "legacy_plain_string_id_regex"
+    ]
+  },
+  "blocker_closures_v9": {
+    "block_msg_id": "1785170419561-e9c85913",
+    "dispatch_msg_id": "1785170465016-2cda19d9",
+    "holes_closed": [
+      "canonical_contiguous_registry_v19_through_vN_from_plan_revision",
+      "canonical_key_form_no_leading_zero_aliases",
+      "two_way_registry_governed_leaf_set_equality",
+      "hostiles_plus_3_matrix_24_exact"
+    ]
+  },
+  "carried_stage1_invariants": {
+    "O_EXCL_receipts": true,
+    "absolute_manifest_schema_F1": true,
+    "container_key_and_scalar_type_boundary": true,
+    "current_generation_self_identity": true,
+    "frozen_registry_surfaces_F2": true,
+    "structural_path_chronology_F3": true,
+    "tmp_baselines_exact_paths": true
+  },
+  "claim_ceiling": {
+    "may_claim": [
+      "Step A: mode-aware lifecycle grammar with exactly two allowlist templates",
+      "Step A: positive ACCEPT proofs for both exact mode/text pairs",
+      "Step A: frozen legacy plain-string cutoff v19\u2013v32; v33+ plain-string REJECT",
+      "Step A: frozen mapping schema with per-branch malformed-entry REJECT",
+      "Step A: historical plain-string registry entries (PLAN_v31/v32) still ACCEPT",
+      "Step A: prior F1/F2/F3 battery green"
+    ],
+    "must_not_claim": [
+      "PLAN_v32 authority-truth cured inside Step A alone (truth cure = Step B supersession)",
+      "PLAN_v33 minted",
+      "harness dry-exec clean under rebound closure",
+      "commit-coherence / whole-slice commit-quality",
+      "science claim change",
+      "S3 re-exec",
+      "acquisition",
+      "readiness",
+      "sub2",
+      "byte_savings",
+      "density_win"
+    ]
+  },
+  "decision_contract": {
+    "NOT_fast_path": true,
+    "authority": "dispatch 1785170761810-568b43d3; co_lead BLOCK 1785170737238-03d0e1a7; prior BLOCK 1785170419561-e9c85913; prior dispatch 1785170465016-2cda19d9; PLAN_v9 freeze 1785170638034-d71300c0; task 1785163855817-03f00155",
+    "executor": "plan-dev (codex)",
+    "intent": "Close PLAN_v9 vacuity holes: replace ambiguous either-direction mismatch with three distinct mechanically replayable fixtures (missing-generation + both mismatch directions); add spec-class\u2194fixture bijection table. Membership architecture otherwise unchanged.",
+    "mode": "planning",
+    "reason_not_fast_path": "HIGH control-plane grammar/schema extension; novel mode declaration; full plan gate required",
+    "receipt_sink": "claude gate-1 ONLY",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation"
+    ]
+  },
+  "dispatch_msg_id": "1785170761810-568b43d3",
+  "finding": {
+    "defect": "_lifecycle_authority_grammar emits ONLY the converged-fast-path sentence. Stage-2 dispatch 1785168271320-9581a9c1 was FULL PLAN GATE (implement forbidden until dual accept), yet every PLAN_v32 operative lifecycle record asserts fast-path authority that did not exist. Grammar-exactness \u2260 authority truth.",
+    "file_line_anchors": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py:_lifecycle_authority_grammar:642-648",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py:validate_lifecycle_authority_cites_dispatch"
+    ],
+    "hostile_fixtures": [
+      {
+        "mutate": "full_plan_gate mode + fast_path text",
+        "name": "hostile_fast_path_text_under_full_plan_gate_mode",
+        "new_behavior": "REJECT match=lifecycle_mode_text_mismatch"
+      },
+      {
+        "mutate": "fast_path mode + full_plan text",
+        "name": "hostile_full_plan_text_under_fast_path_mode",
+        "new_behavior": "REJECT match=lifecycle_mode_text_mismatch"
+      },
+      {
+        "mutate": "mode=other_mode",
+        "name": "hostile_unknown_lifecycle_mode",
+        "new_behavior": "REJECT match=lifecycle_mode_unknown"
+      },
+      {
+        "mutate": "registry[v33]=plain string",
+        "name": "hostile_registry_v33_plain_string",
+        "new_behavior": "REJECT match=lifecycle_registry_legacy_string_beyond_v32"
+      },
+      {
+        "mutate": "hostile_registry_entry_non_mapping_non_string",
+        "name": "hostile_registry_entry_non_mapping_non_string",
+        "new_behavior": "REJECT match=lifecycle_registry_entry_type"
+      },
+      {
+        "mutate": "hostile_registry_mapping_missing_id",
+        "name": "hostile_registry_mapping_missing_id",
+        "new_behavior": "REJECT match=lifecycle_registry_missing_id"
+      },
+      {
+        "mutate": "hostile_registry_mapping_missing_mode",
+        "name": "hostile_registry_mapping_missing_mode",
+        "new_behavior": "REJECT match=lifecycle_registry_missing_mode"
+      },
+      {
+        "mutate": "hostile_registry_id_empty",
+        "name": "hostile_registry_id_empty",
+        "new_behavior": "REJECT match=lifecycle_registry_id_empty"
+      },
+      {
+        "mutate": "hostile_registry_id_non_string",
+        "name": "hostile_registry_id_non_string",
+        "new_behavior": "REJECT match=lifecycle_registry_id_type"
+      },
+      {
+        "mutate": "hostile_registry_id_malformed_shape",
+        "name": "hostile_registry_id_malformed_shape",
+        "new_behavior": "REJECT match=lifecycle_registry_id_shape"
+      },
+      {
+        "mutate": "hostile_registry_mode_empty_or_non_string",
+        "name": "hostile_registry_mode_empty_or_non_string",
+        "new_behavior": "REJECT match=lifecycle_registry_mode_type"
+      },
+      {
+        "mutate": "hostile_registry_unknown_mode",
+        "name": "hostile_registry_unknown_mode",
+        "new_behavior": "REJECT match=lifecycle_mode_unknown"
+      },
+      {
+        "mutate": "hostile_registry_extra_key",
+        "name": "hostile_registry_extra_key",
+        "new_behavior": "REJECT match=lifecycle_registry_extra_key"
+      },
+      {
+        "mutate": "registry[v99]=7 unreferenced",
+        "name": "hostile_unreferenced_registry_entry_non_string",
+        "new_behavior": "REJECT match=lifecycle_registry_entry_type",
+        "tag": "registry_wide_fail_closure"
+      },
+      {
+        "mutate": "registry[v99]=\"not-a-room-message-id\" unreferenced",
+        "name": "hostile_unreferenced_registry_entry_malformed_string_id",
+        "new_behavior": "REJECT match=lifecycle_registry_legacy_string_beyond_v32|lifecycle_registry_id_shape",
+        "tag": "registry_wide_fail_closure"
+      },
+      {
+        "mutate": "registry key not matching ^v\\d+$",
+        "name": "hostile_registry_malformed_key_shape",
+        "new_behavior": "REJECT match=lifecycle_registry_key_shape",
+        "tag": "registry_wide_fail_closure"
+      },
+      {
+        "mutate": "registry[v25]=\"not-a-room-message-id\"",
+        "name": "hostile_legacy_plain_string_malformed_id_shape",
+        "new_behavior": "REJECT match=lifecycle_registry_id_shape",
+        "tag": "legacy_id_shape"
+      },
+      {
+        "mutate": "registry[\"v99\"]={id,mode} well-formed but outside {v19..vN} / unreferenced",
+        "name": "hostile_unreferenced_wellformed_registry_v99_mapping",
+        "new_behavior": "REJECT match=lifecycle_registry_generation_extra",
+        "tag": "canonical_membership"
+      },
+      {
+        "mutate": "registry[\"v031\"]={id,mode} well-formed leading-zero alias",
+        "name": "hostile_registry_leading_zero_alias_v031",
+        "new_behavior": "REJECT match=lifecycle_registry_key_not_canonical",
+        "tag": "canonical_membership"
+      },
+      {
+        "mutate": "Start from membership-satisfying plan at fixed vN; DELETE one required registry key (e.g. delete registry[\"v25\"]) while plan_revision/N and governed leaves stay fixed",
+        "name": "hostile_registry_generation_missing_required",
+        "new_behavior": "REJECT match=lifecycle_registry_generation_missing",
+        "tag": "canonical_membership"
+      },
+      {
+        "direction": "registry_minus_governed",
+        "mutate": "Otherwise-valid plan; inject one registry generation that has no matching structurally governed lifecycle-leaf generation (registry \u2212 governed direction); keep keys otherwise canonical",
+        "name": "hostile_registry_only_generation_vs_governed",
+        "new_behavior": "REJECT match=lifecycle_registry_governed_set_mismatch",
+        "tag": "canonical_membership"
+      },
+      {
+        "direction": "governed_minus_registry",
+        "mutate": "Otherwise-valid plan; inject one structurally governed lifecycle-leaf generation that has no matching registry key (governed \u2212 registry direction); keep registry otherwise canonical",
+        "name": "hostile_governed_only_generation_vs_registry",
+        "new_behavior": "REJECT match=lifecycle_registry_governed_set_mismatch",
+        "tag": "canonical_membership"
+      },
+      {
+        "mutate": "synthetic full_plan_gate pair",
+        "name": "accept_full_plan_gate_mode_with_exact_full_plan_text",
+        "new_behavior": "ACCEPT",
+        "tag": "positive_mode_ACCEPT"
+      },
+      {
+        "mutate": "synthetic fast_path mapping pair",
+        "name": "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+        "new_behavior": "ACCEPT",
+        "tag": "positive_mode_ACCEPT"
+      },
+      {
+        "mutate": "none \u2014 PLAN_v31 bytes",
+        "name": "hostile_compat_plain_string_v31_still_accepts",
+        "new_behavior": "ACCEPT",
+        "tag": "compat_ACCEPT"
+      },
+      {
+        "mutate": "none \u2014 PLAN_v32 bytes",
+        "name": "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar",
+        "new_behavior": "ACCEPT",
+        "tag": "compat_ACCEPT"
+      }
+    ],
+    "id": "F4_lifecycle_mode_grammar_single_template_false_authority",
+    "mechanism": {
+      "add": "Mode-aware grammar with EXACTLY two templates; registry mode declaration for NEW generations; plain-string entries default mode=fast_path (v19-v32 compat, zero historical remint); mode-vs-text mismatch REJECT; unknown mode REJECT.",
+      "boundary": "Registry truth (whether the cited dispatch was actually full_plan_gate vs fast_path) remains a REVIEW-gate / in-room check \u2014 validators cannot resolve room records. Validators only enforce text == template(declared_mode, N, id).",
+      "keep": "Allowlist-exact templates (only N and id vary); F3 container-key candidate selection; scalar+container non-str REJECT; historical plain-string registry compat; path-derived generation binding."
+    },
+    "plan_v10_closures": {
+      "ambiguous_mismatch_replacement": "PLAN_v10 REPLACES hostile_registry_governed_set_mismatch (single either-direction fixture) with THREE distinct fixtures: hostile_registry_generation_missing_required, hostile_registry_only_generation_vs_governed, hostile_governed_only_generation_vs_registry. Keeps hostile_unreferenced_wellformed_registry_v99_mapping + hostile_registry_leading_zero_alias_v031. Arithmetic: prior matrix 24 \u2212 1 (ambiguous removed) + 3 = 26 exact.",
+      "bijection_rule": "EVERY named membership/registry/mode error class maps to \u22651 named fixture; symmetric claims must be per-direction decomposed. Vacuity of a named error class with zero fixtures is structurally forbidden.",
+      "carries_plan_v9_architecture": true,
+      "exact_fixture_accounting": {
+        "F4_ACCEPT_fixtures": {
+          "legacy_compat_immutable_bytes": 2,
+          "names": [
+            "accept_full_plan_gate_mode_with_exact_full_plan_text",
+            "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+            "hostile_compat_plain_string_v31_still_accepts",
+            "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar"
+          ],
+          "positive_mode_synthetic": 2,
+          "total_ACCEPT": 4
+        },
+        "F4_REJECT_fixtures": {
+          "canonical_membership": 5,
+          "legacy_id_shape": 1,
+          "malformed_mapping_branches": 9,
+          "mode_mismatch": 2,
+          "names_canonical_membership": [
+            "hostile_unreferenced_wellformed_registry_v99_mapping",
+            "hostile_registry_leading_zero_alias_v031",
+            "hostile_registry_generation_missing_required",
+            "hostile_registry_only_generation_vs_governed",
+            "hostile_governed_only_generation_vs_registry"
+          ],
+          "names_legacy_id_shape": [
+            "hostile_legacy_plain_string_malformed_id_shape"
+          ],
+          "names_malformed_mapping_branches": [
+            "hostile_registry_entry_non_mapping_non_string",
+            "hostile_registry_mapping_missing_id",
+            "hostile_registry_mapping_missing_mode",
+            "hostile_registry_id_empty",
+            "hostile_registry_id_non_string",
+            "hostile_registry_id_malformed_shape",
+            "hostile_registry_mode_empty_or_non_string",
+            "hostile_registry_unknown_mode",
+            "hostile_registry_extra_key"
+          ],
+          "names_registry_wide": [
+            "hostile_unreferenced_registry_entry_non_string",
+            "hostile_unreferenced_registry_entry_malformed_string_id",
+            "hostile_registry_malformed_key_shape"
+          ],
+          "registry_wide_unreferenced_and_key_shape": 3,
+          "removed_ambiguous": "hostile_registry_governed_set_mismatch",
+          "total_REJECT": 22,
+          "unknown_mode": 1,
+          "v33_plain_string": 1
+        },
+        "F4_fixture_total": 26,
+        "all_fixture_names_for_receipt_binding": [
+          "hostile_fast_path_text_under_full_plan_gate_mode",
+          "hostile_full_plan_text_under_fast_path_mode",
+          "hostile_unknown_lifecycle_mode",
+          "hostile_registry_v33_plain_string",
+          "hostile_registry_entry_non_mapping_non_string",
+          "hostile_registry_mapping_missing_id",
+          "hostile_registry_mapping_missing_mode",
+          "hostile_registry_id_empty",
+          "hostile_registry_id_non_string",
+          "hostile_registry_id_malformed_shape",
+          "hostile_registry_mode_empty_or_non_string",
+          "hostile_registry_unknown_mode",
+          "hostile_registry_extra_key",
+          "hostile_unreferenced_registry_entry_non_string",
+          "hostile_unreferenced_registry_entry_malformed_string_id",
+          "hostile_registry_malformed_key_shape",
+          "hostile_legacy_plain_string_malformed_id_shape",
+          "hostile_unreferenced_wellformed_registry_v99_mapping",
+          "hostile_registry_leading_zero_alias_v031",
+          "hostile_registry_generation_missing_required",
+          "hostile_registry_only_generation_vs_governed",
+          "hostile_governed_only_generation_vs_registry",
+          "accept_full_plan_gate_mode_with_exact_full_plan_text",
+          "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+          "hostile_compat_plain_string_v31_still_accepts",
+          "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar"
+        ],
+        "arithmetic": "prior_24 - 1_ambiguous_mismatch + 3_distinct = 26",
+        "baseline_pytest_prior": 102,
+        "note_on_baseline": "102 baseline = Stage-1 F1/F2/F3 suite; does NOT include F4 mode/schema/membership fixtures. Legacy compat ACCEPT on immutable PLAN_v31/v32 are F4 ACCEPT coverage, not double-counted in 102. Both already satisfy canonical membership.",
+        "pytest_floor": "102 prior + F4 fixtures totaling 26 (4 ACCEPT + 22 REJECT); no approximations",
+        "replacement_from_v9": "PLAN_v10 REPLACES hostile_registry_governed_set_mismatch (single either-direction fixture) with THREE distinct fixtures: hostile_registry_generation_missing_required, hostile_registry_only_generation_vs_governed, hostile_governed_only_generation_vs_registry. Keeps hostile_unreferenced_wellformed_registry_v99_mapping + hostile_registry_leading_zero_alias_v031. Arithmetic: prior matrix 24 \u2212 1 (ambiguous removed) + 3 = 26 exact."
+      },
+      "membership_hostiles_exact": [
+        {
+          "mutate": "registry[\"v99\"]={id,mode} well-formed but outside {v19..vN} / unreferenced",
+          "name": "hostile_unreferenced_wellformed_registry_v99_mapping",
+          "new_behavior": "REJECT match=lifecycle_registry_generation_extra",
+          "tag": "canonical_membership"
+        },
+        {
+          "mutate": "registry[\"v031\"]={id,mode} well-formed leading-zero alias",
+          "name": "hostile_registry_leading_zero_alias_v031",
+          "new_behavior": "REJECT match=lifecycle_registry_key_not_canonical",
+          "tag": "canonical_membership"
+        },
+        {
+          "mutate": "Start from membership-satisfying plan at fixed vN; DELETE one required registry key (e.g. delete registry[\"v25\"]) while plan_revision/N and governed leaves stay fixed",
+          "name": "hostile_registry_generation_missing_required",
+          "new_behavior": "REJECT match=lifecycle_registry_generation_missing",
+          "tag": "canonical_membership"
+        },
+        {
+          "direction": "registry_minus_governed",
+          "mutate": "Otherwise-valid plan; inject one registry generation that has no matching structurally governed lifecycle-leaf generation (registry \u2212 governed direction); keep keys otherwise canonical",
+          "name": "hostile_registry_only_generation_vs_governed",
+          "new_behavior": "REJECT match=lifecycle_registry_governed_set_mismatch",
+          "tag": "canonical_membership"
+        },
+        {
+          "direction": "governed_minus_registry",
+          "mutate": "Otherwise-valid plan; inject one structurally governed lifecycle-leaf generation that has no matching registry key (governed \u2212 registry direction); keep registry otherwise canonical",
+          "name": "hostile_governed_only_generation_vs_registry",
+          "new_behavior": "REJECT match=lifecycle_registry_governed_set_mismatch",
+          "tag": "canonical_membership"
+        }
+      ],
+      "spec_class_fixture_bijection": [
+        {
+          "error_class": "lifecycle_mode_text_mismatch",
+          "fixtures": [
+            "hostile_fast_path_text_under_full_plan_gate_mode",
+            "hostile_full_plan_text_under_fast_path_mode"
+          ]
+        },
+        {
+          "error_class": "lifecycle_mode_unknown",
+          "fixtures": [
+            "hostile_unknown_lifecycle_mode",
+            "hostile_registry_unknown_mode"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_legacy_string_beyond_v32",
+          "fixtures": [
+            "hostile_registry_v33_plain_string",
+            "hostile_unreferenced_registry_entry_malformed_string_id"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_entry_type",
+          "fixtures": [
+            "hostile_registry_entry_non_mapping_non_string",
+            "hostile_unreferenced_registry_entry_non_string"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_missing_id",
+          "fixtures": [
+            "hostile_registry_mapping_missing_id"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_missing_mode",
+          "fixtures": [
+            "hostile_registry_mapping_missing_mode"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_id_empty",
+          "fixtures": [
+            "hostile_registry_id_empty"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_id_type",
+          "fixtures": [
+            "hostile_registry_id_non_string"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_id_shape",
+          "fixtures": [
+            "hostile_registry_id_malformed_shape",
+            "hostile_legacy_plain_string_malformed_id_shape",
+            "hostile_unreferenced_registry_entry_malformed_string_id"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_mode_type",
+          "fixtures": [
+            "hostile_registry_mode_empty_or_non_string"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_extra_key",
+          "fixtures": [
+            "hostile_registry_extra_key"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_key_shape",
+          "fixtures": [
+            "hostile_registry_malformed_key_shape"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_generation_extra",
+          "fixtures": [
+            "hostile_unreferenced_wellformed_registry_v99_mapping"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_key_not_canonical",
+          "fixtures": [
+            "hostile_registry_leading_zero_alias_v031"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_generation_missing",
+          "fixtures": [
+            "hostile_registry_generation_missing_required"
+          ]
+        },
+        {
+          "error_class": "lifecycle_registry_governed_set_mismatch",
+          "fixtures": [
+            "hostile_registry_only_generation_vs_governed",
+            "hostile_governed_only_generation_vs_registry"
+          ],
+          "note": "Per-direction decomposition required; one fixture per direction"
+        }
+      ]
+    },
+    "plan_v7_closures": {
+      "frozen_legacy_cutoff": {
+        "hostile": {
+          "mutate": "registry[v33] = \"<plain dispatch id string>\"",
+          "name": "hostile_registry_v33_plain_string",
+          "new_behavior": "REJECT match=lifecycle_registry_legacy_string_beyond_v32"
+        },
+        "legacy_plain_string_id_regex": "^\\d{13}-[0-9a-f]+$",
+        "plain_string_fallback_valid_only_for_generations": "v19..v32",
+        "plain_string_v33_error": "lifecycle_registry_legacy_string_beyond_v32",
+        "v33_plus_must_be_mode_carrying_mapping": true,
+        "validator_constant_names": [
+          "LIFECYCLE_REGISTRY_LEGACY_PLAIN_STRING_MIN_GEN = 19",
+          "LIFECYCLE_REGISTRY_LEGACY_PLAIN_STRING_MAX_GEN = 32"
+        ]
+      },
+      "frozen_mapping_schema": {
+        "extra_keys": "FORBIDDEN (no allowed extras)",
+        "id_regex": "^\\d{13}-[0-9a-f]+$",
+        "id_regex_note": "room-message-id form: 13 digits, dash, lowercase hex",
+        "id_type": "non-empty string",
+        "malformed_mapping_branch_count_exact": 9,
+        "mode_enum_exact": [
+          "fast_path",
+          "full_plan_gate"
+        ],
+        "per_branch_REJECT_tests": [
+          {
+            "error": "lifecycle_registry_entry_type",
+            "name": "hostile_registry_entry_non_mapping_non_string"
+          },
+          {
+            "error": "lifecycle_registry_missing_id",
+            "name": "hostile_registry_mapping_missing_id"
+          },
+          {
+            "error": "lifecycle_registry_missing_mode",
+            "name": "hostile_registry_mapping_missing_mode"
+          },
+          {
+            "error": "lifecycle_registry_id_empty",
+            "name": "hostile_registry_id_empty"
+          },
+          {
+            "error": "lifecycle_registry_id_type",
+            "name": "hostile_registry_id_non_string"
+          },
+          {
+            "error": "lifecycle_registry_id_shape",
+            "name": "hostile_registry_id_malformed_shape"
+          },
+          {
+            "error": "lifecycle_registry_mode_type",
+            "name": "hostile_registry_mode_empty_or_non_string"
+          },
+          {
+            "error": "lifecycle_mode_unknown",
+            "name": "hostile_registry_unknown_mode"
+          },
+          {
+            "error": "lifecycle_registry_extra_key",
+            "name": "hostile_registry_extra_key"
+          }
+        ],
+        "required_keys_exact": [
+          "id",
+          "mode"
+        ]
+      },
+      "positive_new_mode_proof": {
+        "fixtures": [
+          {
+            "expected": "ACCEPT through validate_lifecycle_authority_cites_dispatch",
+            "name": "accept_full_plan_gate_mode_with_exact_full_plan_text",
+            "registry": {
+              "id": "<synthetic_room_id>",
+              "mode": "full_plan_gate"
+            },
+            "text_template": "full_plan_gate"
+          },
+          {
+            "expected": "ACCEPT through validate_lifecycle_authority_cites_dispatch",
+            "name": "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+            "registry": {
+              "id": "<synthetic_room_id>",
+              "mode": "fast_path"
+            },
+            "text_template": "fast_path"
+          }
+        ],
+        "note": "Synthetic plan fixtures with governed version-addressable leaves \u2014 NOT only legacy v31/v32 bytes.",
+        "required": true
+      }
+    },
+    "plan_v8_closures": {
+      "exact_fixture_accounting": {
+        "F4_ACCEPT_fixtures": {
+          "legacy_compat_immutable_bytes": 2,
+          "names": [
+            "accept_full_plan_gate_mode_with_exact_full_plan_text",
+            "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+            "hostile_compat_plain_string_v31_still_accepts",
+            "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar"
+          ],
+          "positive_mode_synthetic": 2,
+          "total_ACCEPT": 4
+        },
+        "F4_REJECT_fixtures": {
+          "canonical_membership": 5,
+          "legacy_id_shape": 1,
+          "malformed_mapping_branches": 9,
+          "mode_mismatch": 2,
+          "names_canonical_membership": [
+            "hostile_unreferenced_wellformed_registry_v99_mapping",
+            "hostile_registry_leading_zero_alias_v031",
+            "hostile_registry_generation_missing_required",
+            "hostile_registry_only_generation_vs_governed",
+            "hostile_governed_only_generation_vs_registry"
+          ],
+          "names_legacy_id_shape": [
+            "hostile_legacy_plain_string_malformed_id_shape"
+          ],
+          "names_malformed_mapping_branches": [
+            "hostile_registry_entry_non_mapping_non_string",
+            "hostile_registry_mapping_missing_id",
+            "hostile_registry_mapping_missing_mode",
+            "hostile_registry_id_empty",
+            "hostile_registry_id_non_string",
+            "hostile_registry_id_malformed_shape",
+            "hostile_registry_mode_empty_or_non_string",
+            "hostile_registry_unknown_mode",
+            "hostile_registry_extra_key"
+          ],
+          "names_registry_wide": [
+            "hostile_unreferenced_registry_entry_non_string",
+            "hostile_unreferenced_registry_entry_malformed_string_id",
+            "hostile_registry_malformed_key_shape"
+          ],
+          "registry_wide_unreferenced_and_key_shape": 3,
+          "removed_ambiguous": "hostile_registry_governed_set_mismatch",
+          "total_REJECT": 22,
+          "unknown_mode": 1,
+          "v33_plain_string": 1
+        },
+        "F4_fixture_total": 26,
+        "all_fixture_names_for_receipt_binding": [
+          "hostile_fast_path_text_under_full_plan_gate_mode",
+          "hostile_full_plan_text_under_fast_path_mode",
+          "hostile_unknown_lifecycle_mode",
+          "hostile_registry_v33_plain_string",
+          "hostile_registry_entry_non_mapping_non_string",
+          "hostile_registry_mapping_missing_id",
+          "hostile_registry_mapping_missing_mode",
+          "hostile_registry_id_empty",
+          "hostile_registry_id_non_string",
+          "hostile_registry_id_malformed_shape",
+          "hostile_registry_mode_empty_or_non_string",
+          "hostile_registry_unknown_mode",
+          "hostile_registry_extra_key",
+          "hostile_unreferenced_registry_entry_non_string",
+          "hostile_unreferenced_registry_entry_malformed_string_id",
+          "hostile_registry_malformed_key_shape",
+          "hostile_legacy_plain_string_malformed_id_shape",
+          "hostile_unreferenced_wellformed_registry_v99_mapping",
+          "hostile_registry_leading_zero_alias_v031",
+          "hostile_registry_generation_missing_required",
+          "hostile_registry_only_generation_vs_governed",
+          "hostile_governed_only_generation_vs_registry",
+          "accept_full_plan_gate_mode_with_exact_full_plan_text",
+          "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+          "hostile_compat_plain_string_v31_still_accepts",
+          "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar"
+        ],
+        "arithmetic": "prior_24 - 1_ambiguous_mismatch + 3_distinct = 26",
+        "baseline_pytest_prior": 102,
+        "note_on_baseline": "102 baseline = Stage-1 F1/F2/F3 suite; does NOT include F4 mode/schema/membership fixtures. Legacy compat ACCEPT on immutable PLAN_v31/v32 are F4 ACCEPT coverage, not double-counted in 102. Both already satisfy canonical membership.",
+        "pytest_floor": "102 prior + F4 fixtures totaling 26 (4 ACCEPT + 22 REJECT); no approximations",
+        "replacement_from_v9": "PLAN_v10 REPLACES hostile_registry_governed_set_mismatch (single either-direction fixture) with THREE distinct fixtures: hostile_registry_generation_missing_required, hostile_registry_only_generation_vs_governed, hostile_governed_only_generation_vs_registry. Keeps hostile_unreferenced_wellformed_registry_v99_mapping + hostile_registry_leading_zero_alias_v031. Arithmetic: prior matrix 24 \u2212 1 (ambiguous removed) + 3 = 26 exact."
+      },
+      "legacy_id_shape": {
+        "applies_to": "legacy plain-string entries v19-v32 AND mapping.id",
+        "compat": "immutable PLAN_v31/v32 ACCEPT",
+        "hostile": {
+          "mutate": "registry[v25]=\"not-a-room-message-id\"",
+          "name": "hostile_legacy_plain_string_malformed_id_shape",
+          "new_behavior": "REJECT match=lifecycle_registry_id_shape",
+          "tag": "legacy_id_shape"
+        },
+        "regex": "^\\d{13}-[0-9a-f]+$"
+      },
+      "note": "Counts restated exact for PLAN_v9 matrix 24; membership closures live in plan_v9_closures.",
+      "receipt_identity": {
+        "active": "IMPLEMENT_receipt_v5",
+        "see": "receipt_lineage_note",
+        "skipped_never_minted_v4_documented_in_plan": true
+      },
+      "registry_wide_fail_closure": {
+        "hostiles": [
+          {
+            "mutate": "registry[v99]=7 unreferenced",
+            "name": "hostile_unreferenced_registry_entry_non_string",
+            "new_behavior": "REJECT match=lifecycle_registry_entry_type",
+            "tag": "registry_wide_fail_closure"
+          },
+          {
+            "mutate": "registry[v99]=\"not-a-room-message-id\" unreferenced",
+            "name": "hostile_unreferenced_registry_entry_malformed_string_id",
+            "new_behavior": "REJECT match=lifecycle_registry_legacy_string_beyond_v32|lifecycle_registry_id_shape",
+            "tag": "registry_wide_fail_closure"
+          },
+          {
+            "mutate": "registry key not matching ^v\\d+$",
+            "name": "hostile_registry_malformed_key_shape",
+            "new_behavior": "REJECT match=lifecycle_registry_key_shape",
+            "tag": "registry_wide_fail_closure"
+          }
+        ],
+        "key_shape_error": "lifecycle_registry_key_shape",
+        "key_shape_regex": "^v\\d+$",
+        "rule": "Validate EVERY lifecycle_dispatch_id_registry key/value BEFORE leaf matching, even if unreferenced."
+      }
+    },
+    "plan_v9_closures": {
+      "canonical_membership_frozen": {
+        "canonical_contiguous_set": {
+          "authority_preseeding_failure_mode": "A valid-but-unreferenced registry record carried across generations would later read as historical provenance \u2014 membership freeze closes that.",
+          "compat_basis": "Immutable PLAN_v31 registry is exactly contiguous v19..v31 (13 entries); PLAN_v32 adds v32. Freezing membership costs zero compat on real generations.",
+          "extra_or_future_error": "lifecycle_registry_generation_extra",
+          "missing_error": "lifecycle_registry_generation_missing",
+          "rule": "For plan at generation vN, registry keys must be EXACTLY {v19..vN} contiguous.",
+          "vN_derivation": "vN is parsed from plan_revision (e.g. plan_revision=\"v32\" \u2192 N=32). Must be path-consistent with existing self-identity rules (filename PLAN_vN / artifact_class / schema_version generation agree with plan_revision)."
+        },
+        "canonical_key_form": {
+          "error": "lifecycle_registry_key_not_canonical",
+          "example_reject": "v031",
+          "note": "Syntax ^v\\d+$ alone is insufficient; v031 matches syntax but fails canonicity.",
+          "rule": "canonical = 'v' + str(int(digits)); key must equal that round-trip (no leading zeros / aliases)"
+        },
+        "two_way_set_equality": {
+          "error": "lifecycle_registry_governed_set_mismatch",
+          "rule": "Set equality both directions between registry generations and structurally governed lifecycle-leaf generations; mismatch either direction \u2192 REJECT"
+        }
+      },
+      "carries_plan_v8_closures": true,
+      "exact_fixture_accounting": {
+        "F4_ACCEPT_fixtures": {
+          "legacy_compat_immutable_bytes": 2,
+          "names": [
+            "accept_full_plan_gate_mode_with_exact_full_plan_text",
+            "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+            "hostile_compat_plain_string_v31_still_accepts",
+            "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar"
+          ],
+          "positive_mode_synthetic": 2,
+          "total_ACCEPT": 4
+        },
+        "F4_REJECT_fixtures": {
+          "canonical_membership": 5,
+          "legacy_id_shape": 1,
+          "malformed_mapping_branches": 9,
+          "mode_mismatch": 2,
+          "names_canonical_membership": [
+            "hostile_unreferenced_wellformed_registry_v99_mapping",
+            "hostile_registry_leading_zero_alias_v031",
+            "hostile_registry_generation_missing_required",
+            "hostile_registry_only_generation_vs_governed",
+            "hostile_governed_only_generation_vs_registry"
+          ],
+          "names_legacy_id_shape": [
+            "hostile_legacy_plain_string_malformed_id_shape"
+          ],
+          "names_malformed_mapping_branches": [
+            "hostile_registry_entry_non_mapping_non_string",
+            "hostile_registry_mapping_missing_id",
+            "hostile_registry_mapping_missing_mode",
+            "hostile_registry_id_empty",
+            "hostile_registry_id_non_string",
+            "hostile_registry_id_malformed_shape",
+            "hostile_registry_mode_empty_or_non_string",
+            "hostile_registry_unknown_mode",
+            "hostile_registry_extra_key"
+          ],
+          "names_registry_wide": [
+            "hostile_unreferenced_registry_entry_non_string",
+            "hostile_unreferenced_registry_entry_malformed_string_id",
+            "hostile_registry_malformed_key_shape"
+          ],
+          "registry_wide_unreferenced_and_key_shape": 3,
+          "removed_ambiguous": "hostile_registry_governed_set_mismatch",
+          "total_REJECT": 22,
+          "unknown_mode": 1,
+          "v33_plain_string": 1
+        },
+        "F4_fixture_total": 26,
+        "all_fixture_names_for_receipt_binding": [
+          "hostile_fast_path_text_under_full_plan_gate_mode",
+          "hostile_full_plan_text_under_fast_path_mode",
+          "hostile_unknown_lifecycle_mode",
+          "hostile_registry_v33_plain_string",
+          "hostile_registry_entry_non_mapping_non_string",
+          "hostile_registry_mapping_missing_id",
+          "hostile_registry_mapping_missing_mode",
+          "hostile_registry_id_empty",
+          "hostile_registry_id_non_string",
+          "hostile_registry_id_malformed_shape",
+          "hostile_registry_mode_empty_or_non_string",
+          "hostile_registry_unknown_mode",
+          "hostile_registry_extra_key",
+          "hostile_unreferenced_registry_entry_non_string",
+          "hostile_unreferenced_registry_entry_malformed_string_id",
+          "hostile_registry_malformed_key_shape",
+          "hostile_legacy_plain_string_malformed_id_shape",
+          "hostile_unreferenced_wellformed_registry_v99_mapping",
+          "hostile_registry_leading_zero_alias_v031",
+          "hostile_registry_generation_missing_required",
+          "hostile_registry_only_generation_vs_governed",
+          "hostile_governed_only_generation_vs_registry",
+          "accept_full_plan_gate_mode_with_exact_full_plan_text",
+          "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+          "hostile_compat_plain_string_v31_still_accepts",
+          "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar"
+        ],
+        "arithmetic": "prior_24 - 1_ambiguous_mismatch + 3_distinct = 26",
+        "baseline_pytest_prior": 102,
+        "note_on_baseline": "102 baseline = Stage-1 F1/F2/F3 suite; does NOT include F4 mode/schema/membership fixtures. Legacy compat ACCEPT on immutable PLAN_v31/v32 are F4 ACCEPT coverage, not double-counted in 102. Both already satisfy canonical membership.",
+        "pytest_floor": "102 prior + F4 fixtures totaling 26 (4 ACCEPT + 22 REJECT); no approximations",
+        "replacement_from_v9": "PLAN_v10 REPLACES hostile_registry_governed_set_mismatch (single either-direction fixture) with THREE distinct fixtures: hostile_registry_generation_missing_required, hostile_registry_only_generation_vs_governed, hostile_governed_only_generation_vs_registry. Keeps hostile_unreferenced_wellformed_registry_v99_mapping + hostile_registry_leading_zero_alias_v031. Arithmetic: prior matrix 24 \u2212 1 (ambiguous removed) + 3 = 26 exact."
+      },
+      "note": "Counts restated for PLAN_v10 matrix 26; ambiguous mismatch fixture retired; see plan_v10_closures."
+    },
+    "registry_schema": {
+      "canonical_membership": {
+        "canonical_contiguous_set": {
+          "authority_preseeding_failure_mode": "A valid-but-unreferenced registry record carried across generations would later read as historical provenance \u2014 membership freeze closes that.",
+          "compat_basis": "Immutable PLAN_v31 registry is exactly contiguous v19..v31 (13 entries); PLAN_v32 adds v32. Freezing membership costs zero compat on real generations.",
+          "extra_or_future_error": "lifecycle_registry_generation_extra",
+          "missing_error": "lifecycle_registry_generation_missing",
+          "rule": "For plan at generation vN, registry keys must be EXACTLY {v19..vN} contiguous.",
+          "vN_derivation": "vN is parsed from plan_revision (e.g. plan_revision=\"v32\" \u2192 N=32). Must be path-consistent with existing self-identity rules (filename PLAN_vN / artifact_class / schema_version generation agree with plan_revision)."
+        },
+        "canonical_key_form": {
+          "error": "lifecycle_registry_key_not_canonical",
+          "example_reject": "v031",
+          "note": "Syntax ^v\\d+$ alone is insufficient; v031 matches syntax but fails canonicity.",
+          "rule": "canonical = 'v' + str(int(digits)); key must equal that round-trip (no leading zeros / aliases)"
+        },
+        "fixture_decomposition_v10": "PLAN_v10 REPLACES hostile_registry_governed_set_mismatch (single either-direction fixture) with THREE distinct fixtures: hostile_registry_generation_missing_required, hostile_registry_only_generation_vs_governed, hostile_governed_only_generation_vs_registry. Keeps hostile_unreferenced_wellformed_registry_v99_mapping + hostile_registry_leading_zero_alias_v031. Arithmetic: prior matrix 24 \u2212 1 (ambiguous removed) + 3 = 26 exact.",
+        "two_way_set_equality": {
+          "error": "lifecycle_registry_governed_set_mismatch",
+          "fixtures": [
+            "hostile_registry_only_generation_vs_governed",
+            "hostile_governed_only_generation_vs_registry"
+          ],
+          "rule": "Set equality both directions between registry generations and structurally governed lifecycle-leaf generations; EACH direction has its own named REJECT fixture"
+        }
+      },
+      "generation_extra_error": "lifecycle_registry_generation_extra",
+      "generation_missing_error": "lifecycle_registry_generation_missing",
+      "governed_set_mismatch_error": "lifecycle_registry_governed_set_mismatch",
+      "key_canonical_form_required": true,
+      "key_not_canonical_error": "lifecycle_registry_key_not_canonical",
+      "key_shape_error": "lifecycle_registry_key_shape",
+      "key_shape_regex": "^v\\d+$",
+      "legacy_plain_string": {
+        "beyond_cutoff_error": "lifecycle_registry_legacy_string_beyond_v32",
+        "id_regex": "^\\d{13}-[0-9a-f]+$",
+        "mode_default": "fast_path",
+        "type": "str dispatch id",
+        "valid_only_for_generations": "v19..v32"
+      },
+      "malformed_entry": "REJECT with per-branch named errors (see plan_v7_closures.frozen_mapping_schema.per_branch_REJECT_tests)",
+      "mode_carrying_required_from_v33": {
+        "extra_keys": "FORBIDDEN",
+        "id_regex": "^\\d{13}-[0-9a-f]+$",
+        "mode_enum": [
+          "fast_path",
+          "full_plan_gate"
+        ],
+        "required_keys_exact": [
+          "id",
+          "mode"
+        ]
+      },
+      "registry_wide_validation_before_leaf_matching": true,
+      "unknown_mode": "REJECT lifecycle_mode_unknown",
+      "vN_derivation": "vN is parsed from plan_revision (e.g. plan_revision=\"v32\" \u2192 N=32). Must be path-consistent with existing self-identity rules (filename PLAN_vN / artifact_class / schema_version generation agree with plan_revision)."
+    },
+    "surface": "lifecycle_dispatch_id_registry + governed note/active_after chronology leaves",
+    "templates_exact": {
+      "fast_path": "PLAN_v{N} minted under converged fast-path +1 implement dispatch {ID}; dual accept applies to the frozen artifact review, not the mint.",
+      "full_plan_gate": "PLAN_v{N} minted under full-plan-gate dispatch {ID}; implementation authority arrives only via post-dual-accept persisted +1 implement.",
+      "note": "Byte-identical fast_path template to today's _lifecycle_authority_grammar output (historical compat)."
+    },
+    "v32_false_mode_disposition": {
+      "after_Step_A": "PLAN_v32 remains byte-preserved. Its registry entry is plain-string \u2192 fast_path default; its lifecycle text already matches the fast_path template, so DIRECT validate_lifecycle_* continues to ACCEPT v32 as historical/structural grammar context.",
+      "do_not_rewrite_v32": true,
+      "truth_cure": "Authority-truth defect is cured by supersession + this adjudication trail + Step B PLAN_v33 remint under declared mode=full_plan_gate with matching full_plan_gate template text. Not by rewriting or deleting v32.",
+      "v32_sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+    }
+  },
+  "minted_at": "2026-07-27T16:47:33.257552+00:00",
+  "packet_revision": "v10",
+  "parent_plan": {
+    "block_msg_id": "1785170737238-03d0e1a7",
+    "dispatch_msg_id": "1785170761810-568b43d3",
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v9.json",
+    "sha256": "3ba6427730ddc48f236cae4d0d5d15cc4421282dddc28c27d34b72d0dce7513a"
+  },
+  "plan_revision": "v10",
+  "receipt_lineage_note": {
+    "active_implement_receipt": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v5.json",
+    "reason": "IMPLEMENT_receipt_v4 was reserved by superseded PLAN_v6 write_surface but never minted (PLAN_v6 frozen then superseded before +1). PLAN_v7/v8 advance active receipt to v5; gap documented here in-plan. O_EXCL on v5 prevents collision.",
+    "skipped_never_minted": "IMPLEMENT_receipt_v4"
+  },
+  "schema_version": "recarry_validator_hardening_plan_v10",
+  "self_check_at_mint": {
+    "F4_fixture_total_26": true,
+    "REJECT_22_ACCEPT_4": true,
+    "ambiguous_mismatch_fixture_absent": true,
+    "bijection_covers_all_reject_fixtures": true,
+    "both_mismatch_directions_present": true,
+    "developer_step_id_is_v10": true,
+    "generation_missing_fixture_present": true,
+    "no_tilde_approximations": true,
+    "plan_revision_equals_packet_revision": true,
+    "skipped_v4_documented_in_plan": true,
+    "step_B_not_pre_minted": true,
+    "v32_preserve_required": true,
+    "v6_through_v9_preserved": true,
+    "workflow_names_PLAN_v10": true
+  },
+  "stages": {
+    "step_A_this_plan": {
+      "OUT_of_Step_A": [
+        "PLAN_v33 mint",
+        "harness rebind",
+        "closure pin rebind",
+        "S3",
+        "commit"
+      ],
+      "UPDATE": [
+        "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+        "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+      ],
+      "acceptance": [
+        "/tmp hashed baselines in IMPLEMENT_receipt_v5",
+        "POSITIVE ACCEPT: both exact mode/text pairs",
+        "REJECT exactly 22 F4 hostiles (2+1+1+9+3+1+5)",
+        "COMPAT ACCEPT: PLAN_v31 and PLAN_v32 (membership-satisfying)",
+        "DIRECT validate_single_action_class_per_path ACCEPT on v31 and v32",
+        "pytest floor: 102 prior + F4 fixtures totaling 26 (4 ACCEPT + 22 REJECT)",
+        "canonical 783f2799\u2026 and PLAN_v32 55417cff\u2026 unchanged",
+        "lifecycle_registry_generation_missing covered by named fixture",
+        "both mismatch directions covered by distinct named fixtures",
+        "spec-class\u2194fixture bijection satisfied",
+        "py_compile/import clean"
+      ],
+      "pytest_floor": "102 prior + F4 fixtures totaling 26 (4 ACCEPT + 22 REJECT); no approximations",
+      "scope": "Validator mode-grammar + registry-wide fail-closure + canonical membership (with per-direction mismatch + missing-generation fixtures) + tests; IMPLEMENT_receipt_v5"
+    },
+    "step_B_successor_handoff": {
+      "OUT": [
+        "S3 re-exec",
+        "science-claim change",
+        "rewriting PLAN_v32",
+        "Step-A re-litigation"
+      ],
+      "declared_not_implemented_here": true,
+      "scope": "Separate consolidated dispatch: PLAN_v33 remint with validators pin \u2192 NEW Step-A sha, lifecycle records under TRUTHFUL full_plan_gate mode citing Step-B dispatch, harness 3-constant rebind to v33, dry-exec + parity guard, IMPLEMENT_receipt_v18",
+      "trigger": "After Step-A dual accept + implementation dual accept"
+    }
+  },
+  "stop_conditions": [
+    "Ambiguity in mode template wording or registry schema \u2192 STOP and ask claude",
+    "Any rewrite/deletion of PLAN_v32 \u2192 hard STOP",
+    "Relabeling Stage-2 full-plan dispatch as fast_path \u2192 hard STOP",
+    "Pre-minting PLAN_v33 in Step A \u2192 STOP",
+    "Editing harness PLAN_* constants or closure pins in Step A \u2192 STOP (Step B)",
+    "Hardened/extended validators REJECT clean PLAN_v31 or PLAN_v32 under DIRECT validate_* \u2192 STOP (compat break; do not weaken; report)",
+    "Regression of F1/F2/F3 scalar/container axes \u2192 STOP",
+    "Canonical audit mutation \u2192 hard STOP",
+    "Any write under artifacts/acc_entropy/baselines/ \u2192 STOP",
+    "No stage/commit/push/.pt",
+    "Missing positive full_plan_gate ACCEPT fixture \u2192 STOP (fixture incompleteness)",
+    "Plain-string registry fallback accepted for v33+ \u2192 STOP",
+    "Malformed mapping branch without named REJECT test \u2192 STOP",
+    "Any operative identity still naming the skipped never-minted implement-receipt generation \u2192 STOP",
+    "Any approximate fixture count (~N) in operative text \u2192 STOP",
+    "Unreferenced malformed registry entry ACCEPTed \u2192 STOP",
+    "Legacy plain-string id failing room-id regex ACCEPTed \u2192 STOP",
+    "Well-formed unreferenced registry generation outside {v19..vN} ACCEPTed \u2192 STOP",
+    "Leading-zero / alias registry key (e.g. v031) ACCEPTed \u2192 STOP",
+    "Registry generations \u2260 governed lifecycle-leaf generations ACCEPTed \u2192 STOP",
+    "Named error class with zero covering fixtures \u2192 STOP",
+    "lifecycle_registry_generation_missing without a dedicated fixture \u2192 STOP",
+    "Governed-set mismatch covered by only one direction fixture \u2192 STOP",
+    "Ambiguous either-direction single fixture reintroduced \u2192 STOP"
+  ],
+  "supersedes": {
+    "adjudication_lineage_block_ids": [
+      "1785165408689-e34de5b7",
+      "1785165757226-3310e559",
+      "1785166129846-eff22011",
+      "1785168920347-95e7852b",
+      "1785169578453-81e776e3",
+      "1785169938438-e28cc695",
+      "1785170419561-e9c85913",
+      "1785170737238-03d0e1a7"
+    ],
+    "adjudication_lineage_dispatch_ids": [
+      "1785165800725-a52e7d1a",
+      "1785165939095-785921a6",
+      "1785166151413-83cde722",
+      "1785168271320-9581a9c1",
+      "1785168976142-ad147f16",
+      "1785169606289-b9708135",
+      "1785169987288-c3a5fc32",
+      "1785170465016-2cda19d9",
+      "1785170761810-568b43d3"
+    ],
+    "measurement_plan_v32_status": {
+      "do_not_rely_on_for_plus1": true,
+      "gate1_freeze_msg_id": "1785168751847-c3abf98b",
+      "role": "superseded_evidence_preserved_bytes",
+      "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+    },
+    "note": "PLAN_v10 closes PLAN_v9 vacuity holes (missing-generation fixture + per-direction mismatch decomposition + spec-class\u2194fixture bijection).",
+    "plans": [
+      {
+        "preserved_bytes": true,
+        "rev": "v1",
+        "sha256": "0d8486eb3298b0757e3306755ff9fa18f108a8bfa0249923a4adf176fddbb974"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v2",
+        "sha256": "c7d036e454639940a97dab28bd5cc391b695351ba2e0d585df5553475a154987"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v3",
+        "sha256": "a264c680eb74be58ef7e747a1190a77198eb70353538166593dac5a0d9fe98ef"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v4",
+        "sha256": "458a8f535c9f2bc350839ba6bae98075cb72bb860e01a6514310440ef0e893ea"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v5",
+        "sha256": "699e9ed7a508eb31c119547455e5ae2b1f22a73a80006d47712ed914a0756d2d"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v6",
+        "sha256": "63e66e1db635e1f439ec28f95963c9df6e132e01321d09985d74dd961f60b9fb"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v7",
+        "sha256": "10ffd8fdae6617f60878b0d62fd6d74eaef651d2ec43e4c0d1bd7b5c52eede0b"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v8",
+        "sha256": "7adf22ed129160a1646fa8af31fbe548429701343cddbe7df9db81d2a0ae233a"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v9",
+        "sha256": "3ba6427730ddc48f236cae4d0d5d15cc4421282dddc28c27d34b72d0dce7513a"
+      }
+    ]
+  },
+  "validation_plan": {
+    "F4_ACCEPT_exact": 4,
+    "F4_REJECT_exact": 22,
+    "F4_fixture_total_exact": 26,
+    "all_fixture_names_for_receipt_binding": [
+      "hostile_fast_path_text_under_full_plan_gate_mode",
+      "hostile_full_plan_text_under_fast_path_mode",
+      "hostile_unknown_lifecycle_mode",
+      "hostile_registry_v33_plain_string",
+      "hostile_registry_entry_non_mapping_non_string",
+      "hostile_registry_mapping_missing_id",
+      "hostile_registry_mapping_missing_mode",
+      "hostile_registry_id_empty",
+      "hostile_registry_id_non_string",
+      "hostile_registry_id_malformed_shape",
+      "hostile_registry_mode_empty_or_non_string",
+      "hostile_registry_unknown_mode",
+      "hostile_registry_extra_key",
+      "hostile_unreferenced_registry_entry_non_string",
+      "hostile_unreferenced_registry_entry_malformed_string_id",
+      "hostile_registry_malformed_key_shape",
+      "hostile_legacy_plain_string_malformed_id_shape",
+      "hostile_unreferenced_wellformed_registry_v99_mapping",
+      "hostile_registry_leading_zero_alias_v031",
+      "hostile_registry_generation_missing_required",
+      "hostile_registry_only_generation_vs_governed",
+      "hostile_governed_only_generation_vs_registry",
+      "accept_full_plan_gate_mode_with_exact_full_plan_text",
+      "accept_fast_path_mode_carrying_with_exact_fast_path_text",
+      "hostile_compat_plain_string_v31_still_accepts",
+      "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar"
+    ],
+    "baseline_expected_pre_edit_shas": {
+      "tests": "f2ee6a814369789539683c4423c5e1f5a87f7307c2a524bcadff04171cc17a6c",
+      "validators": "324ecdba39a31cf750edbbcb6f1e0fc4cd6d43eb6d4ac6332e47e4b39002157b"
+    },
+    "baselines": "/tmp only; exact paths + sha256 in IMPLEMENT_receipt_v5; NEVER artifacts/acc_entropy/baselines/",
+    "canonical_invariant": {
+      "assert_before_and_after": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+    },
+    "canonical_membership_required": true,
+    "focused_pytest": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "generation_missing_fixture_required": true,
+    "immutable_inputs_must_ACCEPT_after_extension": [
+      {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+        "sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba"
+      },
+      {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+        "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+      }
+    ],
+    "legacy_cutoff_constant_required": {
+      "max_gen": 32,
+      "min_gen": 19
+    },
+    "legacy_plain_string_id_regex": "^\\d{13}-[0-9a-f]+$",
+    "malformed_mapping_branch_count_exact": 9,
+    "mapping_id_regex": "^\\d{13}-[0-9a-f]+$",
+    "per_direction_mismatch_fixtures_required": true,
+    "plan_v32_byte_invariant": {
+      "assert_before_and_after": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+      "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+    },
+    "positive_mode_fixtures_required": true,
+    "pytest_floor": "102 prior + F4 fixtures totaling 26 (4 ACCEPT + 22 REJECT); no approximations",
+    "receipt": "O_EXCL IMPLEMENT_receipt_v5 binding PLAN_v10 sha + ALL 26 fixture names + DIRECT v31/v32 ACCEPT + PLAN_v32/canonical unchanged + receipt_lineage_note for skipped never-minted v4 + bijection satisfied",
+    "registry_wide_fail_closure_required": true,
+    "regression_battery": "full Stage-1 18-probe class (F1/F2/F3 scalar+container) must stay green",
+    "self_identity_check": {
+      "IMPLEMENT_receipt_must_bind_v10_identity": true,
+      "all_operative_sections_use_IMPLEMENT_receipt_v5": true,
+      "expected_developer_step_id": "S0_v10_stepA_mode_grammar_extension",
+      "workflow_0_must_name_PLAN_v10": true
+    },
+    "spec_class_fixture_bijection_required": true,
+    "vN_derivation": "vN is parsed from plan_revision (e.g. plan_revision=\"v32\" \u2192 N=32). Must be path-consistent with existing self-identity rules (filename PLAN_vN / artifact_class / schema_version generation agree with plan_revision)."
+  },
+  "workflow": [
+    "PLAN_v10 \u2192 claude gate-1 \u2192 co_lead gate-2 HIGH \u2192 +1 implement (Step A only)",
+    "Step-A IMPLEMENT_receipt_v5 \u2192 dual accept",
+    "THEN Step-B consolidated dispatch (PLAN_v33 + harness rebind) \u2014 do NOT pre-mint"
+  ],
+  "write_surface": {
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v5.json"
+    ],
+    "CREATE_THEN_PRESERVE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v10.json"
+    ],
+    "OUT": [
+      "PLAN_v32 rewrite or deletion",
+      "relabeling Stage-2 full-plan dispatch as fast_path",
+      "PLAN_v33 pre-mint in Step A",
+      "measurement PLAN-family remint in Step A",
+      "harness PLAN_* rebind in Step A",
+      "closure pin edits in Step A",
+      "artifacts/acc_entropy/baselines/**",
+      "canonical audit mutation",
+      "S3 re-exec",
+      "stage/commit/push",
+      ".pt"
+    ],
+    "PRESERVE_BYTES": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v2.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v3.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v4.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v5.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v6.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v7.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v8.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v9.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_FINALIZE_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_FINALIZE_receipt_v2.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v2.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v3.json",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py"
+    ],
+    "UPDATE": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+    ],
+    "note": "UPDATE validators+tests after +1 on PLAN_v10. Active IMPLEMENT receipt is v5 (skipped never-minted v4 documented in receipt_lineage_note). PRESERVE includes PLAN_v6..v9 + PLAN_v31/v32. Receipt must bind all 26 fixture names from exact_fixture_accounting.all_fixture_names_for_receipt_binding."
+  }
+}

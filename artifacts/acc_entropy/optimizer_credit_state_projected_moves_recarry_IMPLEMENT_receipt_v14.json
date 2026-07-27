@@ -1,0 +1,92 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt/v14",
+  "receipt_kind": "S4a_IMPLEMENT_receipt_v14",
+  "covers_only": [
+    "S1_plan_v28",
+    "S2_validators_tests_H1_uniqueness",
+    "S2b_focused_pytest",
+    "dry_exec_prove"
+  ],
+  "does_not_cover": [
+    "S3_terminal_audit_receipt",
+    "S4b_FINALIZE",
+    "staging",
+    "commit",
+    "push"
+  ],
+  "S3_fields_present": false,
+  "authorizes_S3": false,
+  "authority": {
+    "dispatch_msg_id": "1785160790572-0ce8c375",
+    "plus1_implement": "1785160790572-0ce8c375",
+    "gate1_r27_block_msg_id": "1785160790572-0ce8c375",
+    "plan": "PLAN_v28",
+    "plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v28.json",
+    "plan_sha256": "d929b6abdf7ccd487404db5a9efc37f8dff56593ccdaea0abf51b08c5e59a22e",
+    "argv_template_sha256": "281916c307948a362e168119942e4af345a77e0e5381c48246116b896659fdcc",
+    "fast_path": true,
+    "task_id": "1785141831989-47a1370d"
+  },
+  "repairs": {
+    "H1a": "DEVELOPER_STEPS[].id appears EXACTLY once (duplicate id REJECT regardless of statuses); hostiles N5 duplicate ACTIVE, N5b ACTIVE+SUPERSEDED",
+    "H1b": "validate_single_action_class_per_path rejects duplicate paths WITHIN a single action list; hostile N6"
+  },
+  "artifacts": {
+    "PLAN_v28": {
+      "sha256": "d929b6abdf7ccd487404db5a9efc37f8dff56593ccdaea0abf51b08c5e59a22e"
+    },
+    "validators": {
+      "sha256": "240c23009e287f82aea15912edd136fbad808250e56602befb173c104a6f7aa7",
+      "pure": true
+    },
+    "evidence": {
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "unchanged": true
+    },
+    "harness": {
+      "sha256": "9e96b57897c736c994f60c549d6c074e9bb86c076efebe9e7fab2783eef8fcab"
+    },
+    "tests": {
+      "sha256": "28f990b59e639c73a53d7b0d9ef49811a907afd2b63fa68e1b9080617cea3a14"
+    }
+  },
+  "baselines_pre_v28": {
+    "harness": "4261bb964d7a4baf4af13efd6d205c448ba54108fa9383759b62dad00a1a96ab",
+    "validators": "8f9331c0d21b21bbf492fb64006bd6954ce7c539d52b47374b5878c8d6ebf742",
+    "tests": "c5e94b29d19e8017bd49e0ab387ed3e71c023f0a0b4005add2bd23a046241227"
+  },
+  "preserve_bytes": {
+    "PLAN_v27": "37bc8f9084c43bce1d25ef6d0d01059d6a54b4da5665b773b716111cb496b8eb",
+    "IMPLEMENT_receipt_v13": "f7a168b02fa2a1f313bfc21d4856a238bdb8de5329d8a52bb0f9c92856d7f920"
+  },
+  "focused_pytest": {
+    "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "exit_code": 0,
+    "summary": "74 passed in 29.71s",
+    "order": "BEFORE O_EXCL IMPLEMENT_receipt_v14 mint",
+    "delta_vs_v27": "71 -> 74 (+N5/N5b/N6 hostiles)"
+  },
+  "dry_execution": {
+    "command": [
+      "python3",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v28.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "--s3-authority-anchor-msg-id",
+      "DRYEXEC-V28-SCRATCH-ANCHOR",
+      "--dry-exec-out",
+      "artifacts/acc_entropy/_dry_exec_scratch_v28_recarry.json"
+    ],
+    "exit_code": 0,
+    "canonical_out_absent": true,
+    "scratch_sha256": "f04b5c2b8e111b236a0db143dca39fc27f8664ca4c5609ebbd403f93afdf2961",
+    "runtime_harness_sha256": "9e96b57897c736c994f60c549d6c074e9bb86c076efebe9e7fab2783eef8fcab",
+    "preview_branch": "BR-RECARRY-SPARSE-HOLDS-AB",
+    "non_authoritative": true
+  },
+  "edit_freeze": true,
+  "context_health": "self-measured; PLAN_v28 remint H1 uniqueness; S3 HOLD until dual accept + fresh v28 +1 (S3 auth only)"
+}

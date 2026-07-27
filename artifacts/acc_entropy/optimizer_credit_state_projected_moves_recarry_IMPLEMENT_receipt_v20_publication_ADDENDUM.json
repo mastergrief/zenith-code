@@ -1,0 +1,49 @@
+{
+  "IMPLEMENT_receipt_v20_publication": {
+    "board_bracket_msg_id": "1785183618051-6717780f",
+    "evidence": {
+      "record": 11,
+      "transcript": "agent-0cce0618-bdae-4fbe-a5d9-7a3b95a33a75",
+      "verbatim_publication_code": "assert not out.exists(), 'receipt_v20 already exists'\nfd = os.open(out, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)\ntry:\n    os.write(fd, (json.dumps(receipt, indent=2, sort_keys=True) + '\\n').encode())\nfinally:\n    os.close(fd)\n"
+    },
+    "mtime": "2026-07-27T20:22:59Z",
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v20.json",
+    "primitive_used": "final_path_O_EXCL_direct_open",
+    "receipt_path_absent_pre_mint": true,
+    "sha256": "c4e9be8a178d57898d02b5485999c27868b4bd9f7ee56e1e0b3c1588c0dfac75"
+  },
+  "PLAN_v34_publication": {
+    "board_bracket_msg_id": "1785182994410-fde5da4e",
+    "evidence": {
+      "records": [
+        13,
+        14,
+        16
+      ],
+      "transcript": "agent-0d7a8742-19ad-44de-9107-bca739fe078c",
+      "verbatim_publication_code": "def oexcl(path:Path, data:bytes):\n    if path.exists(): raise SystemExit(f'exists {path}')\n    fd=os.open(str(path), os.O_CREAT|os.O_EXCL|os.O_WRONLY)\n    try: os.write(fd,data)\n    except Exception:\n        os.close(fd)\n        if path.exists(): path.unlink()\n        raise\n    else: os.close(fd)\n\nassert not V34.exists()\noexcl(V34, raw)\nassert sha_file(V34)==v34_sha\n"
+    },
+    "mtime": "2026-07-27T20:14:24Z",
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v34.json",
+    "primitive_used": "final_path_O_EXCL_direct_open",
+    "sha256": "0a47d2550b85cc1a26153e3439da38d08d45fb559665ce7b248ef1e6c736efee",
+    "v34_path_absent_pre_mint": true
+  },
+  "addendum_own_publication": {
+    "addendum_path_absent_pre_mint": true,
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v20_publication_ADDENDUM.json",
+    "primitive_used": "final_path_O_EXCL_direct_open",
+    "verbatim_publication_code": "assert not ADDENDUM.exists()\nfd = os.open(str(ADDENDUM), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)\ntry:\n    os.write(fd, raw)\nfinally:\n    os.close(fd)\n"
+  },
+  "artifact_kind": "IMPLEMENT_receipt_v20_publication_ADDENDUM",
+  "authority": {
+    "co_lead_gate2_block_msg_id": "1785184402646-bd6f3d0f",
+    "phase1_evidence_msg_id": "1785184639341-f087b5bf",
+    "phase1_gate1_confirm_msg_id": "1785184741110-2442d5da",
+    "plan_request_v19_sha256": "6ff93f5707882ecbf81b48e7f12605d61d171b91ec63efeb998d3a27f2117e77",
+    "plus1_implement_msg_id": "1785182909987-22b94c29",
+    "two_phase_dispatch_msg_id": "1785184450200-aa309b2d"
+  },
+  "covers_only": "publication_provenance",
+  "immutability_statement": "receipt_v20 remains immutable; this addendum covers ONLY publication provenance and does not mutate PLAN_v34, DIFF manifest, harness, tests, or IMPLEMENT_receipt_v20."
+}

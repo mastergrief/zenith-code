@@ -1,0 +1,117 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt/v11",
+  "receipt_kind": "S4a_IMPLEMENT_receipt_v11",
+  "covers_only": [
+    "S1_plan_v25",
+    "S2_validators_harness_tests_R1_R4",
+    "S2b_focused_pytest",
+    "dry_exec_prove"
+  ],
+  "does_not_cover": [
+    "S3_terminal_audit_receipt",
+    "S4b_FINALIZE",
+    "staging",
+    "commit",
+    "push"
+  ],
+  "S3_fields_present": false,
+  "authorizes_S3": false,
+  "authority": {
+    "dispatch_msg_id": "1785158672023-50b002ca",
+    "plus1_implement": "1785158672023-50b002ca",
+    "gate2_block_msg_id": "1785158614714-613569dc",
+    "supersedes_gate1_r24_freeze": "1785157940148-a70e542f",
+    "plan": "PLAN_v25",
+    "plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v25.json",
+    "plan_sha256": "0cd15dcab5cd4004ede49837a6dd7c8da9a1a666dff296cd400d48082be3708a",
+    "argv_template_sha256": "46b89c87fa1e561c1046b84af736d841302e7678d412e04ae045759a95bbc250",
+    "fast_path": true,
+    "task_id": "1785141831989-47a1370d"
+  },
+  "repairs": {
+    "R1": "six authority/DAG leaves + self-discovering harness-sha citation sweep",
+    "R2": "DEV v22/v23/v24 S3/S4b -> SUPERSEDED_DEFINITION_NEVER_EXECUTED",
+    "R3": "lifecycle chronology cites real dispatch ids; no prospective dual-accept",
+    "R4": "four pure plan-structure validators + non-vacuous hostiles; enforced on harness plan-binding path"
+  },
+  "artifacts": {
+    "PLAN_v25": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v25.json",
+      "sha256": "0cd15dcab5cd4004ede49837a6dd7c8da9a1a666dff296cd400d48082be3708a"
+    },
+    "validators": {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "sha256": "72cf21f999b78ab5428a65831c6e4248af4871aa4681ca81ad6d5cfd1a59db47",
+      "pure": true
+    },
+    "evidence": {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "unchanged": true
+    },
+    "harness": {
+      "path": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "sha256": "4091f6a0bbc0a46c974321c7a62efe912d5651bbcd62379052de53e88cc8b9cd"
+    },
+    "tests": {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "sha256": "58b191bdc435ec1613317f063311c9646431b6be96dc8845fa3068295ba3f050"
+    }
+  },
+  "baselines_pre_v25": {
+    "harness": "a0c94c8540800f297e8fddf90c51bd6c1a11df85d7894bbc5bffc643cbc4f4aa",
+    "validators": "42c602c702afba992ecba15b1496c9879dc75459f179e693381bae0fb502ba76",
+    "tests": "0c74db2ae5fc2349a8cbd18f539328de6b4f0ef21432a03a65aa8fdbe89403f3",
+    "paths": [
+      "artifacts/acc_entropy/baselines/optimizer_credit_state_projected_moves_recarry_measurement_run.py.pre_v25",
+      "artifacts/acc_entropy/baselines/recarry_measurement_validators.py.pre_v25",
+      "artifacts/acc_entropy/baselines/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py.pre_v25"
+    ]
+  },
+  "preserve_bytes": {
+    "PLAN_v24": "4354250e2a533ee6330ebcb991a92df1e2850fbfaa5419cee53d6a8bffb8f25a",
+    "IMPLEMENT_receipt_v10": "b73ed8f8d54d8a74e44f0918d5cc71a08e1232f33902a070dd4964549cff9be5"
+  },
+  "focused_pytest": {
+    "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "exit_code": 0,
+    "summary": "61 passed in 30.54s",
+    "order": "BEFORE O_EXCL IMPLEMENT_receipt_v11 mint",
+    "delta_vs_v24_baseline": "57 -> 61 (+4 plan-structure hostiles)"
+  },
+  "dry_execution": {
+    "command": [
+      "python3",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v25.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "--s3-authority-anchor-msg-id",
+      "DRYEXEC-V25-SCRATCH-ANCHOR",
+      "--dry-exec-out",
+      "artifacts/acc_entropy/_dry_exec_scratch_v25_recarry.json"
+    ],
+    "exit_code": 0,
+    "dry_exec": true,
+    "authority_verification": "gate_pending",
+    "audit_branch_id": "BR-RECARRY-SPARSE-HOLDS-AB",
+    "events_equal": true,
+    "compositional_reduction_holds": true,
+    "harness_file_sha256": "4091f6a0bbc0a46c974321c7a62efe912d5651bbcd62379052de53e88cc8b9cd",
+    "plan_sha256": "0cd15dcab5cd4004ede49837a6dd7c8da9a1a666dff296cd400d48082be3708a",
+    "s3_go_msg_id_absent": true,
+    "canonical_out_absent_before_after": true,
+    "science_preview_non_authoritative": true
+  },
+  "closure": {
+    "file_count": 100,
+    "validators_pin_updated_to": "72cf21f999b78ab5428a65831c6e4248af4871aa4681ca81ad6d5cfd1a59db47",
+    "evidence_unchanged": true,
+    "harness_external_not_in_closure": true
+  },
+  "mint_note": "PLAN_v25 path written once via temp+rename; validators closure pin refreshed in-mint before receipt (same implement step; gate-1 not yet frozen). No source edits after this receipt.",
+  "edit_freeze": true,
+  "context_health": "self-measured; S3 HOLD"
+}

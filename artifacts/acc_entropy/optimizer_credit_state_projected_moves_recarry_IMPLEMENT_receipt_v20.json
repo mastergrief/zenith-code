@@ -1,0 +1,236 @@
+{
+  "S3_fields_present": false,
+  "authority": {
+    "authority_record_task": "1785180808709-4c0741dd",
+    "gate1_pass_freeze": "1785182705135-fbf5a5c6",
+    "gate2_pass": "1785182882746-b3c61a06",
+    "governing_plan_request": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v19.json",
+      "sha256": "6ff93f5707882ecbf81b48e7f12605d61d171b91ec63efeb998d3a27f2117e77"
+    },
+    "plus1_implement_msg_id": "1785182909987-22b94c29",
+    "working_task": "1785163855817-03f00155"
+  },
+  "authority_verification": "gate_pending",
+  "authorizes_S3": false,
+  "bounded_tests_update": {
+    "after_sha256": "77e89ccf555e5c1038a806f92bec86f49ee3c8cac1922483602ff9d1d59ac4ad",
+    "baseline_path": "/tmp/recarry_hardening_baselines/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py.pre_v34_rebind",
+    "before_sha256": "17526238d8f134529ca3004e11cca733802a3efa723974224cf0ad17b066f6b5",
+    "functions": [
+      "test_governing_receipt_anchor_only_excludes_go_id",
+      "test_hostile_argv_template_deviation",
+      "test_harness_file_sha256_embedded_and_matches_runtime",
+      "test_dry_exec_out_scratch_path_cli"
+    ],
+    "hunks": {
+      "test_dry_exec_out_scratch_path_cli": {
+        "after_extent": [
+          717,
+          744
+        ],
+        "before_extent": [
+          717,
+          744
+        ],
+        "unified_diff": "--- a/test_dry_exec_out_scratch_path_cli\n+++ b/test_dry_exec_out_scratch_path_cli\n@@ -10,7 +10,7 @@\n     rc = h.main(\n         [\n             \"--plan\",\n-            str(PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v33\")).relative_to(REPO_ROOT)),\n+            str(PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v34\")).relative_to(REPO_ROOT)),\n             \"--out\",\n             \"artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json\",\n             \"--s3-authority-anchor-msg-id\",\n"
+      },
+      "test_governing_receipt_anchor_only_excludes_go_id": {
+        "after_extent": [
+          609,
+          625
+        ],
+        "before_extent": [
+          609,
+          625
+        ],
+        "unified_diff": "--- a/test_governing_receipt_anchor_only_excludes_go_id\n+++ b/test_governing_receipt_anchor_only_excludes_go_id\n@@ -1,8 +1,8 @@\n def test_governing_receipt_anchor_only_excludes_go_id(h):\n     argv = _anchor_argv(\"test-only-anchor-id-not-a-launch\")\n-    argv[3] = argv[3].replace(\"v31\", \"v33\")\n+    argv[3] = argv[3].replace(\"v31\", \"v34\")\n     receipt = h.build_governing_receipt(\n-        plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v33\")),\n+        plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v34\")),\n         argv=argv,\n         s3_authority_anchor_msg_id=\"test-only-anchor-id-not-a-launch\",\n     )\n@@ -12,6 +12,6 @@\n     assert receipt[\"authority_verification\"] == \"gate_pending\"\n     assert \"s3_go_msg_id\" not in receipt\n     assert receipt[\"plan_sha256\"] == h.PLAN_SHA256_EXPECTED\n-    assert receipt[\"plan_revision\"] == \"v33\"\n+    assert receipt[\"plan_revision\"] == \"v34\"\n     assert receipt[\"evidence_to_receipt_field_equality_validated\"] is True\n     assert receipt[\"transient_fp_debt_remains\"] is True\n"
+      },
+      "test_harness_file_sha256_embedded_and_matches_runtime": {
+        "after_extent": [
+          642,
+          652
+        ],
+        "before_extent": [
+          642,
+          652
+        ],
+        "unified_diff": "--- a/test_harness_file_sha256_embedded_and_matches_runtime\n+++ b/test_harness_file_sha256_embedded_and_matches_runtime\n@@ -1,8 +1,8 @@\n def test_harness_file_sha256_embedded_and_matches_runtime(h):\n     argv = _anchor_argv(\"test-only-anchor-id-not-a-launch\")\n-    argv[3] = argv[3].replace(\"v31\", \"v33\")\n+    argv[3] = argv[3].replace(\"v31\", \"v34\")\n     receipt = h.build_governing_receipt(\n-        plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v33\")),\n+        plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v34\")),\n         argv=argv,\n         s3_authority_anchor_msg_id=\"test-only-anchor-id-not-a-launch\",\n     )\n"
+      },
+      "test_hostile_argv_template_deviation": {
+        "after_extent": [
+          628,
+          634
+        ],
+        "before_extent": [
+          628,
+          634
+        ],
+        "unified_diff": "--- a/test_hostile_argv_template_deviation\n+++ b/test_hostile_argv_template_deviation\n@@ -3,5 +3,5 @@\n     argv[3] = \"artifacts/acc_entropy/wrong_plan.json\"\n     with pytest.raises(ValueError, match=\"argv_template_deviation\"):\n         h.build_governing_receipt(\n-            plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v33\")), argv=argv, s3_authority_anchor_msg_id=\"anchor\"\n+            plan_path=PLAN_V30.with_name(PLAN_V30.name.replace(\"v31\", \"v34\")), argv=argv, s3_authority_anchor_msg_id=\"anchor\"\n         )\n"
+      }
+    },
+    "outside_span_bytes_equal": true
+  },
+  "context_health": "not self-measurable; peer_status pending",
+  "covers_only": [
+    "PLAN_v34_mint",
+    "DIFF_MANIFEST_v33_to_v34",
+    "harness_3_constant_rebind",
+    "bounded_4_test_rebind_v33_to_v34",
+    "proofs_direct_pytest_dryexec",
+    "IMPLEMENT_receipt_v20"
+  ],
+  "does_not_cover": [
+    "S3",
+    "S4b",
+    "stage",
+    "commit",
+    "push",
+    "science_claim_remint"
+  ],
+  "edit_freeze": true,
+  "minted_at": "2026-07-27T20:22:59Z",
+  "precondition_or_created": {
+    "DIFF_MANIFEST_v33_to_v34": {
+      "category_counts": {
+        "a_current_generation_identity_substitutions": 13,
+        "b_supersedes_append": 7,
+        "c_lifecycle_registry_and_v34_surfaces": 8,
+        "e_governing_runtime_template": 4,
+        "f_exact_v34_active_ids_and_receipt_fields": 20,
+        "g_adjudication_lineage_additions": 25,
+        "h_parent_identity_repair": 4,
+        "i_current_generation_self_check_regeneration": 16,
+        "j_successor_write_action_map_restructuring": 105,
+        "k_prior_phase_status_supersession": 7
+      },
+      "counts": {
+        "added": 161,
+        "changed": 41,
+        "removed": 7,
+        "total_deltas": 209
+      },
+      "file_sha256": "bcf830ff6fc38ddf74c1f443ecef66fbe5a17d47fd74dce1c9c9b8ed09f89b2c",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v33_to_v34_DIFF_MANIFEST.json",
+      "semantic_digest_sha256": "0bb08cece5309fbc6c5543f7bc988c4fa9947550f9e38a837f6652146ebf30fa",
+      "unmapped_paths": []
+    },
+    "PLAN_v34": {
+      "argv_template_sha256": "5a1faff46d7fa3dc2b69a9aa2be4e66abdad1c16656fce00845569778d8d2d24",
+      "parent_identity_hash_match": true,
+      "parent_plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "parent_plan_sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v34.json",
+      "primitive_used": "final_path_O_EXCL_or_prior_session_no_clobber",
+      "registry_v34": {
+        "id": "1785178242635-d16e6ffc",
+        "mode": "full_plan_gate"
+      },
+      "sha256": "0a47d2550b85cc1a26153e3439da38d08d45fb559665ce7b248ef1e6c736efee"
+    },
+    "harness": {
+      "after_sha256": "d53526f6ebd576d09f2cf8e038d48bd0d518066aa33c2cc947cf66632455833b",
+      "before_sha256": "6b3d6555ded2d85c1d969eb32e586ebe36c31638ebfe34836c7cc007cd166452",
+      "constants": {
+        "ARGV_TEMPLATE_SHA256_EXPECTED": "5a1faff46d7fa3dc2b69a9aa2be4e66abdad1c16656fce00845569778d8d2d24",
+        "PLAN_REVISION": "v34",
+        "PLAN_SHA256_EXPECTED": "0a47d2550b85cc1a26153e3439da38d08d45fb559665ce7b248ef1e6c736efee"
+      },
+      "path": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py"
+    }
+  },
+  "protected_surfaces_rehash_proof": {
+    "PLAN_v31": {
+      "expected": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba",
+      "match": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+      "sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba"
+    },
+    "PLAN_v32": {
+      "expected": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7",
+      "match": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+      "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+    },
+    "PLAN_v33": {
+      "expected": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e",
+      "match": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v33.json",
+      "sha256": "0afe31e14a3fdab6a3d38f61751085b64bd7066403c33e448d82c4c1cc1aa70e"
+    },
+    "canonical": {
+      "expected": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "match": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+    },
+    "diff_v32_v33": {
+      "expected": "e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84",
+      "match": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_PLAN_v32_to_v33_DIFF_MANIFEST.json",
+      "sha256": "e3474aba4c4868819fe1c8ca2ed0a62ffd178136ad05ce2b0768cfb3fba0ee84"
+    },
+    "evidence": {
+      "expected": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "match": true,
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0"
+    },
+    "plan_request_v19": {
+      "expected": "6ff93f5707882ecbf81b48e7f12605d61d171b91ec63efeb998d3a27f2117e77",
+      "match": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_stepB_closure_rebind_PLAN_v19.json",
+      "sha256": "6ff93f5707882ecbf81b48e7f12605d61d171b91ec63efeb998d3a27f2117e77"
+    },
+    "receipt_v19": {
+      "expected": "0576d8c4103b6ce3742b1f2e229d66d815713ac07712fff042e6acf429336f5b",
+      "match": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v19.json",
+      "sha256": "0576d8c4103b6ce3742b1f2e229d66d815713ac07712fff042e6acf429336f5b"
+    },
+    "validators": {
+      "expected": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae",
+      "match": true,
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "sha256": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae"
+    }
+  },
+  "receipt_kind": "IMPLEMENT_receipt_v20",
+  "schema": "recarry_implement_receipt_v20",
+  "validation": {
+    "direct_validate": {
+      "v31": "ACCEPT",
+      "v32": "ACCEPT",
+      "v33": "ACCEPT",
+      "v34": "ACCEPT",
+      "validators_exercised": [
+        "validate_lifecycle_authority_cites_dispatch",
+        "validate_single_action_class_per_path",
+        "validate_active_ids_exactly_current_generation",
+        "validate_developer_steps_ids_unique",
+        "validate_no_false_complete_s3_s4b_status",
+        "validate_supersedes_schema",
+        "validate_plan_anchor_go_citations_carry_harness_sha"
+      ]
+    },
+    "dry_exec": {
+      "audit_branch_id": "BR-RECARRY-SPARSE-HOLDS-AB",
+      "authority_verification": "gate_pending",
+      "canonical_after": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "canonical_before": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "canonical_unchanged": true,
+      "dry_exec": true,
+      "events_equal": true,
+      "exit_code": 0,
+      "harness_file_sha256": "d53526f6ebd576d09f2cf8e038d48bd0d518066aa33c2cc947cf66632455833b",
+      "non_authoritative_preview": true,
+      "s3_go_msg_id_absent": true,
+      "scratch_out": "/tmp/recarry_stepB_v34_dry_exec.json"
+    },
+    "pytest": {
+      "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+      "exit_code": 0,
+      "summary": "128 passed in 41.74s"
+    }
+  }
+}

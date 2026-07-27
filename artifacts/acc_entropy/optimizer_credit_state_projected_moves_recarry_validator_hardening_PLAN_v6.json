@@ -1,0 +1,336 @@
+{
+  "DEVELOPER_STEPS": [
+    {
+      "bound_order": [
+        "1_tmp_baseline_capture_hashed",
+        "2_edit_validators_and_tests_only",
+        "3_direct_validate_lifecycle_ACCEPT_PLAN_v31_and_PLAN_v32",
+        "4_focused_pytest_floor_102_plus_mode_hostiles",
+        "5_assert_PLAN_v32_sha_unchanged_and_canonical_unchanged",
+        "6_O_EXCL_IMPLEMENT_receipt_v4"
+      ],
+      "count": "ONE",
+      "id": "S0_v6_stepA_mode_grammar_extension",
+      "mechanical_assertions": {
+        "data": "no mutation outside validators+tests+receipt_v4+/tmp baselines; PLAN_v32 rewrite/deletion forbidden; harness/closure/PLAN_v33 untouched",
+        "runtime": "DIRECT validate_lifecycle_* and validate_single_action_class_per_path ACCEPT on immutable PLAN_v31 and PLAN_v32; no governing dry-exec required in Step A",
+        "tests": "hostile_fast_path_text_under_full_plan_gate_mode REJECT; hostile_full_plan_text_under_fast_path_mode REJECT; hostile_unknown_lifecycle_mode REJECT; compat PLAN_v31/v32 ACCEPT; prior \u2265102 remain green",
+        "types": "py_compile + import clean on both edited files"
+      },
+      "size": "MEDIUM",
+      "status": "ACTIVE"
+    }
+  ],
+  "SIZING": "MEDIUM",
+  "artifact_class": "validator_hardening_PLAN_v6",
+  "autonomy_rung": "HIGH",
+  "carried_stage1_invariants": {
+    "O_EXCL_receipts": true,
+    "absolute_manifest_schema_F1": true,
+    "container_key_and_scalar_type_boundary": true,
+    "current_generation_self_identity": true,
+    "frozen_registry_surfaces_F2": true,
+    "structural_path_chronology_F3": true,
+    "tmp_baselines_exact_paths": true
+  },
+  "claim_ceiling": {
+    "may_claim": [
+      "Step A: mode-aware lifecycle grammar with exactly two allowlist templates",
+      "Step A: mode-vs-text mismatch REJECT; unknown mode REJECT",
+      "Step A: historical plain-string registry entries (incl. PLAN_v31 and PLAN_v32) still ACCEPT under DIRECT validate_lifecycle_*",
+      "Step A: prior F1/F2/F3 battery green"
+    ],
+    "must_not_claim": [
+      "PLAN_v32 authority-truth cured inside Step A alone (truth cure = Step B supersession)",
+      "PLAN_v33 minted",
+      "harness dry-exec clean under rebound closure",
+      "commit-coherence / whole-slice commit-quality",
+      "science claim change",
+      "S3 re-exec",
+      "acquisition",
+      "readiness",
+      "sub2",
+      "byte_savings",
+      "density_win"
+    ]
+  },
+  "decision_contract": {
+    "NOT_fast_path": true,
+    "authority": "dispatch 1785168976142-ad147f16; co_lead BLOCK 1785168920347-95e7852b; Stage-2 PLAN_v32 gate-1 freeze 1785168751847-c3abf98b; task 1785163855817-03f00155; Gabe standing auto-research directive",
+    "executor": "plan-dev (codex)",
+    "intent": "Extend lifecycle authority grammar to be mode-aware so full-plan-gate generations cannot assert a converged-fast-path authority sentence. Cure the PLAN_v32 false-mode defect via supersession + adjudication trail (Step B), not by rewriting v32.",
+    "mode": "planning",
+    "reason_not_fast_path": "HIGH control-plane grammar/schema extension; novel mode declaration; full plan gate required",
+    "receipt_sink": "claude gate-1 ONLY",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation"
+    ]
+  },
+  "dispatch_msg_id": "1785168976142-ad147f16",
+  "finding": {
+    "defect": "_lifecycle_authority_grammar emits ONLY the converged-fast-path sentence. Stage-2 dispatch 1785168271320-9581a9c1 was FULL PLAN GATE (implement forbidden until dual accept), yet every PLAN_v32 operative lifecycle record asserts fast-path authority that did not exist. Grammar-exactness \u2260 authority truth.",
+    "file_line_anchors": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py:_lifecycle_authority_grammar:642-648",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py:validate_lifecycle_authority_cites_dispatch"
+    ],
+    "hostile_fixtures": [
+      {
+        "mutate": "registry[vN]={id, mode:full_plan_gate} but note uses fast_path template",
+        "name": "hostile_fast_path_text_under_full_plan_gate_mode",
+        "new_behavior": "REJECT match=lifecycle_mode_text_mismatch|lifecycle_authority_cite_invalid",
+        "old_behavior": "N/A (mode absent pre-extension) / would PASS under single-template"
+      },
+      {
+        "mutate": "registry[vN]={id, mode:fast_path} but note uses full_plan_gate template",
+        "name": "hostile_full_plan_text_under_fast_path_mode",
+        "new_behavior": "REJECT match=lifecycle_mode_text_mismatch|lifecycle_authority_cite_invalid",
+        "old_behavior": "PASS if text happened to match sole template; post-extension must REJECT"
+      },
+      {
+        "mutate": "registry[vN]={id, mode:other_mode}",
+        "name": "hostile_unknown_lifecycle_mode",
+        "new_behavior": "REJECT match=lifecycle_mode_unknown"
+      },
+      {
+        "mutate": "none \u2014 immutable PLAN_v31 bytes",
+        "name": "hostile_compat_plain_string_v31_still_accepts",
+        "new_behavior": "ACCEPT (plain-string \u2192 fast_path default; text matches fast_path template)",
+        "tag": "compat_not_hostile_reject"
+      },
+      {
+        "mutate": "none \u2014 immutable PLAN_v32 bytes",
+        "name": "hostile_compat_plain_string_v32_still_accepts_as_historical_grammar",
+        "new_behavior": "ACCEPT under DIRECT validate_lifecycle_* (grammar compat); truth cured by Step B supersession",
+        "tag": "compat_not_hostile_reject"
+      }
+    ],
+    "id": "F4_lifecycle_mode_grammar_single_template_false_authority",
+    "mechanism": {
+      "add": "Mode-aware grammar with EXACTLY two templates; registry mode declaration for NEW generations; plain-string entries default mode=fast_path (v19-v32 compat, zero historical remint); mode-vs-text mismatch REJECT; unknown mode REJECT.",
+      "boundary": "Registry truth (whether the cited dispatch was actually full_plan_gate vs fast_path) remains a REVIEW-gate / in-room check \u2014 validators cannot resolve room records. Validators only enforce text == template(declared_mode, N, id).",
+      "keep": "Allowlist-exact templates (only N and id vary); F3 container-key candidate selection; scalar+container non-str REJECT; historical plain-string registry compat; path-derived generation binding."
+    },
+    "registry_schema": {
+      "legacy_plain_string": "str dispatch id \u2192 mode defaults to fast_path",
+      "malformed_entry": "REJECT (non-str non-mapping, missing id, empty id)",
+      "mode_carrying_new_generations": {
+        "id": "<dispatch_msg_id>",
+        "mode": "fast_path|full_plan_gate"
+      },
+      "unknown_mode": "REJECT"
+    },
+    "surface": "lifecycle_dispatch_id_registry + governed note/active_after chronology leaves",
+    "templates_exact": {
+      "fast_path": "PLAN_v{N} minted under converged fast-path +1 implement dispatch {ID}; dual accept applies to the frozen artifact review, not the mint.",
+      "full_plan_gate": "PLAN_v{N} minted under full-plan-gate dispatch {ID}; implementation authority arrives only via post-dual-accept persisted +1 implement.",
+      "note": "Byte-identical fast_path template to today's _lifecycle_authority_grammar output (historical compat)."
+    },
+    "v32_false_mode_disposition": {
+      "after_Step_A": "PLAN_v32 remains byte-preserved. Its registry entry is plain-string \u2192 fast_path default; its lifecycle text already matches the fast_path template, so DIRECT validate_lifecycle_* continues to ACCEPT v32 as historical/structural grammar context.",
+      "do_not_rewrite_v32": true,
+      "truth_cure": "Authority-truth defect is cured by supersession + this adjudication trail + Step B PLAN_v33 remint under declared mode=full_plan_gate with matching full_plan_gate template text. Not by rewriting or deleting v32.",
+      "v32_sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+    }
+  },
+  "minted_at": "2026-07-27T16:18:11.238204+00:00",
+  "packet_revision": "v6",
+  "parent_plan": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v5.json",
+    "sha256": "699e9ed7a508eb31c119547455e5ae2b1f22a73a80006d47712ed914a0756d2d"
+  },
+  "plan_revision": "v6",
+  "schema_version": "recarry_validator_hardening_plan_v6",
+  "self_check_at_mint": {
+    "developer_step_id_is_v6": true,
+    "fast_path_template_byte_identical_to_current_grammar": true,
+    "plan_revision_equals_packet_revision": true,
+    "step_B_not_pre_minted": true,
+    "v32_preserve_required": true,
+    "workflow_names_PLAN_v6": true
+  },
+  "stages": {
+    "step_A_this_plan": {
+      "OUT_of_Step_A": [
+        "PLAN_v33 mint",
+        "harness rebind",
+        "closure pin rebind",
+        "S3",
+        "commit"
+      ],
+      "UPDATE": [
+        "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+        "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+      ],
+      "acceptance": [
+        "/tmp hashed baselines (exact paths) in IMPLEMENT receipt",
+        "\u22654 mode hostiles: 3 REJECT + v31/v32 compat ACCEPT proofs",
+        "DIRECT validate_lifecycle_authority_cites_dispatch(PLAN_v31) ACCEPT",
+        "DIRECT validate_lifecycle_authority_cites_dispatch(PLAN_v32) ACCEPT",
+        "DIRECT validate_single_action_class_per_path ACCEPT on v31 and v32",
+        "full prior battery green (container/scalar/F1/F2/F3) \u2014 pytest floor \u2265102 + new mode tests",
+        "canonical 783f2799\u2026 unchanged",
+        "PLAN_v32 bytes unchanged (sha 55417cff\u2026)",
+        "py_compile/import clean"
+      ],
+      "scope": "Validator grammar/schema extension + tests hostiles + IMPLEMENT_receipt_v4"
+    },
+    "step_B_successor_handoff": {
+      "OUT": [
+        "S3 re-exec",
+        "science-claim change",
+        "rewriting PLAN_v32",
+        "Step-A re-litigation"
+      ],
+      "declared_not_implemented_here": true,
+      "scope": "Separate consolidated dispatch: PLAN_v33 remint with validators pin \u2192 NEW Step-A sha, lifecycle records under TRUTHFUL full_plan_gate mode citing Step-B dispatch, harness 3-constant rebind to v33, dry-exec + parity guard, IMPLEMENT_receipt_v18",
+      "trigger": "After Step-A dual accept + implementation dual accept"
+    }
+  },
+  "stop_conditions": [
+    "Ambiguity in mode template wording or registry schema \u2192 STOP and ask claude",
+    "Any rewrite/deletion of PLAN_v32 \u2192 hard STOP",
+    "Relabeling Stage-2 full-plan dispatch as fast_path \u2192 hard STOP",
+    "Pre-minting PLAN_v33 in Step A \u2192 STOP",
+    "Editing harness PLAN_* constants or closure pins in Step A \u2192 STOP (Step B)",
+    "Hardened/extended validators REJECT clean PLAN_v31 or PLAN_v32 under DIRECT validate_* \u2192 STOP (compat break; do not weaken; report)",
+    "Regression of F1/F2/F3 scalar/container axes \u2192 STOP",
+    "Canonical audit mutation \u2192 hard STOP",
+    "Any write under artifacts/acc_entropy/baselines/ \u2192 STOP",
+    "No stage/commit/push/.pt"
+  ],
+  "supersedes": {
+    "adjudication_lineage_block_ids": [
+      "1785165408689-e34de5b7",
+      "1785165757226-3310e559",
+      "1785166129846-eff22011",
+      "1785168920347-95e7852b"
+    ],
+    "adjudication_lineage_dispatch_ids": [
+      "1785165800725-a52e7d1a",
+      "1785165939095-785921a6",
+      "1785166151413-83cde722",
+      "1785168271320-9581a9c1",
+      "1785168976142-ad147f16"
+    ],
+    "measurement_plan_v32_status": {
+      "do_not_rely_on_for_plus1": true,
+      "gate1_freeze_msg_id": "1785168751847-c3abf98b",
+      "role": "superseded_evidence_preserved_bytes",
+      "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+    },
+    "note": "PLAN_v6 extends Stage-1 hardening lineage with F4 mode-aware lifecycle grammar. F1/F2/F3 mechanisms carried; container/scalar axes untouched.",
+    "plans": [
+      {
+        "preserved_bytes": true,
+        "rev": "v1",
+        "sha256": "0d8486eb3298b0757e3306755ff9fa18f108a8bfa0249923a4adf176fddbb974"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v2",
+        "sha256": "c7d036e454639940a97dab28bd5cc391b695351ba2e0d585df5553475a154987"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v3",
+        "sha256": "a264c680eb74be58ef7e747a1190a77198eb70353538166593dac5a0d9fe98ef"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v4",
+        "sha256": "458a8f535c9f2bc350839ba6bae98075cb72bb860e01a6514310440ef0e893ea"
+      },
+      {
+        "preserved_bytes": true,
+        "rev": "v5",
+        "sha256": "699e9ed7a508eb31c119547455e5ae2b1f22a73a80006d47712ed914a0756d2d"
+      }
+    ]
+  },
+  "validation_plan": {
+    "baseline_expected_pre_edit_shas": {
+      "tests": "f2ee6a814369789539683c4423c5e1f5a87f7307c2a524bcadff04171cc17a6c",
+      "validators": "324ecdba39a31cf750edbbcb6f1e0fc4cd6d43eb6d4ac6332e47e4b39002157b"
+    },
+    "baselines": "/tmp only; exact paths + sha256 in IMPLEMENT_receipt_v4; NEVER artifacts/acc_entropy/baselines/",
+    "canonical_invariant": {
+      "assert_before_and_after": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+    },
+    "focused_pytest": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "immutable_inputs_must_ACCEPT_after_extension": [
+      {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+        "sha256": "69041cbe5890c5b9d1af0c85ccdacbc6767147e2f263236629aca871939bf6ba"
+      },
+      {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+        "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+      }
+    ],
+    "plan_v32_byte_invariant": {
+      "assert_before_and_after": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+      "sha256": "55417cff418f9625474e9818535def05355e33f3255fa6469c923c9ea6ca0cd7"
+    },
+    "pytest_floor": "\u2265102 prior + \u22653 new REJECT hostiles + compat ACCEPT coverage",
+    "receipt": "O_EXCL IMPLEMENT_receipt_v4 binding PLAN_v6 sha, before/after shas, /tmp baseline paths, hostile names, pytest count, DIRECT v31+v32 ACCEPT, PLAN_v32+canonical sha unchanged",
+    "regression_battery": "full Stage-1 18-probe class (F1/F2/F3 scalar+container) must stay green",
+    "self_identity_check": {
+      "IMPLEMENT_receipt_must_bind_v6_identity": true,
+      "operative_step_id_must_equal_plan_revision_generation": "S0_v6_stepA_mode_grammar_extension",
+      "workflow_0_must_name_PLAN_v6": true
+    }
+  },
+  "workflow": [
+    "PLAN_v6 \u2192 claude gate-1 \u2192 co_lead gate-2 HIGH \u2192 +1 implement (Step A only)",
+    "Step-A IMPLEMENT_receipt_v4 \u2192 dual accept",
+    "THEN Step-B consolidated dispatch (PLAN_v33 + harness rebind) \u2014 do NOT pre-mint"
+  ],
+  "write_surface": {
+    "CREATE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v4.json"
+    ],
+    "CREATE_THEN_PRESERVE": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v6.json"
+    ],
+    "OUT": [
+      "PLAN_v32 rewrite or deletion",
+      "relabeling Stage-2 full-plan dispatch as fast_path",
+      "PLAN_v33 pre-mint in Step A",
+      "measurement PLAN-family remint in Step A",
+      "harness PLAN_* rebind in Step A",
+      "closure pin edits in Step A",
+      "artifacts/acc_entropy/baselines/**",
+      "canonical audit mutation",
+      "S3 re-exec",
+      "stage/commit/push",
+      ".pt"
+    ],
+    "PRESERVE_BYTES": [
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v2.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v3.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v4.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_PLAN_v5.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v31.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v32.json",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_FINALIZE_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_FINALIZE_receipt_v2.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v1.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v2.json",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_validator_hardening_IMPLEMENT_receipt_v3.json",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py"
+    ],
+    "UPDATE": [
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py"
+    ],
+    "note": "UPDATE validators+tests ONLY after +1. PRESERVE lists Stage-1 frozen outputs and PLAN_v31/v32 as immutable inputs; /tmp baselines capture pre-edit validator/tests shas."
+  }
+}

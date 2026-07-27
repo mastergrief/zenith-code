@@ -1,0 +1,135 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt/v4",
+  "authority": {
+    "kind": "S4a-R_refactor_fast_path_plus1_implement",
+    "dispatch_msg_id": "1785152846523-dea60716",
+    "gate2_block_msg_id": "1785152792025-56106ace",
+    "plan_addendum": "PLAN_v17-ADDENDUM-A1",
+    "plan_v17_sha256": "b1ca9229427823c6bc7da800faf74a69c660b48754ff31cc564679798aea6f95",
+    "plan_v17_bytes_untouched": true,
+    "plan_v18_pending": true,
+    "receipt_v4_reason": "truthful line-band supersede of v3"
+  },
+  "characterization_baseline_frozen": {
+    "harness_sha256": "110543deee0c4250d283895f5990159cda27b3bea7ee48eaf208092718cd7cb4",
+    "tests_sha256": "0eca9933371aeeb4758dac1719e5404130fdccb8196cac62036628f255018fcd",
+    "pytest": "51 passed"
+  },
+  "covers_only": [
+    "S1_harness_evidence_type",
+    "S2_tests",
+    "S2b_focused_pytest",
+    "S4a-R_architecture_extraction"
+  ],
+  "does_not_cover": [
+    "S3_terminal_audit_receipt",
+    "S4b_FINALIZE_receipt"
+  ],
+  "S3_fields_present": false,
+  "authorizes_S3": false,
+  "seam_map": {
+    "recarry_measurement_validators.py": {
+      "role": "PURE authority/receipt/argv/DAG validators + key-absence + S4a/S4b receipt validators",
+      "pure": true,
+      "no_filesystem": true,
+      "no_cli": true,
+      "no_torch": true,
+      "sha256": "0bc9d74e12241958448aaecaf899c4e13f06a03d3e057a944b142348e642f755",
+      "lines": 332
+    },
+    "recarry_measurement_evidence.py": {
+      "role": "evidence/measurement collection + IO pin validators; may import torch/BDL",
+      "no_cli": true,
+      "no_oexcl_mint": true,
+      "sha256": "d14e5238991d3856b9c20532579df785ce7dea8e79dd409cd9afbafbdd67e2b5",
+      "lines": 454
+    },
+    "optimizer_credit_state_projected_moves_recarry_measurement_run.py": {
+      "role": "thin harness: argparse/main, path wiring, O_EXCL mint, re-exports for tests",
+      "sha256": "214bb236c1556447b1711ad3445e4a04d864b07d6eb28201bf98bd2b9e192e53",
+      "lines": 253,
+      "target_band": "<=~250 (approximate, per dispatch)",
+      "within_band": true
+    }
+  },
+  "dependency_direction": {
+    "rule": "script -> modules; never reverse",
+    "script_imports_modules": true,
+    "modules_import_script": false,
+    "evidence_imports_validators": true,
+    "validators_import_evidence": false
+  },
+  "line_counts": {
+    "before_harness_monolith": 976,
+    "after": {
+      "harness": 253,
+      "validators": 332,
+      "evidence": 454,
+      "tests": 598
+    }
+  },
+  "pytest": {
+    "baseline": {
+      "count": 51,
+      "result": "51 passed"
+    },
+    "post_refactor": {
+      "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "exit_code": 0,
+      "summary": "51 passed in 30.09s",
+      "assertion_content_unchanged": true,
+      "test_file_change": "imports_only_seam_imports_added"
+    }
+  },
+  "cli_dry_exec": {
+    "help_shows_s3_authority_anchor_msg_id_required": true,
+    "stale_s3_go_msg_id_rejected": true,
+    "missing_anchor_rejected": true
+  },
+  "artifacts": {
+    "harness": {
+      "path": "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "sha256": "214bb236c1556447b1711ad3445e4a04d864b07d6eb28201bf98bd2b9e192e53",
+      "action": "UPDATE"
+    },
+    "validators": {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "sha256": "0bc9d74e12241958448aaecaf899c4e13f06a03d3e057a944b142348e642f755",
+      "action": "CREATE"
+    },
+    "evidence": {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "sha256": "d14e5238991d3856b9c20532579df785ce7dea8e79dd409cd9afbafbdd67e2b5",
+      "action": "CREATE"
+    },
+    "tests": {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "sha256": "a68341f260ebe16bc5e4cbb56f051358a1ae5c838d2413519cd068012e6e81da",
+      "action": "UPDATE_imports_only"
+    },
+    "implement_receipt_v1_preserved": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v1.json",
+      "sha256": "67be3fdead20f9d255595ecb47a5f94ba8e62f628c5facda837ffad46b2f5391",
+      "action": "PRESERVE_BYTES"
+    },
+    "implement_receipt_v2_preserved": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v2.json",
+      "sha256": "7831cc834055dbdd8201062b15433d9a8aece878473a312de31320b510d1bcf1",
+      "action": "PRESERVE_BYTES"
+    }
+  },
+  "repo_head_sha": "ed4932b9eef0fb547970019edf55e02ab57cb32a",
+  "no_S3_anchor_go_mint": true,
+  "no_S3_execution": true,
+  "no_S4b": true,
+  "no_staging_commit_push": true,
+  "behavior_preserving_extraction_only": true,
+  "supersedes_receipt_v3": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt_v3.json",
+    "sha256": "f9aa54936a419eebc3f5678a40fa683885405ca310e1b68e452a4547862e7676",
+    "preserved_bytes": true,
+    "reason": "meets_target encoded exact bound 250 not met (actual lines=253); replace with approximate band semantics",
+    "gate2_block_msg_id": "1785153460797-cd004e2b"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "schema": "hrm_text_158_optimizer_credit_state_projected_moves_recarry_IMPLEMENT_receipt/v16",
+  "receipt_kind": "S4a_IMPLEMENT_receipt_v16",
+  "covers_only": [
+    "S1_plan_v30",
+    "S2_validators_tests_R1_R2",
+    "S2b_focused_pytest",
+    "dry_exec_prove"
+  ],
+  "does_not_cover": [
+    "S3_terminal_audit_receipt",
+    "S4b_FINALIZE",
+    "staging",
+    "commit",
+    "push"
+  ],
+  "S3_fields_present": false,
+  "authorizes_S3": false,
+  "authority": {
+    "dispatch_msg_id": "1785161829054-e7d8db4f",
+    "plus1_implement": "1785161829054-e7d8db4f",
+    "gate2_block_msg_id": "1785161780090-50d1689a",
+    "supersedes_gate1_r29_freeze": "1785161499971-d04341d7",
+    "plan": "PLAN_v30",
+    "plan_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v30.json",
+    "plan_sha256": "624eefd5c388d4147e4c576dc7984df03eb521cf1235a260d7e14b90ea555297",
+    "argv_template_sha256": "5269c3a30c867199915635ddec122252477354982580353213aaa843d6a79e5e",
+    "fast_path": true,
+    "task_id": "1785141831989-47a1370d"
+  },
+  "repairs": {
+    "R1": "exact-equality across ALL operative manifests vs active_write_manifest; plan/receipt artifact identity; IN\u2194OUT conflict. Hostiles: omission, extra, PLAN_v99, IN-OUT.",
+    "R2": "lifecycle PLAN_vN text + exact registry dispatch on EVERY version-addressable leaf (no historical exemption); prospective REJECT everywhere. Fixed v24/v25 live false prose. Hostiles: wrong gen text, historical prospective, historical id mismatch."
+  },
+  "artifacts": {
+    "PLAN_v30": {
+      "sha256": "624eefd5c388d4147e4c576dc7984df03eb521cf1235a260d7e14b90ea555297"
+    },
+    "validators": {
+      "sha256": "8fcf0aacc8f8b3ac6e381e67839512482d21c9d48732cc5363686f4cfdee5899",
+      "pure": true
+    },
+    "evidence": {
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "unchanged": true
+    },
+    "harness": {
+      "sha256": "9ddb64e125e8f28f0b2c6f02ed23267f6e855a77c08d79e89023b7183de61439"
+    },
+    "tests": {
+      "sha256": "cf40420f8bcc66b0dfe41b9b9b839def20fd8a09802d69ed9ed2455d0cb920ed"
+    }
+  },
+  "baselines_pre_v30": {
+    "harness": "915e63b7c294d3b50f67fdb283c20b33751b980d625a935b2e4c8ef801069ce3",
+    "validators": "1db111e0401187d923442a7a1869504305d05dfe9b63fb9a3cb58787c85753d2",
+    "tests": "54ef9f6ba557ee345db5532fad8dd474cc3132f16ec3dde2519355722f4a1d9a"
+  },
+  "preserve_bytes": {
+    "PLAN_v29": "eb152fa33a7ee05e15238d08f9b577d69396c1b764f6881508cb81fe77d35a1c",
+    "IMPLEMENT_receipt_v15": "6265da1549e13b8e20e03370196802663b48125a30b57c80e397fde541c70156"
+  },
+  "focused_pytest": {
+    "command": "timeout 600 python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py -q",
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "exit_code": 0,
+    "summary": "83 passed in 31.49s",
+    "order": "BEFORE O_EXCL IMPLEMENT_receipt_v16 mint",
+    "delta_vs_v29": "76 -> 83 (+R1/R2 hostiles)"
+  },
+  "dry_execution": {
+    "command": [
+      "python3",
+      "scripts/optimizer_credit_state_projected_moves_recarry_measurement_run.py",
+      "--plan",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_PLAN_v30.json",
+      "--out",
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "--s3-authority-anchor-msg-id",
+      "DRYEXEC-V30-SCRATCH-ANCHOR",
+      "--dry-exec-out",
+      "artifacts/acc_entropy/_dry_exec_scratch_v30_recarry.json"
+    ],
+    "exit_code": 0,
+    "canonical_out_absent": true,
+    "scratch_sha256": "c99baed3a8fd5f2fb50002daa9e64c2631fc5269e03e8d54a219b62352d23323",
+    "runtime_harness_sha256": "9ddb64e125e8f28f0b2c6f02ed23267f6e855a77c08d79e89023b7183de61439",
+    "preview_branch": "BR-RECARRY-SPARSE-HOLDS-AB",
+    "non_authoritative": true
+  },
+  "edit_freeze": true,
+  "context_health": "self-measured; PLAN_v30 remint R1/R2; S3 HOLD until dual accept + fresh v30 +1 (S3 auth only)"
+}
