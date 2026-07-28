@@ -1,0 +1,51 @@
+{
+  "diff_vs_v8": {
+    "note": "B3 GPU fixture production envelope + CPU loader characterization; TSA/enforcer/recarry untouched",
+    "paths_changed": [
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_test_collection_census_v2.json",
+      "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_cpu.py",
+      "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_gpu_live.py"
+    ]
+  },
+  "entries": {
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_test_collection_census_v2.json": {
+      "expected_sha256": "d5fa028dbf0baf18cb65421e7cc93efec6659e27a5ccb11789a9d3297a6f65d4",
+      "why": "census_v2 remint after B3 fixture + CPU characterization (n=35)"
+    },
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": {
+      "expected_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "why": "R2: B3 emission single pair \u2014 helper opens after update; landing wrapper closes after validate; public P1b closes own path"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py": {
+      "expected_sha256": "38082933e88d016c7a37536127fc0f0ba92c5a56a776f0d695367b34dbdf932b",
+      "why": "F1 rebind POST_LANDING_TSA_SHA256 after R2 TSA edit"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_cpu.py": {
+      "expected_sha256": "9525198d44ad201fe92a407c2dcaed003e5dcd5ebad2b7eab0d807686ff47c5b",
+      "why": "C-new: CPU-static B3 fixture envelope passes load_trainer_sub2_authority_checkpoint_blob; hand-subset polarity; n=35"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_gpu_live.py": {
+      "expected_sha256": "0925a04ab0f0dd65ff7ff7cb171610294fdfecb81a3112e573a29156b2811ef0",
+      "why": "C1 B3 fixture uses production save_trainer_sub2_live_checkpoint_envelope (full canonical blob + checkpoint_format); no hand-selected field drop"
+    },
+    "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py": {
+      "expected_sha256": "5e79d9cdb99f23a00fa5bb1bd5aed984b42980ca5697e201f2213873ae9aca0f",
+      "why": "R3 centralized fail-telemetry kill path; R4 good_topology + 3 hanging hostiles"
+    },
+    "scripts/sparse_live_carrier_production_landing_dry_exec.py": {
+      "expected_sha256": "67ce6099c6919175d035cf4e9e90bc8bbc6c584fdcaf0fef811727492982bc65",
+      "why": "round4 B1-B5 freeze"
+    },
+    "scripts/sparse_live_carrier_test_collection_census.py": {
+      "expected_sha256": "842b09136a7ac86ad880ec5a9c50602ab10ecad0dd4a9909004f4ec3c4baa990",
+      "why": "round4 B1-B5 freeze"
+    }
+  },
+  "minted_at_step": "post_B3_gpu_fixture_schema_version_fix",
+  "parent_snapshot_v8_sha256": "19f2d999f5fc364131da460ee04b36842fed34f308262114a2b5d0b8b611b0ab",
+  "plan_sha256": "e090bb0207174d1d396ca6cae2c01459f0c682ec14c6ab5942722337fba3d11f",
+  "schema_version": "sparse_live_carrier_final_implementation_snapshot_v1",
+  "snapshot_revision": "v9",
+  "task_id": "1785226603783-45b748c6",
+  "tsa_entry_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a"
+}

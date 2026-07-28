@@ -26,6 +26,8 @@ from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
     select_trainer_eligible_bitlinears,
     derive_trainer_sub2_authority_states,
     trainer_authoritative_forward_context,
+    save_trainer_sub2_live_checkpoint_envelope,
+    is_p1_live_sub2_checkpoint,
 )
 from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     default_dry_run_rank_vote_spec,
@@ -170,25 +172,31 @@ def test_gpu_live_b3_landing_wrapper_default_fused_only():
 
         model = _model(device)
         batch = _batch(device)
-        eligible = select_trainer_eligible_bitlinears(model, use_ternary_bulk=True)
-        states = derive_trainer_sub2_authority_states(eligible)
-        blob = tsa.build_trainer_sub2_authority_checkpoint_blob(
-            model, eligible_modules=eligible, tensor_states=states, step=0
+        # C1 (addendum): envelope = FULL canonical producer blob
+        # (build_trainer_sub2_authority_checkpoint_blob → schema_version at TSA :1702)
+        # + checkpoint_format on top. Use production save path so fields cannot be
+        # hand-selected/dropped again (prior defect: only trainer_sub2_authority/
+        # model_state/format reconstructed).
+        p1 = save_trainer_sub2_live_checkpoint_envelope(
+            model,
+            use_ternary_bulk=True,
+            eligible_scope="all-bitlinear",
+            step=0,
+            config={"proof": "gpu_live_b3"},
+            source_pin="gpu_live_b3",
+            epoch=0,
         )
-        # (b) preflight valid P1 envelope BEFORE landing attempt
-        p1 = {
-            "trainer_sub2_authority": blob["trainer_sub2_authority"],
-            "model_state": blob["model_state"],
-            "format": getattr(tsa, "P1_LIVE_CHECKPOINT_FORMAT", "p1_live"),
-        }
-        if not tsa.is_p1_live_sub2_checkpoint(p1):
-            # try known envelope wrappers if any
-            for key in ("checkpoint_format", "p1_live_format"):
-                p1[key] = getattr(tsa, "P1_LIVE_CHECKPOINT_FORMAT", "p1_live")
-            if not tsa.is_p1_live_sub2_checkpoint(p1):
-                pytest.fail(
-                    f"B3 P1 envelope preflight failed: is_p1_live_sub2_checkpoint=False keys={list(p1)}"
-                )
+        if not is_p1_live_sub2_checkpoint(p1):
+            pytest.fail(
+                f"B3 P1 envelope preflight failed after production save path: "
+                f"keys={list(p1)} schema_version={p1.get('schema_version')!r} "
+                f"checkpoint_format={p1.get('checkpoint_format')!r}"
+            )
+        if p1.get("schema_version") != tsa.TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION:
+            pytest.fail(
+                f"B3 production envelope missing/ mismatched schema_version: "
+                f"{p1.get('schema_version')!r}"
+            )
 
         landing = build_sparse_vote_authority_landing_receipt(
             plan_sha256="0" * 64,

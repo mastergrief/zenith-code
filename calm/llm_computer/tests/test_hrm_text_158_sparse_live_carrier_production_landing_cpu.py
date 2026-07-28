@@ -818,3 +818,72 @@ def test_enforcer_duplicate_start_then_hang_kills():
         assert "TERM" in kills and "KILL" in kills, kills
         assert "duplicate start" in str(doc.get("error", "")).lower()
 
+
+def test_b3_fixture_envelope_passes_production_blob_loader():
+    """C-new: CPU-static — exact B3 fixture envelope (production save path) must
+    satisfy load_trainer_sub2_authority_checkpoint_blob schema_version contract
+    (TSA :1726). Catches hand-wrap drift before GPU.
+    """
+    import torch
+    from calm.hrm_text_158.bit_linear import BitLinear
+    from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
+        TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
+        P1_LIVE_CHECKPOINT_FORMAT,
+        is_p1_live_sub2_checkpoint,
+        load_trainer_sub2_authority_checkpoint_blob,
+        save_trainer_sub2_live_checkpoint_envelope,
+        select_trainer_eligible_bitlinears,
+    )
+
+    class _Tiny(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = BitLinear(4, 4, bias=False)
+
+        def forward(self, x):
+            return self.lin(x)
+
+    model = _Tiny()
+    # EXACT same construction path as gpu_live B3 fixture
+    envelope = save_trainer_sub2_live_checkpoint_envelope(
+        model,
+        use_ternary_bulk=True,
+        eligible_scope="all-bitlinear",
+        step=0,
+        config={"proof": "gpu_live_b3"},
+        source_pin="gpu_live_b3",
+        epoch=0,
+    )
+    assert is_p1_live_sub2_checkpoint(envelope) is True
+    assert envelope.get("schema_version") == TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION
+    assert envelope.get("checkpoint_format") == P1_LIVE_CHECKPOINT_FORMAT
+    assert "trainer_sub2_authority" in envelope and "model_state" in envelope
+    # must not be a hand-selected subset — full producer keys present
+    for key in ("schema_version", "artifact_role", "model_state", "trainer_sub2_authority",
+                "checkpoint_format"):
+        assert key in envelope, key
+
+    fresh = _Tiny()
+    eligible = select_trainer_eligible_bitlinears(fresh, use_ternary_bulk=True)
+    states = load_trainer_sub2_authority_checkpoint_blob(
+        fresh,
+        envelope,
+        eligible_modules=eligible,
+        device="cpu",
+    )
+    assert set(states) == set(eligible)
+
+    # polarity: hand-selected subset (the prior defect) must fail :1726
+    hand = {
+        "trainer_sub2_authority": envelope["trainer_sub2_authority"],
+        "model_state": envelope["model_state"],
+        "checkpoint_format": P1_LIVE_CHECKPOINT_FORMAT,
+    }
+    with pytest.raises(ValueError, match="2C4a checkpoint blob schema mismatch"):
+        load_trainer_sub2_authority_checkpoint_blob(
+            _Tiny(),
+            hand,
+            eligible_modules=select_trainer_eligible_bitlinears(_Tiny(), use_ternary_bulk=True),
+            device="cpu",
+        )
+

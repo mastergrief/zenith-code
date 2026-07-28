@@ -4,6 +4,7 @@
     "test_b1_omitted_mode_defaults_fused_only_dense_symbols_not_called",
     "test_b2_omitted_mode_signature_default",
     "test_b2_post_resume_update_proof_discriminator_values",
+    "test_b3_fixture_envelope_passes_production_blob_loader",
     "test_b3_landing_corrupt_envelope_fails_without_b1_substitution",
     "test_builder_signatures_default_fused_only",
     "test_call_count_not_one_rejected",
@@ -36,7 +37,7 @@
     "test_tamper_wrapper_p1b_receipt_sha256_rejected",
     "test_update_only_fb_zero_rejected"
   ],
-  "cpu_sha256": "1c37d1bcd8e09c64fd2d3f5d19487562ade25fd1ba269b028f5f77813f81ed5f",
+  "cpu_sha256": "9525198d44ad201fe92a407c2dcaed003e5dcd5ebad2b7eab0d807686ff47c5b",
   "gpu_module": "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_gpu_live.py",
   "gpu_nodes": [
     "test_gpu_live_b1_default_fused_only_emits_phase_events",
@@ -45,7 +46,7 @@
     "test_gpu_live_b3_substitution_impossible_on_corrupt_envelope",
     "test_gpu_live_oracle_on_events_equal_parity"
   ],
-  "gpu_sha256": "49a9e2725b3ad0da27f9eebd94168b4bf6e6e06a7088355d09fdbed92e55bcb1",
+  "gpu_sha256": "0925a04ab0f0dd65ff7ff7cb171610294fdfecb81a3112e573a29156b2811ef0",
   "required_gpu_nodes": [
     "test_gpu_live_b1_default_fused_only_emits_phase_events",
     "test_gpu_live_b2_roundtrip_default_fused_only",
