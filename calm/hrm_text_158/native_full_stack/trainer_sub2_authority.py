@@ -35,6 +35,7 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_learner import (
     make_candidate_authority_tensor_state,
     project_s1_gradient_to_moves,
     rank_bucketed_int16_votes,
+    sparse_rank_bucketed_int16_vote_events_from_weighted_grad,
     tensor_sha256,
     validate_authoritative_resume_payload,
 )
@@ -509,6 +510,466 @@ def _default_local_vote_update_spec() -> VoteUpdateSpec:
 
 def _sparse_vote_events(votes: torch.Tensor) -> SparseVoteEvents:
     return SparseVoteEvents.from_dense_votes(votes)
+
+
+SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY = "fused_only"
+SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON = "oracle_on"
+_SPARSE_VOTE_AUTHORITY_MODES = frozenset(
+    {
+        SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,
+        SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON,
+    }
+)
+
+
+def normalize_sparse_vote_authority_mode(
+    sparse_vote_authority_mode: object = SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,
+) -> str:
+    """Fail-closed mode normalizer. Omitted default is fused_only; None is REJECT."""
+
+    if sparse_vote_authority_mode is None:
+        raise TypeError(
+            "sparse_vote_authority_mode must not be None; "
+            "omit the keyword for default fused_only"
+        )
+    if not isinstance(sparse_vote_authority_mode, str):
+        raise TypeError(
+            "sparse_vote_authority_mode must be str, "
+            f"got {type(sparse_vote_authority_mode).__name__}"
+        )
+    if sparse_vote_authority_mode not in _SPARSE_VOTE_AUTHORITY_MODES:
+        raise ValueError(
+            "sparse_vote_authority_mode must be one of "
+            f"{sorted(_SPARSE_VOTE_AUTHORITY_MODES)}, got {sparse_vote_authority_mode!r}"
+        )
+    return sparse_vote_authority_mode
+
+
+def _dense_votes_from_sparse_events(
+    events: SparseVoteEvents,
+    *,
+    shape: Sequence[int] | torch.Size,
+) -> torch.Tensor:
+    """Votes-only reconstruction for oracle proof — NEVER production apply input."""
+
+    dense = torch.zeros(tuple(int(x) for x in shape), dtype=torch.int16).reshape(-1)
+    if events.event_count() > 0:
+        dense[events.indices] = events.values
+    return dense.reshape(tuple(int(x) for x in shape)).contiguous()
+
+
+def resolve_sparse_vote_authority_path(
+    *,
+    weighted_grad_by_key: Mapping[str, torch.Tensor],
+    q_levels_by_key: Mapping[str, torch.Tensor],
+    rank_spec: Any,
+    sparse_vote_authority_mode: str = SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,
+) -> dict[str, Any]:
+    """Shared B1/B2/B3 mode facade: fused producer authoritative; oracle_on opt-in only.
+
+    Returns path-derived mode discriminator fields. Callers MUST pass
+    votes_by_key=None + sparse_vote_authority_only=True into apply and MUST set
+    receipt sparse_vote_authority_mode from resolved_mode (never independently).
+    """
+
+    resolved_mode = normalize_sparse_vote_authority_mode(sparse_vote_authority_mode)
+    if set(weighted_grad_by_key) != set(q_levels_by_key):
+        raise ValueError("weighted_grad_by_key and q_levels_by_key must have identical keys")
+
+    sparse_events_by_key: dict[str, SparseVoteEvents] = {}
+    for key in sorted(weighted_grad_by_key):
+        sparse_events_by_key[key] = sparse_rank_bucketed_int16_vote_events_from_weighted_grad(
+            weighted_grad_by_key[key],
+            q_levels_by_key[key],
+            rank_spec,
+        )
+
+    oracle_only: dict[str, Any] | None = None
+    if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON:
+        dense_derived_by_key: dict[str, SparseVoteEvents] = {}
+        events_equal_by_key: dict[str, bool] = {}
+        for key in sorted(weighted_grad_by_key):
+            weighted_grad = weighted_grad_by_key[key]
+            credit = credit_from_weighted_grad(weighted_grad)
+            moves = project_s1_gradient_to_moves(weighted_grad, q_levels_by_key[key])
+            votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
+            dense_derived = _sparse_vote_events(votes)
+            dense_derived_by_key[key] = dense_derived
+            fused = sparse_events_by_key[key]
+            events_equal_by_key[key] = bool(
+                fused.event_count() == dense_derived.event_count()
+                and (
+                    fused.event_count() == 0
+                    or (
+                        torch.equal(fused.indices, dense_derived.indices)
+                        and torch.equal(fused.values, dense_derived.values)
+                    )
+                )
+            )
+        oracle_only = {
+            "dense_derived_sparse_events_by_key": dense_derived_by_key,
+            "events_equal_fused_vs_dense_derived": all(events_equal_by_key.values()),
+            "events_equal_by_key": events_equal_by_key,
+            "dense_reference_tagged": "oracle_only",
+        }
+
+    if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None:
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_path_resolved_mode(resolved_mode)
+
+    return {
+        "resolved_mode": resolved_mode,
+        "sparse_vote_authority_mode": resolved_mode,  # path-derived discriminator
+        "sparse_events_by_key": sparse_events_by_key,
+        "sparse_vote_authority_only": True,
+        "dense_vote_authority_skipped": True,
+        "candidate_oracle_control_enabled": False,
+        "votes_by_key_applied": None,
+        "oracle_only": oracle_only,
+        "transient_over2_tensors_fused_only": ("weighted_grad",),
+    }
+
+
+def _fused_or_oracle_transient_over2(resolved_mode: str) -> tuple[str, ...]:
+    if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY:
+        return ("weighted_grad",)
+    return (
+        "weighted_grad",
+        "decoded_bounded_accumulator_for_exact_oracle_control",
+        "dense_oracle_qacc_reference_result",
+    )
+
+
+def _build_vote_projection_proof(
+    *,
+    rank_spec: Any,
+    update_spec: VoteUpdateSpec,
+    resolved_mode: str,
+    total_sparse_events: int,
+    oracle_only: Any,
+) -> dict[str, Any]:
+    proof: dict[str, Any] = {
+        "rank_vote_spec": rank_spec.to_live_dict(),
+        "vote_update_spec": asdict(update_spec),
+        "candidate_mode": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        "candidate_sparse_vote_events_only": True,
+        "dense_vote_authority_persisted": False,
+        "sparse_vote_authority_mode": resolved_mode,
+        "sparse_vote_authority_only": True,
+        "dense_vote_authority_skipped": True,
+        "votes_by_key_applied": None,
+        "candidate_oracle_control_enabled": False,
+        "total_sparse_vote_event_count": int(total_sparse_events),
+        "transient_over2_tensors": list(_fused_or_oracle_transient_over2(resolved_mode)),
+    }
+    # ABSENCE policy: oracle_only key present only under oracle_on
+    if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON:
+        proof["oracle_only"] = oracle_only
+    return proof
+
+
+def validate_sparse_vote_authority_mode_matches_execution_path(
+    receipt_fields: Mapping[str, Any],
+    *,
+    resolved_mode: str,
+) -> None:
+    """Reject caller-authored discriminator that disagrees with path-resolved mode.
+
+    resolved_mode MUST come from an independent path witness / facade result — never
+    from the claimed receipt field being validated (no self-compare).
+    """
+
+    claimed = receipt_fields.get("sparse_vote_authority_mode")
+    if claimed != resolved_mode:
+        raise ValueError(
+            "sparse_vote_authority_mode discriminator mismatch: "
+            f"claimed={claimed!r} resolved={resolved_mode!r}"
+        )
+    if receipt_fields.get("sparse_vote_authority_only") is not True:
+        raise ValueError("sparse_vote_authority_only must be True on production path")
+    if receipt_fields.get("votes_by_key_applied") is not None:
+        raise ValueError("votes_by_key_applied must be None on sparse authority path")
+    if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY:
+        if "oracle_only" in receipt_fields and receipt_fields.get("oracle_only") is not None:
+            raise ValueError("oracle_only must be ABSENT/None under fused_only")
+        tot = receipt_fields.get("transient_over2_tensors")
+        if list(tot) != ["weighted_grad"]:
+            raise ValueError(
+                "fused_only transient_over2_tensors must be exactly ['weighted_grad'], "
+                f"got {tot!r}"
+            )
+
+
+def _path_witness_token(
+    *,
+    resolved_mode: str,
+    execution_nonce: str,
+    weighted_grad_capture_sha256_by_key: Mapping[str, str],
+) -> str:
+    """Non-caller-authored path witness bound at execution time."""
+
+    payload = {
+        "resolved_mode": resolved_mode,
+        "execution_nonce": execution_nonce,
+        "weighted_grad_capture_sha256_by_key": {
+            str(k): str(v)
+            for k, v in sorted(weighted_grad_capture_sha256_by_key.items())
+        },
+        "schema": "sparse_vote_path_witness_v1",
+    }
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(blob).hexdigest()
+
+
+class SparseVoteExecutionWitness:
+    """Execution-scoped counters + path-mode observation (findings 2/A/B).
+
+    Validity requires forward_backward_count==1 AND update_count==1 (no max()).
+    resolved_mode is observed only at resolve_sparse_vote_authority_path.
+    """
+
+    def __init__(self) -> None:
+        self.forward_backward_count = 0
+        self.update_count = 0
+        self.weighted_grad_capture_sha256_by_key: dict[str, str] = {}
+        self.path_resolved_mode_observations: list[str] = []
+
+    def note_forward_backward(self, weighted_grad_by_key: Mapping[str, torch.Tensor]) -> None:
+        self.forward_backward_count += 1
+        for key, tensor in sorted(weighted_grad_by_key.items()):
+            self.weighted_grad_capture_sha256_by_key[str(key)] = tensor_sha256(
+                tensor.detach()
+            )
+
+    def note_update(self) -> None:
+        self.update_count += 1
+
+    def note_path_resolved_mode(self, resolved_mode: str) -> None:
+        mode = str(resolved_mode)
+        if self.path_resolved_mode_observations and mode != self.path_resolved_mode_observations[-1]:
+            raise ValueError(
+                "conflicting path_resolved_mode observations: "
+                f"{self.path_resolved_mode_observations[-1]!r} vs {mode!r}"
+            )
+        self.path_resolved_mode_observations.append(mode)
+
+    def witnessed_path_resolved_mode(self) -> str:
+        if not self.path_resolved_mode_observations:
+            raise ValueError("path_resolved_mode never observed at resolve site")
+        if len(self.path_resolved_mode_observations) != 1:
+            # multiple identical ok if same; conflict already rejected
+            # require exactly one observation event for one-execution claim
+            if len(set(self.path_resolved_mode_observations)) != 1:
+                raise ValueError("multiple distinct path_resolved_mode observations")
+            # still require exactly one observation for strict one-execution
+            if len(self.path_resolved_mode_observations) != 1:
+                raise ValueError(
+                    "path_resolved_mode observation count must be 1 for one-execution, "
+                    f"got {len(self.path_resolved_mode_observations)}"
+                )
+        return self.path_resolved_mode_observations[0]
+
+    @property
+    def forward_backward_update_call_count(self) -> int:
+        # kept for legacy field; validity uses both counts == 1 independently
+        if self.forward_backward_count == 1 and self.update_count == 1:
+            return 1
+        return int(self.forward_backward_count + self.update_count)
+
+
+# process-local active witness (tests may install); core always creates fresh
+_ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS: SparseVoteExecutionWitness | None = None
+_PHASE_EMITTER: Any | None = None  # optional (kind, phase) -> None for GPU phase hooks
+
+def _emit_phase(kind: str, phase: str) -> None:
+    emitter = _PHASE_EMITTER
+    if emitter is not None:
+        emitter(kind, phase)
+
+
+def p1b_receipt_canonical_sha256(receipt: "TrainerSub2AuthorityLiveConversionReceipt") -> str:
+    """Canonical digest of unchanged P1b receipt (S2 digest-bound one-execution)."""
+
+    payload = receipt.to_dict() if hasattr(receipt, "to_dict") else asdict(receipt)
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+    return hashlib.sha256(blob).hexdigest()
+
+
+@dataclass(frozen=True)
+class SparseVoteAuthorityLandingReceipt:
+    """Task-local wrapper around unchanged P1b live conversion receipt (Q2/S2)."""
+
+    schema_version: str
+    slice_readiness_claim: bool
+    sparse_vote_authority_subproof: dict[str, Any]
+    p1b_live_conversion_receipt: TrainerSub2AuthorityLiveConversionReceipt
+    p1b_receipt_sha256: str
+    core_execution_identity: dict[str, Any]
+    plan_sha256: str
+    task_id: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "slice_readiness_claim": bool(self.slice_readiness_claim),
+            "sparse_vote_authority_subproof": dict(self.sparse_vote_authority_subproof),
+            "p1b_live_conversion_receipt": self.p1b_live_conversion_receipt.to_dict(),
+            "p1b_receipt_sha256": self.p1b_receipt_sha256,
+            "core_execution_identity": dict(self.core_execution_identity),
+            "plan_sha256": self.plan_sha256,
+            "task_id": self.task_id,
+        }
+
+
+def validate_sparse_vote_authority_landing_receipt(
+    receipt: SparseVoteAuthorityLandingReceipt,
+) -> None:
+    if receipt.schema_version != "sparse_vote_authority_landing_receipt_v1":
+        raise ValueError("landing receipt schema_version mismatch")
+    if receipt.slice_readiness_claim is not False:
+        raise ValueError("slice_readiness_claim must be hard-false on landing receipt")
+    recomputed = p1b_receipt_canonical_sha256(receipt.p1b_live_conversion_receipt)
+    if recomputed != receipt.p1b_receipt_sha256:
+        raise ValueError("p1b_receipt_sha256 mismatch vs embedded P1b payload")
+    core_id = dict(receipt.core_execution_identity)
+    sub_id = dict(receipt.sparse_vote_authority_subproof.get("execution_identity") or {})
+    for bag, label in ((core_id, "core"), (sub_id, "subproof")):
+        if str(bag.get("p1b_receipt_sha256")) != recomputed:
+            raise ValueError(f"{label} execution_identity.p1b_receipt_sha256 mismatch")
+        if int(bag.get("forward_backward_count", -1)) != 1:
+            raise ValueError(f"{label} forward_backward_count must be 1")
+        if int(bag.get("update_count", -1)) != 1:
+            raise ValueError(f"{label} update_count must be 1")
+        if int(bag.get("forward_backward_update_call_count", -1)) != 1:
+            raise ValueError(f"{label} forward_backward_update_call_count must be 1")
+    # Independent resolved mode from path observation at resolve site — NOT from kwarg/claim
+    resolved_mode = str(core_id.get("path_resolved_mode") or "")
+    if not resolved_mode:
+        raise ValueError("core_execution_identity missing path_resolved_mode witness")
+    if int(core_id.get("path_resolved_mode_observation_count", 0)) != 1:
+        raise ValueError("path_resolved_mode observation count must be 1")
+    expected_token = _path_witness_token(
+        resolved_mode=resolved_mode,
+        execution_nonce=str(core_id.get("execution_nonce") or ""),
+        weighted_grad_capture_sha256_by_key=dict(
+            core_id.get("weighted_grad_capture_sha256_by_key") or {}
+        ),
+    )
+    if str(core_id.get("path_witness_token") or "") != expected_token:
+        raise ValueError("path_witness_token mismatch vs execution artifacts")
+    if str(sub_id.get("path_witness_token") or "") != expected_token:
+        raise ValueError("subproof path_witness_token mismatch")
+    # claimed discriminator vs independent path witness
+    validate_sparse_vote_authority_mode_matches_execution_path(
+        receipt.sparse_vote_authority_subproof,
+        resolved_mode=resolved_mode,
+    )
+    wg = core_id.get("weighted_grad_capture_sha256_by_key")
+    if not isinstance(wg, dict) or not wg:
+        raise ValueError("weighted_grad_capture_sha256_by_key must be non-empty per-key map")
+    forbidden_pollution = {"total_sparse_vote_event_count", "post_resume_payload_sha256_after"}
+    if forbidden_pollution & set(wg):
+        raise ValueError(
+            "weighted_grad_capture_sha256_by_key must not contain pollution keys "
+            f"{forbidden_pollution}"
+        )
+
+
+def run_sparse_vote_authority_b3_core(
+    **kwargs: Any,
+) -> tuple[TrainerSub2AuthorityLiveConversionReceipt, dict[str, Any], dict[str, Any]]:
+    """ONE execution core: returns (p1b_receipt, sparse_subproof, core_execution_identity).
+
+    Public P1b builder returns only the first element; wrapper wraps all three.
+    """
+
+    global _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS
+    witness = SparseVoteExecutionWitness()
+    prior = _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS
+    _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS = witness
+    try:
+        sparse_mode = kwargs.get(
+            "sparse_vote_authority_mode", SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY
+        )
+        p1b = _build_trainer_sub2_authority_live_conversion_receipt_impl(**kwargs)
+    finally:
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS = prior
+
+    digest = p1b_receipt_canonical_sha256(p1b)
+    # executed mode from path observation at resolve site (B) — kwarg is request only
+    resolved_mode = witness.witnessed_path_resolved_mode()
+    wg_map = dict(witness.weighted_grad_capture_sha256_by_key)
+    fb = int(witness.forward_backward_count)
+    upd = int(witness.update_count)
+    call_count = 1 if (fb == 1 and upd == 1) else int(fb + upd)
+    execution_nonce = hashlib.sha256(
+        f"{digest}:{p1b.post_resume_payload_sha256_after}:{resolved_mode}:{fb}:{upd}".encode()
+    ).hexdigest()
+    path_token = _path_witness_token(
+        resolved_mode=resolved_mode,
+        execution_nonce=execution_nonce,
+        weighted_grad_capture_sha256_by_key=wg_map,
+    )
+    core_execution_identity = {
+        "execution_nonce": execution_nonce,
+        "forward_backward_update_call_count": call_count,
+        "forward_backward_count": fb,
+        "update_count": upd,
+        "weighted_grad_capture_sha256_by_key": wg_map,
+        "post_update_payload_sha256": str(p1b.post_resume_payload_sha256_after),
+        "p1b_receipt_sha256": digest,
+        "path_resolved_mode": resolved_mode,
+        "path_resolved_mode_observation_count": len(witness.path_resolved_mode_observations),
+        "path_witness_token": path_token,
+        "requested_sparse_vote_authority_mode": normalize_sparse_vote_authority_mode(
+            sparse_mode
+        ),
+    }
+    subproof: dict[str, Any] = {
+        "sparse_vote_authority_mode": resolved_mode,
+        "sparse_vote_authority_only": True,
+        "dense_vote_authority_skipped": True,
+        "votes_by_key_applied": None,
+        "candidate_oracle_control_enabled": False,
+        "fused_sparse_event_count_total": int(p1b.total_sparse_vote_event_count),
+        "mutation_witness": {
+            "post_resume_update_mutated": bool(p1b.post_resume_update_mutated),
+            "q_changed_count": int(p1b.q_changed_count),
+        },
+        "transient_over2_tensors": ["weighted_grad"],
+        "execution_identity": dict(core_execution_identity),
+    }
+    if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON:
+        subproof["oracle_only"] = {"dense_reference_tagged": "oracle_only"}
+    return p1b, subproof, core_execution_identity
+
+
+def build_sparse_vote_authority_landing_receipt(
+    *,
+    plan_sha256: str,
+    task_id: str,
+    **kwargs: Any,
+) -> SparseVoteAuthorityLandingReceipt:
+    # R2: single B3 emission pair — started after update in
+    # _run_live_p1_vote_carrier_subproof; closed here after full receipt
+    # construct + validate (covers P1b receipt/validation too).
+    p1b, subproof, core_id = run_sparse_vote_authority_b3_core(**kwargs)
+    receipt = SparseVoteAuthorityLandingReceipt(
+        schema_version="sparse_vote_authority_landing_receipt_v1",
+        slice_readiness_claim=False,
+        sparse_vote_authority_subproof=subproof,
+        p1b_live_conversion_receipt=p1b,
+        p1b_receipt_sha256=str(core_id["p1b_receipt_sha256"]),
+        core_execution_identity=core_id,
+        plan_sha256=str(plan_sha256),
+        task_id=str(task_id),
+    )
+    validate_sparse_vote_authority_landing_receipt(receipt)
+    _emit_phase("PHASE_END", "emission")
+    return receipt
 
 
 def _eligible_master_hashes(eligible_modules: Mapping[str, BitLinear]) -> dict[str, str]:
@@ -1717,6 +2178,7 @@ def build_trainer_sub2_authority_local_update_receipt(
     weight_decay: float = 0.0,
     step: int = 0,
     vote_update_spec: VoteUpdateSpec | None = None,
+    sparse_vote_authority_mode: str = SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,
 ) -> TrainerSub2AuthorityLocalUpdateReceipt:
     """Run the gated 2C2 default-off trainer local qacc proof."""
 
@@ -1736,12 +2198,12 @@ def build_trainer_sub2_authority_local_update_receipt(
     rank_spec = default_dry_run_rank_vote_spec()
     update_spec = vote_update_spec or _default_local_vote_update_spec()
     vote_specs_by_key = {key: update_spec for key in states}
-    dense_votes_by_key: dict[str, torch.Tensor] = {}
-    sparse_events_by_key: dict[str, dict[int, int]] = {}
+    weighted_grad_by_key: dict[str, torch.Tensor] = {}
     weighted_grad_stats: dict[str, dict[str, Any]] = {}
     prior_training = bool(model.training)
     loss_finite = False
     try:
+        _emit_phase("PHASE_START", "forward_backward")
         model.train(True)
         model.zero_grad(set_to_none=True)
         with trainer_authoritative_forward_context(
@@ -1758,31 +2220,46 @@ def build_trainer_sub2_authority_local_update_receipt(
             loss_to_backward.backward()
             for key, state in sorted(states.items()):
                 weighted_grad = handle.weighted_grad(key)
-                credit = credit_from_weighted_grad(weighted_grad)
-                moves = project_s1_gradient_to_moves(weighted_grad, state.q_levels)
-                votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
-                dense_votes_by_key[key] = votes.detach().cpu().to(torch.int16).contiguous()
-                sparse_events_by_key[key] = _sparse_vote_events(votes)
+                weighted_grad_by_key[key] = weighted_grad
                 weighted_grad_stats[key] = {
                     "weighted_grad_shape": list(weighted_grad.shape),
                     "weighted_grad_nonzero_count": int((weighted_grad != 0).sum().item()),
-                    "credit_nonzero_count": int((credit != 0).sum().item()),
-                    "projected_move_nonzero_count": int((moves != 0).sum().item()),
-                    "dense_rank_vote_nonzero_count": int((votes != 0).sum().item()),
-                    "sparse_vote_event_count": int(sparse_events_by_key[key].event_count()),
                     "weighted_grad_finite": bool(torch.isfinite(weighted_grad).all().item()),
                 }
     finally:
         model.train(prior_training)
 
+    if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None:
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_forward_backward(weighted_grad_by_key)
+    _emit_phase("PHASE_END", "forward_backward")
+
+    path = resolve_sparse_vote_authority_path(
+        weighted_grad_by_key=weighted_grad_by_key,
+        q_levels_by_key={key: state.q_levels for key, state in states.items()},
+        rank_spec=rank_spec,
+        sparse_vote_authority_mode=sparse_vote_authority_mode,
+    )
+    resolved_mode = str(path["resolved_mode"])
+    sparse_events_by_key = dict(path["sparse_events_by_key"])
+    for key, events in sparse_events_by_key.items():
+        weighted_grad_stats[key]["sparse_vote_event_count"] = int(events.event_count())
+        weighted_grad_stats[key]["sparse_vote_authority_mode"] = resolved_mode
+
+    # fused_only: NO densify, NO dense oracle parity (oracle_on compartment only)
+    _emit_phase("PHASE_START", "update")
     step_result = apply_bounded_delta_vote_step(
         states,
-        dense_votes_by_key,
+        None,
         vote_specs_by_key,
         candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
         candidate_sparse_vote_events_by_key=sparse_events_by_key,
         candidate_oracle_control_enabled=False,
+        sparse_vote_authority_only=True,
     )
+    if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None:
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_update()
+    _emit_phase("PHASE_END", "update")
+    _emit_phase("PHASE_START", "emission")
     deferred_backlog_output_entry_count = sum(
         len(entries)
         for entries in step_result.deferred_backlog.values()
@@ -1797,17 +2274,26 @@ def build_trainer_sub2_authority_local_update_receipt(
         and trainer_builder_has_no_active_control_parameters
     )
     proof_by_key = step_result.global_summary["candidate_local_update_proof_by_key"]
-    parity_by_key = {
-        key: _oracle_parity_proof(
-            state_key=key,
-            prior_state=states[key],
-            next_state=step_result.tensor_states[key],
-            votes=dense_votes_by_key[key],
-            vote_spec=vote_specs_by_key[key],
-            candidate_proof=proof_by_key[key],
-        )
-        for key in sorted(states)
-    }
+    parity_by_key: dict[str, Any] = {}
+    if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON:
+        dense_votes_for_oracle_proof = {
+            key: _dense_votes_from_sparse_events(
+                sparse_events_by_key[key],
+                shape=states[key].q_levels.shape,
+            )
+            for key in sparse_events_by_key
+        }
+        parity_by_key = {
+            key: _oracle_parity_proof(
+                state_key=key,
+                prior_state=states[key],
+                next_state=step_result.tensor_states[key],
+                votes=dense_votes_for_oracle_proof[key],
+                vote_spec=vote_specs_by_key[key],
+                candidate_proof=proof_by_key[key],
+            )
+            for key in sorted(states)
+        }
     after_master_hashes = _eligible_master_hashes(eligible)
     fp_masters_byte_identical = before_master_hashes == after_master_hashes
     shadow_free_after = all(
@@ -1816,6 +2302,11 @@ def build_trainer_sub2_authority_local_update_receipt(
     )
     total_sparse_events = sum(events.event_count() for events in sparse_events_by_key.values())
     q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
+    parity_ok = (
+        True
+        if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY
+        else all(bool(proof.get("parity_pass")) for proof in parity_by_key.values())
+    )
     pass_receipt = bool(
         loss_finite
         and optimizer_checks.get("pass")
@@ -1824,7 +2315,7 @@ def build_trainer_sub2_authority_local_update_receipt(
         and total_sparse_events > 0
         and q_changed_count > 0
         and all(bool(proof.get("pass")) for proof in proof_by_key.values())
-        and all(bool(proof.get("parity_pass")) for proof in parity_by_key.values())
+        and parity_ok
         and shadow_free_after
         and fp_masters_byte_identical
         and active_controls_inactive_proven
@@ -1867,22 +2358,14 @@ def build_trainer_sub2_authority_local_update_receipt(
             "forward_backward_loss_finite": bool(loss_finite),
             "weighted_grad_capture_by_key": weighted_grad_stats,
         },
-        transient_over2_tensors=(
-            "weighted_grad",
-            "credit",
-            "projected_moves",
-            "dense_rank_votes_before_sparse_event_extraction",
-            "decoded_bounded_accumulator_for_exact_oracle_control",
-            "dense_oracle_qacc_reference_result",
+        transient_over2_tensors=_fused_or_oracle_transient_over2(resolved_mode),
+        vote_projection_proof=_build_vote_projection_proof(
+            rank_spec=rank_spec,
+            update_spec=update_spec,
+            resolved_mode=resolved_mode,
+            total_sparse_events=int(total_sparse_events),
+            oracle_only=path.get("oracle_only"),
         ),
-        vote_projection_proof={
-            "rank_vote_spec": rank_spec.to_live_dict(),
-            "vote_update_spec": asdict(update_spec),
-            "candidate_mode": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
-            "candidate_sparse_vote_events_only": True,
-            "dense_vote_authority_persisted": False,
-            "total_sparse_vote_event_count": int(total_sparse_events),
-        },
         candidate_step_summary={
             "default_off_trainer_active_controls_inactive_proven": active_controls_inactive_proven,
             "global_cap_spec_passed": False,
@@ -1930,6 +2413,7 @@ def build_trainer_sub2_authority_local_update_receipt(
         non_claims=TRAINER_SUB2_LOCAL_UPDATE_NON_CLAIMS,
     )
     validate_trainer_sub2_authority_local_update_receipt(receipt)
+    _emit_phase("PHASE_END", "emission")
     return receipt
 
 
@@ -1948,6 +2432,7 @@ def build_trainer_sub2_authority_roundtrip_receipt(
     step: int = 0,
     vote_update_spec: VoteUpdateSpec | None = None,
     poison_value: float = 17.0,
+    sparse_vote_authority_mode: str = SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,
 ) -> TrainerSub2AuthorityRoundtripReceipt:
     """Run the gated 2C4a checkpoint/resume/update poison-falsification proof."""
 
@@ -2064,11 +2549,11 @@ def build_trainer_sub2_authority_roundtrip_receipt(
     rank_spec = default_dry_run_rank_vote_spec()
     update_spec = vote_update_spec or _default_local_vote_update_spec()
     vote_specs_by_key = {key: update_spec for key in loaded_states}
-    dense_votes_by_key: dict[str, torch.Tensor] = {}
-    sparse_events_by_key: dict[str, dict[int, int]] = {}
+    weighted_grad_by_key: dict[str, torch.Tensor] = {}
     loss_finite = False
     prior_training = bool(resumed_model.training)
     try:
+        _emit_phase("PHASE_START", "forward_backward")
         resumed_model.train(True)
         resumed_model.zero_grad(set_to_none=True)
         with trainer_authoritative_forward_context(
@@ -2084,23 +2569,36 @@ def build_trainer_sub2_authority_roundtrip_receipt(
             loss_finite = bool(torch.isfinite(loss_to_backward.detach()).item())
             loss_to_backward.backward()
             for key, state in sorted(loaded_states.items()):
-                weighted_grad = handle.weighted_grad(key)
-                credit = credit_from_weighted_grad(weighted_grad)
-                moves = project_s1_gradient_to_moves(weighted_grad, state.q_levels)
-                votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
-                dense_votes_by_key[key] = votes.detach().cpu().to(torch.int16).contiguous()
-                sparse_events_by_key[key] = _sparse_vote_events(votes)
+                weighted_grad_by_key[key] = handle.weighted_grad(key)
     finally:
         resumed_model.train(prior_training)
 
+    if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None:
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_forward_backward(weighted_grad_by_key)
+    _emit_phase("PHASE_END", "forward_backward")
+
+    path = resolve_sparse_vote_authority_path(
+        weighted_grad_by_key=weighted_grad_by_key,
+        q_levels_by_key={key: state.q_levels for key, state in loaded_states.items()},
+        rank_spec=rank_spec,
+        sparse_vote_authority_mode=sparse_vote_authority_mode,
+    )
+    sparse_events_by_key = dict(path["sparse_events_by_key"])
+
+    _emit_phase("PHASE_START", "update")
     step_result = apply_bounded_delta_vote_step(
         loaded_states,
-        dense_votes_by_key,
+        None,
         vote_specs_by_key,
         candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
         candidate_sparse_vote_events_by_key=sparse_events_by_key,
         candidate_oracle_control_enabled=False,
+        sparse_vote_authority_only=True,
     )
+    if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None:
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_update()
+    _emit_phase("PHASE_END", "update")
+    _emit_phase("PHASE_START", "emission")
     post_blob = build_trainer_sub2_authority_checkpoint_blob(
         resumed_model,
         eligible_modules=resumed_eligible,
@@ -2245,6 +2743,20 @@ def build_trainer_sub2_authority_roundtrip_receipt(
                 step_result.global_summary.get("candidate_dense_vote_authority_used")
             ),
             "post_resume_update_mutated_resumed_sub2_authority": bool(post_resume_mutated),
+            # full frozen discriminator / compartment set (plan b_site_receipt_propagation.B2)
+            "sparse_vote_authority_mode": str(path["resolved_mode"]),
+            "sparse_vote_authority_only": True,
+            "dense_vote_authority_skipped": True,
+            "votes_by_key_applied": None,
+            "candidate_oracle_control_enabled": False,
+            "transient_over2_tensors": list(
+                _fused_or_oracle_transient_over2(str(path["resolved_mode"]))
+            ),
+            **(
+                {"oracle_only": path.get("oracle_only")}
+                if str(path["resolved_mode"]) == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON
+                else {}
+            ),
         },
         proof_anchors=(
             "trainer_sub2_authority.py:build_trainer_sub2_authority_checkpoint_blob",
@@ -2256,6 +2768,7 @@ def build_trainer_sub2_authority_roundtrip_receipt(
         non_claims=TRAINER_SUB2_ROUNDTRIP_NON_CLAIMS,
     )
     validate_trainer_sub2_authority_roundtrip_receipt(receipt)
+    _emit_phase("PHASE_END", "emission")
     return receipt
 
 
@@ -2732,6 +3245,7 @@ def _run_live_p1_vote_carrier_subproof(
     vote_update_spec: VoteUpdateSpec | None,
     poison_value: float,
     payload_sha_before: str,
+    sparse_vote_authority_mode: str = SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,
 ) -> dict[str, Any]:
     prior_training = bool(resumed_model.training)
     try:
@@ -2765,11 +3279,11 @@ def _run_live_p1_vote_carrier_subproof(
     rank_spec = default_dry_run_rank_vote_spec()
     update_spec = vote_update_spec or _default_local_vote_update_spec()
     vote_specs_by_key = {key: update_spec for key in loaded_states}
-    dense_votes_by_key: dict[str, torch.Tensor] = {}
-    sparse_events_by_key: dict[str, dict[int, int]] = {}
+    weighted_grad_by_key: dict[str, torch.Tensor] = {}
     loss_finite = False
     prior_training = bool(resumed_model.training)
     try:
+        _emit_phase("PHASE_START", "forward_backward")
         resumed_model.zero_grad(set_to_none=True)
         resumed_model.train(True)
         with trainer_authoritative_forward_context(
@@ -2785,24 +3299,37 @@ def _run_live_p1_vote_carrier_subproof(
             loss_finite = bool(torch.isfinite(loss_to_backward.detach()).item())
             loss_to_backward.backward()
             for key, state in sorted(loaded_states.items()):
-                weighted_grad = handle.weighted_grad(key)
-                credit = credit_from_weighted_grad(weighted_grad)
-                moves = project_s1_gradient_to_moves(weighted_grad, state.q_levels)
-                votes = rank_bucketed_int16_votes(credit, moves, rank_spec)
-                dense_votes_by_key[key] = votes.detach().cpu().to(torch.int16).contiguous()
-                sparse_events_by_key[key] = _sparse_vote_events(votes)
+                weighted_grad_by_key[key] = handle.weighted_grad(key)
     finally:
         resumed_model.zero_grad(set_to_none=True)
         resumed_model.train(prior_training)
 
+    if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None:
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_forward_backward(weighted_grad_by_key)
+    _emit_phase("PHASE_END", "forward_backward")
+
+    path = resolve_sparse_vote_authority_path(
+        weighted_grad_by_key=weighted_grad_by_key,
+        q_levels_by_key={key: state.q_levels for key, state in loaded_states.items()},
+        rank_spec=rank_spec,
+        sparse_vote_authority_mode=sparse_vote_authority_mode,
+    )
+    sparse_events_by_key = dict(path["sparse_events_by_key"])
+
+    _emit_phase("PHASE_START", "update")
     step_result = apply_bounded_delta_vote_step(
         dict(loaded_states),
-        dense_votes_by_key,
+        None,
         vote_specs_by_key,
         candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
         candidate_sparse_vote_events_by_key=sparse_events_by_key,
         candidate_oracle_control_enabled=False,
+        sparse_vote_authority_only=True,
     )
+    if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None:
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_update()
+    _emit_phase("PHASE_END", "update")
+    _emit_phase("PHASE_START", "emission")
     post_blob = build_trainer_sub2_authority_checkpoint_blob(
         resumed_model,
         eligible_modules=resumed_eligible,
@@ -2844,7 +3371,7 @@ def _run_live_p1_vote_carrier_subproof(
     )
     total_sparse_events = sum(events.event_count() for events in sparse_events_by_key.values())
     q_changed_count = int(step_result.global_summary.get("q_changed_count", 0))
-    return {
+    out = {
         "poisoned_fp_master_bypass_falsified": poisoned_bypass_falsified,
         "total_sparse_vote_event_count": int(total_sparse_events),
         "q_changed_count": q_changed_count,
@@ -2855,6 +3382,9 @@ def _run_live_p1_vote_carrier_subproof(
         "post_resume_payload_hash_roundtrip_pass": bool(roundtrip_pass),
         "loss_finite": bool(loss_finite),
     }
+    # R2: B3 emission stays open through P1b receipt build/validate + landing
+    # wrapper construct/validate; wrapper closes exactly once.
+    return out
 
 
 def compute_p1_parent_parity_max_abs_diff_by_site(
@@ -2920,7 +3450,7 @@ def _vote_subproof_passes_three_row(vote: Mapping[str, Any]) -> bool:
     )
 
 
-def build_trainer_sub2_authority_live_conversion_receipt(
+def _build_trainer_sub2_authority_live_conversion_receipt_impl(
     *,
     p1_checkpoint: Mapping[str, Any],
     p1_envelope_bytes: bytes,
@@ -2939,6 +3469,7 @@ def build_trainer_sub2_authority_live_conversion_receipt(
     poison_value: float = 17.0,
     w6_parent_sha256_before: str = "",
     w6_parent_sha256_after: str = "",
+    sparse_vote_authority_mode: str = SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,
 ) -> TrainerSub2AuthorityLiveConversionReceipt:
     if not is_p1_live_sub2_checkpoint(p1_checkpoint):
         raise ValueError("P1b live conversion requires a P1 live checkpoint envelope")
@@ -3002,6 +3533,7 @@ def build_trainer_sub2_authority_live_conversion_receipt(
         vote_update_spec=vote_update_spec,
         poison_value=float(poison_value),
         payload_sha_before=payload_sha_before,
+        sparse_vote_authority_mode=sparse_vote_authority_mode,
     )
 
     parity_map = {str(key): float(value) for key, value in parity_max_abs_diff_by_site.items()}
@@ -3107,6 +3639,59 @@ def build_trainer_sub2_authority_live_conversion_receipt(
     if pass_receipt:
         validate_trainer_sub2_authority_live_conversion_receipt(receipt)
     return receipt
+
+
+
+def build_trainer_sub2_authority_live_conversion_receipt(
+    *,
+    p1_checkpoint: Mapping[str, Any],
+    p1_envelope_bytes: bytes,
+    fresh_model_fn: Callable[[], torch.nn.Module],
+    batch: Mapping[str, Any],
+    forward_loss_fn: Callable[[torch.nn.Module, Mapping[str, Any]], torch.Tensor],
+    forward_output_fn: Callable[[torch.nn.Module, Mapping[str, Any]], torch.Tensor] | None,
+    parity_max_abs_diff_by_site: Mapping[str, float],
+    use_ternary_bulk: bool,
+    eligible_scope: str = "all-bitlinear",
+    device: torch.device | str = "cpu",
+    step: int = 0,
+    source_commit_sha: str = "",
+    proof_command_argv: Sequence[str] = (),
+    vote_update_spec: VoteUpdateSpec | None = None,
+    poison_value: float = 17.0,
+    w6_parent_sha256_before: str = "",
+    w6_parent_sha256_after: str = "",
+    sparse_vote_authority_mode: str = SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,
+) -> TrainerSub2AuthorityLiveConversionReceipt:
+    """Public P1b builder: keyword-only signature preserved; core once; returns ONLY p1b."""
+
+    p1b, _subproof, _core_id = run_sparse_vote_authority_b3_core(
+        p1_checkpoint=p1_checkpoint,
+        p1_envelope_bytes=p1_envelope_bytes,
+        fresh_model_fn=fresh_model_fn,
+        batch=batch,
+        forward_loss_fn=forward_loss_fn,
+        forward_output_fn=forward_output_fn,
+        parity_max_abs_diff_by_site=parity_max_abs_diff_by_site,
+        use_ternary_bulk=use_ternary_bulk,
+        eligible_scope=eligible_scope,
+        device=device,
+        step=step,
+        source_commit_sha=source_commit_sha,
+        proof_command_argv=proof_command_argv,
+        vote_update_spec=vote_update_spec,
+        poison_value=poison_value,
+        w6_parent_sha256_before=w6_parent_sha256_before,
+        w6_parent_sha256_after=w6_parent_sha256_after,
+        sparse_vote_authority_mode=sparse_vote_authority_mode,
+    )
+    # Public P1b path is not the B3 landing wrapper; close the emission pair
+    # started by _run_live_p1_vote_carrier_subproof after full core+receipt work.
+    # Landing wrapper path closes emission itself after landing validate instead.
+    # Only one of these paths runs per call.
+    _emit_phase("PHASE_END", "emission")
+    return p1b
+
 
 
 def _resolve_live_conversion_source_commit_sha() -> str:

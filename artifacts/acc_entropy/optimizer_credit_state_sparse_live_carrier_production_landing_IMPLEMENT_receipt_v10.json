@@ -1,0 +1,148 @@
+{
+  "HEAD": "449d06576ebf14412e51e2bc131153b474875d08",
+  "LANDS_AB": false,
+  "PRE_AMEND_TSA_SHA256": "1799be9787a9218176ea667966558a5b98e921eef7cd4e546bafc9f519bd7814",
+  "authorizes_GPU_smoke": false,
+  "branch": "BR-SPARSE-VOTE-AUTHORITY-PENDING_GPU",
+  "corrections": {
+    "R1": "gpu_live B1/B2/B3: remove test-level emission pairs; flush-only test-side",
+    "R2": "B3 emission: helper opens after update; landing wrapper closes after validate; public P1b closes own path; B1/B2 unchanged",
+    "R3": "enforcer ONE fail-telemetry path; hostiles invalid_duration_then_hang / unknown_phase_start_then_hang / duplicate_start_then_hang \u2192 TERM/KILL + PHASE_TELEMETRY exit 2",
+    "R4": "enforcer good_topology self-test \u2192 CLASS_OK exit 0"
+  },
+  "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "derived_from_tsa_on_disk_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+  "final_implementation_snapshot": {
+    "diff_vs_v7_paths": [
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_test_collection_census_v2.json",
+      "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_cpu.py",
+      "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_gpu_live.py",
+      "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py"
+    ],
+    "entries": {
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_test_collection_census_v2.json": {
+        "expected_sha256": "00e0157ac7fb696fc5d27c91882927b68ffb26f1c4a5dbc3e758ecff138e41dc",
+        "why": "census_v2 remint after R1-R4 (node count may change)"
+      },
+      "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": {
+        "expected_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+        "why": "R2: B3 emission single pair \u2014 helper opens after update; landing wrapper closes after validate; public P1b closes own path"
+      },
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py": {
+        "expected_sha256": "38082933e88d016c7a37536127fc0f0ba92c5a56a776f0d695367b34dbdf932b",
+        "why": "F1 rebind POST_LANDING_TSA_SHA256 after R2 TSA edit"
+      },
+      "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_cpu.py": {
+        "expected_sha256": "1c37d1bcd8e09c64fd2d3f5d19487562ade25fd1ba269b028f5f77813f81ed5f",
+        "why": "R3/R4 enforcer hostiles + good_topology self-tests; 34 nodes"
+      },
+      "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_gpu_live.py": {
+        "expected_sha256": "49a9e2725b3ad0da27f9eebd94168b4bf6e6e06a7088355d09fdbed92e55bcb1",
+        "why": "R1: remove test-level emission START/END pairs; tests keep flush only"
+      },
+      "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py": {
+        "expected_sha256": "5e79d9cdb99f23a00fa5bb1bd5aed984b42980ca5697e201f2213873ae9aca0f",
+        "why": "R3 centralized fail-telemetry kill path; R4 good_topology + 3 hanging hostiles"
+      },
+      "scripts/sparse_live_carrier_production_landing_dry_exec.py": {
+        "expected_sha256": "67ce6099c6919175d035cf4e9e90bc8bbc6c584fdcaf0fef811727492982bc65",
+        "why": "round4 B1-B5 freeze"
+      },
+      "scripts/sparse_live_carrier_test_collection_census.py": {
+        "expected_sha256": "842b09136a7ac86ad880ec5a9c50602ab10ecad0dd4a9909004f4ec3c4baa990",
+        "why": "round4 B1-B5 freeze"
+      }
+    },
+    "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v8.json",
+    "revision": "v8",
+    "sha256": "19f2d999f5fc364131da460ee04b36842fed34f308262114a2b5d0b8b611b0ab",
+    "tsa_entry_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a"
+  },
+  "findings": [
+    "R1",
+    "R2",
+    "R3",
+    "R4"
+  ],
+  "gate2_block_msg_id": "1785241099036-f5d42a64",
+  "minted_POST_LANDING_TSA_SHA256_literal": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+  "minted_at": "2026-07-28T12:26:38Z",
+  "next": "dual accept IMPLEMENT_v10 \u2192 S4a GPU packet draft",
+  "non_claims": [
+    "not debt-row closure",
+    "not readiness flip",
+    "not LANDS-AB",
+    "not sub-2",
+    "not GPU formal pass"
+  ],
+  "parents_preserved": {
+    "FINAL_SNAPSHOT_v7": "f1c147b13e5d919ff5b87c14b662ee0a53bf3f1538fc77822a5e3bbc3463f8f1",
+    "IMPLEMENT_v9": "ec85438130ef7ed2dab724c5bf450588d8c52d1165445540be3b0014735b322c"
+  },
+  "plan_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_PLAN_v16.json",
+  "plan_revision": "v16",
+  "plan_sha256": "e090bb0207174d1d396ca6cae2c01459f0c682ec14c6ab5942722337fba3d11f",
+  "plus1_implement_msg_id": "1785236146313-e36cd4aa",
+  "prior_POST_LANDING_at_v9": "4d9f01d230fb583f0288bde95955d94ab448c17032e316dcda37f94737aa62c3",
+  "round6_dispatch_msg_id": "1785241172418-d4adb57d",
+  "schema_version": "sparse_live_carrier_production_landing_IMPLEMENT_receipt_v10",
+  "slice_readiness_claim": false,
+  "staging_manifest_addendum": {
+    "exact_staged_paths_proposed": [
+      "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_cpu.py",
+      "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_gpu_live.py",
+      "scripts/sparse_live_carrier_test_collection_census.py",
+      "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+      "scripts/sparse_live_carrier_production_landing_dry_exec.py",
+      "calm/llm_computer/tests/test_hrm_text_158_optimizer_credit_state_projected_moves_recarry_measurement.py",
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_test_collection_census_v2.json",
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v8.json",
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_IMPLEMENT_receipt_v10.json"
+    ],
+    "preserved_lineage_unstaged": [
+      "FINAL_SNAPSHOT_v1-v7",
+      "IMPLEMENT_receipt_v3-v9"
+    ],
+    "proposal": "preserved-lineage-unstaged"
+  },
+  "task_id": "1785226603783-45b748c6",
+  "validation": {
+    "census_v2_assert_cpu": {
+      "exit_code": 0,
+      "n": 34,
+      "result": "ok"
+    },
+    "cpu_landing_pytest": {
+      "exit_code": 0,
+      "n": 34,
+      "result": "34 passed in 24.62s"
+    },
+    "dry_exec_fused_only_vs_snapshot_v8": {
+      "exit_code": 0,
+      "receipt": "/tmp/sparse_live_carrier_scratch/1785226603783-45b748c6/e090bb020717/plan-dev/dry_v10_fused_only-fca495c7.json",
+      "result": "ok"
+    },
+    "dry_exec_oracle_on_schema_only_vs_snapshot_v8": {
+      "exit_code": 0,
+      "receipt": "/tmp/sparse_live_carrier_scratch/1785226603783-45b748c6/e090bb020717/plan-dev/dry_v10_oracle_on_schema_only-5b4e3fa2.json",
+      "result": "ok"
+    },
+    "enforcer_self_tests": {
+      "child_nonzero": "CHILD_NONZERO exit 2",
+      "duplicate_start_then_hang": "PHASE_TELEMETRY kills=[TERM,KILL] exit 2",
+      "good_topology": "OK exit 0",
+      "invalid_duration_then_hang": "PHASE_TELEMETRY kills=[TERM,KILL] exit 2",
+      "malformed_then_hang": "PHASE_TELEMETRY kills=[TERM,KILL] exit 2",
+      "missing_coverage": "PHASE_TELEMETRY exit 2",
+      "unknown_phase_start_then_hang": "PHASE_TELEMETRY kills=[TERM,KILL] exit 2",
+      "wrong_duration_type": "PHASE_TELEMETRY exit 2"
+    },
+    "recarry_pytest": {
+      "exit_code": 0,
+      "result": "128 passed in 47.53s"
+    }
+  }
+}

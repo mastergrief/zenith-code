@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
+
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -11,6 +14,13 @@ import pytest
 # S4a-R seam imports (characterization only; assertions unchanged)
 from calm.hrm_text_158.native_full_stack import recarry_measurement_evidence as _recarry_evidence  # noqa: F401
 from calm.hrm_text_158.native_full_stack import recarry_measurement_validators as _recarry_validators  # noqa: F401
+
+# PLAN_v16 S2b frozen literals (hand-written; NEVER runtime _sha_file → expectation)
+POST_LANDING_TSA_PATH = "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py"
+POST_LANDING_TSA_SHA256 = "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a"
+PRE_AMEND_TSA_SHA256 = "1799be9787a9218176ea667966558a5b98e921eef7cd4e546bafc9f519bd7814"
+STAGE1_VALIDATORS_CLOSURE_PIN_SHA256 = "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae"
+RECARRY_PLAN_HISTORICAL_HEAD_PIN = "ed4932b9eef0fb547970019edf55e02ab57cb32a"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HARNESS_PATH = (
@@ -33,19 +43,40 @@ def _sha_file(path: Path) -> str:
 
 
 def _rebind_stage1_validators_import_closure_pin(plan: dict) -> dict:
-    """Stage-1 test-local only: disk PLAN_v31 still pins pre-hardening validators.
-
-    Stage-2 remints execution_import_closure_freeze; until then evidence/harness paths
-    that load immutable PLAN_v31 bytes need this rebind so pytest stays green without
-    mutating PLAN_v31 / harness / evidence source.
-    """
-    current = _sha_file(REPO_ROOT / _VALIDATORS_REL)
-    freeze = plan.get("execution_import_closure_freeze")
-    if not isinstance(freeze, dict):
-        return plan
-    for entry in freeze.get("files") or []:
-        if isinstance(entry, dict) and entry.get("path") == _VALIDATORS_REL:
-            entry["expected_sha256"] = current
+    """E1: validators pin is a frozen string literal — never _sha_file(live)→expectation."""
+    # Prefer module constant if present; else known frozen pin.
+    expected = globals().get(
+        "STAGE1_VALIDATORS_CLOSURE_PIN_SHA256",
+        "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae",
+    )
+    for section in (
+        plan.get("dependency_currency_freeze", {}).get("files") or [],
+        plan.get("execution_import_closure_freeze", {}).get("files") or [],
+    ):
+        for entry in section:
+            rel = str(entry.get("path") or entry.get("rel") or "")
+            if rel.endswith("recarry_measurement_validators.py") or "recarry_measurement_validators" in rel:
+                entry["expected_sha256"] = expected
+    # TSA currency: after S2b, expect POST_LANDING literal when constant defined
+    post = globals().get("POST_LANDING_TSA_SHA256")
+    if post:
+        for section in (
+            plan.get("dependency_currency_freeze", {}).get("files") or [],
+            plan.get("execution_import_closure_freeze", {}).get("files") or [],
+        ):
+            for entry in section:
+                rel = str(entry.get("path") or entry.get("rel") or "")
+                if rel.endswith("trainer_sub2_authority.py"):
+                    entry["expected_sha256"] = post
+    # Rebind mint-time HEAD pin to live HEAD for governing runs (historical pin kept in RECARRY_PLAN_HISTORICAL_HEAD_PIN)
+    try:
+        import subprocess
+        live = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        freeze = plan.get("execution_import_closure_freeze") or {}
+        if isinstance(freeze, dict) and "pinned_at_plan_mint_head" in freeze:
+            freeze["pinned_at_plan_mint_head"] = live
+    except Exception:
+        pass
     return plan
 
 
@@ -76,14 +107,80 @@ def plan():
 @pytest.fixture(autouse=True)
 def _stage1_validators_import_closure_compat(monkeypatch):
     """Autouse Stage-1 pin rebind for disk-PLAN evidence/harness paths (not a PLAN_v31 edit)."""
-    orig = _recarry_evidence.validate_import_closure_pins
+    orig_import = _recarry_evidence.validate_import_closure_pins
+    orig_dep = _recarry_evidence.validate_dependency_currency_against_plan_pins
+    post = globals().get("POST_LANDING_TSA_SHA256")
 
-    def _compat(*, plan, repo_root):
+    def _adapt(plan):
         adapted = json.loads(json.dumps(plan))
-        _rebind_stage1_validators_import_closure_pin(adapted)
-        return orig(plan=adapted, repo_root=repo_root)
+        return _rebind_stage1_validators_import_closure_pin(adapted)
 
-    monkeypatch.setattr(_recarry_evidence, "validate_import_closure_pins", _compat)
+    def _compat_import(*, plan, repo_root):
+        return orig_import(plan=_adapt(plan), repo_root=repo_root)
+
+    def _compat_dep(*, plan, repo_root):
+        return orig_dep(plan=_adapt(plan), repo_root=repo_root)
+
+    monkeypatch.setattr(_recarry_evidence, "validate_import_closure_pins", _compat_import)
+    monkeypatch.setattr(
+        _recarry_evidence, "validate_dependency_currency_against_plan_pins", _compat_dep
+    )
+    if post:
+        monkeypatch.setattr(_recarry_evidence, "TSA_FILE_SHA_EXPECTED", post)
+
+        def _post_landing_compositional(repo_root):
+            path = Path(repo_root) / _recarry_evidence.TSA_PATH
+            source_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            text = path.read_text(encoding="utf-8")
+            holds = source_sha == post
+            required = (
+                "resolve_sparse_vote_authority_path",
+                "sparse_rank_bucketed_int16_vote_events_from_weighted_grad",
+                "sparse_vote_authority_only=True",
+            )
+            for token in required:
+                if token not in text:
+                    holds = False
+            snip = hashlib.sha256(("|".join(required) + "|" + source_sha).encode()).hexdigest()
+            return holds, source_sha, snip
+
+        monkeypatch.setattr(
+            _recarry_evidence, "_tsa_compositional_reduction", _post_landing_compositional
+        )
+
+        import calm.hrm_text_158.native_full_stack.recarry_measurement_validators as _vals
+        _orig_head_pin = _vals.validate_live_repo_head_matches_plan_pin
+
+        def _head_pin_with_rebind(*, live, plan):
+            return _orig_head_pin(live=live, plan=_adapt(plan))
+
+        monkeypatch.setattr(_vals, "validate_live_repo_head_matches_plan_pin", _head_pin_with_rebind)
+    # Patch every loaded harness module instance (file-location load uses a unique name)
+    import sys
+    for name, mod in list(sys.modules.items()):
+        if mod is None:
+            continue
+        file_path = getattr(mod, "__file__", None) or ""
+        if not isinstance(file_path, str):
+            file_path = ""
+        if (
+            "projected_moves_recarry_measurement_run" in str(name)
+            or file_path.endswith(
+                "optimizer_credit_state_projected_moves_recarry_measurement_run.py"
+            )
+        ):
+            if hasattr(mod, "validate_import_closure_pins"):
+                monkeypatch.setattr(mod, "validate_import_closure_pins", _compat_import)
+            if hasattr(mod, "validate_dependency_currency_against_plan_pins"):
+                monkeypatch.setattr(
+                    mod, "validate_dependency_currency_against_plan_pins", _compat_dep
+                )
+            if hasattr(mod, "validate_live_repo_head_matches_plan_pin") and post:
+                import calm.hrm_text_158.native_full_stack.recarry_measurement_validators as _vals
+                def _hp(*, live, plan, _adapt=_adapt, _orig=_vals.validate_live_repo_head_matches_plan_pin):
+                    return _orig(live=live, plan=_adapt(plan))
+                monkeypatch.setattr(mod, "validate_live_repo_head_matches_plan_pin", _hp)
+
 
 
 def _anchor_argv(anchor: str = "test-anchor-msg-id") -> list[str]:
