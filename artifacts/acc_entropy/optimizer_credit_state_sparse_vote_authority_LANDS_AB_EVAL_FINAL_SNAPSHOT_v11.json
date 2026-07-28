@@ -1,0 +1,229 @@
+{
+  "bdl_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+  "blocker_closures": {
+    "gate1_bounce_crosscheck_fail_open": "crosscheck_production_q_vs_receipt_proof now fail-closed when builder_receipt_pass=True: empty proof map \u2192 crosscheck_ok=False reason=no_receipt_proof_to_crosscheck_while_builder_pass; proof map with zero candidate_q_sha256_after \u2192 no_candidate_q_in_receipt_proof_while_builder_pass; partial key coverage of production universe \u2192 partial_candidate_q_coverage_while_builder_pass. builder_receipt_pass=False keeps soft-ok missing-proof (bind gate fails separately). site_measurement passes builder_receipt_pass into crosscheck. Hostile test_builder_pass_empty_receipt_proof_cannot_match_twin: pass=True+empty proof \u2192 production_sparse_matches_twin False + crosscheck_ok False.",
+    "scope": "narrow only; B1 route / named-only oracle / phase brackets / splits frozen-equivalent from v10"
+  },
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "forbidden_absent": {
+    "packet_v1": true,
+    "production_TSA_BDL_edits": true,
+    "stage_commit_push": true,
+    "terminal_receipt": true
+  },
+  "gate1_bounce_v10_msg_id": "1785271129359-7ddc21a2",
+  "implement_v10_dispatch_msg_id": "1785270417442-2a899bb4",
+  "implementation_files": [
+    {
+      "loc": 90,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_authoritative_payload.py",
+      "sha256": "237afbdaa0959f2128f48ec68451264a3c05e29790b70903da7d5e7a2866631d"
+    },
+    {
+      "loc": 240,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py",
+      "sha256": "b82dd32ab72a82dce817932d5796e57510346d314f05afcffa96298ae945d5b2"
+    },
+    {
+      "loc": 331,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py",
+      "sha256": "37b99c86b5843c85d4bdb4ba93cd8c10531c8e3f64532384990bfabee54dcf8f"
+    },
+    {
+      "loc": 496,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py",
+      "sha256": "4aa3a5998c38e0ba6dea99ae133cbf8568bdae05e1bfb104bf485ed752b2506e"
+    },
+    {
+      "loc": 172,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+      "sha256": "d1aa147b600164330526f0c405665b664cb70f61cbec493b38b8a419265065a6"
+    },
+    {
+      "loc": 129,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
+      "sha256": "4cb1da85520baf5d6ccbe5799506cc53f64464de756694a2d382d2fc61ff7fd8"
+    },
+    {
+      "loc": 329,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_metric_reducer.py",
+      "sha256": "4d7cdaf01ffada09d35fec77332ca6c4b11408d1966a3a2a17f95038d25f351d"
+    },
+    {
+      "loc": 274,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py",
+      "sha256": "780cf864d20b0b16e2ca43fa36b196c22c25329cea570957bab5f0aa9a00adae"
+    },
+    {
+      "loc": 147,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_jsonl.py",
+      "sha256": "d358e8da9609259c18da66f9e6ff797bc12e8228dd60ee61dca84ff5eaec5c73"
+    },
+    {
+      "loc": 220,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_topology.py",
+      "sha256": "4226658b286359dd46459fa0f3d86f8b0a61e22b4f3c52942d5a07da239ec0ef"
+    },
+    {
+      "loc": 441,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_binding.py",
+      "sha256": "3a78762d8718c26715473689381ee617db3e140ba761c5614ff5648feb8c1e53"
+    },
+    {
+      "loc": 199,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py",
+      "sha256": "ca6cfec117e42b90b750d0249f5c2a8b480757d7be9035f39442b6132adde5a8"
+    },
+    {
+      "loc": 170,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py",
+      "sha256": "f15ff1f1c308f3752212236b33de89d151ef8e53569e52ff619ecbf323133a9d"
+    },
+    {
+      "loc": 497,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py",
+      "sha256": "642bd421cb5c88a097377b6b048406d9234ff58cb10f975bfb9924d0b9b5df52"
+    },
+    {
+      "loc": 444,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_twin_apply.py",
+      "sha256": "fc9bb013e9b77753929f34f036a3a8cc4eaa6cd13e06bb341415d15db1c9f2f4"
+    },
+    {
+      "loc": 6,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu.py",
+      "sha256": "b4c58179e34ed80e2a654208f8b4f2aceeb090d8f22f91d725cf8b36fcab638e"
+    },
+    {
+      "loc": 4,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding.py",
+      "sha256": "79f8ad2e9ab1b11b9b58db8023f66339c56f11da0f98c965526aa651ed0dd036"
+    },
+    {
+      "loc": 305,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_landing.py",
+      "sha256": "bfffaf2a08c05f6d9e230cb8cbdab9615f0de8a748e59c4e5d580e2068209a19"
+    },
+    {
+      "loc": 526,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local.py",
+      "sha256": "2e7487de7900f0597b1ba465139334dca045feb56089bf3144e6a58b920dc463"
+    },
+    {
+      "loc": 140,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_roundtrip.py",
+      "sha256": "a2c4f7e286c2c6ddad995c0041e48d5ecd1e841bf4dc8913a30733504beed06c"
+    },
+    {
+      "loc": 3,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_evidence.py",
+      "sha256": "0ba1b6eeb7886131d8f3c5d651aa20f96fadcad806e852af01fd45162592eeae"
+    },
+    {
+      "loc": 530,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase.py",
+      "sha256": "44c9dfa4ccca1780f1bb78d37d07fea41ce7198fd1183c7f43727bbe97280e8d"
+    },
+    {
+      "loc": 429,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_reducer.py",
+      "sha256": "31a16fada21c922c9be648ee7e559987c513c8845d787638b2e8d8e0269f2d56"
+    },
+    {
+      "loc": 408,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
+      "sha256": "b7a92fe35eed5c2319e0c9434d6421f71360ab138179f0ab732cc4c7b0c02b48"
+    },
+    {
+      "loc": 87,
+      "path": "scripts/lands_ab_eval_run.py",
+      "sha256": "cb7e31ff4131935002c4b873808aa97ca74a95e81aab982f577d804d3dbf352a"
+    }
+  ],
+  "minted_at": "2026-07-28T20:40:40Z",
+  "packet_terminal_forbidden": true,
+  "parents": {
+    "v10i": "0c0f97ac3cb8fe15b0dcafde1da8437831444c98bdaae4dc3cc8d44da5ffe12e",
+    "v10s": "466efabc6fd3552f2582f85dc70edcf490c69d24b0081f5255763179933ce477",
+    "v1i": "9bef22b92045d6ade9e82395584e845b1c9cbe83440a1f25e93a134db88a7d5b",
+    "v1s": "e74f0a008f7a2676d05b44b8fafaa3cd43243d6af9ab1ba15bbd2673f7f3aa90",
+    "v2i": "c282f80e94d6f3b26606308275e6f2ed2637edee9d6eb2e36cb26905e8fa7e92",
+    "v2s": "400abaa0ca1c826be16816f29b6f774bdbf158393953f8e1cf4eb7710276bac2",
+    "v3i": "beab6f6fc2f36e85b811388c09ff1ed7c470c83fc6b5facd84811c38e242cda0",
+    "v3s": "1618b6138530454b1a35361f192ceb0020001147a9186f3935b9d03d4911e66c",
+    "v4i": "69dc2cfbee0094ca5e04a72790e37aa6145dd0bf8902fe2d4283e867e6bf6717",
+    "v4s": "fbcc2605dddbe8bd7c71210a224c08af2889a9ef1e8fa6885270aeecaa521074",
+    "v5i": "c7cf4e97ff38721a948012f7bfda4f90c95ae750c67f24d9a04af0c1e630e826",
+    "v5s": "272e2cd8f6341da068df0bd91f6970cddd545ceb232ddb3b4d9b82b5d22f4f2c",
+    "v6i": "6d1e0cabe607a7b198a42f8c14c3543d0c0e935aff0659fcec36249e5bba12d6",
+    "v6s": "a5ec7c2bcc28468b03e77c66f140f8ded8a7bf8eb7393698e028de1f27725364",
+    "v7i": "c9e17ee0a407eed00456d60fde92be5ee16c7820acfc8e28f11c98a67bac30ed",
+    "v7s": "d987b89c59d20f5fff920bfcd244d5a7cb3cae09e53ce5888541884f2c020f31",
+    "v8i": "8764521978705d8a19ab27624d561cfe45beef6e4093449cb4bd9aad7d1342c6",
+    "v8s": "aa67e43c9398c9be92fb978ab254ebf6bbd3ef8ba395937d5347295a3ca2e8d4",
+    "v9i": "ecb6eb5fb2d6043c09b7386b2c16b7e8898a1e5d26f7bc1af6c4b46f2617b3ca",
+    "v9s": "2cc7eb46a7bee69724b5ad57ef5b5abe257b982007c27d57751a981592c3dbd2"
+  },
+  "plan_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_PLAN_v6.json",
+  "plan_revision": "v6",
+  "plan_sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+  "plus1_implement_msg_id": "1785247579082-220d1149",
+  "read_only_pins_verified": {
+    "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json": {
+      "expected": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "live": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "ok": true
+    },
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v9.json": {
+      "expected": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "live": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "ok": true
+    },
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_GPU_SMOKE_packet_v4.json": {
+      "expected": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "live": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "ok": true
+    },
+    "bin/watch-wrap": {
+      "expected": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "live": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": {
+      "expected": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "live": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py": {
+      "expected": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "live": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": {
+      "expected": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "live": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "ok": true
+    },
+    "landed_production_landing_tests_and_enforcer": {
+      "note": "SNAPSHOT_v9 entry shas re-derived at developer_gate_pre",
+      "ok": true
+    }
+  },
+  "repo_head_sha": "422e846fd0b51a8dd953b7334819506a84a5ad70",
+  "schema": "lands_ab_eval_final_implementation_snapshot_v11",
+  "snapshot_revision": "v11",
+  "task_id": "1785244883605-c7c0b0a3",
+  "tsa_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+  "validation": {
+    "b1_good_path_still": "s3/s4/s6 True claimed==recomputed",
+    "cpu_gpu_pytest": "94 passed",
+    "hostile_empty_proof": "production_sparse_matches_twin False"
+  },
+  "write_surface_class": "IMPLEMENTATION_CREATE"
+}

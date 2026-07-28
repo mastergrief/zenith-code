@@ -1,0 +1,118 @@
+{
+  "blocker_closures": {
+    "A_gpu_twin_s3_s4_s6": "gpu_live nodes call measure_site_apply_twin; S4 strict >0; O_EXCL raw obs",
+    "B_oracle_s5_distinct": "three distinct oracle nodes with site_tag + independent two_branch recompute",
+    "C_phase_topology": "phase_event_capture + complete_phase_cycle + good/dup/missing characterizations",
+    "D_cpu_static_seed158": "measure_g_cpu_static_ab exact polarities; tautology removed",
+    "E_twin_clones": "clone_bounded_accumulator; no prior reuse; mutate/unequal hostiles",
+    "F_evidence_consumer": "build_eval_receipt_from_raw_observations; primitives diagnostic-only",
+    "G_rank_spec_pin": "require_canonical_rank_spec content hash 6c109e04\u2026",
+    "H_hostiles": "rank_spec drift, envelope subset, post-snapshot O_EXCL, physical/D1 non-gating, empty eligible"
+  },
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "fixture_lineage": {
+    "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+    "parity_fixture_descriptor_sha256": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+    "rank_spec_digest": "6c109e0482292edf72d3cc4ada6bda0840e67e8dbfac4ad7fd64d353602806a5",
+    "recarry_receipt_sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+  },
+  "forbidden_absent": {
+    "packet_v1": true,
+    "production_TSA_BDL_edits": true,
+    "terminal_receipt": true
+  },
+  "gate2_block_msg_id": "1785248580402-39d4d6df",
+  "implement_v2_dispatch_msg_id": "1785248661917-5c70950f",
+  "implementation_files": [
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py",
+      "sha256": "b82dd32ab72a82dce817932d5796e57510346d314f05afcffa96298ae945d5b2"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
+      "sha256": "7807eeffe4fc03cc1a580c4e10505a384d5e28b5b184492dfc67cbb8f011697e"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py",
+      "sha256": "f15ff1f1c308f3752212236b33de89d151ef8e53569e52ff619ecbf323133a9d"
+    },
+    {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu.py",
+      "sha256": "9e0050fb635f5dacddd559a10c0ef74bc6effce34105c638ad1eb7b301c215bd"
+    },
+    {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
+      "sha256": "8ac718c0d7b5b3fb6172364fd924522ed88dfa8f0978d9ee0ca7145353e8ef60"
+    },
+    {
+      "path": "scripts/lands_ab_eval_run.py",
+      "sha256": "cb7e31ff4131935002c4b873808aa97ca74a95e81aab982f577d804d3dbf352a"
+    }
+  ],
+  "minted_at": "2026-07-28T14:38:25Z",
+  "parent_implement_receipt_v1_sha256": "9bef22b92045d6ade9e82395584e845b1c9cbe83440a1f25e93a134db88a7d5b",
+  "parent_snapshot_v1_sha256": "e74f0a008f7a2676d05b44b8fafaa3cd43243d6af9ab1ba15bbd2673f7f3aa90",
+  "plan_revision": "LANDS_AB_EVAL_PLAN_v6",
+  "plan_sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+  "plus1_implement_msg_id": "1785247579082-220d1149",
+  "raw_observation_artifacts_present": {
+    "G_CPU_STATIC_AB": {
+      "path": "artifacts/acc_entropy/lands_ab_raw_obs_G_CPU_STATIC_AB_v2.json",
+      "sha256": "31cc1fa1a241b952b7bc41bab8bc316b92173b3eb1354380731f8ba3b05d36b1"
+    }
+  },
+  "read_only_pins_reverified": [
+    {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "status": "OK"
+    },
+    {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v9.json",
+      "sha256": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "status": "OK"
+    },
+    {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_GPU_SMOKE_packet_v4.json",
+      "sha256": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "status": "OK"
+    },
+    {
+      "path": "bin/watch-wrap",
+      "sha256": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "status": "OK"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "status": "OK"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "status": "OK"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "status": "OK"
+    }
+  ],
+  "repo_head_sha": "422e846fd0b51a8dd953b7334819506a84a5ad70",
+  "schema": "lands_ab_eval_final_implementation_snapshot_v2",
+  "snapshot_class": "final_implementation_snapshot",
+  "task_id": "1785244883605-c7c0b0a3",
+  "v1_pair_byte_preserved": true,
+  "validation": {
+    "cpu_pytest": "74 passed",
+    "gpu_collect_only": "7 tests collected",
+    "runner_cpu_static_ab": "G_CPU_STATIC_AB all surfaces true under seed158",
+    "runner_reducer_smoke": "synthetic_only=true science_claim=false"
+  },
+  "write_surface": "IMPLEMENTATION_CREATE"
+}

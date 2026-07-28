@@ -1,0 +1,456 @@
+{
+  "artifact_class": "LANDS_AB_EVAL_PLAN",
+  "branch_classifier_rule": "Exactly one terminal branch id is minted by the evaluation receipt. Priority order on multi-hit: SCOPE-CREEP-STOP > FIXTURE-CONTRACT-FAIL > VACUOUS > DIVERGENT-EVENT > DIVERGENT-APPLY > DIVERGENT-ORACLE-LIVE > EQUIVALENT. No verdict outside this list.",
+  "claim_ladder": {
+    "debt_row_readiness_re_tier_rule": "Even after BR-LANDS-AB-EQUIVALENT, any debt-row or readiness checker change is a SEPARATE HIGH gated slice with its own plan, dual accept, and executable checker re-tier. This plan never writes readiness/debt row flips.",
+    "may_claim_on_BR_LANDS_AB_EQUIVALENT": [
+      "production sparse-vote-authority apply is bit-exact equivalent to dense-transient credit baseline apply under the preregistered fixture set and surfaces S1\u2013S6",
+      "A+B event parity continues to hold on static fixture and production oracle_on sites exercised",
+      "LANDS-AB evaluation PASS enables a *subsequent* gated design/implement slice for debt-row or readiness checker re-tier consideration"
+    ],
+    "must_not_claim_even_on_EQUIVALENT": [
+      "optimizer_credit_state_transient_fp_debt_cleared / transient_fp_debt_row_cleared",
+      "readiness_row_flip / production_readiness_PASS / full_sub2_runtime_ready_for_science",
+      "sub-2 / sub2 / byte_savings / density_win",
+      "SparseVoteEvents is bit-packed or sub-2 persistent",
+      "weighted_grad eliminated",
+      "acquisition / bank / curriculum progress",
+      "GPU_performance / GPU_generalization / GPU_training_throughput",
+      "working-bar \u22642.5 overrides full_sub2_runtime_ready_for_science (ternary_hybrid_stack.md non-override)",
+      "PLAN_v16 BR-SPARSE-VOTE-AUTHORITY-LANDS-AB science reinterpretation as this verdict"
+    ],
+    "on_divergent_or_null": [
+      "named branch id is a shippable informative result with before/after measurement discipline",
+      "does not authorize silent recipe stretch (LR/runway/model) to force equivalence"
+    ]
+  },
+  "cross_thread_required": true,
+  "decision_contract": {
+    "authority": "Gabe standing auto-research directive + S4f smoke PASS enabling subsequent AB eval",
+    "autonomy_rung": "L2",
+    "confidence": "medium",
+    "escalation_rule": "Ambiguous dense-baseline lineage head or new science surface \u2192 STOP to claude; no improvisation",
+    "executor": "plan-dev (plan/impl); claude-as-test-operator (formal GPU packet)",
+    "intent": "Preregister LANDS-AB science evaluation of sparse production vs dense-transient baseline",
+    "mode": "planning",
+    "receipt_sink": "ai-room board + artifacts/acc_entropy/",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation",
+      "commit"
+    ],
+    "risk": "high",
+    "validation_proof": "S1\u2013S6 exact thresholds + dual-gate plan/implement + packet go + terminal branch id"
+  },
+  "dense_baseline_definition": {
+    "ambiguity_policy": "If developer_gate_pre cannot re-derive recarry receipt sha + fixture descriptor sha + rank_spec symbol against live modules, STOP and escalate \u2014 do not invent a new dense baseline.",
+    "lineage_head": {
+      "compositional_reduction_holds_at_lineage": true,
+      "events_equal_at_lineage": true,
+      "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+      "governing_claim_at_lineage": "A+B_only",
+      "parity_fixture_descriptor_sha256": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+      "rank_spec_symbol": "default_dry_run_rank_vote_spec",
+      "recarry_receipt_path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "recarry_receipt_sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+    },
+    "name": "dense_transient_credit_baseline",
+    "path": "weighted_grad \u2192 credit_from_weighted_grad \u2192 project_s1_gradient_to_moves \u2192 rank_bucketed_int16_votes(default_dry_run_rank_vote_spec) \u2192 apply_bounded_delta_vote_step(..., votes_by_key=dense_votes, sparse_vote_authority_only=False OR densify-from-sparse reference under oracle-only densify compartment)",
+    "role": "REFERENCE baseline for equivalence only. Not the production authority after landing. May construct dense intermediates solely inside measurement/oracle compartments."
+  },
+  "dispatch_msg_id": "1785244915036-8da81a7f",
+  "drafted_by": "plan-dev",
+  "execution_shape": {
+    "executor_lanes": {
+      "claude_as_test_operator": "formal GPU packet execution + terminal receipt",
+      "codex_co_lead": "read-only gate-2 on frozen artifacts",
+      "forbid_plan_dev_formal_gpu": true,
+      "plan_dev": "plan, bounded implement, packet draft, CPU validation"
+    },
+    "gate_chain": [
+      "plan-dev mints LANDS_AB_EVAL_PLAN_vN (this artifact family)",
+      "claude gate-1 freeze",
+      "co_lead gate-2 full plan checklist (HIGH tier, exhaustive-first)",
+      "dual accept + fresh +1 implement citing THIS plan sha + task 1785244883605-c7c0b0a3",
+      "plan-dev implements measurement harness/tests only within write_surface",
+      "claude gate-1 + co_lead gate-2 on IMPLEMENT",
+      "+1 commit / +1 push as authorized",
+      "plan-dev drafts LANDS_AB_EVAL_packet_v1 (separate from GPU_SMOKE_packet_v4)",
+      "claude S4b freeze + co_lead S4c + distinct S4d go citing plan+packet sha",
+      "claude-as-test-operator runs packet (foreground + watch-wrap; enforcer reuse for any GPU nodes)",
+      "terminal evaluation receipt \u2192 claude gate-1 \u2192 co_lead gate-2 \u2192 synthesis"
+    ],
+    "implementation_write_surface_preview": {
+      "forbidden_UPDATE": [
+        "readiness checkers flip",
+        "optimizer_credit_state debt row clear",
+        "PLAN_v16 or production landing smoke packet rewrite as this science claim",
+        "weighted_grad elimination"
+      ],
+      "likely_CREATE": [
+        "CPU tests for S1\u2013S6 hostiles + positive AB apply equivalence",
+        "measurement runner script for LANDS-AB eval (thin harness)",
+        "optional GPU eval nodes module if not foldable into existing gpu_live without claim pollution",
+        "FINAL_SNAPSHOT for this eval slice",
+        "IMPLEMENT receipt + LANDS_AB_EVAL_packet after implement dual accept"
+      ],
+      "likely_UPDATE_or_import_only": [
+        "reuse resolve_sparse_vote_authority_path / apply_bounded_delta_vote_step / recarry evidence helpers"
+      ],
+      "note": "Exact write_surface freezes at +1 implement against the dual-accepted plan revision; this is preview only."
+    },
+    "packets": {
+      "LANDS_AB_EVAL_packet_v1": {
+        "must_carry": [
+          "pin_source final_implementation_snapshot for this eval slice",
+          "runner-supplied --expected-packet-sha256 binding (S4d go = SoT; non-self-referential)",
+          "watch-wrap WRAP mode only (no --log)",
+          "per-node enforcer occurrence model if GPU nodes present",
+          "per_phase budgets + hard timeout",
+          "claim_ceiling copied from this plan",
+          "branch_classifier_rule copied verbatim"
+        ],
+        "reuse": {
+          "enforcer": "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "not_reuse_as_authority": "GPU_SMOKE_packet_v4 (different claim; smoke \u2260 AB)",
+          "phase_order": [
+            "forward_backward",
+            "update",
+            "emission",
+            "flush"
+          ]
+        },
+        "status": "NOT minted in this dispatch \u2014 draft only after dual-accepted IMPLEMENT"
+      }
+    }
+  },
+  "fast_path": false,
+  "fast_path_forbidden_reason": "Novel science-semantics slice: defines LANDS-AB equivalence verdict taxonomy. Not a defect-cycle mechanical remint. Full refinement loop required at plan gate.",
+  "gate_posture": "full_dual_gate_plan_then_implement_then_proof",
+  "hostiles_and_prereg_folds": {
+    "falsifiers_of_equivalence": [
+      "events_equal false on F_static_AB",
+      "q_levels or vote-acc sha mismatch after apply on any required key",
+      "q_changed_count mismatch",
+      "oracle_on events_equal false on any production site",
+      "vacuous zero-event / zero-mutation run presented as EQUIVALENT",
+      "fused_only receipt containing dense intermediates or oracle_only"
+    ],
+    "from_this_window": [
+      {
+        "fold": "All checkpoint fixtures via save_trainer_sub2_live_checkpoint_envelope; CPU loader characterization required before GPU",
+        "hazard": "Hand-selected P1 envelope drops schema_version (B3 smoke FAIL root cause)",
+        "id": "H-ENVELOPE-SCHEMA"
+      },
+      {
+        "fold": "End-to-end acceptance replay of expected node topology (good_topology self-test class) before GPU packet go",
+        "hazard": "Test-level emission pairs duplicate builder emission \u2192 guaranteed PHASE_TELEMETRY",
+        "id": "H-TOPOLOGY-DUP-EMISSION"
+      },
+      {
+        "fold": "Packets pure wrap mode; wrapper-topology dry-exec proves rc propagation",
+        "hazard": "--log forces tail mode and ignores wrapped command",
+        "id": "H-WATCH-WRAP-MODE"
+      },
+      {
+        "fold": "pin_set includes watch-wrap; packet sha runner-bound from S4d go; drift hostiles STOP-before-child",
+        "hazard": "Operative packet / watch-wrap omitted from protected rehash",
+        "id": "H-SOURCE-SET-PIN"
+      },
+      {
+        "fold": "O_EXCL final_implementation_snapshot + --snapshot load; post-snapshot mutation hostile",
+        "hazard": "Dry-exec constructs expectations from current bytes",
+        "id": "H-SELF-CERT-SNAPSHOT"
+      },
+      {
+        "fold": "default_dry_run_rank_vote_spec only; rank_spec_drift hostile REJECT",
+        "hazard": "Non-default rank_spec silently changes event maps",
+        "id": "H-RANK-SPEC-DRIFT"
+      }
+    ],
+    "required_hostile_tests_at_implement": [
+      "hand_envelope_subset_fails_loader",
+      "rank_spec_drift_rejected",
+      "post_snapshot_mutation_rejected",
+      "vacuous_fixture_cannot_mint_EQUIVALENT",
+      "events_equal_false_classifies_DIVERGENT_EVENT",
+      "apply_q_mismatch_classifies_DIVERGENT_APPLY",
+      "fused_only_receipt_with_dense_symbols_rejected"
+    ]
+  },
+  "measurement_contract": {
+    "N_and_seeds": {
+      "forbid": "Do not mint EQUIVALENT from N-of-M soft majority; thresholds are exact.",
+      "prod_tiny": {
+        "N_cpu": 1,
+        "N_cuda_one_step": 1,
+        "rationale": "Equivalence is bit-exact under frozen geometry \u2014 N>1 is not a substitute for exactness. If flaky non-determinism appears, classify FIXTURE-CONTRACT-FAIL / device nondeterminism; do not average.",
+        "seed_policy": "deterministic model/batch init as in landed gpu_live helpers"
+      },
+      "static_AB": {
+        "N": 1,
+        "rationale": "frozen recarry fixture; not a statistical screen",
+        "seed": 158
+      }
+    },
+    "fixtures": {
+      "F_multi_key_expand": {
+        "rule": "Must be preregistered in IMPLEMENT packet before use; not improvised mid-run",
+        "status": "optional_follow_on_if_F_prod_tiny is non-vacuous but co_lead requires broader support"
+      },
+      "F_prod_tiny_bitlinear": {
+        "device": "CPU schema + CUDA one-step for S3/S4/S5 on live builders",
+        "envelope_contract": "Any P1/checkpoint fixture MUST use production save_trainer_sub2_live_checkpoint_envelope (full canonical blob + checkpoint_format). Hand-selected subsets \u2192 FIXTURE-CONTRACT-FAIL.",
+        "lineage": "gpu_live / cpu landing tiny BitLinear models used in production builders",
+        "purpose": "production-site apply equivalence + non-vacuity + oracle live"
+      },
+      "F_static_AB": {
+        "device": "CPU required; GPU optional diagnostic only for this fixture",
+        "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+        "lineage": "3C_C1_dry_run_fixture_seed158 / recarry A+B",
+        "parity_fixture_descriptor_sha256": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+        "purpose": "S1/S2/S3 under frozen seed-158 weighted_grad"
+      }
+    },
+    "gpu_vs_cpu_split": {
+      "CPU": [
+        "schema/hostiles",
+        "static A+B event parity reaffirm",
+        "apply outcome equivalence on CPU tensors",
+        "envelope/pin/topology contract checks",
+        "dry-exec / snapshot binding"
+      ],
+      "GPU": [
+        "one-step production-builder apply equivalence (loop entry: forward/backward + apply)",
+        "oracle_on live events_equal on CUDA",
+        "non-vacuity on CUDA"
+      ],
+      "rule": "workflow.md: loop entry on GPU; CPU for non-loop schema/parity/safety only"
+    },
+    "pass_fail_table": [
+      {
+        "fail_branch": "DIVERGENT-EVENT",
+        "pass": "events_equal True all keys",
+        "surface": "S1 event parity"
+      },
+      {
+        "fail_branch": "DIVERGENT-EVENT",
+        "pass": "True",
+        "surface": "S2 compositional reduction"
+      },
+      {
+        "fail_branch": "DIVERGENT-APPLY",
+        "pass": "bit-exact all compared_fields_exact",
+        "surface": "S3 apply outcomes"
+      },
+      {
+        "fail_branch": "VACUOUS",
+        "pass": "events>0 and q_changed>0",
+        "surface": "S4 non-vacuity"
+      },
+      {
+        "fail_branch": "DIVERGENT-ORACLE-LIVE",
+        "pass": "events_equal True all sites",
+        "surface": "S5 oracle live"
+      },
+      {
+        "fail_branch": "FIXTURE-CONTRACT-FAIL",
+        "pass": "exact fused_only schema",
+        "surface": "S6 geometry honesty"
+      },
+      {
+        "fail_branch": "EQUIVALENT",
+        "pass": "all pass",
+        "surface": "all of S1\u2013S6"
+      }
+    ],
+    "surfaces_compared": {
+      "S1_event_parity": {
+        "helpers": [
+          "recarry_measurement_evidence / events_equal derivation",
+          "resolve_sparse_vote_authority_path oracle_on events_equal_fused_vs_dense_derived"
+        ],
+        "predicate": "events_equal == True (derived, not hand-authored)",
+        "threshold": "exact True on every required fixture key",
+        "what": "SparseVoteEvents multiset / canonical event map fused vs dense-derived"
+      },
+      "S2_compositional_reduction": {
+        "predicate": "True under frozen binding set ids A,B only",
+        "threshold": "exact True",
+        "what": "compositional_reduction_holds for A+B governing symbols"
+      },
+      "S3_apply_outcome_equivalence": {
+        "compared_fields_exact": [
+          "per-key q_levels tensor bytes sha256",
+          "per-key vote accumulator tensor bytes sha256 (live carrier dtype as-is)",
+          "global_summary.q_changed_count",
+          "authoritative_state_payload_sha256 if a post-apply blob is built"
+        ],
+        "note": "This is the core LANDS-AB science surface. Event parity alone (already banked on A+B CPU) is necessary but not sufficient for BR-LANDS-AB-EQUIVALENT.",
+        "threshold": "bit-exact equality on all compared_fields_exact for every required fixture key",
+        "what": "After one apply_bounded_delta_vote_step from identical pre-state + weighted_grad, sparse-authority apply vs dense-baseline apply"
+      },
+      "S4_non_vacuity": {
+        "on_fail_branch": "BR-LANDS-AB-VACUOUS",
+        "threshold": "both strict > 0",
+        "what": "fused event_count_total > 0 AND q_changed_count > 0 on each required production site fixture"
+      },
+      "S5_oracle_live_builders": {
+        "on_fail_branch": "BR-LANDS-AB-DIVERGENT-ORACLE-LIVE",
+        "threshold": "events_equal_fused_vs_dense_derived True per site",
+        "what": "oracle_on events_equal on production B1/B2/B3 call sites (not only static recarry fixture)"
+      },
+      "S6_geometry_honesty": {
+        "on_fail_branch": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL or SCOPE-CREEP-STOP",
+        "threshold": "exact schema match",
+        "what": "fused_only receipts keep votes_by_key_applied is None, sparse_vote_authority_only True, transient_over2_tensors == [weighted_grad], oracle_only ABSENT"
+      }
+    }
+  },
+  "minted_at": "2026-07-28T13:24:14Z",
+  "naming_disambiguation": {
+    "PLAN_v16_branch_BR_SPARSE_VOTE_AUTHORITY_LANDS_AB": "Meant \"GPU smoke PASS after PENDING_GPU\" as the terminal *production-landing* branch name. That name is HISTORICAL for the landing slice and MUST NOT be reused as the science verdict of this evaluation plan.",
+    "forbid_conflation": "Smoke PASS \u2260 AB-EQUIVALENT. AB-EQUIVALENT \u2260 debt-row clear. AB-EQUIVALENT \u2260 readiness flip. Each is a separately gated step with its own claim ceiling.",
+    "this_plan_LANDS_AB": "Science evaluation: does the production sparse-vote-authority route land apply-equivalent to the dense-transient credit baseline under preregistered fixtures/surfaces? Verdicts are the branch ids defined in preregistered_branches below ONLY."
+  },
+  "packet_revision": "v1",
+  "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_PLAN_v1.json",
+  "pinned_at_plan_mint_head": "422e846fd0b51a8dd953b7334819506a84a5ad70",
+  "plan_revision": "v1",
+  "preregistered_branches": [
+    {
+      "id": "BR-LANDS-AB-EQUIVALENT",
+      "meaning": "All prereg surfaces clear exact thresholds: event parity + apply outcome equivalence + oracle_on events_equal + non-vacuity. Opens debt-row/readiness RE-TIER PATH as a further gated checker-change slice ONLY (does not flip rows itself).",
+      "selects_next": "separately_gated_debt_row_or_readiness_checker_re_tier_design_slice"
+    },
+    {
+      "id": "BR-LANDS-AB-DIVERGENT-EVENT",
+      "meaning": "Fused sparse events \u2260 dense-derived events under frozen fixture/rank_spec (events_equal false or compositional_reduction fails).",
+      "selects_next": "repair_event_producer_or_rank_spec_binding_lane"
+    },
+    {
+      "id": "BR-LANDS-AB-DIVERGENT-APPLY",
+      "meaning": "Events equal but post-apply authoritative state diverges (q_levels / vote-acc / q_changed_count / payload sha) between sparse-authority apply and dense baseline apply.",
+      "selects_next": "repair_apply_path_or_sparse_authority_geometry_lane"
+    },
+    {
+      "id": "BR-LANDS-AB-DIVERGENT-ORACLE-LIVE",
+      "meaning": "Static A+B fixture parity holds but production-builder oracle_on path fails events_equal on live B1/B2/B3 sites (CPU or CUDA).",
+      "selects_next": "repair_production_path_observation_or_site_binding_lane"
+    },
+    {
+      "id": "BR-LANDS-AB-VACUOUS",
+      "meaning": "Zero fused events and/or zero mutation witness on required fixtures \u2014 measurement is non-informative; honest null, not equivalence.",
+      "selects_next": "fixture_or_model_scale_redesign_before_rerun"
+    },
+    {
+      "id": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+      "meaning": "Producer-envelope / source-set / rank_spec / topology / pin rehash fails before science comparison (learned hazards this window).",
+      "selects_next": "bounded_fixture_or_pin_contract_repair_not_science_stretch"
+    },
+    {
+      "id": "BR-LANDS-AB-SCOPE-CREEP-STOP",
+      "meaning": "Attempted readiness/debt flip, sub-2 claim, weighted_grad elimination, or PLAN_v16 reopen inside this slice \u2192 STOP.",
+      "selects_next": "stop_and_re_scope"
+    }
+  ],
+  "provenance": {
+    "base_pins": {
+      "FINAL_SNAPSHOT_v9": {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v9.json",
+        "sha256": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a"
+      },
+      "GPU_SMOKE_packet_v4": {
+        "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_GPU_SMOKE_packet_v4.json",
+        "sha256": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a"
+      },
+      "POST_LANDING_TSA_SHA256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "bounded_delta_learner_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "canonical_recarry_audit_receipt": {
+        "immutable_lineage_sha_cited_by_landing": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+        "note": "Landing dry-exec binds recarry canonical 783f2799\u2026; receipt_v1 on disk is the operative A+B measurement head cited here. Re-hash both at developer_gate_pre; mismatch \u2192 STOP.",
+        "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+        "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+      },
+      "recarry_measurement_evidence_sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "repo_HEAD": "422e846fd0b51a8dd953b7334819506a84a5ad70"
+    },
+    "enabling_result": {
+      "dual_accept_msg_id": "1785244813801-4e80f10d",
+      "meaning": "GPU one-step smoke of the landed production topology PASSED under GPU_SMOKE_packet_v4. That enables LANDS-AB evaluation as a subsequent gated step; it does NOT itself mint science AB-equivalence or debt/readiness re-tier.",
+      "s4f_smoke_pass_msg_id": "1785244629257-2362a384"
+    },
+    "gabe_standing_directive": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science",
+    "parent_contract_closed_at_smoke": {
+      "note": "PLAN_v16 is CLOSED at production-landing + smoke. This slice gets its OWN plan. Do not reopen PLAN_v16 write_surface.",
+      "plan": "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_PLAN_v16.json",
+      "plan_sha256": "e090bb0207174d1d396ca6cae2c01459f0c682ec14c6ab5942722337fba3d11f"
+    },
+    "parent_task_id": "1785226603783-45b748c6",
+    "parent_task_status": "completed_enabling_this_slice"
+  },
+  "question": {
+    "not_the_question": [
+      "whether weighted_grad can be eliminated at the backward boundary",
+      "whether optimizer_credit_state transient_fp_debt is cleared",
+      "whether full_sub2_runtime_ready_for_science passes",
+      "byte savings / density / sub-2 persistent train-state",
+      "acquisition / bank / curriculum progress",
+      "GPU throughput / generalization / multi-step training dynamics"
+    ],
+    "primary": "Under the frozen production sparse-vote-authority geometry (votes_by_key=None, sparse_vote_authority_only=True, candidate_oracle_control_enabled=False, fused candidate, default_dry_run_rank_vote_spec), does one authoritative apply step produce outcomes that are equivalent to the dense-transient credit baseline path (credit_from_weighted_grad \u2192 project_s1_gradient_to_moves \u2192 rank_bucketed_int16_votes \u2192 apply with dense votes / densified sparse) on the preregistered fixture set?",
+    "secondary_diagnostic": "Does oracle_on events_equal(fused, dense_derived) continue to hold on the landed production builders (B1/B2/B3 sites) on CPU and one-step CUDA under the same rank_spec?"
+  },
+  "report_to": [
+    "claude"
+  ],
+  "schema": "hrm_text_158_sparse_vote_authority_LANDS_AB_eval_plan/v1",
+  "self_check": {
+    "debt_readiness_re_tier_is_subsequent_only": true,
+    "does_not_conflate_smoke_with_AB": true,
+    "does_not_implement": true,
+    "does_not_mint_packet": true,
+    "has_branch_classifier_closed_set": true,
+    "has_claim_ladder_with_must_not": true,
+    "has_dense_baseline_lineage_head": true,
+    "has_exact_thresholds": true,
+    "has_gpu_cpu_split": true,
+    "has_hostiles_from_this_window": true,
+    "has_question": true
+  },
+  "sparse_production_definition": {
+    "forbidden_on_production_path": [
+      "credit_from_weighted_grad",
+      "project_s1_gradient_to_moves",
+      "rank_bucketed_int16_votes dense construction for apply input",
+      "votes_by_key non-None apply authority",
+      "oracle densify outside oracle_on compartment"
+    ],
+    "landed_at": {
+      "FINAL_SNAPSHOT_v9": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "POST_LANDING_TSA_SHA256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "smoke_packet_v4": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a"
+    },
+    "mode": "fused_only (default/omitted)",
+    "name": "sparse_vote_authority_production_fused_only",
+    "path": "weighted_grad \u2192 sparse_rank_bucketed_int16_vote_events_from_weighted_grad \u2192 apply_bounded_delta_vote_step(..., votes_by_key=None, candidate_sparse_vote_events_by_key=sparse_events, candidate_mode=ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE, candidate_oracle_control_enabled=False, sparse_vote_authority_only=True)"
+  },
+  "stop_conditions": [
+    "This dispatch: plan artifact only \u2014 no code edits, no runs, no packet mints",
+    "Dense-baseline lineage head unreproducible at developer_gate_pre \u2192 STOP escalate (do not invent fixture)",
+    "Any attempt to mint readiness/debt flip inside this eval \u2192 SCOPE-CREEP-STOP",
+    "Any attempt to treat smoke PASS as AB-EQUIVALENT without S1\u2013S6 \u2192 SCOPE-CREEP-STOP",
+    "No .pt commits; no banked parent mutation"
+  ],
+  "task_id": "1785244883605-c7c0b0a3",
+  "tier": "HIGH",
+  "work_repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "workflow": [
+    "PLAN_v1 O_EXCL \u2192 claude gate-1 \u2192 co_lead gate-2 (full refinement; expect multi-round) \u2192 dual accept",
+    "Fresh +1 implement citing THIS plan sha + task 1785244883605-c7c0b0a3",
+    "Implement measurement harness + hostiles + snapshot \u2192 IMPLEMENT receipt \u2192 dual accept",
+    "Commit/push as gated \u2192 draft LANDS_AB_EVAL_packet_v1 \u2192 dual packet gates \u2192 distinct go",
+    "claude-as-test-operator executes \u2192 terminal branch id receipt \u2192 synthesis"
+  ]
+}

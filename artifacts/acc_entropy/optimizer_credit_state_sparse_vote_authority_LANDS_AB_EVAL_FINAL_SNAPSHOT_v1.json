@@ -1,0 +1,75 @@
+{
+  "entries": {
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py": {
+      "expected_sha256": "b82dd32ab72a82dce817932d5796e57510346d314f05afcffa96298ae945d5b2",
+      "why": "IMPLEMENTATION_CREATE under PLAN_v6 +1 implement"
+    },
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py": {
+      "expected_sha256": "b8c4429abb4b95b74dd3b2058f38824bb9e128126f5c76f6999b9b7b7a3a6754",
+      "why": "IMPLEMENTATION_CREATE under PLAN_v6 +1 implement"
+    },
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py": {
+      "expected_sha256": "e3020e790962a10278d24eba3d0e5ea4961e58e5e36a604b86b884859a1b4bb1",
+      "why": "IMPLEMENTATION_CREATE under PLAN_v6 +1 implement"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu.py": {
+      "expected_sha256": "b10206c6fbd2147b6009f14807234465bd3ea091cdb63dfb35c11dc94dc8306b",
+      "why": "IMPLEMENTATION_CREATE under PLAN_v6 +1 implement"
+    },
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py": {
+      "expected_sha256": "224827db814af218ac286d539925a5d2260b93f319095c3ebc974c457234c683",
+      "why": "IMPLEMENTATION_CREATE under PLAN_v6 +1 implement"
+    },
+    "scripts/lands_ab_eval_run.py": {
+      "expected_sha256": "49fbc42fbbc84ff438a3c757c5f29acafbd5e95f847f8ed98ee0fa3fe39247ba",
+      "why": "IMPLEMENTATION_CREATE under PLAN_v6 +1 implement"
+    }
+  },
+  "minted_at": "2026-07-28T14:14:16Z",
+  "packet_terminal_forbidden": true,
+  "plan_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_PLAN_v6.json",
+  "plan_revision": "v6",
+  "plan_sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+  "plus1_implement_msg_id": "1785247579082-220d1149",
+  "read_only_pins_verified": {
+    "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json": {
+      "expected": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "live": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "ok": true
+    },
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v9.json": {
+      "expected": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "live": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "ok": true
+    },
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_GPU_SMOKE_packet_v4.json": {
+      "expected": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "live": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "ok": true
+    },
+    "bin/watch-wrap": {
+      "expected": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "live": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": {
+      "expected": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "live": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py": {
+      "expected": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "live": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": {
+      "expected": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "live": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "ok": true
+    }
+  },
+  "schema_version": "lands_ab_eval_final_implementation_snapshot_v1",
+  "snapshot_revision": "v1",
+  "task_id": "1785244883605-c7c0b0a3",
+  "write_surface_class": "IMPLEMENTATION_CREATE"
+}

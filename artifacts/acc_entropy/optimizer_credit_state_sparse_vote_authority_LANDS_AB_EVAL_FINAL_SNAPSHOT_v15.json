@@ -1,0 +1,396 @@
+{
+  "bdl_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+  "blocker_closures": {
+    "1_injective_post_acc_binding_RO_investigation": {
+      "cap_collision_hostile": "test_cap_collision_legacy_fields_equal_injective_rejects: 12 fields equal \u2192 transition_fields_equal True but crosscheck_ok False",
+      "determination": "STOP_DISCOVERED_WORK_INJECTIVE_SURFACE_ABSENT",
+      "implementation": "12-field transition equality remains NECESSARY precondition (transition_fields_equal). Injective sufficiency fail-closed when builder_receipt_pass=True: crosscheck_ok=False reason=neither_full_sparse_event_carrier_hash_nor_full_bounded_acc_payload_hash_on_named_receipt. B1 production_sparse_matches_twin cannot mint True (honest fixture-like fail-closed, analogous to B3 named-map absence).",
+      "surface_a_full_sparse_event_carrier_hash": {
+        "evidence": "vote_projection_proof has only counts/mode flags (candidate_sparse_vote_events_only, total_sparse_vote_event_count); no per-key event indices/values/hash. forward_backward_capture_proof weighted_grad_capture_by_key has sparse_vote_event_count only.",
+        "status": "NOT_RO_ON_NAMED_RECEIPT"
+      },
+      "surface_b_full_bounded_acc_or_decoded_logical_sha": {
+        "evidence": "bounded_accumulator_summary_after has raw_arrays_included=False (shape/counts only); fused path candidate_bounded_decode_sha256_after is None; no full hot/cold payload hash on receipt.",
+        "status": "NOT_RO_ON_NAMED_RECEIPT"
+      }
+    },
+    "2_formal_flush_transport": "emit_measurement_owned_flush dual-writes START/work/END to memory + ENV JSONL (measurement_owned=true, synthesized=false); work_fn (cuda sync) enclosed. fold native_complete sets needs_measurement_flush; does not silent-append flush. Empty synthesis still marked+unrelayed; partial still anomalous. test_native_complete_flush_jsonl_eight_events_encloses_work: 8 JSONL events, flush duration >= injected delay."
+  },
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "colead_revise_msg_id": "1785274919879-c2226ef0",
+  "commit_gate_step1b_dispatch_msg_id": "1785274936581-e8511ce6",
+  "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "discovered_work": {
+    "blocks_lands_ab_b1_apply_equivalence": true,
+    "does_not_authorize_tsa_bdl_edit": true,
+    "id": "DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE",
+    "missing_surfaces": [
+      "named_receipt.full_sparse_event_carrier_or_hash_per_key",
+      "named_receipt.full_bounded_accumulator_payload_or_decoded_logical_int16_sha_per_key"
+    ],
+    "suggested_owner": "TSA/BDL emission (out of plan-dev RO lane) or co_lead adjudicate B1 honest-fixture-fail"
+  },
+  "forbidden_absent": {
+    "packet_v1": true,
+    "production_TSA_BDL_edits": true,
+    "stage_commit_push": true,
+    "terminal_receipt": true
+  },
+  "gate1_freeze_v14_msg_id": "1785274321464-290a565a",
+  "gate2_pass_v14_msg_id": "1785274578042-8ef32490",
+  "implementation_files": [
+    {
+      "loc": 90,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_authoritative_payload.py",
+      "sha256": "237afbdaa0959f2128f48ec68451264a3c05e29790b70903da7d5e7a2866631d",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 240,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py",
+      "sha256": "b82dd32ab72a82dce817932d5796e57510346d314f05afcffa96298ae945d5b2",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 359,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py",
+      "sha256": "87e5375a98b64512bd03a2ed0823b61c1f8c3e2ebf3b3cf8af71d5c367e138f3",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 494,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py",
+      "sha256": "a13c07b35f33853bb9f6a997746f6ea7aa3f5c9bbad35a338a5b03c8dc2f92f5",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 171,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+      "sha256": "cc5125f9ff279d32144e014f617c34f166b9313a16d4a2ac1597f9e7c628d05e",
+      "whitespace_only_delta_vs_v14": true
+    },
+    {
+      "loc": 129,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
+      "sha256": "4cb1da85520baf5d6ccbe5799506cc53f64464de756694a2d382d2fc61ff7fd8",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 341,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_metric_reducer.py",
+      "sha256": "5f71e1d8e81e2d74cd377dde619ad698b58d06d4621e3538607a640021dad93c",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 323,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py",
+      "sha256": "b513189214ffc05396c5163777029f4878d1b38aa9d2eb1f17fcbb4544f53c47",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 407,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_jsonl.py",
+      "sha256": "adef162342859404fb8bdd8d29f472d2a694cd7e422407e7863b94cd4c827610",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 220,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_topology.py",
+      "sha256": "4226658b286359dd46459fa0f3d86f8b0a61e22b4f3c52942d5a07da239ec0ef",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 441,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_binding.py",
+      "sha256": "3a78762d8718c26715473689381ee617db3e140ba761c5614ff5648feb8c1e53",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 301,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py",
+      "sha256": "4e33f89a0c69052463819a88a1749ee496443dfa0a77636d5971603ff35fce8b",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 170,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py",
+      "sha256": "f15ff1f1c308f3752212236b33de89d151ef8e53569e52ff619ecbf323133a9d",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 493,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py",
+      "sha256": "e26e84af3c96a57a6ac685c472545faf654a289d896bb653cc2abf6405b21a29",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 444,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_twin_apply.py",
+      "sha256": "fc9bb013e9b77753929f34f036a3a8cc4eaa6cd13e06bb341415d15db1c9f2f4",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 33,
+      "path": "calm/llm_computer/tests/lands_ab_eval_test_helpers.py",
+      "sha256": "5c76903efd8c6468a8d5c75f4cd023f5661ebcbdba779984fbbb68742cb6e694",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 9,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu.py",
+      "sha256": "3b89c880efa8dc8b9a40f32fd374156b109311fbbb51b0ebfbb2ba96403bbdd1",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 4,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding.py",
+      "sha256": "79f8ad2e9ab1b11b9b58db8023f66339c56f11da0f98c965526aa651ed0dd036",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 253,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_landing.py",
+      "sha256": "fe2e02deec4c7841165ff96235f3d8d5362d870ddcc48b49ca56399773997d95",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 3,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local.py",
+      "sha256": "4e14baef75be5b0edf26917a6e8f42846eac0a8537b866f0c674dbc386d4147b",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 244,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_core.py",
+      "sha256": "1b2b235389c783ec3663ff28653c1f3e3673311b8efcae1d5b1857c98232e8ba",
+      "whitespace_only_delta_vs_v14": true
+    },
+    {
+      "loc": 417,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py",
+      "sha256": "7363cf07e143e78cd53340d4f39cefd93ed48d6d028196d1bd1c97a8276ed592",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 86,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_roundtrip.py",
+      "sha256": "a3a144e629cb7364e067089ce6bb6e41d2db83e2f05d1c158fea3a9f2e6944f6",
+      "whitespace_only_delta_vs_v14": true
+    },
+    {
+      "loc": 3,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_evidence.py",
+      "sha256": "0ba1b6eeb7886131d8f3c5d651aa20f96fadcad806e852af01fd45162592eeae",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 4,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase.py",
+      "sha256": "fcdcbf06376b5c9a89a59ff7f267464d98763ffd7a9ac556c4bdb2664f75a860",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 355,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_enforcer.py",
+      "sha256": "518d9cfdd4ceacff3c3e3870b2b26d220d38f4c0d1fc4b96f4eb4e733189da76",
+      "whitespace_only_delta_vs_v14": true
+    },
+    {
+      "loc": 296,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_stream.py",
+      "sha256": "a2b1523fa5b345ff7d031c3e725692c11b44dca8f39698b35e86bd6e3cbf1d13",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 158,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_topology.py",
+      "sha256": "e7e17018f143c87c721a6ea699795c9cf47a81821b33495460c48e88743086d6",
+      "whitespace_only_delta_vs_v14": true
+    },
+    {
+      "loc": 425,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_reducer.py",
+      "sha256": "92549e555074cb3bdcd8a3eb3ce003e5e009c156862c7da1109e50ccfeb6e060",
+      "whitespace_only_delta_vs_v14": true
+    },
+    {
+      "loc": 408,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
+      "sha256": "b7a92fe35eed5c2319e0c9434d6421f71360ab138179f0ab732cc4c7b0c02b48",
+      "whitespace_only_delta_vs_v14": false
+    },
+    {
+      "loc": 87,
+      "path": "scripts/lands_ab_eval_run.py",
+      "sha256": "cb7e31ff4131935002c4b873808aa97ca74a95e81aab982f577d804d3dbf352a",
+      "whitespace_only_delta_vs_v14": false
+    }
+  ],
+  "minted_at": "2026-07-28T21:48:08Z",
+  "packet_terminal_forbidden": true,
+  "parents": {
+    "v10i": "0c0f97ac3cb8fe15b0dcafde1da8437831444c98bdaae4dc3cc8d44da5ffe12e",
+    "v10s": "466efabc6fd3552f2582f85dc70edcf490c69d24b0081f5255763179933ce477",
+    "v11i": "0d9e73db54ce5c67d09998050618a8105425d08f1f160857d36f054b77e1a1d5",
+    "v11s": "27c9675e567184a0886fef6c4f683a2fa17b59132594aedd26736673656c8a4e",
+    "v12i": "504000a7a6df70b64ef367a7eb6110b045e3f6fa24bb4f355dcbcdb773e6d585",
+    "v12s": "83c65df1ce206b4f81779809cf54a341fc7dd865652f47c405407f732e938a45",
+    "v13i": "eda0f3449abd2627b0199c4c13b07157716e59a65a752e92ddfd358c72ee786e",
+    "v13s": "2f0490d9dca30f0e95db18b90bd321e4f9511a22f91b994ac948f390904dbe19",
+    "v14i": "4b4ef6f9e1fb15c585f36b182f1238d98b56e5bacad58465c33c332d27b2ae2f",
+    "v14s": "4a5c202b045c84ca33ff0563bf7637cfbb7262648f5a1c9572bc86e296d71159",
+    "v1i": "9bef22b92045d6ade9e82395584e845b1c9cbe83440a1f25e93a134db88a7d5b",
+    "v1s": "e74f0a008f7a2676d05b44b8fafaa3cd43243d6af9ab1ba15bbd2673f7f3aa90",
+    "v2i": "c282f80e94d6f3b26606308275e6f2ed2637edee9d6eb2e36cb26905e8fa7e92",
+    "v2s": "400abaa0ca1c826be16816f29b6f774bdbf158393953f8e1cf4eb7710276bac2",
+    "v3i": "beab6f6fc2f36e85b811388c09ff1ed7c470c83fc6b5facd84811c38e242cda0",
+    "v3s": "1618b6138530454b1a35361f192ceb0020001147a9186f3935b9d03d4911e66c",
+    "v4i": "69dc2cfbee0094ca5e04a72790e37aa6145dd0bf8902fe2d4283e867e6bf6717",
+    "v4s": "fbcc2605dddbe8bd7c71210a224c08af2889a9ef1e8fa6885270aeecaa521074",
+    "v5i": "c7cf4e97ff38721a948012f7bfda4f90c95ae750c67f24d9a04af0c1e630e826",
+    "v5s": "272e2cd8f6341da068df0bd91f6970cddd545ceb232ddb3b4d9b82b5d22f4f2c",
+    "v6i": "6d1e0cabe607a7b198a42f8c14c3543d0c0e935aff0659fcec36249e5bba12d6",
+    "v6s": "a5ec7c2bcc28468b03e77c66f140f8ded8a7bf8eb7393698e028de1f27725364",
+    "v7i": "c9e17ee0a407eed00456d60fde92be5ee16c7820acfc8e28f11c98a67bac30ed",
+    "v7s": "d987b89c59d20f5fff920bfcd244d5a7cb3cae09e53ce5888541884f2c020f31",
+    "v8i": "8764521978705d8a19ab27624d561cfe45beef6e4093449cb4bd9aad7d1342c6",
+    "v8s": "aa67e43c9398c9be92fb978ab254ebf6bbd3ef8ba395937d5347295a3ca2e8d4",
+    "v9i": "ecb6eb5fb2d6043c09b7386b2c16b7e8898a1e5d26f7bc1af6c4b46f2617b3ca",
+    "v9s": "2cc7eb46a7bee69724b5ad57ef5b5abe257b982007c27d57751a981592c3dbd2"
+  },
+  "plan_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_PLAN_v6.json",
+  "plan_revision": "v6",
+  "plan_sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+  "plus1_implement_msg_id": "1785247579082-220d1149",
+  "prior_dead_diff_digest": "8e1d80b7c0336f805125b14c96991f75f7471b7b28c7c39ee868f943ecd059c5",
+  "read_only_pins_verified": {
+    "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json": {
+      "expected": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "live": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "ok": true
+    },
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v9.json": {
+      "expected": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "live": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "ok": true
+    },
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_GPU_SMOKE_packet_v4.json": {
+      "expected": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "live": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "ok": true
+    },
+    "bin/watch-wrap": {
+      "expected": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "live": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": {
+      "expected": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "live": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py": {
+      "expected": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "live": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "ok": true
+    },
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": {
+      "expected": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "live": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+      "ok": true
+    },
+    "landed_production_landing_tests_and_enforcer": {
+      "note": "SNAPSHOT_v9 entry shas re-derived at developer_gate_pre",
+      "ok": true
+    }
+  },
+  "repo_head_sha": "422e846fd0b51a8dd953b7334819506a84a5ad70",
+  "schema": "lands_ab_eval_final_implementation_snapshot_v15",
+  "snapshot_revision": "v15",
+  "task_id": "1785244883605-c7c0b0a3",
+  "tsa_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+  "validation": {
+    "focused_pytest": "178 passed (245.28s) over affected suites + full cpu shim imports",
+    "whitespace_only": true
+  },
+  "whitespace_only_delta_vs_v14": {
+    "eof_proof": [
+      {
+        "bytes_after": 7319,
+        "bytes_before": 7319,
+        "content_without_trailing_nl_equal": true,
+        "delta_bytes": 0,
+        "only_eof_ws_change": true,
+        "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+        "trailing_newlines_after": 1,
+        "trailing_newlines_before": 1
+      },
+      {
+        "bytes_after": 9574,
+        "bytes_before": 9576,
+        "content_without_trailing_nl_equal": true,
+        "delta_bytes": -2,
+        "only_eof_ws_change": true,
+        "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_core.py",
+        "trailing_newlines_after": 1,
+        "trailing_newlines_before": 3
+      },
+      {
+        "bytes_after": 2974,
+        "bytes_before": 2976,
+        "content_without_trailing_nl_equal": true,
+        "delta_bytes": -2,
+        "only_eof_ws_change": true,
+        "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_roundtrip.py",
+        "trailing_newlines_after": 1,
+        "trailing_newlines_before": 3
+      },
+      {
+        "bytes_after": 13591,
+        "bytes_before": 13601,
+        "content_without_trailing_nl_equal": true,
+        "delta_bytes": -10,
+        "only_eof_ws_change": true,
+        "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_enforcer.py",
+        "trailing_newlines_after": 1,
+        "trailing_newlines_before": 11
+      },
+      {
+        "bytes_after": 7321,
+        "bytes_before": 7323,
+        "content_without_trailing_nl_equal": true,
+        "delta_bytes": -2,
+        "only_eof_ws_change": true,
+        "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_topology.py",
+        "trailing_newlines_after": 1,
+        "trailing_newlines_before": 3
+      },
+      {
+        "bytes_after": 15192,
+        "bytes_before": 15196,
+        "content_without_trailing_nl_equal": true,
+        "delta_bytes": -4,
+        "only_eof_ws_change": true,
+        "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_reducer.py",
+        "trailing_newlines_after": 1,
+        "trailing_newlines_before": 5
+      }
+    ],
+    "files": [
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_core.py",
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_roundtrip.py",
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_enforcer.py",
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_topology.py",
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_reducer.py"
+    ],
+    "note": "EOF trailing blank line(s) normalized to single final newline only; no semantic byte change",
+    "revise_msg_id": "1785274919879-c2226ef0"
+  },
+  "write_surface_class": "IMPLEMENTATION_CREATE"
+}

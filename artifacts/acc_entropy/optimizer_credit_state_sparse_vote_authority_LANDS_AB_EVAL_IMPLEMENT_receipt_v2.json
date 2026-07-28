@@ -1,0 +1,96 @@
+{
+  "LANDS_AB": false,
+  "bdl_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+  "blocker_closures": {
+    "A_gpu_twin_s3_s4_s6": "gpu_live nodes call measure_site_apply_twin; S4 strict >0; O_EXCL raw obs",
+    "B_oracle_s5_distinct": "three distinct oracle nodes with site_tag + independent two_branch recompute",
+    "C_phase_topology": "phase_event_capture + complete_phase_cycle + good/dup/missing characterizations",
+    "D_cpu_static_seed158": "measure_g_cpu_static_ab exact polarities; tautology removed",
+    "E_twin_clones": "clone_bounded_accumulator; no prior reuse; mutate/unequal hostiles",
+    "F_evidence_consumer": "build_eval_receipt_from_raw_observations; primitives diagnostic-only",
+    "G_rank_spec_pin": "require_canonical_rank_spec content hash 6c109e04\u2026",
+    "H_hostiles": "rank_spec drift, envelope subset, post-snapshot O_EXCL, physical/D1 non-gating, empty eligible"
+  },
+  "caveats": [
+    "GPU nodes collectable; formal CUDA matrix is post-push packet + distinct go",
+    "CPU suite stubs CUDA raw rows only for consumer-shape tests; formal S3/S5 cells require GPU matrix",
+    "claim_ceiling.LANDS_AB=false until formal evidence-bound full matrix run"
+  ],
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "cross_thread_required": true,
+  "files_changed": [
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py",
+      "sha256": "b82dd32ab72a82dce817932d5796e57510346d314f05afcffa96298ae945d5b2",
+      "why": "IMPLEMENT_v2 evidence-bound measurement correction"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
+      "sha256": "7807eeffe4fc03cc1a580c4e10505a384d5e28b5b184492dfc67cbb8f011697e",
+      "why": "IMPLEMENT_v2 evidence-bound measurement correction"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py",
+      "sha256": "f15ff1f1c308f3752212236b33de89d151ef8e53569e52ff619ecbf323133a9d",
+      "why": "IMPLEMENT_v2 evidence-bound measurement correction"
+    },
+    {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu.py",
+      "sha256": "9e0050fb635f5dacddd559a10c0ef74bc6effce34105c638ad1eb7b301c215bd",
+      "why": "IMPLEMENT_v2 evidence-bound measurement correction"
+    },
+    {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
+      "sha256": "8ac718c0d7b5b3fb6172364fd924522ed88dfa8f0978d9ee0ca7145353e8ef60",
+      "why": "IMPLEMENT_v2 evidence-bound measurement correction"
+    },
+    {
+      "path": "scripts/lands_ab_eval_run.py",
+      "sha256": "cb7e31ff4131935002c4b873808aa97ca74a95e81aab982f577d804d3dbf352a",
+      "why": "IMPLEMENT_v2 evidence-bound measurement correction"
+    }
+  ],
+  "final_implementation_snapshot_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_FINAL_SNAPSHOT_v2.json",
+  "final_implementation_snapshot_sha256": "400abaa0ca1c826be16816f29b6f774bdbf158393953f8e1cf4eb7710276bac2",
+  "gate2_block_msg_id": "1785248580402-39d4d6df",
+  "implement_v2_dispatch_msg_id": "1785248661917-5c70950f",
+  "minted_at": "2026-07-28T14:38:25Z",
+  "parent_implement_receipt_v1_sha256": "9bef22b92045d6ade9e82395584e845b1c9cbe83440a1f25e93a134db88a7d5b",
+  "parent_snapshot_v1_sha256": "e74f0a008f7a2676d05b44b8fafaa3cd43243d6af9ab1ba15bbd2673f7f3aa90",
+  "plan_revision": "LANDS_AB_EVAL_PLAN_v6",
+  "plan_sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+  "plus1_implement_msg_id": "1785247579082-220d1149",
+  "production_sources_untouched": true,
+  "raw_cpu_static_ab_artifact": {
+    "path": "artifacts/acc_entropy/lands_ab_raw_obs_G_CPU_STATIC_AB_v2.json",
+    "sha256": "31cc1fa1a241b952b7bc41bab8bc316b92173b3eb1354380731f8ba3b05d36b1"
+  },
+  "receipt_class": "IMPLEMENTATION_CREATE",
+  "repo_head_sha": "422e846fd0b51a8dd953b7334819506a84a5ad70",
+  "report_to": [
+    "claude"
+  ],
+  "schema": "lands_ab_eval_implement_receipt_v2",
+  "science_claim": false,
+  "stop_conditions_honored": [
+    "no packet_v1",
+    "no terminal_receipt",
+    "no stage/commit/push",
+    "no TSA/BDL edits",
+    "no formal LANDS-AB science claim"
+  ],
+  "task_id": "1785244883605-c7c0b0a3",
+  "tsa_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+  "v1_pair_byte_preserved": true,
+  "validation": {
+    "cpu_pytest": "74 passed",
+    "gpu_collect_only": "7 tests collected",
+    "runner_cpu_static_ab": "G_CPU_STATIC_AB all surfaces true under seed158",
+    "runner_reducer_smoke": "synthetic_only=true science_claim=false"
+  }
+}
