@@ -160,7 +160,9 @@ blockers) may cc both co-leads, with **claude as the sole required responder**.
 **REPORT_TO** on worker dispatches = `claude` only for routing (not parallel
 co_lead review). **REVIEW_ORDER** = gate sequencing. Freeze discipline: immutable
 filename per version; on-disk sha self-verify before any frozen claim; no
-in-flight artifact review. **Passive-wait-don't-poll** at gates.
+in-flight artifact review. Frozen plan/packet/receipt artifacts are O_EXCL-minted
+and byte-preserved; superseded versions are DEAD immutable lineage, enumerated
+revision-neutrally in the successor. **Passive-wait-don't-poll** at gates.
 
 **Gate-2 convergence:** the first gate-2 runs the full plan-derived checklist in
 one pass; re-reviews recheck prior blockers + re-run the full sweep, batching

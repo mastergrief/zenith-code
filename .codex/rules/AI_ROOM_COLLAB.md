@@ -99,7 +99,9 @@ force-push, no silent data loss.
 ## Receipt discipline
 
 Push-delivered replies — don't poll inbox. Receipt metadata → atlas, not
-eager-tier rules.
+eager-tier rules. Frozen plan/packet/receipt artifacts are O_EXCL-minted and
+byte-preserved; superseded versions are DEAD immutable lineage, enumerated
+revision-neutrally in the successor.
 
 ## Status / Ack discipline
 

@@ -98,10 +98,12 @@ PreToolUse block-and-explain guards on `ai_room_post`/`_reply` (fail-open on par
 - **`commit_precondition_colead_gate.py`** (Bash matcher) — once `git commit` is
   recognized, blocks unless a fresh co_lead validation/diff PASS echoes the
   staged `DIFF_DIGEST`. `git push` is not co_lead-gated (force-push blocked).
+  No auto-match of a room-posted PASS → executor flags first; claude authorizes
+  `CO_LEAD_GATE_OVERRIDE` bound to target-repo path + 64-hex DIFF_DIGEST +
+  co_lead PASS msg id — never unilateral.
 - **`worker_gate_wake_pairing_gate.py`** — gate/drive posts need paired
   `task_update(notify=true, in_progress)` or `WAKE_VERIFIED`.
-- **`ai_room_heartbeat_watchdog.py`** (cron) — stall detection + wake on
-  missing worker heartbeat.
+- **`ai_room_heartbeat_watchdog.py`** (cron) — stall detection + missing-heartbeat wake.
 
 ## Worker task shape
 
@@ -117,8 +119,7 @@ post. **Completed-task ack-idle**: don't `complete` between gates; reopen
 1. Read task; verify provenance + contract.
 2. Ground narrowly (no session-log scans).
 3. Post plan + risk; wait for persisted `+1 implement`.
-4. Implement/prove; post validation receipt to claude gate-1 ONLY (co_lead
-   gate-2 only after claude's frozen handoff).
+4. Implement/prove; receipt to claude gate-1 ONLY (co_lead gate-2 after freeze).
 5. Commit after `+1 commit`; push after `+1 push` or `+1 commit+push`.
 6. Report SHA; wait for recycle.
 
@@ -128,7 +129,8 @@ Read-only handles that mutate = safety failure. Plan gate = refinement loop
 ## Validation and receipts
 
 Match risk + user impact. Receipts: commands, outputs, artifacts, cites, msg
-ids, caveats. Cited gate ids must resolve as authored records.
+ids, caveats. Cited gate ids must resolve as authored records. Receipt commands
+are exact replayable argv (env vars verbatim, no ellipsis) — else receipt defect.
 
 ## Gate-2 convergence + review-risk tier
 
@@ -194,7 +196,5 @@ non-force FF; no `.pt`/large binary; no science claim; drift excluded;
 ## Failure modes / Anti-patterns
 
 Stale context → re-ground/recycle. Schema-stale MCP → respawn. Gate confusion →
-re-confirm on-thread. Ack-idle dormancy → reopen task + execution wake.
-
-Spawn for trivial work. Provenance as lane bypass. Worker output without
-receipts. Unrelated drift in commits. Handle reuse across unrelated slices. Worker `@gabe` directly.
+re-confirm on-thread. Ack-idle → reopen + execution wake. Spawn for trivial work.
+Provenance as lane bypass. Output without receipts. Unrelated drift in commits. Unaudited handle reuse. Worker `@gabe`.

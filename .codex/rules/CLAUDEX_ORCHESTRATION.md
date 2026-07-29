@@ -96,6 +96,11 @@ Questions → claude with provenance. See `.codex/rules/AI_ROOM_COLLAB.md`.
 
 Fresh-process for landing-day code. Real-product-path > unit tests for visible
 shape. Receipts: commands, outputs, artifacts, cites, msg ids, caveats.
+Receipt commands/results are exact replayable argv (env vars verbatim, no
+ellipsis; result must replay from its own recorded command) — else receipt
+defect. Commit-hook no-auto-match of a room PASS → flag to claude first;
+`CO_LEAD_GATE_OVERRIDE` is claude-authorized only (bound to target-repo path +
+64-hex DIFF_DIGEST + co_lead PASS msg id) — never executor-unilateral.
 
 ## Anti-patterns
 
