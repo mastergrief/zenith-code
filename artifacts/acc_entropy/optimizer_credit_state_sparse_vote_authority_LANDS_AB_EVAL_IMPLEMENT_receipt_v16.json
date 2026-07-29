@@ -1,0 +1,114 @@
+{
+  "all_owned_seams_le_500": true,
+  "caveats": [
+    "launch_packet_v1 a9a6ec68 remains DEAD for launch",
+    "packet_v2 remint only after dual accept + commit/push of v16 code",
+    "formal matrix still structural null under current TSA emission"
+  ],
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "dispatch_msg_id": "1785276502269-54621a16",
+  "files_changed_or_created": [
+    {
+      "changed_in_v16": true,
+      "loc": 482,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py",
+      "sha256": "b193497b52d7835eddedc62b72d64650286a88894db7b4a218772cf4931f4690"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 136,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
+      "sha256": "7e47ce9b1ac5032ce4ed66d4607683fe96a196ad0e75d4f8f06c477a21d10165"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 417,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_metric_reducer.py",
+      "sha256": "88306ae7e0bc923ee15c82f4ad4dcc9d21686c8d621253e7ae3656490b88d3c4"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 86,
+      "path": "calm/llm_computer/tests/lands_ab_eval_test_helpers.py",
+      "sha256": "ff86bb6f4e94d5b8eb90efb22552c092e631f0773f328d5685a36bc212cfd099"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 355,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_enforcer.py",
+      "sha256": "1de62cc240649c933b5215a4d3998edb3d15f34c5c2390c15bb4bf94f1698269"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 203,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_topology.py",
+      "sha256": "dd8c9305fd5df72696b6d58f7349752341f8145fdb9dbee6d23d11cdf3e3ef93"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 406,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
+      "sha256": "2514856d8497b3e740cdbdb8a47caba548e448c28602be37622d531ad276627e"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 104,
+      "path": "scripts/lands_ab_eval_run.py",
+      "sha256": "597e92766022f8ad7cab1430bb31e6925ce558dac2ef0ba40f32e6d5dc1595d9"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 83,
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_runtime_io.py",
+      "sha256": "968bdb8440342bb847d218738ca3f805c6ab8a30003529c0c7950a3e51d429cf"
+    },
+    {
+      "changed_in_v16": true,
+      "loc": 138,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_dry_exec_v16.py",
+      "sha256": "32fba269aa6d46df29a6483c5a3a3ef6d9cd727fd4f2a39cf0dccf0b764bd249"
+    }
+  ],
+  "implement_revision": "v16",
+  "launch_plan_block_msg_id": "1785276464193-24161356",
+  "line_counts_max": 493,
+  "minted_at": "2026-07-28T22:14:25Z",
+  "no_stage_commit_push": true,
+  "parents": {
+    "IMPLEMENT_v15": "e5f5234083e3ca52caf411b7b9bd07be67c35936eca1ecea0efaf17b9a2c187f",
+    "SNAPSHOT_v15": "2cd3aeac48de522a44c2b204797ae39d781b4ae41631d064b0d383d25f07fafd"
+  },
+  "plan_sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+  "preregistration_untouched": true,
+  "repo_head_sha": "24c9bbd7eabf0d3f90f5dffff570092fccc38ba6",
+  "report_to": [
+    "claude"
+  ],
+  "ro_pins": {
+    "bdl_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+    "tsa_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+    "verified_match": true
+  },
+  "schema": "LANDS_AB_EVAL_IMPLEMENT_receipt/v16",
+  "snapshot_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_FINAL_SNAPSHOT_v16.json",
+  "snapshot_sha256": "655ea6aa1ddcfd824b0b356479557cfe7f1a50d822d787d572035088061ac02a",
+  "steps_done": [
+    "STEP1 heterogeneous validate_required_key_universe (CPU class vs CUDA shared class; required=union)",
+    "STEP2 O_EXCL runner --out + o_excl_write_text; LANDS_AB_RUN_ROOT nonce root; harvest exactly-one",
+    "STEP3 dry-exec: real measure_g_cpu_static_ab + six CUDA fixture-fail schemas \u2192 BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+    "STEP4 code only this receipt; launch_packet_v2 after dual accept + commit/push gates (not this mint)"
+  ],
+  "task_id": "1785244883605-c7c0b0a3",
+  "tests": {
+    "dry_exec_LANDS_AB": false,
+    "dry_exec_branch_id": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+    "focused": "35 passed (dry_exec_v16 + topology + enforcer + binding_local_core + binding_local_pipeline)",
+    "full_cpu_suite": "281 passed in 104.58s"
+  }
+}

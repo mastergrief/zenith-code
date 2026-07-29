@@ -61,7 +61,7 @@ def test_science_consumer_rejects_synthetic_row_laundering():
     }.items():
         if row.startswith("G_CUDA_ORACLE"):
             metrics = {
-                "events_equal_by_key": {"proj": True},
+                "events_equal_by_key": {"lin": True},
                 "events_equal_fused_vs_dense_derived": True,
                 "independent_two_branch_recompute_ok": True,
                 "dense_derived_provenance": "two_branch_parallel_dense_vote_derivation",
@@ -73,9 +73,9 @@ def test_science_consumer_rejects_synthetic_row_laundering():
             }
         else:
             metrics = {
-                "post_q_sha256_by_key": {"proj": {"sparse": "a"*64, "dense": "a"*64}},
-                "post_logical_acc_sha256_by_key": {"proj": {"sparse": "b"*64, "dense": "b"*64}},
-                "events_equal_by_key": {"proj": True},
+                "post_q_sha256_by_key": {"lin": {"sparse": "a"*64, "dense": "a"*64}},
+                "post_logical_acc_sha256_by_key": {"lin": {"sparse": "b"*64, "dense": "b"*64}},
+                "events_equal_by_key": {"lin": True},
                 "sparse_event_count": 1,
                 "q_changed_count_sparse": 1,
                 "q_changed_count_dense": 1,
@@ -94,7 +94,7 @@ def test_science_consumer_rejects_synthetic_row_laundering():
             device="cuda",
             measured_surfaces={s: True for s in surfs},
             metrics=metrics,
-            key_universe=["proj"],
+            key_universe=["lin"],
             fixture_contract_raw_fail=False,
             synthetic_only=True,
             phase_topology={"good_topology": True, "detail": "good_topology"},
@@ -107,7 +107,7 @@ def test_science_consumer_rejects_synthetic_row_laundering():
         build_eval_receipt_from_raw_artifacts(
             raw_artifact_paths=paths,
             source_pins=DEFAULT_SOURCE_PINS,
-            required_key_set=list(cpu_obs["key_universe"]),
+            required_key_set=sorted(set(list(cpu_obs["key_universe"]) + ["lin"])),
         )
 
 

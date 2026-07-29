@@ -45,10 +45,8 @@ from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
 
 
 def _scratch_dir() -> Path:
-    base = Path(os.environ.get("LANDS_AB_RUNTIME_SCRATCH", "/tmp/lands_ab_runtime_scratch"))
-    d = base / uuid.uuid4().hex
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    from calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io import resolve_run_scratch_dir
+    return resolve_run_scratch_dir(create=True)
 
 
 def _write_obs(gating_row: str, obs: dict, scratch: Path) -> str:

@@ -25,6 +25,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.mode == "reducer-smoke":
+        # Diagnostic stdout-only; never silently ignore an explicit --out.
+        if args.out:
+            print(
+                "error: reducer-smoke does not write --out "
+                "(stdout-only synthetic diagnostic; use cpu-static-ab/cpu-s3-char for O_EXCL writes)",
+                file=sys.stderr,
+            )
+            return 2
         from calm.hrm_text_158.native_full_stack.lands_ab_eval_branch_reducer import (
             all_true_matrix,
             reduce_lands_ab_branch_strict,
@@ -58,6 +66,9 @@ def main(argv: list[str] | None = None) -> int:
         from calm.hrm_text_158.native_full_stack.lands_ab_eval_measurement import (
             run_s3_apply_equivalence_cpu_tiny_diagnostic,
         )
+        from calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io import (
+            o_excl_write_text,
+        )
 
         result = run_s3_apply_equivalence_cpu_tiny_diagnostic(seed=args.seed, dim=args.dim)
         result = dict(result)
@@ -67,19 +78,33 @@ def main(argv: list[str] | None = None) -> int:
         text = json.dumps(result, indent=2, sort_keys=True, default=str)
         print(text)
         if args.out:
-            Path(args.out).write_text(text + "\n")
+            o_excl_write_text(Path(args.out), text)
         return 0
 
     # default: evidence-bound G_CPU_STATIC_AB
     from calm.hrm_text_158.native_full_stack.lands_ab_eval_measurement import (
         measure_g_cpu_static_ab,
     )
+    from calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io import (
+        o_excl_write_text,
+        resolve_run_scratch_dir,
+        runtime_scratch_raw_path,
+    )
+    import uuid
 
     result = measure_g_cpu_static_ab()
     text = json.dumps(result, indent=2, sort_keys=True, default=str)
     print(text)
     if args.out:
-        Path(args.out).write_text(text + "\n")
+        o_excl_write_text(Path(args.out), text)
+    else:
+        # formal default: O_EXCL raw obs under run root (LANDS_AB_RUN_ROOT or unique scratch)
+        root = resolve_run_scratch_dir(create=True)
+        path = runtime_scratch_raw_path(
+            scratch_dir=root, gating_row="G_CPU_STATIC_AB", run_nonce=uuid.uuid4().hex[:12]
+        )
+        o_excl_write_text(path, text)
+        print(json.dumps({"raw_obs_path": str(path)}, sort_keys=True))
     return 0
 
 

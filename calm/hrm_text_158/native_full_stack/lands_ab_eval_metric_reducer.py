@@ -314,13 +314,31 @@ def recompute_surface_cells_from_primitives(
     return out
 
 
+def _norm_key_universe(univ: Sequence[str]) -> list[str]:
+    keys = [str(x) for x in univ]
+    if len(keys) != len(set(keys)):
+        raise ValueError("key_universe_duplicate")
+    return keys
+
+
 def validate_required_key_universe(
     *,
     required_key_set: Sequence[str],
     row_key_universes: Mapping[str, Sequence[str]],
     per_key_maps: Sequence[Mapping[str, Any]] | None = None,
+    per_key_maps_by_row: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
 ) -> list[str]:
-    """Require nonempty required set; exact equality vs every row universe and per-key maps."""
+    """Validate row-appropriate key universes.
+
+    Science path (all GATING_ROWS present):
+      - G_CPU_STATIC_AB has its own nonempty universe (fixture, e.g. ['proj']).
+      - all six G_CUDA_* rows share ONE exact nonempty universe (e.g. ['lin']).
+      - required_key_set must equal the sorted UNION of the two class universes.
+      - per-key maps validated against the row-appropriate universe (by-row preferred).
+
+    Partial/diagnostic path (not all GATING_ROWS): keep exact-equality of required_key_set
+    vs every provided row universe (unit-test hostiles).
+    """
     if required_key_set is None:
         raise ValueError("required_key_set_required")
     keys = [str(k) for k in required_key_set]
@@ -328,6 +346,59 @@ def validate_required_key_universe(
         raise ValueError("required_key_set_empty")
     if len(keys) != len(set(keys)):
         raise ValueError("required_key_set_duplicate")
+
+    from calm.hrm_text_158.native_full_stack.lands_ab_eval_schema import GATING_ROWS
+
+    cpu_row = "G_CPU_STATIC_AB"
+    cuda_rows = [r for r in GATING_ROWS if r.startswith("G_CUDA_")]
+    full_science = set(GATING_ROWS).issubset(set(row_key_universes.keys()))
+
+    if full_science:
+        cpu_u = _norm_key_universe(row_key_universes[cpu_row])
+        if not cpu_u:
+            raise ValueError("cpu_key_universe_empty")
+        cuda_list = [_norm_key_universe(row_key_universes[r]) for r in cuda_rows]
+        if not cuda_list[0]:
+            raise ValueError("cuda_key_universe_empty")
+        for r, u in zip(cuda_rows, cuda_list):
+            if u != cuda_list[0]:
+                raise ValueError(
+                    f"cuda_row_universe_mismatch_within_class row={r} "
+                    f"expected={cuda_list[0]} row={u}"
+                )
+        # exact per-row class match already enforced; refuse hand renames outside class
+        for row, univ in row_key_universes.items():
+            if row not in GATING_ROWS:
+                raise ValueError(f"unknown_gating_row_in_universes:{row}")
+            u = _norm_key_universe(univ)
+            expected = cpu_u if row == cpu_row else cuda_list[0]
+            if u != expected:
+                raise ValueError(
+                    f"key_universe_mismatch row={row} class_expected={expected} row={u}"
+                )
+        union = sorted(set(cpu_u) | set(cuda_list[0]))
+        if sorted(keys) != union:
+            raise ValueError(
+                f"required_key_set_not_union_of_row_classes "
+                f"required={sorted(keys)} union={union} cpu={cpu_u} cuda={cuda_list[0]}"
+            )
+        if per_key_maps_by_row is not None:
+            for row, maps in per_key_maps_by_row.items():
+                expected = set(cpu_u if row == cpu_row else cuda_list[0])
+                for i, m in enumerate(maps):
+                    if set(str(x) for x in m.keys()) != expected:
+                        raise ValueError(f"per_key_map_key_set_mismatch:{row}:{i}")
+        elif per_key_maps:
+            # only legal when classes are homogeneous (cpu == cuda)
+            if set(cpu_u) != set(cuda_list[0]):
+                raise ValueError("per_key_maps_require_by_row_for_heterogeneous_universes")
+            req = set(cpu_u)
+            for i, m in enumerate(per_key_maps):
+                if set(str(x) for x in m.keys()) != req:
+                    raise ValueError(f"per_key_map_key_set_mismatch:{i}")
+        return union
+
+    # Partial / unit-test path: exact equality vs every provided row.
     req = set(keys)
     for row, univ in row_key_universes.items():
         u = set(str(x) for x in univ)
@@ -335,6 +406,11 @@ def validate_required_key_universe(
             raise ValueError(
                 f"key_universe_mismatch row={row} required={sorted(req)} row={sorted(u)}"
             )
+    if per_key_maps_by_row is not None:
+        for row, maps in per_key_maps_by_row.items():
+            for i, m in enumerate(maps):
+                if set(str(x) for x in m.keys()) != req:
+                    raise ValueError(f"per_key_map_key_set_mismatch:{row}:{i}")
     for i, m in enumerate(per_key_maps or []):
         if set(str(x) for x in m.keys()) != req:
             raise ValueError(f"per_key_map_key_set_mismatch:{i}")

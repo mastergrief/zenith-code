@@ -47,6 +47,13 @@ from calm.hrm_text_158.native_full_stack.lands_ab_eval_metric_reducer import (
 from calm.hrm_text_158.native_full_stack.lands_ab_eval_twin_apply import (
     key_universe_sha256,
 )
+from calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io import (
+    harvest_exactly_one_raw_obs,
+    o_excl_write_json,
+    o_excl_write_text,
+    resolve_run_scratch_dir,
+    runtime_scratch_raw_path,
+)
 
 # Expected device per gating row (PLAN_v6 site_device_matrix)
 EXPECTED_DEVICE_BY_ROW: dict[str, str] = {
@@ -161,29 +168,6 @@ def validate_raw_row_observation(obs: Mapping[str, Any]) -> None:
         raise ValueError("raw_obs_rank_spec_digest_mismatch")
 
 
-def o_excl_write_json(path: Path, payload: Mapping[str, Any]) -> str:
-    """O_EXCL write — no pre-delete; unique runtime-scratch path only."""
-    data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    try:
-        os.write(fd, data)
-    finally:
-        os.close(fd)
-    return hashlib.sha256(data).hexdigest()
-
-
-def runtime_scratch_raw_path(
-    *,
-    scratch_dir: Path,
-    gating_row: str,
-    run_nonce: str,
-) -> Path:
-    """Unique runtime-scratch path — never under artifacts/."""
-    scratch = Path(scratch_dir)
-    if "artifacts" in scratch.parts and "acc_entropy" in scratch.parts:
-        raise ValueError("raw_obs_must_not_write_to_repo_artifacts")
-    scratch.mkdir(parents=True, exist_ok=True)
-    return scratch / f"lands_ab_raw_obs_{gating_row}_{run_nonce}.json"
 
 
 def recompute_surface_cells_from_metrics(
@@ -363,16 +347,19 @@ def build_eval_receipt_from_raw_artifacts(
     }
     reducer_out = reduce_lands_ab_branch_strict(primitives)
     row_universes = {row: list(raw_by_row[row].get("key_universe") or []) for row in GATING_ROWS}
-    per_maps = []
+    per_maps_by_row: dict[str, list[dict[str, Any]]] = {}
     for row in GATING_ROWS:
         met = raw_by_row[row].get("metrics") or {}
+        maps: list[dict[str, Any]] = []
         for mk in ("post_q_sha256_by_key", "post_logical_acc_sha256_by_key", "events_equal_by_key"):
             if mk in met and isinstance(met[mk], dict):
-                per_maps.append(met[mk])
+                maps.append(met[mk])
+        if maps:
+            per_maps_by_row[row] = maps
     keys = validate_required_key_universe(
         required_key_set=required_key_set,
         row_key_universes=row_universes,
-        per_key_maps=per_maps,
+        per_key_maps_by_row=per_maps_by_row,
     )
     receipt = {
         "schema": EVAL_RECEIPT_SCHEMA,
@@ -383,6 +370,7 @@ def build_eval_receipt_from_raw_artifacts(
         "source_pin_report": pin_report,
         "required_key_set": keys,
         "required_key_set_sha256": key_universe_sha256(keys),
+        "row_key_universes": {r: list(row_universes[r]) for r in GATING_ROWS},
         "raw_row_artifacts": artifact_meta,
         "surface_pass_by_row": matrix,
         "scope_creep": scope_creep,

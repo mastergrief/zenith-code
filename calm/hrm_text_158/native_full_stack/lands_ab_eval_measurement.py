@@ -71,6 +71,13 @@ from calm.hrm_text_158.native_full_stack.lands_ab_eval_metric_reducer import (  
 )
 
 # seam e — evidence contract
+from calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io import (  # noqa: F401
+    harvest_exactly_one_raw_obs,
+    o_excl_write_json,
+    o_excl_write_text,
+    resolve_run_scratch_dir,
+    runtime_scratch_raw_path,
+)
 from calm.hrm_text_158.native_full_stack.lands_ab_eval_evidence_contract import (  # noqa: F401
     AUTHORIZED_RAW_FIELDS,
     EXPECTED_DEVICE_BY_ROW,

@@ -1,0 +1,68 @@
+{
+  "all_owned_seams_le_500": true,
+  "caveats": [
+    "launch_packet_v1 a9a6ec68 remains DEAD for launch",
+    "packet_v2 remint only after dual accept + commit/push of v17 code",
+    "formal matrix still structural null under current TSA emission",
+    "v17 is reducer-smoke --out hard-error only; no science/claim changes"
+  ],
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "dispatch_msg_id": "1785311795754-49ce1582",
+  "files_changed_or_created": [
+    {
+      "changed_in_v17": true,
+      "loc": 166,
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_dry_exec_v16.py",
+      "sha256": "b7d897a3617be64449924c389a5d91cc816e06fc8f2c41bc3b4099ff029e6503"
+    },
+    {
+      "changed_in_v17": true,
+      "loc": 112,
+      "path": "scripts/lands_ab_eval_run.py",
+      "sha256": "a41887628b2a889cf6a96ec8a9ae68a223945fd7f0a31315daf0558f12016959"
+    }
+  ],
+  "implement_revision": "v17",
+  "launch_plan_block_msg_id": "1785276464193-24161356",
+  "line_counts_max": 493,
+  "minted_at": "2026-07-29T08:00:50Z",
+  "no_stage_commit_push": true,
+  "parents": {
+    "IMPLEMENT_v16": "2443128e3db97bab6e8addb84fe4af2746b8b38485bb254dbafd290e74ed750a",
+    "SNAPSHOT_v16": "655ea6aa1ddcfd824b0b356479557cfe7f1a50d822d787d572035088061ac02a"
+  },
+  "plan_sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+  "preregistration_untouched": true,
+  "repo_head_sha": "24c9bbd7eabf0d3f90f5dffff570092fccc38ba6",
+  "report_to": [
+    "claude"
+  ],
+  "ro_pins": {
+    "bdl_path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+    "bdl_sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+    "tsa_path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+    "tsa_sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+    "verified_match": true
+  },
+  "schema": "LANDS_AB_EVAL_IMPLEMENT_receipt/v17",
+  "snapshot_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_FINAL_SNAPSHOT_v17.json",
+  "snapshot_sha256": "da7d16ba7ae10fc1dc2611ad66c335e2c96f745f6096d2ee4aadc318ecfcd66e",
+  "steps_done": [
+    "one-atom: scripts/lands_ab_eval_run.py reducer-smoke hard-errors on explicit --out (rc=2; no file write)",
+    "test_runner_reducer_smoke_rejects_explicit_out added in dry_exec suite",
+    "everything else frozen-equivalent to IMPLEMENT_v16 (no universe/O_EXCL/dry-exec semantic changes)"
+  ],
+  "task_id": "1785244883605-c7c0b0a3",
+  "tests": {
+    "focused_dry_exec_v16_suite": "5 passed in 17.65s",
+    "full_lands_ab_cpu_suite": "282 passed in 102.32s",
+    "manual_reducer_smoke_out": "rc=2 + no file",
+    "manual_reducer_smoke_stdout": "rc=0"
+  }
+}

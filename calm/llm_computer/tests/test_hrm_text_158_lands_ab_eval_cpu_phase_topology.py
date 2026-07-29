@@ -79,6 +79,51 @@ def test_required_key_universe_empty_rejected():
         )
 
 
+def test_required_key_universe_heterogeneous_row_classes():
+    from calm.hrm_text_158.native_full_stack.lands_ab_eval_metric_reducer import (
+        validate_required_key_universe,
+    )
+    from calm.hrm_text_158.native_full_stack.lands_ab_eval_schema import GATING_ROWS
+
+    row_u = {"G_CPU_STATIC_AB": ["proj"]}
+    for r in GATING_ROWS:
+        if r.startswith("G_CUDA_"):
+            row_u[r] = ["lin"]
+    # union required_key_set
+    keys = validate_required_key_universe(
+        required_key_set=["lin", "proj"], row_key_universes=row_u
+    )
+    assert keys == ["lin", "proj"]
+    # wrong union rejected
+    with pytest.raises(ValueError, match="required_key_set_not_union"):
+        validate_required_key_universe(
+            required_key_set=["proj"], row_key_universes=row_u
+        )
+    # cuda within-class mismatch rejected
+    bad = dict(row_u)
+    bad["G_CUDA_B2_APPLY"] = ["other"]
+    with pytest.raises(ValueError, match="cuda_row_universe_mismatch_within_class"):
+        validate_required_key_universe(
+            required_key_set=["lin", "proj", "other"], row_key_universes=bad
+        )
+    # per-key map by row uses row-appropriate universe
+    keys2 = validate_required_key_universe(
+        required_key_set=["lin", "proj"],
+        row_key_universes=row_u,
+        per_key_maps_by_row={
+            "G_CPU_STATIC_AB": [{"proj": True}],
+            "G_CUDA_B1_APPLY": [{"lin": True}],
+        },
+    )
+    assert keys2 == ["lin", "proj"]
+    with pytest.raises(ValueError, match="per_key_map_key_set_mismatch"):
+        validate_required_key_universe(
+            required_key_set=["lin", "proj"],
+            row_key_universes=row_u,
+            per_key_maps_by_row={"G_CUDA_B1_APPLY": [{"proj": True}]},
+        )
+
+
 def test_phase_topology_hostiles():
     from calm.hrm_text_158.native_full_stack.lands_ab_eval_phase_topology import (
         classify_phase_topology,
