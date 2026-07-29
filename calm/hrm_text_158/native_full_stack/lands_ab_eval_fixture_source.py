@@ -42,15 +42,15 @@ def sha256_file(path: Path) -> str:
 
 
 
-# PLAN_v6 READ_ONLY pins (production)
+# Production source pins (TSA/BDL refreshed under DW_INJECTIVE PLAN_v7 pin addendum)
 DEFAULT_SOURCE_PINS: dict[str, str] = {
     "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
     "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v9.json": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
     "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_GPU_SMOKE_packet_v4.json": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
     "bin/watch-wrap": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
-    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
     "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
-    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0",
 }
 
 def verify_source_pins(

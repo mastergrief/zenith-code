@@ -1,0 +1,478 @@
+{
+  "DEVELOPER_STEPS": 5,
+  "SIZING": "LARGE",
+  "acceptance_for_plan_gate": [
+    "all 4 v2-round blockers resolved with explicit plan fields",
+    "ONE B3 carrier fully contracted (witness)",
+    "existing regression commands exact",
+    "successor task id + board contract ok",
+    "SIZING LARGE + 5 steps with type/test/runtime/data assertions",
+    "logical_shape non-optional",
+    "claim ceiling false; emission-only"
+  ],
+  "architecture_seam": {
+    "new_module": {
+      "path": "calm/hrm_text_158/native_full_stack/named_receipt_binding.py",
+      "public_api": [
+        "sparse_event_map_binding_sha256(events, *, logical_shape: tuple[int, ...]) -> str  # logical_shape REQUIRED non-optional",
+        "build_sparse_event_binding_by_key(sparse_events_by_key, *, logical_shape_by_key: Mapping[str, tuple[int,...]]) -> dict[str,str]",
+        "build_sparse_event_count_by_key(...)",
+        "logical_shape_by_key_from_q_levels(q_levels_by_key) -> dict[str, tuple[int,...]]",
+        "emit_candidate_bounded_decode_sha256_after(state) -> str  # delegates bounded_accumulator_decoded_sha256",
+        "oracle_only_serializable_projection(oracle_only: Mapping|None) -> dict|None"
+      ],
+      "role": "pure receipt-binding facade; no launch/loop/GPU/fs imports"
+    },
+    "seam_map": [
+      {
+        "owner": "named_receipt_binding.py + BDA:821-874",
+        "seam": "pure binding hashes"
+      },
+      {
+        "owner": "SparseVoteExecutionWitness + resolve note + B3 consume",
+        "seam": "witness relay"
+      },
+      {
+        "owner": "TSA thin delegation at :2362 and :2731-2760",
+        "seam": "B1/B2 receipt assembly"
+      },
+      {
+        "owner": "BDL candidate loop",
+        "seam": "S2 proof emission"
+      },
+      {
+        "owner": "UNTOUCHED",
+        "seam": "train apply/rank/threshold"
+      }
+    ]
+  },
+  "autonomy_rung": "L2",
+  "b3_relay_contract": {
+    "carrier": "SparseVoteExecutionWitness (trainer_sub2_authority.py:725-779 class; process-local _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS :781-782)",
+    "consumer": {
+      "site": "run_sparse_vote_authority_b3_core subproof assembly TSA:931-947",
+      "steps": [
+        "After resolved_mode = witness.witnessed_path_resolved_mode()",
+        "Read witness named_receipt binding maps; FAIL-CLOSED if named_receipt_bindings_observed is False after a successful p1b path that must have resolved (hard error: missing relay)",
+        "Insert into subproof: sparse_event_map_binding_sha256_by_key, sparse_event_count_by_key, sparse_event_logical_shape_by_key",
+        "If resolved_mode == oracle_on: subproof['oracle_only'] = witness.oracle_only_serializable EXACT copy; FAIL-CLOSED if None or missing events_equal_by_key or key-set != binding keys",
+        "If resolved_mode == fused_only: oracle_only key ABSENT; FAIL-CLOSED if oracle_only_serializable is not None"
+      ]
+    },
+    "explicitly_forbidden_language": "NO alternative 'or p1b-held copy'; NO dual-carrier option; ONE carrier = execution witness only",
+    "fused_only_absence": true,
+    "oracle_key_set_check": "set(events_equal_by_key)==set(sparse_event_map_binding_sha256_by_key)==set(count)==set(shape); fail-closed",
+    "producer": {
+      "lines": "561-628 (oracle map built 587-614; note_path_resolved_mode already at 616-617)",
+      "new_method": "SparseVoteExecutionWitness.note_named_receipt_bindings(...)",
+      "producer_steps": [
+        "Build binding/count/shape maps via named_receipt_binding helpers from sparse_events_by_key + logical_shape_by_key from q_levels shapes",
+        "If oracle_on: project oracle_only to serializable bool-map fields (events_equal_by_key complete per-key)",
+        "If fused_only: oracle_only_serializable remains None (ABSENCE)",
+        "Call active witness.note_named_receipt_bindings(...) if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None; if no active witness (non-B3 callers), skip silently \u2014 B1/B2 still embed fields via their own assembly paths"
+      ],
+      "site": "resolve_sparse_vote_authority_path after sparse_events_by_key + oracle_only construction",
+      "stores_serializable": {
+        "oracle_only_serializable": "None under fused_only ABSENCE; under oracle_on: {events_equal_by_key: dict[str,bool], events_equal_fused_vs_dense_derived: bool, dense_reference_tagged: 'oracle_only'} ONLY \u2014 NO SparseVoteEvents / dense tensors",
+        "sparse_event_count_by_key": "dict[str,int]",
+        "sparse_event_logical_shape_by_key": "dict[str, list[int]]",
+        "sparse_event_map_binding_sha256_by_key": "dict[str,str]"
+      }
+    },
+    "serialization_shape": {
+      "binding maps": "dict[str,str|int|list[int]] JSON-safe; no tensors",
+      "dense_reference_tagged": "literal oracle_only",
+      "events_equal_by_key": "dict[str,bool] JSON-safe",
+      "events_equal_fused_vs_dense_derived": "bool"
+    },
+    "tamper_fail_closed": [
+      "missing note_named_receipt_bindings under B3 core after resolve \u2192 hard error at B3 assembly",
+      "oracle_on with tag-only or empty events_equal_by_key \u2192 hard error",
+      "partial key sets \u2192 hard error",
+      "non-64-hex binding values \u2192 hard error",
+      "mutated witness maps after note (if re-noted with conflict) \u2192 hard error similar to path_resolved_mode conflict"
+    ],
+    "witness_fields_added": [
+      "named_receipt_bindings_observed: bool",
+      "sparse_event_map_binding_sha256_by_key: dict[str,str]",
+      "sparse_event_count_by_key: dict[str,int]",
+      "sparse_event_logical_shape_by_key: dict[str, tuple/list[int]]",
+      "oracle_only_serializable: dict|None"
+    ]
+  },
+  "blocker_resolution_table": [
+    {
+      "blocker": 1,
+      "plan_field": "relay_choice + b3_relay_contract",
+      "resolution": "SELECTED ACTIVE_EXECUTION_WITNESS only. Producer note at resolve :561-628; consumer B3 :931-947; serializable maps+oracle bool fields; fused ABSENCE; key-set + tamper fail-closed; explicitly forbids p1b alternative language",
+      "title": "B3 relay carrier at live boundary"
+    },
+    {
+      "blocker": 2,
+      "plan_field": "validation_plan.existing_family_regression_commands",
+      "resolution": "Exact pytest commands for sparse_live_carrier_production_landing_cpu, native_bounded_delta_learner, sparse_vote_authority_apply, sparse_live_carrier_production_landing_gpu_live; dirty test may run but unstaged",
+      "title": "Existing-family regression commands"
+    },
+    {
+      "blocker": 3,
+      "plan_field": "task_id + owner_block.BOARD_CONTRACT_STATUS + decision_contract",
+      "resolution": "PLAN_v3 pinned to successor task 1785319160424-6ee48028 which lints clean; parent cancelled",
+      "title": "Board decision_contract"
+    },
+    {
+      "blocker": 4,
+      "plan_field": "SIZING + DEVELOPER_STEPS + sizing_and_step_assertions.steps[*] with [types]/[tests]/[runtime]/[data] + design.S1 logical_shape NON-OPTIONAL",
+      "resolution": "SIZING:LARGE; DEVELOPER_STEPS:5 with mechanical per-step assertions; facade API requires logical_shape with no None default",
+      "title": "LARGE/5-step + non-optional logical_shape"
+    }
+  ],
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "binding_claim": "canonical_collision_resistant_binding_under_stated_normalization",
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "mathematical_injectivity_claimed": false,
+    "note": "Ceiling false through this plan and implementation. Real equivalence requires SEPARATE consumer adaptation + LANDS-AB re-run packet.",
+    "science_claim": false
+  },
+  "confidence": "high",
+  "decision_contract": {
+    "authority": "claude gate-1 freeze + codex_co_lead gate-2 PASS + persisted Claude +1 implement citing this plan sha",
+    "escalation_rule": "apply/ranking/threshold semantic drift OR need for P1b surgery after choosing witness OR consumer RO-flag flip OR LANDS-AB re-run \u2192 STOP + report to claude",
+    "executor": "plan-dev",
+    "intent": "Emission-only canonical collision-resistant named-receipt binding (S1 event-map + S2 streaming decode sha + S3 real B3 oracle map via ONE contracted execution-witness carrier), pure facade, characterization-first; claim_ceiling false; no LANDS-AB rerun in this slice.",
+    "mode": "correction",
+    "receipt_sink": "ai-room REPORT_TO [claude] only",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation",
+      "commit",
+      "push"
+    ],
+    "risk": "high"
+  },
+  "design": {
+    "S1_sparse_event_map_binding": {
+      "canonical_bytes": [
+        "Prefix required: b'shape=' + comma-joined logical_shape ints + b'\\n'",
+        "Then sorted unique (index,value) lines f'{index}={value}\\n'",
+        "fail-closed on duplicate indices, zero values, bad dtypes, missing shape"
+      ],
+      "fields": [
+        "sparse_event_map_binding_sha256_by_key",
+        "sparse_event_count_by_key",
+        "sparse_event_logical_shape_by_key"
+      ],
+      "logical_shape": "NON-OPTIONAL on all public binding APIs (no None default)"
+    },
+    "S2_decode_sha_streaming": {
+      "authority": "bounded_accumulator_decoded_sha256 BDA:821-874 ONLY",
+      "characterization": "streaming == tensor_sha256(decode_i16) on empty/default/exception/hot fixtures",
+      "field": "candidate_bounded_decode_sha256_after",
+      "forbidden": "default-on decode_i16+tensor_sha256 materialization on named emit path"
+    },
+    "S3_b3_oracle_map": {
+      "relay": "b3_relay_contract (ACTIVE_EXECUTION_WITNESS only)",
+      "status": "CONFIRMED_MISSING_FIX_VIA_WITNESS_RELAY"
+    },
+    "b1_b2_b3_executable_coverage_contract": {
+      "B1_local_update": {
+        "S2": "candidate_local_update_proof_by_key[*].candidate_bounded_decode_sha256_after always",
+        "destination": "vote_projection_proof via _build_vote_projection_proof :642-668 call ~:2362",
+        "key_set_invariant": "binding==count==shape==sparse_events keys; fail-closed",
+        "required_fields": [
+          "sparse_event_map_binding_sha256_by_key",
+          "sparse_event_count_by_key",
+          "sparse_event_logical_shape_by_key"
+        ],
+        "source": "path sparse_events_by_key + q_levels shapes"
+      },
+      "B2_roundtrip": {
+        "assembly_rule": "MUST call named_receipt_binding helpers \u2014 no inline rehash",
+        "destination": "post_resume_update_proof hand-assembled :2731-2760",
+        "oracle_only": "keep existing ABSENCE/presence of path oracle_only serializable projection when oracle_on (:2755-2758)",
+        "required_fields": "same as B1",
+        "source": "path sparse_events_by_key + resumed state shapes"
+      },
+      "B3_oracle_landing": {
+        "destination": "sparse_vote_authority_subproof :931-947",
+        "forbidden": "tag-only stub; reading path dict after out-of-scope; p1b field alternative",
+        "required_fields": "S1 maps always; oracle_only real map under oracle_on; ABSENCE under fused",
+        "source": "ONLY SparseVoteExecutionWitness named_receipt fields (see b3_relay_contract)"
+      }
+    },
+    "overhead_and_budget": {
+      "S2": "O(overrides) streaming; no full int16 materialize on emit",
+      "acceptance": "paired before/after named B1 fused 1-step: emission phase <=2x baseline OR total step <=1.5x baseline; report both in implement receipt"
+    },
+    "principle": "EMISSION-ONLY schema-additive. Claim=canonical collision-resistant binding under stated normalization (not math injectivity). Zero training semantic change."
+  },
+  "dispatch_id": "1785319197293-1341431b",
+  "fast_path": false,
+  "head_pin": {
+    "branch": "feature/hrm-text-1.58",
+    "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "sha": "92f8f2020dc99e10f2492900cfeb26c1028e5045"
+  },
+  "mode": "PLAN_ONLY",
+  "named_hostiles": [
+    {
+      "id": "H_CAP_COLLISION_CARRIER_SEPARABLE",
+      "spec": {
+        "cap": 2,
+        "events_A": {
+          "0": 127,
+          "1": 126,
+          "2": 1
+        },
+        "events_B": {
+          "0": 127,
+          "1": 126,
+          "2": 2
+        },
+        "logical_shape": [
+          8
+        ],
+        "threshold_abs": 1
+      }
+    },
+    {
+      "id": "H_MISSING_CARRIER_KEY_FAIL"
+    },
+    {
+      "id": "H_DUPLICATE_INDEX_FAIL_CLOSED"
+    },
+    {
+      "id": "H_B3_TAG_ONLY_ORACLE_FORBIDDEN"
+    },
+    {
+      "id": "H_DECODE_SHA_AUTHORITY"
+    },
+    {
+      "id": "H_B3_MISSING_WITNESS_RELAY",
+      "requirement": "B3 assembly without note_named_receipt_bindings hard-errors"
+    }
+  ],
+  "out_of_scope": [
+    "LANDS-AB 7-row re-run",
+    "launch packet remint",
+    "INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE flip",
+    "science/equivalence/readiness/sub-2 claims",
+    "implementation before dual-accept +1 implement"
+  ],
+  "owner_block": {
+    "ACTIVE_LEAD_FINAL_OWNER": "claude",
+    "BOARD_CONTRACT_STATUS": "successor task decision_contract lints clean (autonomy_rung=L2, confidence=high, validation_proof present) per dispatch",
+    "BOARD_OWNERSHIP_TRANSFER": "task 1785319160424-6ee48028 remains in_progress under plan-dev through implement; no complete between gates; parent 1785317070189-d675f0d4 cancelled",
+    "EXACT_RECEIPT_THREAD": "task 1785319160424-6ee48028; material receipts REPORT_TO [claude] only",
+    "IMPLEMENTATION_EXECUTOR": "plan-dev (ai-room handle codex)",
+    "PEER_REVIEW_LANE": "codex_co_lead gate-2 (frozen handoff only)",
+    "PROCEED_UNDER_GRANT": "implementation only after dual-accepted PLAN_v3+ and persisted Claude +1 implement citing this plan sha; no grant for LANDS-AB re-run or consumer flag flip"
+  },
+  "parent_cancelled_task_id": "1785317070189-d675f0d4",
+  "parent_lands_ab_task_id": "1785244883605-c7c0b0a3",
+  "parent_packet_lineage_commit": "92f8f2020dc99e10f2492900cfeb26c1028e5045",
+  "parent_terminal_receipt_sha256": "f872c0b42a45338e30c9d0b8e5c0573a5a49a0f7838cea8deca90e58c882bcad",
+  "plan_id": "DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_PLAN_v3",
+  "plan_revision": 3,
+  "problem": {
+    "confirmed_live_gap_for_relay": "Witness :725-779 only counts/mode/wg; P1b receipt :3055-3117 has no oracle/event-binding fields; B3 :931-947 currently sets tag-only oracle_only under oracle_on",
+    "summary": "Named receipts lack S1/S2 bindings; B3 discards real oracle map and has no live carrier after path goes out of scope."
+  },
+  "provenance": {
+    "cancelled_parent_task": "1785317070189-d675f0d4",
+    "dispatch": "1785319197293-1341431b",
+    "gabe_directive": "standing auto-research; human gates waived; peer gates never",
+    "gate2_block_v1": "1785318313132-8f6cd33a",
+    "gate2_block_v2": "1785319094884-c9554196",
+    "parent_commit": "92f8f2020dc99e10f2492900cfeb26c1028e5045",
+    "parent_terminal": "1785316489281-c4ae1429",
+    "successor_task": "1785319160424-6ee48028"
+  },
+  "relay_choice": {
+    "justification": "Claude dispatch recommendation accepted: lighter than P1b constructor/from-dict/validator/canonical-digest churn; witness is already process-local active across resolve\u2192B3 assembly in run_sparse_vote_authority_b3_core (created at :890, installed as _ACTIVE\u2026, used after p1b returns at :903+). B3 currently has witness in scope but only uses counts/mode/wg hashes \u2014 extending it is the minimal mechanical relay for path oracle maps + event bindings produced at resolve.",
+    "not_selected": "P1B_RECEIPT_FIELDS",
+    "override_reason": null,
+    "selected": "ACTIVE_EXECUTION_WITNESS"
+  },
+  "rollback": {
+    "implement_receipt_must_list": [
+      "old_TSA_sha",
+      "new_TSA_sha",
+      "old_BDL_sha",
+      "new_BDL_sha",
+      "dirty_test_fingerprint_unchanged"
+    ],
+    "strategy": "single coherent commit for facade+witness relay+B1/B2/B3 emission+BDL S2+new tests; revert restores pins"
+  },
+  "schema": "hrm_text_158_dw_injective_post_acc_named_receipt_surface_plan/v3",
+  "sizing_and_step_assertions": {
+    "DEVELOPER_STEPS": 5,
+    "SIZING": "LARGE",
+    "gpu_smoke_steps": 1,
+    "new_facade_module_target_lines": "<=400",
+    "steps": [
+      {
+        "data": "fixed tiny fixtures; no new datasets",
+        "runtime": "CPU only",
+        "step": 1,
+        "tests": "NEW file characterization tests green on HEAD before edits",
+        "title": "Characterization freeze",
+        "types": "assert current absences of S1 fields on vote_projection_proof / post_resume_update_proof / B3 subproof; tag-only B3 oracle_only under oracle_on"
+      },
+      {
+        "data": "hostile event maps A/B + shapes",
+        "runtime": "CPU pure",
+        "step": 2,
+        "tests": "H_CAP_COLLISION, H_DUPLICATE_INDEX, geometry-required hostiles green",
+        "title": "named_receipt_binding facade + S1 helper (logical_shape required)",
+        "types": "public API signatures require logical_shape: tuple[int,...]; no Optional"
+      },
+      {
+        "data": "same path fixtures as existing landing tests",
+        "runtime": "CPU builders + optional GPU later",
+        "step": 3,
+        "tests": "H_B3_TAG_ONLY_ORACLE_FORBIDDEN, H_B3_MISSING_WITNESS_RELAY, B1/B2/B3 key-set contracts",
+        "title": "Witness relay + B1/B2/B3 destinations",
+        "types": "SparseVoteExecutionWitness gains serializable named_receipt fields; note at resolve; consume at B3"
+      },
+      {
+        "data": "empty/default/exception/hot-override accumulator states",
+        "runtime": "CPU",
+        "step": 4,
+        "tests": "H_DECODE_SHA_AUTHORITY + characterization equality suite",
+        "title": "S2 BDL default-on streaming decode sha",
+        "types": "proof field always present; authority = BDA streaming only"
+      },
+      {
+        "data": "existing landing fixtures only",
+        "runtime": "GPU 1-step B1 fused + B2 roundtrip + B3 oracle-on; emission budget recorded",
+        "step": 5,
+        "tests": "NEW suite + EXISTING regression commands listed in validation_plan.existing_family_regression_commands",
+        "title": "Validation matrix + budgets + dual-sha receipt",
+        "types": "implement receipt lists old/new TSA/BDL shas + dirty fingerprint unchanged"
+      }
+    ]
+  },
+  "source_pins_readonly_until_plus1_implement": {
+    "BDA": {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py",
+      "role": "bounded_accumulator_decoded_sha256 :821-874 THE decode-hash authority"
+    },
+    "BDL": {
+      "line_count": 3958,
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d"
+    },
+    "TSA": {
+      "line_count": 3794,
+      "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a"
+    },
+    "sparse_vote_events": {
+      "path": "calm/hrm_text_158/native_full_stack/sparse_vote_events.py"
+    }
+  },
+  "stop_conditions": [
+    "semantic drift in vote apply/ranking/threshold/cap",
+    "raw_arrays_included forced True",
+    "P1b receipt surgery (wrong relay)",
+    "new FP trainable state",
+    "edit/stage dirty trainer_sub2 test",
+    "LANDS-AB re-run or consumer RO flag flip",
+    "O_EXCL collision on PLAN_v3 path"
+  ],
+  "supersedes": {
+    "plan_v1": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_PLAN_v1.json",
+      "sha256": "daf2d54e1ad072266f6b796ed5d0f5eb2be8a91561b8a8145fb321bb122ad9f9",
+      "status": "DEAD_LINEAGE_IMMUTABLE"
+    },
+    "plan_v2": {
+      "gate2_block": "1785319094884-c9554196",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_PLAN_v2.json",
+      "sha256": "0131ef688337d1dc722bb1de664f57116a9d734251a0c42b08f7e984af3331d9",
+      "status": "DEAD_LINEAGE_IMMUTABLE"
+    }
+  },
+  "task_id": "1785319160424-6ee48028",
+  "test_plan": {
+    "characterization_first": true,
+    "cpu": [
+      "pure binding + hostiles",
+      "B1/B2/B3 field contracts",
+      "witness relay fail-closed",
+      "S2 streaming authority"
+    ],
+    "gpu": [
+      "1-step B1 fused",
+      "1-step B2 roundtrip",
+      "1-step B3 oracle-on"
+    ],
+    "new_file_only_for_new_tests": "calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py",
+    "out_of_scope": [
+      "full 7-row LANDS-AB matrix",
+      "EQUIVALENT expectations"
+    ]
+  },
+  "tier": "HIGH",
+  "validation_plan": {
+    "dirty_test_policy": "MAY RUN test_hrm_text_158_trainer_sub2_authority.py but MUST remain byte-untouched and unstaged; fingerprint assert before any stage",
+    "existing_family_regression_commands": [
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_cpu.py -q",
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_native_bounded_delta_learner.py -q",
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_sparse_vote_authority_apply.py -q",
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_gpu_live.py -q"
+    ],
+    "gpu_smokes": "named 1-step B1/B2/B3 commands in implement receipt; loop-entry GPU",
+    "new_suite_command": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py -q",
+    "stop_on": [
+      "semantic drift in existing apply tests",
+      "dirty fingerprint change",
+      "dense decode default-on reintroduction",
+      "B3 tag-only oracle_only surviving",
+      "P1b schema edits",
+      "consumer RO flag flip"
+    ]
+  },
+  "validation_proof": "characterization-first CPU suite + pure helper hostiles + B1/B2/B3 field contracts + existing-family regression commands (sparse_live_carrier_production_landing_cpu, native_bounded_delta_learner, sparse_vote_authority_apply, sparse_live_carrier_production_landing_gpu_live) + GPU 1-step B1 fused / B2 roundtrip / B3 oracle-on smokes with emission-phase budget + streaming-hash equality characterization + dirty-test fingerprint unchanged; receipts to claude gate-1 only",
+  "write_surface": {
+    "consumer_followon": {
+      "name": "LANDS_AB_RERUN_UNDER_INJECTIVE_SURFACES",
+      "not_authorized_by_this_plan": true
+    },
+    "forbidden": [
+      "LANDS-AB re-run / launch packet",
+      "INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE flip",
+      "vote apply/ranking/threshold/cap semantics",
+      "P1b receipt schema surgery (relay is witness-only)",
+      "new FP masters/moments",
+      ".pt commits",
+      "edit/stage dirty trainer_sub2 test"
+    ],
+    "implementation_create_after_plus1_implement": {
+      "BDA_edit": "default NO edit; call streaming helper only",
+      "allowed_paths": [
+        "calm/hrm_text_158/native_full_stack/named_receipt_binding.py",
+        "calm/hrm_text_158/native_full_stack/sparse_vote_events.py",
+        "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_IMPLEMENT_receipt_v1.json",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_FINAL_SNAPSHOT_v1.json"
+      ],
+      "dirty_test_fingerprint_to_preserve_untouched": {
+        "HEAD_blob": "76a1c404f229c3f8aa8085d0fdee989cc8a3cdcb",
+        "path": "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority.py",
+        "rule": "do not edit; do not stage; may RUN for regression; re-hash before staging other files",
+        "worktree_git_hash_object_at_plan_mint": "a6ba5930c0ac97df6885d7c36105bfb40c72f087",
+        "worktree_sha256_at_plan_mint": "db86b65e261635b45cbada944ee33db0331234065973e24a73f4e73c9737ca71"
+      },
+      "explicitly_excluded_forever_this_slice": [
+        "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority.py"
+      ]
+    },
+    "plan_phase": "O_EXCL PLAN_v3 only; v1/v2 dead lineage preserved"
+  }
+}

@@ -289,7 +289,10 @@ def _honest_landing_from_stub():
 
 
 def test_honest_one_execution_wrapper_pass():
-    validate_sparse_vote_authority_landing_receipt(_honest_landing_from_stub())
+    validate_sparse_vote_authority_landing_receipt(
+        _honest_landing_from_stub(),
+        allow_legacy_without_named_evidence=True,
+    )
 
 
 def test_mutate_embedded_p1b_payload_post_build_rejected():
@@ -310,7 +313,10 @@ def test_mutate_embedded_p1b_payload_post_build_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="p1b_receipt_sha256 mismatch"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_forge_subproof_identity_unbound_digest_rejected():
@@ -331,7 +337,10 @@ def test_forge_subproof_identity_unbound_digest_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="subproof execution_identity.p1b_receipt_sha256"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_tamper_wrapper_p1b_receipt_sha256_rejected():
@@ -347,7 +356,10 @@ def test_tamper_wrapper_p1b_receipt_sha256_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="p1b_receipt_sha256 mismatch"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_call_count_not_one_rejected():
@@ -367,7 +379,10 @@ def test_call_count_not_one_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="forward_backward_update_call_count"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_forged_wrapper_mode_self_compare_rejected():
@@ -386,7 +401,10 @@ def test_forged_wrapper_mode_self_compare_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="discriminator mismatch"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_second_execution_witness_rejects_call_count_one_claim():
@@ -420,7 +438,10 @@ def test_second_execution_witness_rejects_call_count_one_claim():
         task_id="t",
     )
     with pytest.raises(ValueError, match="forward_backward_count must be 1|update_count must be 1|forward_backward_update_call_count must be 1"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_post_snapshot_mutation_of_covered_surface_rejected():
@@ -487,7 +508,10 @@ def test_fb_only_update_zero_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="update_count must be 1"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_update_only_fb_zero_rejected():
@@ -507,7 +531,10 @@ def test_update_only_fb_zero_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="forward_backward_count must be 1"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_double_fb_rejected():
@@ -528,7 +555,10 @@ def test_double_fb_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="forward_backward_count must be 1"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_double_update_rejected():
@@ -549,7 +579,10 @@ def test_double_update_rejected():
         task_id="t",
     )
     with pytest.raises(ValueError, match="update_count must be 1"):
-        validate_sparse_vote_authority_landing_receipt(bad)
+        validate_sparse_vote_authority_landing_receipt(
+            bad,
+            allow_legacy_without_named_evidence=True,
+        )
 
 
 def test_enforcer_schema_hostiles_missing_node_duration_unknown_type():

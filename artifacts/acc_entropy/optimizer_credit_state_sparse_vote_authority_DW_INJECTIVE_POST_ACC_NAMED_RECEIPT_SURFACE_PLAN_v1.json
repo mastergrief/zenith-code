@@ -1,0 +1,302 @@
+{
+  "acceptance_for_plan_gate": [
+    "problem sites cited with file:line against live pins 6a923faf\u2026 / ef3eb981\u2026",
+    "S1/S2/S3 emission design is injective, schema-additive, emission-only",
+    "named hostile H_CAP_COLLISION_CARRIER_SEPARABLE is pre-registered",
+    "characterization-first + CPU hostiles + GPU 1-step validation named",
+    "write surface phase-split; consumer re-run explicitly out of scope",
+    "claim ceiling false throughout"
+  ],
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "note": "Remains false through this plan and its implementation; real equivalence requires a SEPARATE later LANDS-AB re-run packet under extended surfaces.",
+    "science_claim": false
+  },
+  "compatibility": {
+    "lands_ab_consumer_flip": "NOT in this implementation scope. lands_ab_eval_production_post_state.INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE remains False until a SEPARATE consumer-adaptation + re-run packet gate observes the new fields and flips under its own plan.",
+    "raw_arrays_included": "stays False by default; not flipped by this plan",
+    "resume_payload": "no required change to resume serialization; optional structural sha only if pure helper reuse is free",
+    "schema_policy": "ADDITIVE ONLY on named receipts. Existing keys retain meaning. Consumers that ignore unknown keys keep working."
+  },
+  "design": {
+    "canonicalization_lock": {
+      "decode_sha": "existing tensor_sha256(decode_bounded_accumulator_to_i16(...)) \u2014 no new codec",
+      "no_python_set_hash": "never hash unordered sets; always sorted indices",
+      "sparse_events": "index-sorted; values int; zero votes excluded (SparseVoteEvents invariant); empty \u2192 sha256('')"
+    },
+    "default_on_named_path": true,
+    "overhead": "O(events) CPU hash + one int16 decode per eligible key per named step; no optimizer/GPU hot-loop change beyond existing candidate path decode cost when oracle already on",
+    "principle": "EMISSION-ONLY schema-additive hashes on the NAMED receipt path. Zero change to vote apply / ranking / threshold / cap / q mutation / training dynamics. No new FP trainable state. No .pt.",
+    "surfaces": [
+      {
+        "canonical_bytes": [
+          "For each SparseVoteEvents under a state_key: sort by index ascending (already guaranteed by SparseVoteEvents.from_dict; for raw tensors re-sort by index with stable tie on first occurrence).",
+          "Stream lines: f'{int(index)}={int(value)}\\n' encoded utf-8 (NO state_key prefix inside the per-key hash; state_key is the map key).",
+          "sha256(hex) of that stream. Empty events \u2192 sha256 of empty bytes (fixed known digest).",
+          "Optional companion field sparse_event_count_by_key[state_key]=int(event_count) for audit; not a substitute for the hash."
+        ],
+        "helper": {
+          "name": "sparse_vote_events_carrier_sha256(events: SparseVoteEvents | Mapping[int,int]) -> str",
+          "no_gpu": true,
+          "preferred_home": "calm/hrm_text_158/native_full_stack/sparse_vote_events.py",
+          "pure": true
+        },
+        "injectivity_requirement": "Two event maps that differ in any (index,value) pair MUST produce distinct hashes. Cap-collision counterexample (below) is the named hostile.",
+        "location": "vote_projection_proof (and mirrored on any path that already copies vote_projection_proof fields into post_resume_update_proof / sparse_vote_authority_subproof \u2014 mirror only where those dicts are already assembled from the same path inputs)",
+        "name": "sparse_event_carrier_sha256_by_key",
+        "surface_id": "S1_sparse_event_carrier_sha256_by_key",
+        "tsa_touch": [
+          "trainer_sub2_authority.py:_build_vote_projection_proof \u2014 ADD required kwargs sparse_events_by_key: Mapping[str, SparseVoteEvents|Mapping]; emit sparse_event_carrier_sha256_by_key + sparse_event_count_by_key",
+          "All call sites of _build_vote_projection_proof (grep; primary :2362) must pass sparse_events_by_key already in scope",
+          "If other builders construct vote_projection_proof dicts by hand, they must either call the helper or leave the new keys absent only on non-named diagnostic paths \u2014 named execution path MUST include them"
+        ],
+        "type": "dict[str, str]  # state_key -> 64-hex"
+      },
+      {
+        "bdl_touch": [
+          "bounded_delta_learner.py apply_bounded_delta_vote_step candidate_mode loop: AFTER candidate_result / next_state construction (~:3233-3238), ALWAYS set proof['candidate_bounded_decode_sha256_after']=tensor_sha256(decode_bounded_accumulator_to_i16(next_state.bounded_accumulator)) regardless of candidate_oracle_control_enabled",
+          "Do NOT force raw_arrays_included=True on BoundedDeltaAccumulatorState (avoids large raw array persistence / resume contract change). Decode-sha is sufficient injective post-acc RO surface for LANDS-AB consumers.",
+          "Optional additive: bounded_accumulator_structural_sha256 over (logical_shape, cold_default, sorted hot_exact pairs, sorted cold_exception pairs) \u2014 only if a pure helper already exists (bounded_accumulator_decoded_sha256); do not invent a second competing authority. Prefer single decode-sha authority for post-acc injectivity."
+        ],
+        "consumer_effect": "extract_local_update_binding will see production_post_logical_acc_sha256_by_key populated on fused path without oracle control.",
+        "location": "candidate_local_update_proof_by_key[state_key] on the named fused path (apply_bounded_delta_vote_step candidate_mode branch)",
+        "name": "candidate_bounded_decode_sha256_after",
+        "semantics": "sha256 of decode_bounded_accumulator_to_i16(next_state.bounded_accumulator) via existing tensor_sha256 helper \u2014 same bytes oracle path already uses at :3264-3303",
+        "surface_id": "S2_candidate_bounded_decode_sha256_after_default_on",
+        "type": "str  # 64-hex; always present for every key that receives a local-update proof"
+      },
+      {
+        "location": "vote_projection_proof['oracle_only'] already ABSENCE-policy present under oracle_on (:664-666). Extend so the NAMED oracle landing path always persists events_equal_by_key (and events_equal_fused_vs_dense_derived when computed) under a stable key path that extract_oracle_from_builder_receipt / extract_landing_binding already read.",
+        "name": "named oracle map on landing/local named receipts",
+        "note": "If oracle_only already contains events_equal_by_key and the LANDS-AB B3 fail is 'map not on named receipt', the fix is pure path-propagation into the receipt fields already consulted \u2014 still emission-only.",
+        "surface_id": "S3_b3_named_oracle_map",
+        "tsa_touch": [
+          "Where path['oracle_only'] is built (resolve_sparse_vote_authority_path / oracle branch), ensure events_equal_by_key is a complete per-key bool map on the named receipt \u2014 not dropped when copying into vote_projection_proof or sparse_vote_authority_subproof",
+          "Do NOT fabricate oracle_only under fused_only mode (ABSENCE policy stays). B3 oracle rows remain oracle_on only."
+        ]
+      }
+    ],
+    "training_semantics_change": false
+  },
+  "developer_steps_after_plus1_implement": [
+    {
+      "actions": [
+        "Add CPU tests that lock CURRENT receipt key absences: vote_projection_proof lacks sparse_event_carrier_sha256_by_key; fused proof_by_key lacks candidate_bounded_decode_sha256_after when oracle control off",
+        "Snapshot helper: given fixed SparseVoteEvents, document pre-image digests for the hostile pair once helper lands (post-edit assertions)"
+      ],
+      "step": 1,
+      "title": "Characterization freeze (architecture_discipline)"
+    },
+    {
+      "actions": [
+        "Implement sparse_vote_events_carrier_sha256",
+        "Extend _build_vote_projection_proof; wire all named-path call sites",
+        "Hostile H_CAP_COLLISION_CARRIER_SEPARABLE green"
+      ],
+      "step": 2,
+      "title": "Pure helper + S1 TSA emission"
+    },
+    {
+      "actions": [
+        "Emit candidate_bounded_decode_sha256_after on every candidate_local_update proof key",
+        "CPU test: fused path proof contains 64-hex decode sha; equals tensor_sha256(decode(...))",
+        "Confirm oracle_on path still consistent (same field, no double-meaning)"
+      ],
+      "step": 3,
+      "title": "S2 BDL default-on decode sha"
+    },
+    {
+      "actions": [
+        "Prove with a minimal oracle_on fixture whether events_equal_by_key already survives onto the named receipt; if yes, document and skip code; if no, emit via existing ABSENCE-policy oracle_only path only"
+      ],
+      "step": 4,
+      "title": "S3 named oracle map propagation (if still missing after S1/S2 grounding tests)"
+    },
+    {
+      "actions": [
+        "pytest focused DW injective suite + related TSA/BDL receipt tests",
+        "GPU 1-step smoke of a named fused builder path asserting new fields present (loop entry = GPU per workflow.md)",
+        "Re-hash TSA/BDL post-edit; update pin notes in implement receipt (pins intentionally change under this task only)",
+        "Post validation_receipt to claude gate-1 only; no LANDS-AB re-run"
+      ],
+      "step": 5,
+      "title": "Validation + receipt"
+    }
+  ],
+  "dispatch_id": "1785317098447-13e0cca5",
+  "fast_path": false,
+  "head_pin": {
+    "branch": "feature/hrm-text-1.58",
+    "repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "sha": "92f8f2020dc99e10f2492900cfeb26c1028e5045"
+  },
+  "mode": "PLAN_ONLY",
+  "named_hostile_cap_collision": {
+    "also": "If both are run through a minimal named proof builder fixture, vote_projection_proof.sparse_event_carrier_sha256_by_key for the key must differ while total_sparse_vote_event_count may match.",
+    "id": "H_CAP_COLLISION_CARRIER_SEPARABLE",
+    "requirement": "sparse_vote_events_carrier_sha256(A) != sparse_vote_events_carrier_sha256(B). Specs/mode/total_event_count alone MUST NOT be treated as sufficient (both have 3 events).",
+    "spec": {
+      "cap": 2,
+      "events_A": {
+        "0": 127,
+        "1": 126,
+        "2": 1
+      },
+      "events_B": {
+        "0": 127,
+        "1": 126,
+        "2": 2
+      },
+      "threshold_abs": 1
+    }
+  },
+  "out_of_scope": [
+    "LANDS-AB 7-row re-run",
+    "launch packet remint",
+    "INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE flip",
+    "science/equivalence/readiness/sub-2 claims",
+    "implementation before dual-accept +1 implement"
+  ],
+  "parent_lands_ab_task_id": "1785244883605-c7c0b0a3",
+  "parent_packet_lineage_commit": "92f8f2020dc99e10f2492900cfeb26c1028e5045",
+  "parent_terminal_receipt_sha256": "f872c0b42a45338e30c9d0b8e5c0573a5a49a0f7838cea8deca90e58c882bcad",
+  "plan_id": "DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_PLAN_v1",
+  "plan_revision": 1,
+  "problem": {
+    "from_structural_null": {
+      "branch_id": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+      "consumer_constant": "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py:36-43 INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE=False",
+      "missing_surface_flags": [
+        "named_receipt.full_sparse_event_carrier_or_hash_per_key",
+        "named_receipt.full_bounded_accumulator_payload_or_decoded_logical_int16_sha_per_key"
+      ]
+    },
+    "sites": [
+      {
+        "call_site": "vote_projection_proof=_build_vote_projection_proof(...) around :2362-2368; sparse_events_by_key already available earlier in the same builder path (~:2243+)",
+        "file": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+        "function": "_build_vote_projection_proof",
+        "id": "A_sparse_event_carrier",
+        "lines": "642-668",
+        "today": "emits rank/update specs, mode flags, total_sparse_vote_event_count, transient_over2 list only; NO per-key sparse event carrier or hash"
+      },
+      {
+        "consumer": "lands_ab_eval_production_binding.extract_local_update_binding :51-53 / :71-75 looks for candidate_bounded_decode_sha256_after; fused \u2192 logical_acc_ro_observable False",
+        "file": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+        "function": "apply_bounded_delta_vote_step (candidate_mode branch)",
+        "id": "B_bounded_acc_decode_sha",
+        "lines": "3214-3353 primary proof_by_key assembly; decode sha only under candidate_oracle_control_enabled True at :3264-3303",
+        "today": "fused/default named path leaves candidate_bounded_decode_sha256_after absent; BoundedDeltaAccumulatorState constructed with raw_arrays_included=False (TSA helper :1364; roundtrip payload :1385 dense_int16_accumulator_persisted=False)"
+      },
+      {
+        "consumer_lines": "lands_ab_eval_oracle_sites.py ~:187-252 named-only provenance; production_binding.extract_landing_binding :119-148",
+        "file": "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py + production_binding.extract_landing_binding",
+        "id": "C_b3_named_oracle_map",
+        "today": "B3 requires a named oracle map (events_equal_by_key / oracle_only) on the builder/landing receipt; fused vote_projection_proof omits full named oracle map; extract_oracle_from_builder_receipt cannot invent it"
+      }
+    ],
+    "summary": "Named production receipts lack injective per-key surfaces required for LANDS-AB named-execution bit-exact equivalence certification."
+  },
+  "provenance": {
+    "dispatch": "1785317098447-13e0cca5",
+    "gabe_directive": "standing auto-research; human gates waived; peer gates never",
+    "parent_commit": "92f8f2020dc99e10f2492900cfeb26c1028e5045",
+    "parent_terminal": "1785316489281-c4ae1429"
+  },
+  "rollback": {
+    "characterization_tests": "remain as documentation of pre-surface behavior if reverted",
+    "no_partial_pin_update": "implement receipt must list both old and new TSA/BDL shas",
+    "strategy": "single coherent commit for emission surfaces; revert commit restores TSA/BDL pins and absences"
+  },
+  "schema": "hrm_text_158_dw_injective_post_acc_named_receipt_surface_plan/v1",
+  "source_pins_readonly_until_plus1_implement": {
+    "BDL": {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d"
+    },
+    "TSA": {
+      "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a"
+    },
+    "bounded_delta_accumulator": {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py",
+      "role": "decode_bounded_accumulator_to_i16 + BoundedDeltaAccumulatorState; prefer no semantic edit"
+    },
+    "sparse_vote_events": {
+      "path": "calm/hrm_text_158/native_full_stack/sparse_vote_events.py",
+      "role": "carrier type; may gain pure hash helper only if needed"
+    }
+  },
+  "stop_conditions": [
+    "semantic drift in vote apply/ranking/threshold/cap",
+    "requirement for raw_arrays_included=True to satisfy injectivity",
+    "requirement for new FP masters/moments",
+    "O_EXCL collision on this plan path (already free at mint)",
+    "scope creep into LANDS-AB re-run or consumer RO flag flip without separate plan"
+  ],
+  "task_id": "1785317070189-d675f0d4",
+  "test_plan": {
+    "characterization_first": true,
+    "cpu_static": [
+      "carrier sha pure: empty, singleton, hostile A vs B distinct, order-independence of dict insertion (sorted)",
+      "vote_projection_proof contains sparse_event_carrier_sha256_by_key for every key in sparse_events_by_key",
+      "fused candidate proof always has candidate_bounded_decode_sha256_after length 64",
+      "schema-additive: pre-existing proof keys still present with prior meanings",
+      "no raw_arrays_included forced True"
+    ],
+    "gpu": [
+      "1-step named fused smoke on CUDA:0 Tiny/fixture already used by LANDS-AB builders \u2014 assert new fields present; NO science claim"
+    ],
+    "hostiles": [
+      "H_CAP_COLLISION_CARRIER_SEPARABLE",
+      "H_MISSING_CARRIER_KEY_FAIL: named path builder with events but missing hash key \u2192 test expects field present (post-edit) / pre-edit characterization expects absent",
+      "H_DECODE_SHA_MISMATCH: tampered decode field != recompute from next_state \u2192 consumer-side would fail; producer must emit recompute-from-state not caller-authored"
+    ],
+    "out_of_scope_tests": [
+      "full 7-row LANDS-AB matrix",
+      "branch EQUIVALENT expectations"
+    ]
+  },
+  "tier": "HIGH",
+  "validation_plan": {
+    "post_edit": [
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py -q",
+      "broader family as warranted by blast radius (TSA/BDL receipt tests)",
+      "GPU 1-step smoke command (named in implement receipt; loop-entry GPU)"
+    ],
+    "pre_edit": "characterization tests green on HEAD 92f8f202 documenting absences",
+    "stop_on": [
+      "any apply/ranking/threshold numeric drift on existing unit tests",
+      "resume/payload contract break",
+      "new FP trainable state",
+      "need to edit LANDS-AB consumer flags to make producer tests pass (wrong layer)"
+    ]
+  },
+  "write_surface": {
+    "consumer_followon": {
+      "depends_on": "dual-accepted implement of this plan + HEAD push of emission surfaces",
+      "name": "LANDS_AB_RERUN_UNDER_INJECTIVE_SURFACES",
+      "not_authorized_by_this_plan": true,
+      "owner_later": "plan-dev packet + claude-as-test-operator formal run"
+    },
+    "forbidden_under_this_plan_implement": [
+      "LANDS-AB re-run / new launch packet",
+      "flipping INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE",
+      "vote apply / ranking / threshold / cap semantic edits",
+      "new FP trainable masters/moments",
+      ".pt commits",
+      "TSA/BDL edits outside emission/proof fields named above"
+    ],
+    "formal_runtime_create": "none in this slice",
+    "implementation_create_after_plus1_implement": [
+      "calm/hrm_text_158/native_full_stack/sparse_vote_events.py (pure carrier sha helper, if not already present)",
+      "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py (S1 + call-site wiring; S3 propagation if needed)",
+      "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py (S2 default-on decode sha emission)",
+      "calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py (NEW characterization + hostiles)",
+      "possibly extend existing TSA/BDL receipt tests if they freeze exact key sets"
+    ],
+    "plan_phase": "POST_ONLY O_EXCL plan artifact (this file)"
+  }
+}

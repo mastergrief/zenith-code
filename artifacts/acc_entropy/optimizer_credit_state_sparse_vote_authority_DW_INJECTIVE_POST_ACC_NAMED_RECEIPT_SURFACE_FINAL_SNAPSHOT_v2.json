@@ -1,0 +1,40 @@
+{
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "consumer_RO_flag_flip": false,
+    "equivalence_claim": false,
+    "readiness_claim": false,
+    "science_claim": false,
+    "sub2_claim": false
+  },
+  "code_diff_unchanged_from_v1": true,
+  "created_at_utc": "2026-07-29T10:56:13.573159+00:00",
+  "dirty_test_untouched": true,
+  "implement_receipt_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_IMPLEMENT_receipt_v2.json",
+  "implement_receipt_sha256": "3471a9156f6ce2d6dce601dcc0ceded704a20c4b9b1bd9ebf1ca4f9baf615a84",
+  "plan_sha256": "e8cbf1d39200b0c5b34db81b1575047780326409c299cbe47de1f7bf40a5cd11",
+  "ready_for_gate1_review": true,
+  "receipt_correction_only": true,
+  "ro_all_equal": true,
+  "schema": "hrm_text_158_dw_injective_post_acc_named_receipt_surface/FINAL_SNAPSHOT/v2",
+  "science_claims": false,
+  "supersedes_snapshot": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_FINAL_SNAPSHOT_v1.json",
+    "sha256": "02739fff9ab96284187cd0b829b8ef37dec5a1be1827b421e728741fea682a61",
+    "status": "DEAD_immutable"
+  },
+  "validation_summary": {
+    "bdl_and_phase_topology": "6 failed / 78 passed \u2014 classified pre-existing or expected pin drift",
+    "family_cpu_core": "66 passed (dw+sparse landing+apply+binding_local_pipeline)",
+    "gpu_b1_b2_b3": "3 passed",
+    "new_suite": "10 passed",
+    "timing_s1_hard_bound": true,
+    "timing_total_1_5x": true
+  },
+  "writable_post_sha256": {
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "bd8e9927d8d20da8702a88add67bb29ec872c6684673b166a41613ef6a41c7af",
+    "calm/hrm_text_158/native_full_stack/named_receipt_binding.py": "5112e0a70afab5cd84928400589a31c136b2a654db4c9e9aaee7c026e25285cf",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "9eb6ab0a10cef466214734283efb72cdf4883f552287f0a435511ff216c1842a",
+    "calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py": "2a30db1b86a1cb6e59111addbe592db02428d895ea327ada8ad3e2f8352e8f47"
+  }
+}

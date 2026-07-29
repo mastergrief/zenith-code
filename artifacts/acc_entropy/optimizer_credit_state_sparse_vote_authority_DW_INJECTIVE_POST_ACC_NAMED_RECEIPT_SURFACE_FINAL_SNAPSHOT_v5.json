@@ -1,0 +1,42 @@
+{
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "consumer_RO_flag_flip": false,
+    "equivalence_claim": false,
+    "readiness_claim": false,
+    "science_claim": false,
+    "sub2_claim": false
+  },
+  "created_at_utc": "2026-07-29T11:32:53.332242+00:00",
+  "dirty_test_untouched": true,
+  "implement_receipt_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_IMPLEMENT_receipt_v5.json",
+  "implement_receipt_sha256": "9abe05ad0a67464690864d587aca1f5bb0a5bc6079e1abc0148e4eeade86ce6d",
+  "named_hostiles_count": 8,
+  "plan_sha256": "e8cbf1d39200b0c5b34db81b1575047780326409c299cbe47de1f7bf40a5cd11",
+  "ready_for_gate1_review": true,
+  "ro_all_equal": true,
+  "schema": "hrm_text_158_dw_injective_post_acc_named_receipt_surface/FINAL_SNAPSHOT/v5",
+  "science_claims": false,
+  "supersedes_snapshot": {
+    "status": "DEAD_immutable",
+    "v1": "02739fff9ab96284187cd0b829b8ef37dec5a1be1827b421e728741fea682a61",
+    "v2": "18df923f84d7ed316afe48d8829b37bc62c2338675ed1620343695038c7f3c4d",
+    "v3": "e16c073c2cd44e8b127d6df376c2483bfe3405ee1c573263dc6f6043330b677c",
+    "v4": "edec8ab1326212a7dcceac604479bde95513455db57d9f05bcfd10e9a94b6582"
+  },
+  "validation_summary": {
+    "b6_residual": "5 failed pre-existing",
+    "cpu_5file_matrix": "85 passed",
+    "d1_d4": true,
+    "gpu_full_file": "5 passed",
+    "phase_topology_green": true
+  },
+  "writable_post_sha256": {
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py": "fe56f497b06476cbd74c4e9dac57acbec50530f448e19041afe40906597a0417",
+    "calm/hrm_text_158/native_full_stack/named_receipt_binding.py": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0",
+    "calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py": "810864b0d5ed6e7c8969adc512321072cdcea28c135b16ca1cdb1b4ce6143d8c",
+    "calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_cpu.py": "90003b19c367e7e44d4aa8324d9546dcbf9607c5edf1b0b08e2d3d04d2d7738d"
+  }
+}

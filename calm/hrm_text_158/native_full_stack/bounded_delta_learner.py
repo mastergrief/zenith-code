@@ -31,6 +31,9 @@ from calm.hrm_text_158.native_full_stack.bounded_delta_accumulator import (
     execute_direct_bounded_local_vote_update_candidate,
     INTRINSIC_BOUNDED_UPDATE_DOMAIN_GAP,
 )
+from calm.hrm_text_158.native_full_stack.named_receipt_binding import (
+    emit_candidate_bounded_decode_sha256_after,
+)
 from calm.hrm_text_158.native_full_stack.forgotten_accum_flip_deferral_apply import (
     apply_global_rate_cap_with_optional_flip_deferral,
 )
@@ -3247,6 +3250,10 @@ def apply_bounded_delta_vote_step(
             proof["oracle_applied_row_identities_sha256"] = None
             proof["oracle_residual_after_threshold_sha256"] = None
             proof["parity_pass"] = None
+            # PLAN_v7 / gate-2 C2: S2 emission via named facade (not direct BDA call).
+            proof["candidate_bounded_decode_sha256_after"] = (
+                emit_candidate_bounded_decode_sha256_after(next_state.bounded_accumulator)
+            )
             if sparse_vote_authority_only:
                 proof["sparse_vote_authority_only"] = True
                 proof["dense_vote_authority_skipped"] = True
@@ -3300,7 +3307,10 @@ def apply_bounded_delta_vote_step(
                         "oracle_dense_vote_sha256": tensor_sha256(dense_votes),
                         "oracle_q_sha256_after": tensor_sha256(oracle_result.q_levels),
                         "oracle_acc_sha256_after": tensor_sha256(oracle_result.accumulators),
-                        "candidate_bounded_decode_sha256_after": tensor_sha256(candidate_decode),
+                        # keep PLAN_v7 streaming S2 authority already set above
+                        "candidate_bounded_decode_sha256_after": proof[
+                            "candidate_bounded_decode_sha256_after"
+                        ],
                         "oracle_applied_row_identities_sha256": oracle_applied_sha,
                         "oracle_residual_after_threshold_sha256": oracle_residual_sha,
                         "parity_pass": bool(parity_pass),

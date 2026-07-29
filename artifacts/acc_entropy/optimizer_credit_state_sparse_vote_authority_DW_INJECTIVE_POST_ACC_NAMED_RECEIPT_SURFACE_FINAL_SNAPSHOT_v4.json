@@ -1,0 +1,44 @@
+{
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "consumer_RO_flag_flip": false,
+    "equivalence_claim": false,
+    "readiness_claim": false,
+    "science_claim": false,
+    "sub2_claim": false
+  },
+  "code_diff_unchanged_from_v3": true,
+  "created_at_utc": "2026-07-29T11:18:57.835729+00:00",
+  "dirty_test_untouched": true,
+  "implement_receipt_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_IMPLEMENT_receipt_v4.json",
+  "implement_receipt_sha256": "a394fcd38dbaecc1ddac69b10ef59cf1c2ded3751438596d12ca27ebbf67cd65",
+  "named_hostiles_count": 8,
+  "plan_sha256": "e8cbf1d39200b0c5b34db81b1575047780326409c299cbe47de1f7bf40a5cd11",
+  "ready_for_gate1_review": true,
+  "receipt_correction_only": true,
+  "ro_all_equal": true,
+  "schema": "hrm_text_158_dw_injective_post_acc_named_receipt_surface/FINAL_SNAPSHOT/v4",
+  "science_claims": false,
+  "supersedes_snapshot": {
+    "status": "DEAD_immutable",
+    "v1": "02739fff9ab96284187cd0b829b8ef37dec5a1be1827b421e728741fea682a61",
+    "v2": "18df923f84d7ed316afe48d8829b37bc62c2338675ed1620343695038c7f3c4d",
+    "v3": "e16c073c2cd44e8b127d6df376c2483bfe3405ee1c573263dc6f6043330b677c"
+  },
+  "validation_summary": {
+    "b6_residual": "5 failed pre-existing",
+    "family_cpu_plus_topo": "82 passed (5-file matrix; no GPU in that cmd)",
+    "gpu_full_file": "5 passed (cmd[1] with env)",
+    "new_suite": "17 passed",
+    "phase_topology_green_after_pin": true,
+    "timing_emission_2x": true,
+    "timing_total_1_5x": true
+  },
+  "writable_post_sha256": {
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py": "63e59c67f37bc2af79d0c21698e46c7a81142ac7102da87e390db9eb1979008c",
+    "calm/hrm_text_158/native_full_stack/named_receipt_binding.py": "34b16baad134319b1edfccc2ee8792a70ec96392166753aa43405bda7df75b24",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "f6062f58ff3c340cca5b1429cd26ca056d2a43a4ebcb16a6ef81876ef174d064",
+    "calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py": "4d8329c6b6f3d60b8d7ecc6b695eb833641ac56e7f4de8ae54c8ce7459169a8e"
+  }
+}

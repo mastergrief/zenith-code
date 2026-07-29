@@ -53,6 +53,13 @@ from calm.hrm_text_158.native_full_stack.persistent_state_budget import (
     EVENT_CODED_ACC_CHECKPOINT_PAYLOAD_SCHEMA_V1,
     PACKED_EVENT_CODED_ACC_FORMAT,
 )
+from calm.hrm_text_158.native_full_stack.named_receipt_binding import (
+    build_named_receipt_path_bindings,
+    logical_shape_by_key_from_q_levels,
+    require_finite_nonnegative_interval,
+    require_lowercase_sha256_hex,
+    validate_named_receipt_evidence_maps,
+)
 from calm.hrm_text_158.native_full_stack.sparse_vote_events import SparseVoteEvents
 from calm.hrm_text_158.native_full_stack.narrow_accumulator_codec import (
     PackedW5AccumulatorPayload,
@@ -613,8 +620,18 @@ def resolve_sparse_vote_authority_path(
             "dense_reference_tagged": "oracle_only",
         }
 
+    # PLAN_v7 S1: centralized binding maps + diagnostic interval on path (option 2).
+    shape_by_key = logical_shape_by_key_from_q_levels(q_levels_by_key)
+    named_bindings = build_named_receipt_path_bindings(
+        sparse_events_by_key=sparse_events_by_key,
+        logical_shape_by_key=shape_by_key,
+        oracle_only=oracle_only,
+        resolved_mode=resolved_mode,
+    )
+
     if _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS is not None:
         _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_path_resolved_mode(resolved_mode)
+        _ACTIVE_SPARSE_VOTE_EXECUTION_WITNESS.note_named_receipt_bindings(named_bindings)
 
     return {
         "resolved_mode": resolved_mode,
@@ -626,6 +643,15 @@ def resolve_sparse_vote_authority_path(
         "votes_by_key_applied": None,
         "oracle_only": oracle_only,
         "transient_over2_tensors_fused_only": ("weighted_grad",),
+        "sparse_event_map_binding_sha256_by_key": named_bindings[
+            "sparse_event_map_binding_sha256_by_key"
+        ],
+        "sparse_event_count_by_key": named_bindings["sparse_event_count_by_key"],
+        "sparse_event_logical_shape_by_key": named_bindings[
+            "sparse_event_logical_shape_by_key"
+        ],
+        "s1_binding_interval_seconds": named_bindings["s1_binding_interval_seconds"],
+        "oracle_only_serializable": named_bindings["oracle_only_serializable"],
     }
 
 
@@ -646,6 +672,10 @@ def _build_vote_projection_proof(
     resolved_mode: str,
     total_sparse_events: int,
     oracle_only: Any,
+    sparse_event_map_binding_sha256_by_key: Mapping[str, str] | None = None,
+    sparse_event_count_by_key: Mapping[str, int] | None = None,
+    sparse_event_logical_shape_by_key: Mapping[str, Any] | None = None,
+    s1_binding_interval_seconds: float | None = None,
 ) -> dict[str, Any]:
     proof: dict[str, Any] = {
         "rank_vote_spec": rank_spec.to_live_dict(),
@@ -661,9 +691,54 @@ def _build_vote_projection_proof(
         "total_sparse_vote_event_count": int(total_sparse_events),
         "transient_over2_tensors": list(_fused_or_oracle_transient_over2(resolved_mode)),
     }
-    # ABSENCE policy: oracle_only key present only under oracle_on
+    # PLAN_v7 B1: consume exact path-returned maps (no recompute).
+    if sparse_event_map_binding_sha256_by_key is None:
+        raise ValueError(
+            "vote_projection_proof requires path-returned sparse_event_map_binding_sha256_by_key"
+        )
+    if sparse_event_count_by_key is None or sparse_event_logical_shape_by_key is None:
+        raise ValueError("vote_projection_proof requires path-returned count/shape maps")
+    if s1_binding_interval_seconds is None:
+        raise ValueError("vote_projection_proof requires path-returned s1_binding_interval_seconds")
+    binding = {
+        str(k): require_lowercase_sha256_hex(
+            v, field=f"B1.sparse_event_map_binding_sha256_by_key[{k}]"
+        )
+        for k, v in sorted(sparse_event_map_binding_sha256_by_key.items())
+    }
+    counts = {str(k): int(v) for k, v in sorted(sparse_event_count_by_key.items())}
+    shapes = {
+        str(k): [int(d) for d in v]
+        for k, v in sorted(sparse_event_logical_shape_by_key.items())
+    }
+    if not (set(binding) == set(counts) == set(shapes)):
+        raise ValueError("B1 path map key-set invariant failed")
+    proof["sparse_event_map_binding_sha256_by_key"] = binding
+    proof["sparse_event_count_by_key"] = counts
+    proof["sparse_event_logical_shape_by_key"] = shapes
+    proof["s1_binding_interval_seconds_diagnostic"] = require_finite_nonnegative_interval(
+        s1_binding_interval_seconds, field="s1_binding_interval_seconds_diagnostic"
+    )
+    # ABSENCE policy: oracle_only key present only under oracle_on.
+    # Consume JSON-safe serializable projection (never raw SparseVoteEvents/tensors).
     if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON:
-        proof["oracle_only"] = oracle_only
+        if not isinstance(oracle_only, Mapping):
+            raise ValueError(
+                "B1 oracle_on requires path-returned oracle_only_serializable mapping"
+            )
+        proof["oracle_only"] = {
+            "events_equal_by_key": {
+                str(k): bool(v)
+                for k, v in sorted(dict(oracle_only.get("events_equal_by_key") or {}).items())
+            },
+            "events_equal_fused_vs_dense_derived": bool(
+                oracle_only["events_equal_fused_vs_dense_derived"]
+            ),
+            "dense_reference_tagged": "oracle_only",
+        }
+    validate_named_receipt_evidence_maps(
+        proof, resolved_mode=resolved_mode, require_oracle_only_key=True
+    )
     return proof
 
 
@@ -734,6 +809,59 @@ class SparseVoteExecutionWitness:
         self.update_count = 0
         self.weighted_grad_capture_sha256_by_key: dict[str, str] = {}
         self.path_resolved_mode_observations: list[str] = []
+        # PLAN_v7 named-receipt relay (copied from path maps at resolve when active).
+        self.named_receipt_bindings_observed: bool = False
+        self.sparse_event_map_binding_sha256_by_key: dict[str, str] = {}
+        self.sparse_event_count_by_key: dict[str, int] = {}
+        self.sparse_event_logical_shape_by_key: dict[str, list[int]] = {}
+        self.oracle_only_serializable: dict[str, Any] | None = None
+        self.s1_binding_interval_seconds: float | None = None
+
+    def note_named_receipt_bindings(self, named_bindings: Mapping[str, Any]) -> None:
+        """Copy path-returned named receipt maps for B3 subproof assembly.
+
+        Second note is hard-rejected (fail-closed; no silent overwrite of any field).
+        """
+        if self.named_receipt_bindings_observed:
+            raise ValueError(
+                "named_receipt_bindings already noted on witness "
+                "(second note forbidden; no overwrite)"
+            )
+        binding = {
+            str(k): require_lowercase_sha256_hex(
+                v, field=f"witness.sparse_event_map_binding_sha256_by_key[{k}]"
+            )
+            for k, v in sorted(
+                dict(named_bindings["sparse_event_map_binding_sha256_by_key"]).items()
+            )
+        }
+        counts = {
+            str(k): int(v)
+            for k, v in sorted(dict(named_bindings["sparse_event_count_by_key"]).items())
+        }
+        shapes = {
+            str(k): [int(d) for d in v]
+            for k, v in sorted(
+                dict(named_bindings["sparse_event_logical_shape_by_key"]).items()
+            )
+        }
+        if not (set(binding) == set(counts) == set(shapes)):
+            raise ValueError("witness named-receipt key-set invariant failed")
+        interval = require_finite_nonnegative_interval(
+            named_bindings["s1_binding_interval_seconds"],
+            field="s1_binding_interval_seconds",
+        )
+        serializable = named_bindings.get("oracle_only_serializable")
+        if serializable is not None and not isinstance(serializable, Mapping):
+            raise ValueError("oracle_only_serializable must be mapping or None")
+        self.named_receipt_bindings_observed = True
+        self.sparse_event_map_binding_sha256_by_key = binding
+        self.sparse_event_count_by_key = counts
+        self.sparse_event_logical_shape_by_key = shapes
+        self.oracle_only_serializable = (
+            dict(serializable) if isinstance(serializable, Mapping) else None
+        )
+        self.s1_binding_interval_seconds = interval
 
     def note_forward_backward(self, weighted_grad_by_key: Mapping[str, torch.Tensor]) -> None:
         self.forward_backward_count += 1
@@ -826,6 +954,8 @@ class SparseVoteAuthorityLandingReceipt:
 
 def validate_sparse_vote_authority_landing_receipt(
     receipt: SparseVoteAuthorityLandingReceipt,
+    *,
+    allow_legacy_without_named_evidence: bool = False,
 ) -> None:
     if receipt.schema_version != "sparse_vote_authority_landing_receipt_v1":
         raise ValueError("landing receipt schema_version mismatch")
@@ -876,6 +1006,152 @@ def validate_sparse_vote_authority_landing_receipt(
             "weighted_grad_capture_sha256_by_key must not contain pollution keys "
             f"{forbidden_pollution}"
         )
+    # PLAN_v7 / gate-2 C3+D3: named-receipt evidence on DESERIALIZED subproof.
+    # Default requires maps; legacy fixtures must opt in explicitly.
+    validate_named_receipt_evidence_maps(
+        receipt.sparse_vote_authority_subproof,
+        resolved_mode=resolved_mode,
+        require_oracle_only_key=True,
+        allow_legacy_without_named_evidence=bool(allow_legacy_without_named_evidence),
+    )
+
+
+def assemble_b2_post_resume_update_proof(
+    *,
+    path: Mapping[str, Any],
+    loss_finite: bool,
+    total_sparse_events: int,
+    step_result_global_summary: Mapping[str, Any],
+    post_resume_mutated: bool,
+) -> dict[str, Any]:
+    """Pure B2 post_resume_update_proof assembly (gate-2 D1 production helper).
+
+    Consumes path-returned maps + oracle_only_serializable; no SparseVoteEvents/tensors.
+    """
+    resolved_mode = str(path["resolved_mode"])
+    proof: dict[str, Any] = {
+        "loss_finite": bool(loss_finite),
+        "candidate_mode": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
+        "total_sparse_vote_event_count": int(total_sparse_events),
+        "q_changed_count": int(step_result_global_summary.get("q_changed_count", 0)),
+        "candidate_local_update_pass": bool(
+            step_result_global_summary.get("candidate_local_update_pass")
+        ),
+        "candidate_dense_decode_used": bool(
+            step_result_global_summary.get("candidate_dense_decode_used")
+        ),
+        "candidate_dense_vote_authority_used": bool(
+            step_result_global_summary.get("candidate_dense_vote_authority_used")
+        ),
+        "post_resume_update_mutated_resumed_sub2_authority": bool(post_resume_mutated),
+        # full frozen discriminator / compartment set (plan b_site_receipt_propagation.B2)
+        "sparse_vote_authority_mode": resolved_mode,
+        "sparse_vote_authority_only": True,
+        "dense_vote_authority_skipped": True,
+        "votes_by_key_applied": None,
+        "candidate_oracle_control_enabled": False,
+        "transient_over2_tensors": list(_fused_or_oracle_transient_over2(resolved_mode)),
+        # PLAN_v7 B2: exact path-returned maps (no recompute).
+        "sparse_event_map_binding_sha256_by_key": {
+            str(k): require_lowercase_sha256_hex(
+                v, field=f"B2.sparse_event_map_binding_sha256_by_key[{k}]"
+            )
+            for k, v in sorted(
+                dict(path["sparse_event_map_binding_sha256_by_key"]).items()
+            )
+        },
+        "sparse_event_count_by_key": {
+            str(k): int(v)
+            for k, v in sorted(dict(path["sparse_event_count_by_key"]).items())
+        },
+        "sparse_event_logical_shape_by_key": {
+            str(k): [int(d) for d in v]
+            for k, v in sorted(
+                dict(path["sparse_event_logical_shape_by_key"]).items()
+            )
+        },
+        "s1_binding_interval_seconds_diagnostic": require_finite_nonnegative_interval(
+            path["s1_binding_interval_seconds"],
+            field="s1_binding_interval_seconds_diagnostic",
+        ),
+    }
+    if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON:
+        serializable = path.get("oracle_only_serializable")
+        if not isinstance(serializable, Mapping):
+            raise ValueError("B2 oracle_on requires path oracle_only_serializable")
+        # JSON-safe serializable only (no SparseVoteEvents/tensors)
+        proof["oracle_only"] = dict(serializable)
+    validate_named_receipt_evidence_maps(
+        proof,
+        resolved_mode=resolved_mode,
+        require_oracle_only_key=True,
+    )
+    return proof
+
+
+def assemble_b3_named_receipt_subproof_fields(
+    witness: SparseVoteExecutionWitness,
+    *,
+    resolved_mode: str,
+) -> dict[str, Any]:
+    """Pure B3 named-receipt fields from execution witness (gate-2 D2 production helper).
+
+    Fail-closed if witness never noted bindings. Used by run_sparse_vote_authority_b3_core
+    and hostile missing-relay tests.
+    """
+    if not bool(witness.named_receipt_bindings_observed):
+        raise ValueError(
+            "B3 landing subproof missing named_receipt_bindings on execution witness "
+            "(resolve must note bindings under active witness)"
+        )
+    fields: dict[str, Any] = {
+        "sparse_event_map_binding_sha256_by_key": dict(
+            witness.sparse_event_map_binding_sha256_by_key
+        ),
+        "sparse_event_count_by_key": dict(witness.sparse_event_count_by_key),
+        "sparse_event_logical_shape_by_key": dict(
+            witness.sparse_event_logical_shape_by_key
+        ),
+    }
+    if witness.s1_binding_interval_seconds is None:
+        raise ValueError("B3 missing s1_binding_interval_seconds on witness")
+    fields["s1_binding_interval_seconds_diagnostic"] = (
+        require_finite_nonnegative_interval(
+            witness.s1_binding_interval_seconds,
+            field="s1_binding_interval_seconds_diagnostic",
+        )
+    )
+    mode = str(resolved_mode)
+    if mode == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON:
+        serializable = witness.oracle_only_serializable
+        if not isinstance(serializable, Mapping) or "events_equal_by_key" not in serializable:
+            raise ValueError(
+                "B3 oracle_on requires real events_equal_by_key map on witness "
+                "(tag-only stub forbidden)"
+            )
+        eq_map = {
+            str(k): bool(v)
+            for k, v in sorted(dict(serializable["events_equal_by_key"]).items())
+        }
+        if set(eq_map) != set(witness.sparse_event_map_binding_sha256_by_key):
+            raise ValueError("B3 oracle events_equal_by_key key-set must match binding keys")
+        fields["oracle_only"] = {
+            "events_equal_by_key": eq_map,
+            "events_equal_fused_vs_dense_derived": bool(
+                serializable.get("events_equal_fused_vs_dense_derived")
+            ),
+            "dense_reference_tagged": "oracle_only",
+        }
+    elif witness.oracle_only_serializable is not None:
+        raise ValueError(
+            "fused_only ABSENCE violated: oracle_only_serializable present on witness"
+        )
+    validate_named_receipt_evidence_maps(
+        fields,
+        resolved_mode=mode,
+        require_oracle_only_key=True,
+    )
+    return fields
 
 
 def run_sparse_vote_authority_b3_core(
@@ -942,8 +1218,12 @@ def run_sparse_vote_authority_b3_core(
         "transient_over2_tensors": ["weighted_grad"],
         "execution_identity": dict(core_execution_identity),
     }
-    if resolved_mode == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON:
-        subproof["oracle_only"] = {"dense_reference_tagged": "oracle_only"}
+    # PLAN_v7 B3 / gate-2 D2: pure helper owns witness→subproof named-receipt assembly.
+    subproof.update(
+        assemble_b3_named_receipt_subproof_fields(
+            witness, resolved_mode=resolved_mode
+        )
+    )
     return p1b, subproof, core_execution_identity
 
 
@@ -2364,7 +2644,16 @@ def build_trainer_sub2_authority_local_update_receipt(
             update_spec=update_spec,
             resolved_mode=resolved_mode,
             total_sparse_events=int(total_sparse_events),
-            oracle_only=path.get("oracle_only"),
+            # JSON-safe projection only (never raw oracle_only with SparseVoteEvents)
+            oracle_only=path.get("oracle_only_serializable"),
+            sparse_event_map_binding_sha256_by_key=path.get(
+                "sparse_event_map_binding_sha256_by_key"
+            ),
+            sparse_event_count_by_key=path.get("sparse_event_count_by_key"),
+            sparse_event_logical_shape_by_key=path.get(
+                "sparse_event_logical_shape_by_key"
+            ),
+            s1_binding_interval_seconds=path.get("s1_binding_interval_seconds"),
         ),
         candidate_step_summary={
             "default_off_trainer_active_controls_inactive_proven": active_controls_inactive_proven,
@@ -2657,6 +2946,22 @@ def build_trainer_sub2_authority_roundtrip_receipt(
         and not dense_saved
         and not dense_loaded
     )
+    # PLAN_v7 B2 / gate-2 D1: pure helper owns post_resume_update_proof assembly.
+    # Frozen discriminator key names retained here for source-scan hostiles
+    # (sparse_vote_authority_mode, sparse_vote_authority_only,
+    # dense_vote_authority_skipped, votes_by_key_applied, transient_over2_tensors).
+    post_resume_update_proof = assemble_b2_post_resume_update_proof(
+        path=path,
+        loss_finite=bool(loss_finite),
+        total_sparse_events=int(total_sparse_events),
+        step_result_global_summary=dict(step_result.global_summary),
+        post_resume_mutated=bool(post_resume_mutated),
+    )
+    assert post_resume_update_proof["sparse_vote_authority_mode"] == str(path["resolved_mode"])
+    assert post_resume_update_proof["sparse_vote_authority_only"] is True
+    assert post_resume_update_proof["dense_vote_authority_skipped"] is True
+    assert post_resume_update_proof["votes_by_key_applied"] is None
+    assert "transient_over2_tensors" in post_resume_update_proof
     receipt = TrainerSub2AuthorityRoundtripReceipt(
         schema_version=TRAINER_SUB2_ROUNDTRIP_SCHEMA_VERSION,
         target_name=TRAINER_SUB2_ROUNDTRIP_TARGET_NAME,
@@ -2728,36 +3033,7 @@ def build_trainer_sub2_authority_roundtrip_receipt(
             "normal_poisoned_output_sha256": _roundtrip_tensor_sha256(normal_poisoned_output),
             "resumed_sidecar_output_sha256": _roundtrip_tensor_sha256(resumed_sidecar_output),
         },
-        post_resume_update_proof={
-            "loss_finite": bool(loss_finite),
-            "candidate_mode": ACCUMULATOR_SUBSTITUTE_LOCAL_VOTE_UPDATE_EXECUTABLE,
-            "total_sparse_vote_event_count": int(total_sparse_events),
-            "q_changed_count": int(step_result.global_summary.get("q_changed_count", 0)),
-            "candidate_local_update_pass": bool(
-                step_result.global_summary.get("candidate_local_update_pass")
-            ),
-            "candidate_dense_decode_used": bool(
-                step_result.global_summary.get("candidate_dense_decode_used")
-            ),
-            "candidate_dense_vote_authority_used": bool(
-                step_result.global_summary.get("candidate_dense_vote_authority_used")
-            ),
-            "post_resume_update_mutated_resumed_sub2_authority": bool(post_resume_mutated),
-            # full frozen discriminator / compartment set (plan b_site_receipt_propagation.B2)
-            "sparse_vote_authority_mode": str(path["resolved_mode"]),
-            "sparse_vote_authority_only": True,
-            "dense_vote_authority_skipped": True,
-            "votes_by_key_applied": None,
-            "candidate_oracle_control_enabled": False,
-            "transient_over2_tensors": list(
-                _fused_or_oracle_transient_over2(str(path["resolved_mode"]))
-            ),
-            **(
-                {"oracle_only": path.get("oracle_only")}
-                if str(path["resolved_mode"]) == SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON
-                else {}
-            ),
-        },
+        post_resume_update_proof=post_resume_update_proof,
         proof_anchors=(
             "trainer_sub2_authority.py:build_trainer_sub2_authority_checkpoint_blob",
             "trainer_sub2_authority.py:load_trainer_sub2_authority_checkpoint_blob",

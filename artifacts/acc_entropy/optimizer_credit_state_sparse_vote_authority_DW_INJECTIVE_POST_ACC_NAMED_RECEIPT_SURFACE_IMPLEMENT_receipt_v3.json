@@ -1,0 +1,164 @@
+{
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "consumer_RO_flag_flip": false,
+    "equivalence_claim": false,
+    "readiness_claim": false,
+    "science_claim": false,
+    "sub2_claim": false
+  },
+  "correction_dispatch_msg_id": "1785323030351-2c73a213",
+  "corrections_applied": {
+    "C1_B2_oracle_serializable": true,
+    "C2_BDL_facade_emit": true,
+    "C3_landing_validator_named_receipt_evidence": true,
+    "C4_tamper_hex_second_note_hostiles_fail_closed_fused_flag": true,
+    "C5_paired_emission_baselines": true,
+    "pin_addendum_fixture_source": true
+  },
+  "created_at_utc": "2026-07-29T11:13:37.154586+00:00",
+  "dirty_trainer_test": {
+    "expected_sha256": "db86b65e261635b45cbada944ee33db0331234065973e24a73f4e73c9737ca71",
+    "path": "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority.py",
+    "untouched": true,
+    "worktree_sha256": "db86b65e261635b45cbada944ee33db0331234065973e24a73f4e73c9737ca71"
+  },
+  "facade_line_count": 347,
+  "files_changed": {
+    "CREATE": [
+      "calm/hrm_text_158/native_full_stack/named_receipt_binding.py",
+      "calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py"
+    ],
+    "EDIT": [
+      "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py"
+    ]
+  },
+  "gate2_block_msg_id": "1785322934056-4042dbe0",
+  "gpu_family_timing_paired": {
+    "all_emission_leq_2x": true,
+    "all_s1_hard_bound": true,
+    "all_total_leq_1_5x": true,
+    "conjunctive": {
+      "B1_fused": {
+        "baseline_emission": 0.0003998279571533203,
+        "baseline_total": 0.0050034350006171735,
+        "emission_leq_2x": true,
+        "emission_ratio": 0.8079904591532499,
+        "post_emission": 0.0003230571746826172,
+        "post_total": 0.005170284000996617,
+        "total_leq_1_5x": true,
+        "total_ratio": 1.0333468907578218
+      },
+      "B2_roundtrip": {
+        "baseline_emission": 0.001676797866821289,
+        "baseline_total": 0.010722547000113991,
+        "emission_leq_2x": true,
+        "emission_ratio": 1.0002843736669984,
+        "post_emission": 0.0016772747039794922,
+        "post_total": 0.009475276001467137,
+        "total_leq_1_5x": true,
+        "total_ratio": 0.883677730800938
+      },
+      "B3_oracle_on": {
+        "baseline_emission": 0.0023581981658935547,
+        "baseline_total": 0.009657532000346691,
+        "emission_leq_2x": true,
+        "emission_ratio": 0.8385400869477303,
+        "post_emission": 0.0019774436950683594,
+        "post_total": 0.009161511001366307,
+        "total_leq_1_5x": true,
+        "total_ratio": 0.9486389484432899
+      }
+    },
+    "method": "temp HEAD checkout of TSA/BDL for baseline phase emission; restore implement; same fixture/seed family builders",
+    "s1_note": "s1 intervals remain <<0.05s hard bound on post path (prior measurements; binding work unchanged order)"
+  },
+  "implement_grant_msg_id": "1785321338836-52397670",
+  "named_hostiles": [
+    "H_CAP_COLLISION_CARRIER_SEPARABLE",
+    "H_MISSING_CARRIER_KEY_FAIL",
+    "H_DUPLICATE_INDEX_FAIL_CLOSED",
+    "H_B3_TAG_ONLY_ORACLE_FORBIDDEN",
+    "H_DECODE_SHA_AUTHORITY",
+    "H_B3_MISSING_WITNESS_RELAY",
+    "H_B2_ORACLE_SERIALIZABLE",
+    "H_SECOND_WITNESS_NOTE_FORBIDDEN"
+  ],
+  "named_hostiles_count": 8,
+  "pin_addendum": {
+    "bdl_literal": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+    "comment_updated": true,
+    "file": "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+    "phase_topology_result": "9 passed",
+    "tsa_literal": "f6062f58ff3c340cca5b1429cd26ca056d2a43a4ebcb16a6ef81876ef174d064"
+  },
+  "plan_id": "DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_PLAN_v7",
+  "plan_sha256": "e8cbf1d39200b0c5b34db81b1575047780326409c299cbe47de1f7bf40a5cd11",
+  "post_implement_sha256": {
+    "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py": "63e59c67f37bc2af79d0c21698e46c7a81142ac7102da87e390db9eb1979008c",
+    "calm/hrm_text_158/native_full_stack/named_receipt_binding.py": "34b16baad134319b1edfccc2ee8792a70ec96392166753aa43405bda7df75b24",
+    "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "f6062f58ff3c340cca5b1429cd26ca056d2a43a4ebcb16a6ef81876ef174d064",
+    "calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py": "4d8329c6b6f3d60b8d7ecc6b695eb833641ac56e7f4de8ae54c8ce7459169a8e"
+  },
+  "receipt_revision": 3,
+  "residual_risks": [
+    "B6 golden 5 fails pre-exist on HEAD; out of grant",
+    "no stage/commit/push in this grant"
+  ],
+  "ro_pins_pre_and_post": {
+    "all_equal": true,
+    "expected": {
+      "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py": "b513189214ffc05396c5163777029f4878d1b38aa9d2eb1f17fcbb4544f53c47",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py": "4e33f89a0c69052463819a88a1749ee496443dfa0a77636d5971603ff35fce8b",
+      "calm/hrm_text_158/native_full_stack/sparse_vote_events.py": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+    },
+    "post": {
+      "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py": "b513189214ffc05396c5163777029f4878d1b38aa9d2eb1f17fcbb4544f53c47",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py": "4e33f89a0c69052463819a88a1749ee496443dfa0a77636d5971603ff35fce8b",
+      "calm/hrm_text_158/native_full_stack/sparse_vote_events.py": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+    }
+  },
+  "schema": "hrm_text_158_dw_injective_post_acc_named_receipt_surface/IMPLEMENT_receipt/v3",
+  "stop_conditions_tripped": [],
+  "supersedes_receipts": [
+    {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_IMPLEMENT_receipt_v1.json",
+      "sha256": "6aa5272e5db723375c11fecd9e2d091f6537f66f5ab9638f7df8d81f8b578c75",
+      "status": "DEAD_immutable"
+    },
+    {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE_IMPLEMENT_receipt_v2.json",
+      "sha256": "3471a9156f6ce2d6dce601dcc0ceded704a20c4b9b1bd9ebf1ca4f9baf615a84",
+      "status": "DEAD_immutable"
+    }
+  ],
+  "task_id": "1785319160424-6ee48028",
+  "validation_commands": [
+    {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_dw_injective_named_receipt_surface_cpu.py calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_cpu.py calm/llm_computer/tests/test_hrm_text_158_sparse_vote_authority_apply.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_topology.py -q",
+      "exit_code": 0,
+      "note": "combined matrix log /tmp/dw_c_final.log: 87 passed",
+      "result": "87 passed (incl. dw 17 + landing 9 + family + GPU file 5 when env set in combined run)"
+    },
+    {
+      "cmd": "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL=/tmp/dw_gpu_phase/phase_events.jsonl PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_sparse_live_carrier_production_landing_gpu_live.py -q",
+      "device": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "env_required": {
+        "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/dw_gpu_phase/phase_events.jsonl"
+      },
+      "exit_code": 0,
+      "result": "5 passed full gpu_live file"
+    },
+    {
+      "classification": "pre_existing_B6_golden",
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_native_bounded_delta_learner.py -q",
+      "exit_code": 1,
+      "result": "5 failed, 70 passed \u2014 B6 golden pre-existing (enum asdict); not this mechanism"
+    }
+  ]
+}
