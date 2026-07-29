@@ -1,0 +1,780 @@
+{
+  "alias_note": "PLAN_v6 write_surface.POST_PUSH_PACKET_CREATE.paths lists \u2026_LANDS_AB_EVAL_packet_v1.json; post-push dispatch 1785275964618-10a45849 names operative create as \u2026_LANDS_AB_EVAL_launch_packet_v1.json. Operative = this path.",
+  "artifact_class": "POST_PUSH_PACKET_CREATE",
+  "authority_chain": {
+    "commit_sha": "24c9bbd7eabf0d3f90f5dffff570092fccc38ba6",
+    "gate2_semantic_pass_msg_id": "1785274578042-8ef32490",
+    "implement_receipt_v15_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_IMPLEMENT_receipt_v15.json",
+    "implement_receipt_v15_sha256": "e5f5234083e3ca52caf411b7b9bd07be67c35936eca1ecea0efaf17b9a2c187f",
+    "implement_snapshot_v15_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_FINAL_SNAPSHOT_v15.json",
+    "implement_snapshot_v15_sha256": "2cd3aeac48de522a44c2b204797ae39d781b4ae41631d064b0d383d25f07fafd",
+    "next_gates": [
+      "claude gate-1 freeze of this packet",
+      "codex_co_lead gate-2 launch review of frozen packet",
+      "claude +1 launch/watch-to-terminal-condition citing plan sha + packet sha",
+      "claude-as-test-operator FORMAL_RUNTIME_CREATE + 7-row run"
+    ],
+    "plan_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_PLAN_v6.json",
+    "plan_sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+    "post_push_packet_dispatch_msg_id": "1785275964618-10a45849",
+    "push_receipt_msg_id": "1785275937360-8c0b323b"
+  },
+  "branch": "feature/hrm-text-1.58",
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "does_not_mint": [
+      "LANDS-AB equivalence",
+      "readiness flip",
+      "debt-row flip",
+      "sub-2 / byte_savings / density_win",
+      "acquisition / bank",
+      "full_sub2_runtime_ready_for_science"
+    ],
+    "emitted_receipts_must_have": {
+      "claim_ceiling.LANDS_AB": false,
+      "science_claim": false
+    },
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "cross_thread_required": true,
+  "dispatch_msg_id": "1785275964618-10a45849",
+  "drafted_by": "codex/plan-dev",
+  "evidence_consumer_command": {
+    "device": "cpu",
+    "duration_budget_seconds": 120,
+    "formal_entry": "build_eval_receipt_from_raw_artifacts (sole science consumer)",
+    "gating_row": "EVIDENCE_CONSUMER",
+    "invocation": {
+      "argv_template": [
+        "timeout",
+        "120",
+        "python3",
+        "-c",
+        "import json,hashlib; from pathlib import Path; from calm.hrm_text_158.native_full_stack.lands_ab_eval_evidence_contract import build_eval_receipt_from_raw_artifacts; from calm.hrm_text_158.native_full_stack.lands_ab_eval_fixture_source import DEFAULT_SOURCE_PINS; man=json.loads(Path(r'/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/raw_artifact_manifest-<nonce>.json').read_text()); receipt=build_eval_receipt_from_raw_artifacts(raw_artifact_paths=man['raw_artifact_paths'], source_pins=dict(DEFAULT_SOURCE_PINS), required_key_set=man['required_key_set'], caveats=man.get('caveats')); out=Path(r'/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/eval_receipt-<nonce>.json'); out.write_text(json.dumps(receipt, indent=2, sort_keys=True)+chr(10)); print(json.dumps({'branch_id': receipt['reducer_output']['branch_id'], 'science_claim': receipt['science_claim'], 'LANDS_AB': receipt['claim_ceiling']['LANDS_AB'], 'eval_receipt_sha256': hashlib.sha256(out.read_bytes()).hexdigest(), 'path': str(out)}, sort_keys=True))"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "env_required": {
+        "PYTHONPATH": "."
+      },
+      "eval_receipt_path_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/eval_receipt-<nonce>.json",
+      "expected_child_rc": 0,
+      "notes": [
+        "Manifest must map all 7 GATING_ROWS to {path, sha256} of O_EXCL raw observations; required_key_set is the union of row key_universe fields (sorted unique) harvested from raw obs \u2014 never hand-authored mid-run.",
+        "Consumer recomputes surface_pass_by_row from primitives; caller booleans never trusted."
+      ],
+      "raw_artifact_manifest_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/raw_artifact_manifest-<nonce>.json"
+    }
+  },
+  "execution_order": [
+    "preflight",
+    "G_CPU_STATIC_AB",
+    "G_CUDA_B1_APPLY",
+    "G_CUDA_B2_APPLY",
+    "G_CUDA_B3_APPLY",
+    "G_CUDA_ORACLE_B1",
+    "G_CUDA_ORACLE_B2",
+    "G_CUDA_ORACLE_B3",
+    "EVIDENCE_CONSUMER",
+    "terminal_classification"
+  ],
+  "executor": {
+    "forbidden_for_plan_dev": [
+      "formal 7-row matrix execution",
+      "terminal receipt mint under FORMAL_RUNTIME_CREATE",
+      "any science claim upgrade"
+    ],
+    "minimal_polling": true,
+    "mode": "foreground_shell_plus_watch_wrap_monitor",
+    "one_terminal_receipt": true,
+    "role": "claude_as_test_operator"
+  },
+  "gating_rows_exact": [
+    "G_CPU_STATIC_AB",
+    "G_CUDA_B1_APPLY",
+    "G_CUDA_B2_APPLY",
+    "G_CUDA_B3_APPLY",
+    "G_CUDA_ORACLE_B1",
+    "G_CUDA_ORACLE_B2",
+    "G_CUDA_ORACLE_B3"
+  ],
+  "minted_at": "2026-07-28T22:02:48Z",
+  "no_pt": true,
+  "packet_revision": "v1",
+  "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v1.json",
+  "pins": {
+    "BDL": {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "sha256": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d"
+    },
+    "IMPLEMENT_v15": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_IMPLEMENT_receipt_v15.json",
+      "sha256": "e5f5234083e3ca52caf411b7b9bd07be67c35936eca1ecea0efaf17b9a2c187f"
+    },
+    "PLAN_v6": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_PLAN_v6.json",
+      "sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5"
+    },
+    "SNAPSHOT_v15": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_FINAL_SNAPSHOT_v15.json",
+      "sha256": "2cd3aeac48de522a44c2b204797ae39d781b4ae41631d064b0d383d25f07fafd"
+    },
+    "TSA": {
+      "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "sha256": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a"
+    },
+    "default_source_pins_for_consumer": {
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v9.json": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_GPU_SMOKE_packet_v4.json": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "bin/watch-wrap": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ef3eb981c23c5ba43bfe9e6a647e9a59b55824204f368efb3f0fcd1dfe92365d",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "6a923faf9755e09b52a712806f935b1d75736589b214f4bd11a959f2c00e9c3a"
+    },
+    "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+    "parity_fixture_descriptor_sha256": "fdc186f780cfdcbe5db72ee04bef49628173a65106e1843d21593c047290314c",
+    "recarry_receipt": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f"
+    },
+    "repo_HEAD": "24c9bbd7eabf0d3f90f5dffff570092fccc38ba6",
+    "runner_and_harness_shas": {
+      "bin/watch-wrap": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py": "b82dd32ab72a82dce817932d5796e57510346d314f05afcffa96298ae945d5b2",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py": "87e5375a98b64512bd03a2ed0823b61c1f8c3e2ebf3b3cf8af71d5c367e138f3",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py": "a13c07b35f33853bb9f6a997746f6ea7aa3f5c9bbad35a338a5b03c8dc2f92f5",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py": "cc5125f9ff279d32144e014f617c34f166b9313a16d4a2ac1597f9e7c628d05e",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py": "4cb1da85520baf5d6ccbe5799506cc53f64464de756694a2d382d2fc61ff7fd8",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py": "b513189214ffc05396c5163777029f4878d1b38aa9d2eb1f17fcbb4544f53c47",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_jsonl.py": "adef162342859404fb8bdd8d29f472d2a694cd7e422407e7863b94cd4c827610",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_topology.py": "4226658b286359dd46459fa0f3d86f8b0a61e22b4f3c52942d5a07da239ec0ef",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py": "f15ff1f1c308f3752212236b33de89d151ef8e53569e52ff619ecbf323133a9d",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py": "e26e84af3c96a57a6ac685c472545faf654a289d896bb653cc2abf6405b21a29",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py": "b7a92fe35eed5c2319e0c9434d6421f71360ab138179f0ab732cc4c7b0c02b48",
+      "scripts/lands_ab_eval_run.py": "cb7e31ff4131935002c4b873808aa97ca74a95e81aab982f577d804d3dbf352a",
+      "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py": "5e79d9cdb99f23a00fa5bb1bd5aed984b42980ca5697e201f2213873ae9aca0f"
+    }
+  },
+  "preflight_checklist": [
+    "git rev-parse HEAD == 24c9bbd7eabf0d3f90f5dffff570092fccc38ba6",
+    "origin/feature/hrm-text-1.58 == HEAD",
+    "re-hash PLAN_v6 \u2192 93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5",
+    "re-hash SNAPSHOT_v15 \u2192 2cd3aeac48de522a44c2b204797ae39d781b4ae41631d064b0d383d25f07fafd",
+    "re-hash this packet against the frozen packet sha from the go record (runner-supplied; do not embed final self-hash as the sole pin)",
+    "re-hash TSA 6a923faf\u2026 and BDL ef3eb981\u2026 (must match pins; any drift = STOP)",
+    "re-hash recarry 783f2799\u2026 + descriptor constant fdc186f7\u2026 + all default_source_pins",
+    "re-hash runner/enforcer/watch-wrap/gpu_live/harness entry shas in pins.runner_and_harness_shas",
+    "CUDA device cuda:0 available for the six CUDA rows",
+    "SCRATCH_ROOT parent exists; all preflight_must_not_exist paths absent",
+    "no .pt load/save; no artifacts/ raw writes planned",
+    "go record cites PLAN_v6 sha + this packet sha; no launch without that go"
+  ],
+  "preregistration": {
+    "any_other_terminal_branch_including_EQUIVALENT": "DEVIATION \u2192 stop + report, not a claim",
+    "bounded_classification": "production emission surfaces insufficient for named-execution bit-exact equivalence certification (B1 injective post-acc surface absent; B3 named oracle map absent)",
+    "claim_ceiling_locked": {
+      "LANDS_AB": false,
+      "equivalent_minted": false,
+      "full_sub2_runtime_ready_for_science": false,
+      "science_claim": false
+    },
+    "expected_terminal_branch": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+    "forbidden_terminal_wording_on_this_run": [
+      "BR-LANDS-AB-EQUIVALENT",
+      "EQUIVALENT",
+      "DIVERGENT as science claim of production inequality beyond fixture-contract",
+      "readiness flip",
+      "debt-row flip",
+      "sub-2",
+      "full_sub2_runtime_ready_for_science",
+      "LANDS_AB=true"
+    ],
+    "locked": true,
+    "note": "This formal matrix is a preregistered STRUCTURAL NULL under current TSA emission. The reducer-derived branch is the output of interest; it does not mint LANDS-AB science. If the run returns anything other than BR-LANDS-AB-FIXTURE-CONTRACT-FAIL, treat as protocol deviation (harness/packet/pin/run-shape), not as unexpected science success.",
+    "reason_surface_refs": [
+      "DW_INJECTIVE_POST_ACC_NAMED_RECEIPT_SURFACE",
+      "B3 named oracle map absence \u2192 honest fixture-fail on G_CUDA_ORACLE_B3 / related cells"
+    ],
+    "rejects_upgraded_science_wording": true
+  },
+  "report_to": [
+    "claude"
+  ],
+  "row_commands": [
+    {
+      "device": "cpu",
+      "duration_budget_seconds": 180,
+      "formal_entry": "scripts/lands_ab_eval_run.py --mode cpu-static-ab \u2192 measure_g_cpu_static_ab",
+      "gating_row": "G_CPU_STATIC_AB",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "180",
+          "python3",
+          "scripts/lands_ab_eval_run.py",
+          "--mode",
+          "cpu-static-ab",
+          "--out",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/raw_obs_G_CPU_STATIC_AB-<nonce>.json"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "env_required": {
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator",
+          "PYTHONPATH": "."
+        },
+        "expected_child_rc": 0,
+        "notes": [
+          "CPU row does NOT arm SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL (no CUDA phase stream).",
+          "Runner prints JSON and writes --out; executor must re-hash --out and record path+sha256 into the raw_artifact_manifest for the consumer.",
+          "science_claim must be false; synthetic_only must be false on this path."
+        ],
+        "raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/raw_obs_G_CPU_STATIC_AB-<nonce>.json"
+      },
+      "surfaces": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s6"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_b1_apply_twin_s3_s4_s6 under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_B1_APPLY",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B1_APPLY-<nonce>.jsonl",
+          "--expected-node-id",
+          "G_CUDA_B1_APPLY",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B1_APPLY-<nonce>.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_b1_apply_twin_s3_s4_s6",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_receipt_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B1_APPLY-<nonce>.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B1_APPLY-<nonce>.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B1_APPLY-<nonce>.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B1_APPLY-<nonce>.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B1_APPLY-<nonce>.json"
+        ],
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_B1_APPLY (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/."
+      },
+      "surfaces": [
+        "s3",
+        "s4",
+        "s6"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_b2_apply_twin_s3_s4_s6 under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_B2_APPLY",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B2_APPLY-<nonce>.jsonl",
+          "--expected-node-id",
+          "G_CUDA_B2_APPLY",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B2_APPLY-<nonce>.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_b2_apply_twin_s3_s4_s6",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_receipt_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B2_APPLY-<nonce>.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B2_APPLY-<nonce>.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B2_APPLY-<nonce>.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B2_APPLY-<nonce>.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B2_APPLY-<nonce>.json"
+        ],
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_B2_APPLY (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/."
+      },
+      "surfaces": [
+        "s3",
+        "s4",
+        "s6"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_b3_apply_twin_s3_s4_s6 under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_B3_APPLY",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B3_APPLY-<nonce>.jsonl",
+          "--expected-node-id",
+          "G_CUDA_B3_APPLY",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B3_APPLY-<nonce>.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_b3_apply_twin_s3_s4_s6",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_receipt_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B3_APPLY-<nonce>.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B3_APPLY-<nonce>.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B3_APPLY-<nonce>.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_B3_APPLY-<nonce>.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_B3_APPLY-<nonce>.json"
+        ],
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_B3_APPLY (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/."
+      },
+      "surfaces": [
+        "s3",
+        "s4",
+        "s6"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_oracle_b1_events_equal under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_ORACLE_B1",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B1-<nonce>.jsonl",
+          "--expected-node-id",
+          "G_CUDA_ORACLE_B1",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B1-<nonce>.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_oracle_b1_events_equal",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_receipt_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B1-<nonce>.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B1-<nonce>.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B1-<nonce>.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B1-<nonce>.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B1-<nonce>.json"
+        ],
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_ORACLE_B1 (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/."
+      },
+      "surfaces": [
+        "s5"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_oracle_b2_events_equal under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_ORACLE_B2",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B2-<nonce>.jsonl",
+          "--expected-node-id",
+          "G_CUDA_ORACLE_B2",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B2-<nonce>.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_oracle_b2_events_equal",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_receipt_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B2-<nonce>.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B2-<nonce>.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B2-<nonce>.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B2-<nonce>.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B2-<nonce>.json"
+        ],
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_ORACLE_B2 (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/."
+      },
+      "surfaces": [
+        "s5"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_oracle_b3_events_equal under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_ORACLE_B3",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B3-<nonce>.jsonl",
+          "--expected-node-id",
+          "G_CUDA_ORACLE_B3",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B3-<nonce>.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_oracle_b3_events_equal",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_receipt_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B3-<nonce>.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B3-<nonce>.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B3-<nonce>.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/phase_events_G_CUDA_ORACLE_B3-<nonce>.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator/enforcer_receipt_G_CUDA_ORACLE_B3-<nonce>.json"
+        ],
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_ORACLE_B3 (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/."
+      },
+      "surfaces": [
+        "s5"
+      ]
+    }
+  ],
+  "runtime_scratch": {
+    "nonce_policy": "Replace <nonce> once per formal run with a fresh hex nonce; never reuse paths.",
+    "root_template": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/24c9bbd7eabf0d3f/test-operator",
+    "rule": "ALL raw observations, phase JSONL, enforcer receipts, manifest, eval receipt live under /tmp (or LANDS_AB_RUNTIME_SCRATCH) OUTSIDE artifacts/. Writing raw into artifacts/ is STOP."
+  },
+  "schema": "LANDS_AB_EVAL_launch_packet/v1",
+  "self_check": {
+    "LANDS_AB_false_locked": true,
+    "consumer_present": true,
+    "cpu_plus_six_cuda": true,
+    "does_not_execute": true,
+    "enforcer_8_event_budgets_named": true,
+    "expected_branch_locked_structural_null": true,
+    "scratch_outside_artifacts": true,
+    "seven_gating_rows_present": true
+  },
+  "stop_conditions": [
+    "enforcer rc != 0 OR terminal_class != OK OR phase overrun / missing coverage / duplicate start",
+    "pytest/child rc != 0",
+    "digest/pin mismatch at preflight or mid-run recheck (HEAD/PLAN/SNAPSHOT/TSA/BDL/recarry/source_pins/harness)",
+    "any TSA/BDL byte drift vs pins",
+    "raw-artifact write into artifacts/ (or any path not outside artifacts/)",
+    "row wall time exceeds declared duration_budget_seconds / hard_timeout_seconds",
+    "consumer raw_artifact_paths missing any of the 7 gating rows",
+    "terminal branch != BR-LANDS-AB-FIXTURE-CONTRACT-FAIL (DEVIATION \u2014 stop + report; do not reword as science)",
+    "any attempt to emit LANDS_AB=true / EQUIVALENT mint language / readiness or debt flip",
+    ".pt commit or banked-parent mutation"
+  ],
+  "task_id": "1785244883605-c7c0b0a3",
+  "terminal_classification": {
+    "FORMAL_RUNTIME_CREATE_path_after_go": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_terminal_receipt_v1.json",
+    "expected_branch_id": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+    "note": "Terminal receipt mint is FORMAL_RUNTIME_CREATE (claude-as-test-operator) after go \u2014 not part of this packet create.",
+    "on_match": "shippable structural null receipt; LANDS_AB remains false; opens separate HIGH TSA/BDL injective-emission follow-on only",
+    "on_mismatch": "DEVIATION \u2014 stop, report branch_id + reason_codes + raw artifact shas; no claim upgrade"
+  },
+  "work_repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158"
+}

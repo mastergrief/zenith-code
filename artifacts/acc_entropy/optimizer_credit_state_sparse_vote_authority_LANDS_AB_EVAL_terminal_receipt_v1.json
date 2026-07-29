@@ -1,0 +1,126 @@
+{
+  "HEAD_sha": "a258f3142e5e9af1ca95b6cc825d84afa3e7d637",
+  "artifact_class": "FORMAL_RUNTIME_CREATE",
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "enforcer_receipt_paths_and_sha256_for_6_cuda_rows": {
+    "G_CUDA_B1_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/enforcer_receipt_G_CUDA_B1_APPLY.json",
+      "sha256": "946079c9307941624402d61806aa86a7ff840489d4a9f426fde233f708743b21"
+    },
+    "G_CUDA_B2_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/enforcer_receipt_G_CUDA_B2_APPLY.json",
+      "sha256": "1668ebe11346b16d0facdd90cb515dd09657938ebc0bc310e85238f12f2ebc1c"
+    },
+    "G_CUDA_B3_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/enforcer_receipt_G_CUDA_B3_APPLY.json",
+      "sha256": "f0b34750d9a00529e83a093a37d720214fefb1f3f01633079a854d861c400737"
+    },
+    "G_CUDA_ORACLE_B1": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/enforcer_receipt_G_CUDA_ORACLE_B1.json",
+      "sha256": "ffc2f44c9f495efcf5ec83f8530d66a39625fa54ef4f2ca14ae487389630be96"
+    },
+    "G_CUDA_ORACLE_B2": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/enforcer_receipt_G_CUDA_ORACLE_B2.json",
+      "sha256": "899291410a9444320ed9fd7dbb549a7f95ac2fcef8211024da642e0e6937c713"
+    },
+    "G_CUDA_ORACLE_B3": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/enforcer_receipt_G_CUDA_ORACLE_B3.json",
+      "sha256": "22131066a9d5d654013f32704c163830ce436553db0aab46d93b4b7165485f37"
+    }
+  },
+  "eval_receipt_path_and_sha256": {
+    "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/eval_receipt.json",
+    "sha256": "1f8ae37e4c2f874236eb91d8243b4d44014c0b8c0525dd6d43c625f280f9af90"
+  },
+  "executor": "claude_as_test_operator",
+  "gate2_pass_msg_id": "1785316223001-2579cbfa",
+  "go_record_msg_id": "1785316249337-7fb606b7",
+  "manifest_path_and_sha256": {
+    "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/raw_artifact_manifest.json",
+    "sha256": "d80434be154ca3b629398e712828f0cbac0e3b72acfc1633765a30033d0936c3"
+  },
+  "minted_at": "2026-07-29T09:14:01Z",
+  "operative_packet_path_and_sha256": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v6.json",
+    "sha256": "6a97928392384d1769164c8c6bc3ef86c6474deb5086153ccf5d17dcb66f9722"
+  },
+  "per_row_durations_seconds": {
+    "EVIDENCE_CONSUMER": 3.67,
+    "G_CPU_STATIC_AB": 4.55,
+    "G_CUDA_B1_APPLY": 12.32,
+    "G_CUDA_B2_APPLY": 11.78,
+    "G_CUDA_B3_APPLY": 11.94,
+    "G_CUDA_ORACLE_B1": 11.74,
+    "G_CUDA_ORACLE_B2": 11.76,
+    "G_CUDA_ORACLE_B3": 11.35
+  },
+  "phase_jsonl_paths_and_sha256_for_6_cuda_rows": {
+    "G_CUDA_B1_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/phase_events_G_CUDA_B1_APPLY.jsonl",
+      "sha256": "76f9cb461e55858f5f3ac3eefe3e09193875773a7341f23fa00ac7a7cdd8c385"
+    },
+    "G_CUDA_B2_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/phase_events_G_CUDA_B2_APPLY.jsonl",
+      "sha256": "50cbe6f936bdc3f77a92558a74d5311e9f84087b27aaa541f46291cf7da906a1"
+    },
+    "G_CUDA_B3_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/phase_events_G_CUDA_B3_APPLY.jsonl",
+      "sha256": "a2cc5f2e8f8d501dc451917d26f6ddf021a1d0f86707eb03d9f2a718b2e7bad3"
+    },
+    "G_CUDA_ORACLE_B1": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/phase_events_G_CUDA_ORACLE_B1.jsonl",
+      "sha256": "5168151967761d58751fd695dbd6e5e4f91db271650d7c032951c5422e48e684"
+    },
+    "G_CUDA_ORACLE_B2": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/phase_events_G_CUDA_ORACLE_B2.jsonl",
+      "sha256": "fa0650d624520b2de4db20990e67d4b12695b581a85f86e742bb77b9d4615014"
+    },
+    "G_CUDA_ORACLE_B3": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/phase_events_G_CUDA_ORACLE_B3.jsonl",
+      "sha256": "eb2f492dfca6e926002272df03cceaac3cf393a56f2f7faf2b4192a6aa14f6ee"
+    }
+  },
+  "prereg_expected_branch": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+  "prereg_match": true,
+  "raw_obs_paths_and_sha256_for_all_7_gating_rows": {
+    "G_CPU_STATIC_AB": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/lands_ab_raw_obs_G_CPU_STATIC_AB_90e35b12db41bc95.json",
+      "sha256": "9727ae42771b910770017e6d0d555bd246439fdb16703d33504e00142815c73e"
+    },
+    "G_CUDA_B1_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/lands_ab_raw_obs_G_CUDA_B1_APPLY_cf4b5414fd2c.json",
+      "sha256": "b76ec960c05604b13d7cb5d0a164635449d30d44055ed29070bfab39061ee245"
+    },
+    "G_CUDA_B2_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/lands_ab_raw_obs_G_CUDA_B2_APPLY_252902048ff0.json",
+      "sha256": "66514ee3249fa028e5421b7e136f0bede3b62a93bc46cb61eea7c32ce95fa13b"
+    },
+    "G_CUDA_B3_APPLY": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/lands_ab_raw_obs_G_CUDA_B3_APPLY_d40ca361fc3e.json",
+      "sha256": "d5b26965f7e1bf0955309859fcb05a46150e52a02f57b1537d6a301a841835e0"
+    },
+    "G_CUDA_ORACLE_B1": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/lands_ab_raw_obs_G_CUDA_ORACLE_B1_41f7d6f62d23.json",
+      "sha256": "a3310c8e02678dda88c37a704e6209caf94caa3f31580d6a327c33318775d9c3"
+    },
+    "G_CUDA_ORACLE_B2": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/lands_ab_raw_obs_G_CUDA_ORACLE_B2_35995ca315a8.json",
+      "sha256": "f2e19903066f4d375c72d23bbdc054e4aab3141191f41b87e4e49965a51ff683"
+    },
+    "G_CUDA_ORACLE_B3": {
+      "path": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95/lands_ab_raw_obs_G_CUDA_ORACLE_B3_b01004ac7361.json",
+      "sha256": "5e3c8ed3e41e7f56345e716d8614e1bb3302a23c059a7f1acfcd9dfa87a1eea2"
+    }
+  },
+  "run_root": "/tmp/lands_ab_runtime_scratch/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/90e35b12db41bc95",
+  "schema": "lands_ab_eval_formal_terminal_receipt_v1",
+  "science_claim": false,
+  "task_id": "1785244883605-c7c0b0a3",
+  "terminal_branch_id": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+  "tsa_bdl_rehash_pre_and_post": "MATCH"
+}
