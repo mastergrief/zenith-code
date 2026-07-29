@@ -1,0 +1,35 @@
+{
+  "B1_fused": {
+    "S1_n": 1,
+    "candidate_bounded_decode_sha256_after_sample": "4dbae61e287bb9ed53a3a8eda64d7e5bd28ac4eea15d85e0de34e4b089da399c",
+    "sparse_event_map_binding_sha256_by_key": {
+      "lin": "5e27e551a8cfe54d5bc8ddea14915318941861a5814afe8113b60a78c1758abf"
+    }
+  },
+  "B2_roundtrip": {
+    "authoritative_state_payload_sha256": "96197f367192629824ee99c6954eef5ec47dfc5aa644f8e01e3ccca95f2ce2bd",
+    "payload_changed": true,
+    "post_update_authoritative_state_payload_sha256": "1c9769265c46b4c2b01ded53846550ee91c9c1eef539aa18301f55f638676504",
+    "sparse_event_map_binding_sha256_by_key": {
+      "lin": "0e39badcdda0ee95d171dd4cc564994fd1399b2f2b61a141592d9d56b4ccf6e1"
+    }
+  },
+  "B3_landing_fused": {
+    "oracle_only_absent_under_fused": true,
+    "post_update_payload_sha256": "b35c38665ca898d044c047178e7bfb87d159f998642700f85448792d1ecc2ab6",
+    "sparse_event_map_binding_sha256_by_key": {
+      "lin": "3ab135cb771d904093687dd802f55e0c035740f44f716f653eaaa981ec686ebf"
+    }
+  },
+  "B3_landing_oracle_on": {
+    "dense_reference_tagged": "oracle_only",
+    "events_equal_by_key": {
+      "lin": true
+    },
+    "events_equal_fused_vs_dense_derived": true,
+    "oracle_only_absent_under_fused": false,
+    "sparse_event_map_binding_sha256_by_key": {
+      "lin": "fbd25667127ef9eb29eb0fd62e92dddd328c7212ee236e318902a18e136e2f57"
+    }
+  }
+}

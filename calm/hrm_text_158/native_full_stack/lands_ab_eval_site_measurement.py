@@ -41,6 +41,8 @@ from calm.hrm_text_158.native_full_stack.lands_ab_eval_production_binding import
 from calm.hrm_text_158.native_full_stack.lands_ab_eval_production_post_state import (
     applied_identities_from_proof_by_key,
     crosscheck_production_q_vs_receipt_proof,
+    recompute_s1_and_compare,
+    evaluate_family_s2,
     production_fused_apply_post_states,
     production_post_q_and_logical_acc_sha256_by_key,
 )
@@ -285,6 +287,12 @@ def measure_from_production_capture(
     receipt_proof_by_key: Mapping[str, Any] | None = None,
     production_event_count: int | None = None,
     production_q_changed_count: int | None = None,
+    named_sparse_event_map_binding_sha256_by_key: Mapping[str, str] | None = None,
+    named_sparse_event_logical_shape_by_key: Mapping[str, Any] | None = None,
+    family: str | None = None,
+    named_s2_decode_by_key: Mapping[str, str] | None = None,
+    named_post_payload_sha256: str | None = None,
+    twin_or_canonical_post_payload_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Author apply-row cells from production-bound primitives (IMPLEMENT_v10).
 
@@ -332,13 +340,38 @@ def measure_from_production_capture(
         logical_acc_absent_reason = "production_logical_acc_not_ro_decodable"
     else:
         logical_acc_absent_reason = ""
-    # cross-check re-apply q vs named receipt proof when provided
+    # S1: independent NRB recompute from prod_apply events + prior q shapes (PLAN_v6)
+    s1_compare = recompute_s1_and_compare(
+        sparse_events_by_key=dict(prod_apply.get("sparse_events_by_key") or {}),
+        prior_states=cpu_states,
+        named_binding_by_key=named_sparse_event_map_binding_sha256_by_key,
+        named_shape_by_key=named_sparse_event_logical_shape_by_key,
+    )
+    s2_compare = evaluate_family_s2(
+        family=family or site_tag,
+        named_s2_decode_by_key=named_s2_decode_by_key,
+        production_logical_acc_by_key=prod_hashes.get(
+            "production_post_logical_acc_sha256_by_key"
+        ),
+        named_post_payload_sha256=named_post_payload_sha256,
+        twin_or_canonical_post_payload_sha256=twin_or_canonical_post_payload_sha256,
+    )
+    # cross-check: family-specific (D1) — B1 needs transition proof; B2/B3 S1+S2 only
+    fam = family or site_tag
     xcheck = crosscheck_production_q_vs_receipt_proof(
         production_post_q_sha256_by_key=prod_hashes["production_post_q_sha256_by_key"],
         receipt_proof_by_key=dict(receipt_proof_by_key or {}),
         builder_receipt_pass=bool(builder_receipt_pass),
         reapply_proof_by_key=dict(prod_apply.get("proof_by_key") or {}),
+        s1_compare=s1_compare if builder_receipt_pass else None,
+        s2_compare=s2_compare if builder_receipt_pass else None,
+        family=fam,
     )
+    # Always attach diagnostic S1/S2 under the allowed optional key for hostiles/GPU
+    # smokes (top-level metrics keys are fail-closed by RO metric_reducer allowlist).
+    xcheck = dict(xcheck)
+    xcheck.setdefault("s1_compare", s1_compare)
+    xcheck.setdefault("s2_compare", s2_compare)
     if not xcheck.get("crosscheck_ok"):
         fixture_fail = True
 
@@ -346,9 +379,12 @@ def measure_from_production_capture(
         dict(prod_apply.get("proof_by_key") or {})
     )
     named_applied = applied_identities_from_proof_by_key(dict(receipt_proof_by_key or {}))
-    # require equality of applied-identity maps when builder pass (v12)
-    if builder_receipt_pass and named_applied != reapply_applied:
-        fixture_fail = True
+    # B1 only: require applied-identity map equality when builder pass + proof provided
+    fam_u = (fam or "").upper()
+    is_b1 = fam_u in ("B1", "G_CUDA_B1_APPLY") or fam_u.startswith("B1") or "B1" in fam_u
+    if builder_receipt_pass and is_b1 and receipt_proof_by_key is not None:
+        if named_applied != reapply_applied:
+            fixture_fail = True
     production = {
         "builder_receipt_pass": bool(builder_receipt_pass),
         "total_sparse_vote_event_count": int(
@@ -399,6 +435,7 @@ def measure_from_production_capture(
             "production_post_logical_acc_sha256_by_key"
         ],
         "production_binding": bind,
+        # s1/s2 nested under production_reapply_crosscheck (RO metric_reducer allowlist)
         "production_reapply_crosscheck": xcheck,
         "logical_acc_absent_reason": logical_acc_absent_reason,
         "twin_post_authoritative_state_payload_sha256": compare.get(

@@ -1,0 +1,60 @@
+{
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "delta_vs_v3": "validation cmd fields only",
+  "files_changed_sha256": {
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py": "67e5e3a018de478ee91797af0e4ce2f7effa06bb41caacbf1a5f0ddd8cd782dc",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py": "f79ac0eff64a831a92b1e93101b2ce5dbaaaa03f56c32ced4bf69c548b0209a0",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py": "e73084fc1e1c833d555eaf64fcd4c61a1af1631fd1696db70977ce86e0fd4ffc",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py": "8ca9ee61a8988f1ba48fb3e0d31d91a3344d3cb59f8840ef989ce70528eba7f9",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py": "a6699d018e45eea586436971647bcce5ef9a944afa8ea36138d834676efa66a7",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py": "c1006a06e1aad03f6d5bee91c8c011e1c1c5372e8fc8866c10f31e066aaf9493",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py": "9b3d4f8fce36256622b6827ce76c5c592d1f5a57e7edbc7f6ffaf4f6ee7d6148",
+    "scripts/lands_ab_packet_dry_exec.py": "68522167cc6f3e3841561b03a75901f0ea54ee0992a73fce2d46713ae12fcc27",
+    "scripts/lands_ab_plan_v4_characterization.py": "ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33",
+    "scripts/lands_ab_science_source_manifest.py": "cd4bc6244a9b9f7539b832250167bb792a4c18b5b6daf92479ddc33b08bba89e"
+  },
+  "gate1_block_msg_id": "1785336202529-c1f9ed06",
+  "implements_receipt_A": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_IMPLEMENT_receipt_A_v4.json",
+  "implements_receipt_A_sha256": "0d85d0e7934796fd6e8d839dd887ca3b3563e9b3285a085d5aa20c2c62b18463",
+  "minted_at_utc": "2026-07-29T14:43:53.523777+00:00",
+  "plan_sha256": "e421aecdf1cc4b9a94d118a0563e7d8ac8516f97da998d38af3b8c60ac88a41c",
+  "prior_v1_DEAD": "f58d7862919c826073d32b81dd6a24bd7f637a75de7414dc4d1b5f7ce8075854",
+  "prior_v2_DEAD": "a9fe779e0437ff3adca4b84fc425f981432eeac4df584a8b5ce187d7bf79c335",
+  "prior_v3_DEAD": "b1a61b44131eba3d9448d110d485cf245f53bb1eaa5a0d63e04326450fd1825d",
+  "ro_pins_post": {
+    "BDA": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357",
+    "BDL": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+    "NRB": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6",
+    "TSA": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0",
+    "sve": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+  },
+  "schema": "LANDS_AB_CONSUMER_ADAPT_RERUN_FINAL_SNAPSHOT_A/v4",
+  "science_source_manifest_HEAD_A_sha256": "a175dc8d5f31628703b4c2baca3ba31f5e6bd78610ca1dab46f849bae16daa8e",
+  "validation_summary": {
+    "characterization": {
+      "cmd": "PYTHONPATH=. python3 scripts/lands_ab_plan_v4_characterization.py --out /tmp/lands_ab_char_v3.json",
+      "result": "CHAR_ALL_FAMILIES_OK"
+    },
+    "consumer_pipeline": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py -q",
+      "result": "16 passed"
+    },
+    "gpu_smokes": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py -q",
+      "result": "4 passed"
+    },
+    "manifest_dryexec_hostiles": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py -q",
+      "result": "23 passed (~235s)"
+    },
+    "regressions": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_landing.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_core.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_reducer.py -q",
+      "result": "61 passed"
+    }
+  }
+}

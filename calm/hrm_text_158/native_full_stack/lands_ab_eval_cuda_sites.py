@@ -171,6 +171,24 @@ def measure_b1_local_update_site(
         )
         or {}
     )
+    vp = dict(getattr(receipt, "vote_projection_proof", None) or {})
+    named_s1 = dict(vp.get("sparse_event_map_binding_sha256_by_key") or {})
+    named_shapes = dict(vp.get("sparse_event_logical_shape_by_key") or {})
+    # B1 S2 named authority: candidate_bounded_decode_sha256_after per key (PLAN_v6)
+    named_s2: dict[str, str] = {}
+    for _k, _p in sorted(proof_by_key.items()):
+        if not isinstance(_p, dict):
+            continue
+        _v = _p.get("candidate_bounded_decode_sha256_after")
+        if isinstance(_v, str) and len(_v) == 64 and all(c in "0123456789abcdef" for c in _v):
+            named_s2[str(_k)] = _v
+    if not named_s2:
+        # fallback to extract map (same field surface when present)
+        named_s2 = {
+            str(k): v
+            for k, v in dict(prod.get("production_post_logical_acc_sha256_by_key") or {}).items()
+            if isinstance(v, str) and len(v) == 64
+        }
     # Evidence reduction OUTSIDE builder native phases
     obs = measure_from_production_capture(
         gating_row=node_id,
@@ -184,6 +202,10 @@ def measure_b1_local_update_site(
         receipt_proof_by_key=proof_by_key,
         production_event_count=int(prod.get("total_sparse_vote_event_count", -1)),
         production_q_changed_count=int(prod.get("q_changed_count", -1)),
+        named_sparse_event_map_binding_sha256_by_key=named_s1,
+        named_sparse_event_logical_shape_by_key=named_shapes,
+        family="B1",
+        named_s2_decode_by_key=named_s2,
     )
     obs = dict(obs)
     met = dict(obs["metrics"])
@@ -239,6 +261,11 @@ def measure_b2_roundtrip_site(
         weighted_grad_by_key={k: v.detach().cpu() for k, v in weighted.items()},
     )
     bind = bind_production_to_twin_roundtrip(production=prod, compare=compare)
+    pr = dict(prod.get("post_resume_update_proof") or {})
+    named_s1 = dict(pr.get("sparse_event_map_binding_sha256_by_key") or {})
+    named_shapes = dict(pr.get("sparse_event_logical_shape_by_key") or {})
+    named_post = str(prod.get("post_update_authoritative_state_payload_sha256") or "")
+    twin_post = str(compare.get("twin_post_authoritative_state_payload_sha256") or "")
     obs = measure_from_production_capture(
         gating_row=node_id,
         prior_states=states,
@@ -251,6 +278,11 @@ def measure_b2_roundtrip_site(
         production_sparse_matches_twin=bool(bind["production_sparse_matches_twin"]),
         production_event_count=int(prod.get("total_sparse_vote_event_count", -1)),
         production_q_changed_count=int(prod.get("q_changed_count", -1)),
+        named_sparse_event_map_binding_sha256_by_key=named_s1,
+        named_sparse_event_logical_shape_by_key=named_shapes,
+        family="B2",
+        named_post_payload_sha256=named_post,
+        twin_or_canonical_post_payload_sha256=twin_post,
     )
     obs = dict(obs)
     met = dict(obs["metrics"])
@@ -331,6 +363,11 @@ def measure_b3_landing_site(
     bind = bind_production_to_twin_landing(
         production=prod, compare=compare, capture_wg_sha_by_key=wg_sha
     )
+    sub = dict(getattr(landing, "sparse_vote_authority_subproof", None) or {})
+    named_s1 = dict(sub.get("sparse_event_map_binding_sha256_by_key") or {})
+    named_shapes = dict(sub.get("sparse_event_logical_shape_by_key") or {})
+    named_post = str(prod.get("post_update_payload_sha256") or "")
+    twin_post = str(compare.get("twin_post_authoritative_state_payload_sha256") or "")
     obs = measure_from_production_capture(
         gating_row=node_id,
         prior_states=states,
@@ -343,6 +380,11 @@ def measure_b3_landing_site(
         production_sparse_matches_twin=bool(bind["production_sparse_matches_twin"]),
         production_event_count=int(prod.get("total_sparse_vote_event_count", -1)),
         production_q_changed_count=int(prod.get("q_changed_count", -1)),
+        named_sparse_event_map_binding_sha256_by_key=named_s1,
+        named_sparse_event_logical_shape_by_key=named_shapes,
+        family="B3",
+        named_post_payload_sha256=named_post,
+        twin_or_canonical_post_payload_sha256=twin_post,
     )
     obs = dict(obs)
     met = dict(obs["metrics"])

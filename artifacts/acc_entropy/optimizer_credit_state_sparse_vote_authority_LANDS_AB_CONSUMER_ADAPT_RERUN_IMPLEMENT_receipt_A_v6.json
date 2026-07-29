@@ -1,0 +1,117 @@
+{
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "corrections": {
+    "G1": "exactly two `--` delimiters (len!=2 FAIL)",
+    "G10": "hostiles for G1-G9 classes; faithful packet_v6 positive remains green",
+    "G2": "enforcer child begins python3 scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py; pytest child begins python3 -m pytest <frozen-node>",
+    "G3": "watch-wrap flags each exactly once with flag+value indices in (ww_i,d0)",
+    "G4": "enforcer flags/budgets confined to (d0,d1), budgets exactly 4\u00d7",
+    "G5": "declared phase_budgets_seconds values equal argv name=value budgets",
+    "G6": "outer timeout equality to inv.hard_timeout_seconds or row.duration_budget_seconds",
+    "G7": "all 7 rows scratch/run_root equal each other and packet runtime_scratch.env_binding",
+    "G8": "all present retained path aliases equal canonical raw/phase/enforcer values",
+    "G9": "raw basename starts with lands_ab_raw_obs_<gating_row>_ (harvest pattern)"
+  },
+  "executor": "plan-dev via codex",
+  "files_changed_sha256": {
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py": "67e5e3a018de478ee91797af0e4ce2f7effa06bb41caacbf1a5f0ddd8cd782dc",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py": "f79ac0eff64a831a92b1e93101b2ce5dbaaaa03f56c32ced4bf69c548b0209a0",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py": "e73084fc1e1c833d555eaf64fcd4c61a1af1631fd1696db70977ce86e0fd4ffc",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py": "8ca9ee61a8988f1ba48fb3e0d31d91a3344d3cb59f8840ef989ce70528eba7f9",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py": "a6699d018e45eea586436971647bcce5ef9a944afa8ea36138d834676efa66a7",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py": "c1006a06e1aad03f6d5bee91c8c011e1c1c5372e8fc8866c10f31e066aaf9493",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py": "82dae4d69a4ef4ffebaf8f7c618ad569c0d3e80936bbdfe5dbc8dd154e28f105",
+    "scripts/lands_ab_packet_dry_exec.py": "1f2b7bf128bff19d434bfe0ac310d0475e5d0cd6d5dcc83261ceaeccd7c82ed0",
+    "scripts/lands_ab_plan_v4_characterization.py": "ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33",
+    "scripts/lands_ab_science_source_manifest.py": "cd4bc6244a9b9f7539b832250167bb792a4c18b5b6daf92479ddc33b08bba89e"
+  },
+  "forbidden_not_done": [
+    "Phase B",
+    "formal matrix",
+    "commit/push"
+  ],
+  "g6_outer_timeout_rule": "argv[1] == float(inv.hard_timeout_seconds) if present else float(row.duration_budget_seconds); uniform equality to that hard bound (not a floor)",
+  "gate2_block_msg_id": "1785338167029-394b2846",
+  "head_pin_pre_implement": "95097a8d53f9bf086d614e55bf8794bee9f44447",
+  "locked_cleared": [
+    "D1_family_crosscheck",
+    "D2_gpu_pass_path",
+    "D5_s1_four_way",
+    "parser_AST",
+    "E-A",
+    "E-B",
+    "E-C",
+    "E-G",
+    "E-H",
+    "E-I",
+    "F-A",
+    "F2",
+    "F4",
+    "F7"
+  ],
+  "minted_at_utc": "2026-07-29T15:30:00.321562+00:00",
+  "next_gate": "claude gate-1 freeze receipt_A_v6 \u2192 co_lead gate-2 recheck G1-G10 + full sweep \u2192 dual accept \u2192 +1 commit",
+  "phase": "A_defect_cycle_v6_G1_G10_process_segment_ownership",
+  "plan_id": "LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v6",
+  "plan_sha256": "e421aecdf1cc4b9a94d118a0563e7d8ac8516f97da998d38af3b8c60ac88a41c",
+  "plus1_implement_msg_id": "1785331688803-4b2f0217",
+  "prior_receipts_DEAD": {
+    "v1": "f58d7862919c826073d32b81dd6a24bd7f637a75de7414dc4d1b5f7ce8075854",
+    "v2": "a9fe779e0437ff3adca4b84fc425f981432eeac4df584a8b5ce187d7bf79c335",
+    "v3": "b1a61b44131eba3d9448d110d485cf245f53bb1eaa5a0d63e04326450fd1825d",
+    "v4": "0d85d0e7934796fd6e8d839dd887ca3b3563e9b3285a085d5aa20c2c62b18463",
+    "v5": "bbc530c38b76ac1690eee638b75c80a22325aa30099de70f93dd254a6c03e014"
+  },
+  "redispatch_msg_id": "1785338216534-a92b1e7b",
+  "report_to": [
+    "claude"
+  ],
+  "ro_pins_match_plan": true,
+  "ro_pins_post": {
+    "BDA": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357",
+    "BDL": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+    "NRB": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6",
+    "TSA": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0",
+    "sve": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+  },
+  "schema": "LANDS_AB_CONSUMER_ADAPT_RERUN_IMPLEMENT_receipt/v6",
+  "scope_files_this_round": [
+    "scripts/lands_ab_packet_dry_exec.py",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py"
+  ],
+  "task_id": "1785325867711-078fb733",
+  "validation": {
+    "characterization": {
+      "cmd": "PYTHONPATH=. python3 scripts/lands_ab_plan_v4_characterization.py --out /tmp/lands_ab_char_v6.json",
+      "exit_code": 0,
+      "result": "CHAR_ALL_FAMILIES_OK",
+      "script_sha256": "ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33"
+    },
+    "consumer_pipeline": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py -q",
+      "exit_code": 0,
+      "result": "16 passed"
+    },
+    "gpu_smokes": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py -q",
+      "device_name": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "exit_code": 0,
+      "result": "4 passed"
+    },
+    "manifest_dryexec_hostiles": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py -q",
+      "exit_code": 0,
+      "result": "40 passed (~430s) faithful positive + prior A-I/F1-F8 + G1-G9 hostiles"
+    },
+    "regressions": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_landing.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_core.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_reducer.py -q",
+      "exit_code": 0,
+      "result": "61 passed"
+    }
+  }
+}

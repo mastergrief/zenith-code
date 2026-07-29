@@ -1,0 +1,673 @@
+{
+  "DEVELOPER_STEPS": 8,
+  "DEVELOPER_STEP_LIST": [
+    {
+      "ASSERTIONS": {
+        "data": "file sha == ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33; artifact JSON path exists; CHAR_ALL_FAMILIES_OK",
+        "runtime": "CPU",
+        "tests": "script exit 0; artifact JSON path exists; key sets non-empty",
+        "types": "B1 S1 map + S2 len64; B2 S1 map + payload shas; B3 fused S1 + payload; B3 oracle_on events_equal_by_key"
+      },
+      "name": "ALL_FAMILY_CHARACTERIZATION_EXECUTABLE",
+      "step": 1,
+      "work": "CREATE scripts/lands_ab_plan_v4_characterization.py byte-identical to plan.validation_plan.characterization_script_content_embedded (sha256=ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33); run exact argv; write declared JSON; exit nonzero if any family missing."
+    },
+    {
+      "ASSERTIONS": {
+        "data": "RO NRB hash unchanged; twin_apply RO unless stop condition",
+        "runtime": "CPU",
+        "tests": "H_BINDING_MISMATCH_FAIL, H_EQUAL_PASS partial",
+        "types": "recomputed binding map == named map when events match"
+      },
+      "name": "E1_S1_SEAM_CUDA_SITES_AND_MEASURE",
+      "step": 2,
+      "work": "Implement named-map pass + NRB recompute compare in measure_from_production_capture; wire cuda_sites B1/B2/B3."
+    },
+    {
+      "ASSERTIONS": {
+        "data": "flag True implies compare path executed",
+        "runtime": "CPU",
+        "tests": "H_DECODE_MISMATCH_FAIL, H_FLAG_TRUE_WITHOUT_MAPS_FAIL, H_VACUOUS_FLAG_ONLY, H_B3_NAMED_MAP_REQUIRED",
+        "types": "per-row predicate table implemented for all 7 rows"
+      },
+      "name": "PER_FAMILY_S2_FLAG_AND_HOSTILES",
+      "step": 3,
+      "work": "B1 decode equality; B2/B3 payload VALUE on APPLY rows; flag True only after real compare; H_VACUOUS; ORACLE rows s5 named-map only (no S1/S2 on oracle observations)."
+    },
+    {
+      "ASSERTIONS": {
+        "data": "fixture surfaces only",
+        "runtime": "CPU",
+        "tests": "CPU static suite green; no B1 named-map required on that row",
+        "types": "row predicate dispatcher does not require vote_projection_proof for G_CPU_STATIC_AB"
+      },
+      "name": "G_CPU_STATIC_AB_OWN_PREDICATES",
+      "step": 4,
+      "work": "Ensure CPU static row uses fixture s1/s2/s3/s4/s6 \u2014 never B1 named-receipt predicates."
+    },
+    {
+      "ASSERTIONS": {
+        "data": "fixture_source pins if bumped match live",
+        "runtime": "CPU",
+        "tests": "new suite 6 hostiles + regressions",
+        "types": "test pass counts exact; PRIORITY_ORDER unchanged vs pin"
+      },
+      "name": "CPU_REGRESSIONS_AND_PIPELINE_FLIPS",
+      "step": 5,
+      "work": "Flip only listed null assertions; binding_local_pipeline + phase_topology + new suite; schema/reducer RO unchanged."
+    },
+    {
+      "ASSERTIONS": {
+        "data": "device_name recorded; no formal matrix",
+        "runtime": "CUDA 4070",
+        "tests": "adapted GPU smokes + PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py -q (manifest hostiles a-g)",
+        "types": "rc=0; phase topology green if enforcer used; oracle_on path asserts events_equal map presence"
+      },
+      "name": "MANDATORY_ADAPTED_GPU_SMOKES",
+      "step": 6,
+      "work": "CREATE/run focused GPU smokes that call measure_b1_local_update_site (adapted consumer), measure_b3_landing_site or product oracle_on named-map path (NOT fused-only landing as sole oracle proof), and any B2 site changed by E1. Exact env SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL; topology/duration recorded."
+    },
+    {
+      "ASSERTIONS": {
+        "data": "receipt_A binds hostiles cmd+result; manifest contains scripts/lands_ab_packet_dry_exec.py + mandatory paths; HEAD_A clean on origin",
+        "runtime": "no formal matrix",
+        "tests": "manifest hostiles pytest green; scripts/lands_ab_packet_dry_exec.py importable; RO rehash match; char file sha == ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33",
+        "types": "receipt cites file shas + test counts + GPU smoke cmds/results"
+      },
+      "name": "PHASE_A_RECEIPT_AND_COMMIT_PUSH",
+      "step": 7,
+      "work": "IMPLEMENT_receipt_A + SNAPSHOT_A; CREATE scripts/lands_ab_packet_dry_exec.py per F1 contract; run frozen generator + hostiles test; science source manifest includes scripts/lands_ab_packet_dry_exec.py; dual-accept; commit+push adaptation \u2192 HEAD_A."
+    },
+    {
+      "ASSERTIONS": {
+        "data": "manifest hashes bound; pre-run pin green",
+        "runtime": "plan-dev does not run formal matrix",
+        "tests": "packet_dry_exec_exact \u2192 PACKET_DRY_EXEC_OK",
+        "types": "packet schema LANDS_AB_EVAL_launch_packet/v7; dry-exec exact argv + pin verifier fail-closed"
+      },
+      "name": "PHASE_B_PACKET_V7_THEN_HOLD_FOR_GO",
+      "step": 8,
+      "work": "After HEAD_A: mint packet_v7 pinning committed manifest; PACKET_receipt_B; run packet_dry_exec_exact (committed scripts/lands_ab_packet_dry_exec.py only \u2014 no tooling CREATE in Phase B); dual-accept; commit+push packet; HOLD formal run for go."
+    }
+  ],
+  "SIZING": "LARGE",
+  "acceptance_for_plan_gate": [
+    "F1: unfrozen dry-exec fallback field ABSENT from validation_plan; dry_exec tool CREATE Phase A; packet_dry_exec_exact invokes committed tool; lands_ab_eval_run RO",
+    "F2: no inherits key in per-row table; oracle s5-only; EQUIVALENT cross-row conjunction stated; oracle_sites RO",
+    "F3: hostiles test file named; 7 hostiles a-g; test command exact; receipt_A binds results",
+    "G1B1 carried: embedded char same sha ca6aa3ee\u2026; byte-identity invariant",
+    "G1B2 carried: generator_choice_frozen=CREATE_REPO_SCRIPT",
+    "E1-E7 carried; live PRIORITY_ORDER; three-phase lifecycle",
+    "no unresolved either-or fallback fields in validation_plan/science_source_closure",
+    "v1-v4 DEAD lineage enumerated",
+    "claim_ceiling false; formal matrix FORBIDDEN plan-dev"
+  ],
+  "autonomy_rung": "L4",
+  "binding_local_pipeline_flip_contract": {
+    "file": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py",
+    "forbid": "weakening unrelated hostiles; deleting fixture-contract fail-closed tests; soft-passing missing maps",
+    "old_null_assertions_expected_to_flip": [
+      "any assert that injective_post_acc_binding_ro_available is False when real compare path is implemented",
+      "any assert on reason == neither_full_sparse_event_carrier_hash_nor_full_bounded_acc_payload_hash_on_named_receipt as permanent UNAVAILABLE",
+      "any assert that crosscheck_ok is False solely due to UNAVAILABLE injective surfaces when transition fields equal and maps match"
+    ]
+  },
+  "claim_ceiling": {
+    "during_plan_implement_packet": {
+      "LANDS_AB": false,
+      "equivalent_minted": false,
+      "full_sub2_runtime_ready_for_science": false,
+      "readiness_claim": false,
+      "science_claim": false,
+      "sub2_claim": false
+    },
+    "equivalent_minted_if_branch_equivalent": {
+      "broadening_requires": "separate dual-gated synthesis task",
+      "claim_scope": "LANDS_AB seven-row seed/fixture matrix at pinned source set",
+      "non_generalizations": [
+        "not universal sparse/dense equivalence",
+        "not acquisition/stability/readiness/full-sub2/science synthesis",
+        "not other models/shapes/seeds/workloads",
+        "not bank claim",
+        "not byte_savings/density_win"
+      ],
+      "science_claim": false
+    }
+  },
+  "confidence": "high",
+  "cross_thread_required": true,
+  "decision_contract": {
+    "authority": "dispatch 1785328469400-d12b2b4b (gate-2 BLOCK consolidated v5) + prior G1B1/G1B2 from 1785327884331 + E1-E7 from 1785327459461 + Gabe standing test-operator quote + null terminal f872c0b4\u2026",
+    "autonomy_rung": "L4",
+    "confidence": "high",
+    "escalation_rule": "unreachable S1 seam, RO edit, vacuous flag, formal run by plan-dev, reducer redefinition \u2192 STOP",
+    "executor": "plan-dev plan+Phase A/B; claude formal run Phase C as test-operator",
+    "intent": "non-vacuous consumer adaptation with feasible B1/B2/B3 APPLY S1 NRB-recompute seam; oracle s5-only + EQUIVALENT cross-row conjunction; Phase-A packet dry-exec tool + manifest hostiles; three-phase adapt/packet/run; packet_v7 reachable EQUIVALENT under live reducer",
+    "mode": "planning",
+    "receipt_sink": "claude gate-1 only; co_lead gate-2 on frozen handoffs",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation",
+      "commit",
+      "push"
+    ],
+    "risk": "high",
+    "validation_proof": "all-family characterization; 6 hostiles; regressions; adapted GPU smokes; source manifest; packet dry-exec"
+  },
+  "design": {
+    "E1_S1_recompute_seam": {
+      "function_signatures": {
+        "crosscheck_production_q_vs_receipt_proof": "extend to accept optional S1 recompute result + per-family S2 predicate outcomes; flag INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE=True ONLY after real compare path exists and hostiles green; H_VACUOUS: flag True with maps stripped \u21d2 fail-closed",
+        "cuda_sites_changes": {
+          "measure_b1_local_update_site": "extract named S1 from receipt.vote_projection_proof.sparse_event_map_binding_sha256_by_key + shapes; S2 decode map from candidate_local_update_proof_by_key[*].candidate_bounded_decode_sha256_after; pass into measure_from_production_capture",
+          "measure_b2_roundtrip_site": "extract named S1 from receipt.post_resume_update_proof.sparse_event_map_binding_sha256_by_key; named_post_payload from checkpoint_payload_summary.post_update_authoritative_state_payload_sha256; twin/canonical VALUE from existing compare/sidecar binding; pass into measure_from_production_capture; family=B2",
+          "measure_b3_landing_site": "extract named S1 from landing.sparse_vote_authority_subproof.sparse_event_map_binding_sha256_by_key; named_post_payload from core_execution_identity.post_update_payload_sha256 or p1b post_resume_payload_sha256_after; pass into measure_from_production_capture; family=B3; oracle rows also require oracle_only.events_equal_by_key completeness"
+        },
+        "internal_recompute": "from prod_apply[\"sparse_events_by_key\"] and logical shapes derived via named_receipt_binding.logical_shape_by_key_from_q_levels({k: prior.q_levels for k,prior in prior_states}) OR named_sparse_event_logical_shape_by_key when present and key-set equal; recomputed = build_sparse_event_binding_by_key(events, shapes); s1_ok = (recomputed == dict(named_sparse_event_map_binding_sha256_by_key)) when named map provided and builder_pass",
+        "measure_from_production_capture_add_kwargs": {
+          "family": "str | None = None  # 'B1'|'B2'|'B3' for S2 authority selection",
+          "named_post_payload_sha256": "str | None = None  # B2 post_update_authoritative / B3 core post_update",
+          "named_s2_payload_or_decode_by_key": "Mapping[str,str] | None = None  # B1 decode; B2/B3 payload optional diagnostic",
+          "named_sparse_event_logical_shape_by_key": "Mapping[str,tuple[int,...]|list[int]] | None = None",
+          "named_sparse_event_map_binding_sha256_by_key": "Mapping[str,str] | None = None",
+          "twin_or_canonical_post_payload_sha256": "str | None = None  # existing twin/sidecar VALUE for B2/B3 S2"
+        }
+      },
+      "preferred_dataflow": "cuda_sites \u2192 measure_from_production_capture \u2192 NRB recompute from prod_apply",
+      "stop_if_unreachable": "If any family cannot reach actual SparseVoteEvents for NRB recompute without TSA/BDL edit \u2192 STOP and report; no improvisation",
+      "twin_apply_edit": "RO by default; only edit if chosen seam cannot reach events (STOP and report first)"
+    },
+    "EQUIVALENT_completeness_all_required": [
+      "set(rows)==GATING_ROWS exact 7-tuple",
+      "exactly-one harvested raw obs per row",
+      "exact applicable-cell set; every cell literal True (no null/unknown/skip)",
+      "six CUDA 8-event enforcer receipts green",
+      "non-empty production key universe",
+      "source pins green pre AND post formal run",
+      "no synthesized phase events",
+      "ALL apply-row injective predicates true (S1 recompute + family S2) on G_CUDA_B1/B2/B3_APPLY; ALL oracle-row s5 named-map predicates true on G_CUDA_ORACLE_B1/B2/B3; cross-row conjunction for EQUIVALENT (not oracle-authored S1/S2)",
+      "G_CPU_STATIC_AB uses fixture predicates not B1 named-receipt",
+      "scope_creep=false",
+      "fixture_contract_raw_fail=false",
+      "no procedural STOP fired"
+    ],
+    "EQUIVALENT_cross_row_conjunction": {
+      "live_APPLICABILITY_MAP_authority": "lands_ab_eval_schema.APPLICABILITY_MAP (oracle=(\"s5\",) only)",
+      "rule": "EQUIVALENT requires ALL of: (1) every G_CUDA_ORACLE_B* s5 named-map predicate true; (2) every corresponding G_CUDA_B*_APPLY S1 recompute + family S2 + transition/apply true; (3) G_CPU_STATIC_AB fixture s1/s2/s3/s4/s6 true; (4) all other EQUIVALENT_completeness gates true. Oracle rows never recompute S1/S2 themselves."
+    },
+    "S1_authority": {
+      "forbidden_prose": "no path-or-recompute alternative; no same-origin path self-compare",
+      "injective_authority": "RECOMPUTE_ONLY: from independent reapply sparse_events_by_key (prod_apply inside measure_from_production_capture) + logical shapes from prior_states.q_levels via NRB named_receipt_binding.build_sparse_event_binding_by_key / sparse_event_map_binding_sha256; compare recomputed map to named receipt sparse_event_map_binding_sha256_by_key. injective_ok requires exact map equality (keys + 64-hex values).",
+      "path_map_equality": "DIAGNOSTIC_ONLY \u2014 never sole injective_ok criterion"
+    },
+    "oracle_sites_RO_this_slice": {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py",
+      "reason": "characterization proved named events_equal_by_key exists under oracle_on; RO-unless tag-only/missing-map condition does NOT activate; keep RO",
+      "writable": false
+    },
+    "ordered_reducer_precedence": {
+      "DEVIATION_UNREGISTERED_OR_LIVENESS": "RUN-PROCEDURAL STOP only \u2014 no terminal branch minted; test-operator interrupt per packet_v6 mechanics; NOT a schema BRANCH_* constant; do NOT insert into PRIORITY_ORDER",
+      "authority": "LIVE lands_ab_eval_schema.PRIORITY_ORDER + lands_ab_eval_branch_reducer.select_branch",
+      "code_owner": "lands_ab_eval_branch_reducer (RO banked)",
+      "order_first_match_wins_live": [
+        "BR-LANDS-AB-SCOPE-CREEP-STOP",
+        "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+        "BR-LANDS-AB-VACUOUS",
+        "BR-LANDS-AB-DIVERGENT-EVENT",
+        "BR-LANDS-AB-DIVERGENT-APPLY",
+        "BR-LANDS-AB-DIVERGENT-ORACLE-LIVE",
+        "BR-LANDS-AB-EQUIVALENT"
+      ],
+      "rule": "document live order; do not redefine banked reducer behavior in this slice",
+      "schema_and_reducer_writable": false
+    },
+    "per_row_predicate_table": {
+      "G_CPU_STATIC_AB": {
+        "NOT_B1_named_receipt": true,
+        "S1": "existing frozen recarry/twin fixture s1 surface (events_equal / fixture S1 cells) \u2014 no B1 vote_projection_proof required",
+        "S2": "existing fixture s2 cells (logical-acc / payload surfaces on twin fixture)",
+        "S3": "existing fixture s3 apply-equivalence cells",
+        "S4": "existing fixture s4 site cells",
+        "S6": "existing fixture s6 topology/contract cells",
+        "source_function": "measure_g_cpu_static_ab / frozen recarry fixture path"
+      },
+      "G_CUDA_B1_APPLY": {
+        "S1": "named vote_projection_proof binding map == NRB recompute from prod_apply events",
+        "S2": "named candidate_local_update_proof_by_key[k].candidate_bounded_decode_sha256_after == production_post_logical_acc_sha256_by_key[k] (independent decode of reapply post_states)",
+        "transition": "TRANSITION_PROOF_FIELDS equality when builder pass"
+      },
+      "G_CUDA_B2_APPLY": {
+        "S1": "named post_resume_update_proof binding map == NRB recompute from prod_apply events",
+        "S2_authority_existing": "post_update_authoritative_state_payload_sha256 VALUE == twin/canonical sidecar VALUE (existing extract_roundtrip_binding + bind path). No candidate_bounded_decode on post_resume proof."
+      },
+      "G_CUDA_B3_APPLY": {
+        "S1": "named sparse_vote_authority_subproof binding map == NRB recompute from prod_apply events",
+        "S2_authority_existing": "p1b post_resume_payload_sha256_after / core post_update_payload_sha256 VALUE equality vs twin/canonical sidecar"
+      },
+      "G_CUDA_ORACLE_B1": {
+        "EQUIVALENT_cross_row_conjunction": "EQUIVALENT fold requires THIS row S5 predicate true AND G_CUDA_B1_APPLY clears its OWN S1 recompute + family S2 + transition/apply predicates. Conjunction over rows, not oracle-authored data.",
+        "S5_oracle_named_map_only": "oracle_only.events_equal_by_key present on the surface this row authors; dict[str,bool]; key-set == production keys; all values literal True; events_equal_fused_vs_dense_derived is bool; dense_reference_tagged literal \"oracle_only\"",
+        "applicability_live": [
+          "s5"
+        ],
+        "does_NOT_author_S1_or_S2": true,
+        "forbids_apply_S1_S2_on_oracle_observation": true,
+        "source_function": "lands_ab_eval_oracle_sites.measure_oracle_at_production_site (RO this slice)"
+      },
+      "G_CUDA_ORACLE_B2": {
+        "EQUIVALENT_cross_row_conjunction": "EQUIVALENT fold requires THIS row S5 predicate true AND G_CUDA_B2_APPLY clears its OWN S1 recompute + family S2 + transition/apply predicates. Conjunction over rows, not oracle-authored data.",
+        "S5_oracle_named_map_only": "oracle_only.events_equal_by_key present on the surface this row authors; dict[str,bool]; key-set == production keys; all values literal True; events_equal_fused_vs_dense_derived is bool; dense_reference_tagged literal \"oracle_only\"",
+        "applicability_live": [
+          "s5"
+        ],
+        "does_NOT_author_S1_or_S2": true,
+        "forbids_apply_S1_S2_on_oracle_observation": true,
+        "source_function": "lands_ab_eval_oracle_sites.measure_oracle_at_production_site (RO this slice)"
+      },
+      "G_CUDA_ORACLE_B3": {
+        "EQUIVALENT_cross_row_conjunction": "EQUIVALENT fold requires THIS row S5 predicate true AND G_CUDA_B3_APPLY clears its OWN S1 recompute + family S2 + transition/apply predicates. Conjunction over rows, not oracle-authored data.",
+        "S5_oracle_named_map_only": "oracle_only.events_equal_by_key present on the surface this row authors; dict[str,bool]; key-set == production keys; all values literal True; events_equal_fused_vs_dense_derived is bool; dense_reference_tagged literal \"oracle_only\"",
+        "applicability_live": [
+          "s5"
+        ],
+        "does_NOT_author_S1_or_S2": true,
+        "forbids_apply_S1_S2_on_oracle_observation": true,
+        "source_function": "lands_ab_eval_oracle_sites.measure_oracle_at_production_site (RO this slice)"
+      }
+    },
+    "three_phase_lifecycle": {
+      "Phase_A_consumer_adapt": {
+        "artifacts": [
+          "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_IMPLEMENT_receipt_A_v1.json",
+          "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_FINAL_SNAPSHOT_A_v1.json"
+        ],
+        "gates": "receipt_A \u2192 claude gate-1 \u2192 co_lead gate-2 \u2192 stage/diff \u2192 +1 commit \u2192 commit+push \u2192 clean HEAD_A",
+        "no_packet_yet": true,
+        "work": "implement consumer/tests per E1-E5; hostiles; CPU regressions; mandatory GPU smokes"
+      },
+      "Phase_B_packet_v7": {
+        "artifacts": [
+          "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v7.json",
+          "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PACKET_receipt_B_v1.json"
+        ],
+        "gates": "packet+receipt_B \u2192 claude gate-1 \u2192 co_lead gate-2 \u2192 stage/diff \u2192 +1 commit \u2192 commit+push packet lineage",
+        "pins_committed_shas_only": true,
+        "work": "mint packet_v7 pinning HEAD_A committed science source-set manifest; dry-exec exact argv+pin verifier"
+      },
+      "Phase_C_formal_run": {
+        "executor": "claude as test-operator (Gabe standing quote)",
+        "plan_dev_forbidden": true,
+        "work": "persisted go \u2192 claude test-operator formal 7-row \u2192 terminal receipt \u2192 terminal-receipt commit gate"
+      }
+    }
+  },
+  "diff_of_intent_vs_v2": [
+    "E1: B2/B3 S1 recompute seam via measure_from_production_capture + cuda_sites named-map pass; twin_apply RO",
+    "E2: all-family characterization script writes declared JSON (B1+B2+B3 fused+oracle_on)",
+    "E3: GPU smokes on adapted measure_b1 + B3 oracle_on named-map + changed B2/B3 sites",
+    "E4: G_CPU_STATIC_AB own fixture predicates; ORACLE_B2 complete; 7-row explicit table",
+    "E5: reducer = live PRIORITY_ORDER; DEVIATION=procedural STOP; schema/reducer RO",
+    "E6: deterministic import-closure manifest; packet dry-exec exact argv+pin verifier",
+    "E7: three-phase lifecycle A adapt commit / B packet commit / C formal run"
+  ],
+  "diff_of_intent_vs_v3": [
+    "G1B1: embed FULL characterization_script_content_embedded + sha256; Phase-A CREATE must be byte-identical; gate-1 dry-exec materializes embedded bytes to scratch",
+    "G1B2: freeze sole choice CREATE scripts/lands_ab_science_source_manifest.py (reject inline-only generator); exact argv + out path"
+  ],
+  "diff_of_intent_vs_v4": [
+    "F1: CREATE scripts/lands_ab_packet_dry_exec.py Phase A only; delete unfrozen dry-exec fallback branch; lands_ab_eval_run.py RO no new flags; Phase B invokes committed tool only",
+    "F2: oracle rows s5-only named-map predicates; EQUIVALENT cross-row conjunction with corresponding APPLY S1/S2; remove apply-predicate inheritance on oracle rows; oracle_sites RO permanently this slice",
+    "F3: CREATE test_hrm_text_158_lands_ab_science_source_manifest.py hostiles a-g; bind cmd/result in receipt_A"
+  ],
+  "dispatch_id": "1785328469400-d12b2b4b",
+  "drafted_by": "plan-dev via codex",
+  "fast_path": false,
+  "gate1_bounce_msg_id": "1785327884331-0be23e43",
+  "gate2_block_msg_id": "1785328399697-8735f20f",
+  "head_pin": {
+    "branch": "feature/hrm-text-1.58",
+    "sha": "95097a8d53f9bf086d614e55bf8794bee9f44447"
+  },
+  "minted_at_utc": "2026-07-29T12:38:30.639113+00:00",
+  "mode": "planning",
+  "named_hostiles": [
+    {
+      "executable": true,
+      "id": "H_FLAG_TRUE_WITHOUT_MAPS_FAIL"
+    },
+    {
+      "executable": true,
+      "id": "H_BINDING_MISMATCH_FAIL"
+    },
+    {
+      "executable": true,
+      "id": "H_DECODE_MISMATCH_FAIL"
+    },
+    {
+      "executable": true,
+      "id": "H_EQUAL_PASS"
+    },
+    {
+      "executable": true,
+      "id": "H_B3_NAMED_MAP_REQUIRED"
+    },
+    {
+      "executable": true,
+      "id": "H_VACUOUS_FLAG_ONLY",
+      "spec": "INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE=True with S1/S2 maps stripped/empty \u21d2 crosscheck fail-closed"
+    }
+  ],
+  "named_hostiles_count": 6,
+  "out_of_scope": [
+    "formal 7-row matrix execution (claude test-operator Phase C)",
+    "TSA/BDL/NRB/BDA/sve emission redesign",
+    "banked reducer PRIORITY_ORDER redefinition",
+    "broad science synthesis beyond claim_scope"
+  ],
+  "owner_block": {
+    "PROCEED_UNDER_GRANT": "dual-accepted THIS frozen plan path+sha + persisted Claude +1 implement",
+    "formal_run": "claude test-operator Phase C after packet dual-accept + go; authority = Gabe standing quote"
+  },
+  "pins_at_mint_required": {
+    "BDA": {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py",
+      "read_only": true,
+      "rehash_pre_and_post": true,
+      "sha256": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357"
+    },
+    "BDL": {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "read_only": true,
+      "rehash_pre_and_post": true,
+      "sha256": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707"
+    },
+    "DW_COMMIT": "95097a8d53f9bf086d614e55bf8794bee9f44447",
+    "NRB": {
+      "path": "calm/hrm_text_158/native_full_stack/named_receipt_binding.py",
+      "read_only": true,
+      "rehash_pre_and_post": true,
+      "sha256": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6"
+    },
+    "TSA": {
+      "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "read_only": true,
+      "rehash_pre_and_post": true,
+      "sha256": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0"
+    },
+    "count_RO_emission_authorities": 5,
+    "null_terminal_dead": "f872c0b42a45338e30c9d0b8e5c0573a5a49a0f7838cea8deca90e58c882bcad",
+    "packet_v6_dead": "6a97928392384d1769164c8c6bc3ef86c6474deb5086153ccf5d17dcb66f9722",
+    "sparse_vote_events": {
+      "path": "calm/hrm_text_158/native_full_stack/sparse_vote_events.py",
+      "read_only": true,
+      "rehash_pre_and_post": true,
+      "sha256": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+    }
+  },
+  "plan_id": "LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v5",
+  "plan_revision": 5,
+  "prior_blockers_status": {
+    "E1": "CLEARED_IN_V3_CARRIED",
+    "E2": "CLEARED_IN_V3_CARRIED",
+    "E3": "CLEARED_IN_V3_CARRIED",
+    "E4": "CLEARED_IN_V3_CARRIED",
+    "E5": "CLEARED_IN_V3_CARRIED",
+    "E6": "CLEARED_IN_V3_CARRIED",
+    "E7": "CLEARED_IN_V3_CARRIED",
+    "F1_packet_dry_exec_tool": "CLEARED_IN_V5",
+    "F2_oracle_row_semantics": "CLEARED_IN_V5",
+    "F3_manifest_hostiles": "CLEARED_IN_V5",
+    "G1B1_characterization_executable": "CLEARED_IN_V4_CARRIED",
+    "G1B2_manifest_generator_single_choice": "CLEARED_IN_V4_CARRIED"
+  },
+  "provenance": {
+    "dispatch_msg_id": "1785328469400-d12b2b4b",
+    "dw_injective_commit": "95097a8d53f9bf086d614e55bf8794bee9f44447",
+    "gabe_authority_note": "session-standing auto-research directive (re-armed as heartbeat cron): Gabe gates waived; peer gates full HIGH; explicit assignment of formal-run role to claude as test-operator",
+    "gabe_standing_auto_research_directive_verbatim": "you \"claude\" will take on the role of test-operator using a shell/monitor with minimal polling until completion or error for maximum context efficiency",
+    "parent_null": {
+      "packet_v6_sha256": "6a97928392384d1769164c8c6bc3ef86c6474deb5086153ccf5d17dcb66f9722",
+      "terminal_branch_id": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+      "terminal_receipt_sha256": "f872c0b42a45338e30c9d0b8e5c0573a5a49a0f7838cea8deca90e58c882bcad"
+    },
+    "prior_gate1_bounce": "1785327884331-0be23e43",
+    "prior_gate2_blocks": [
+      "1785326715983-7c41da41",
+      "1785327406787-2d1d9547",
+      "1785328399697-8735f20f"
+    ]
+  },
+  "report_to": [
+    "claude"
+  ],
+  "risk": "high",
+  "schema": "LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN/v5",
+  "science_source_closure": {
+    "generator_choice_frozen": "CREATE_REPO_SCRIPT",
+    "generator_command_exact": "PYTHONPATH=. python3 scripts/lands_ab_science_source_manifest.py --entry scripts/lands_ab_eval_run.py --entry calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py --entry calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py --entry calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py --root-package calm.hrm_text_158.native_full_stack --also-include calm/hrm_text_158/native_full_stack/lands_ab_eval_twin_apply.py --also-include calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py --also-include calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py --out artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json",
+    "generator_contract": "CREATE scripts/lands_ab_science_source_manifest.py in Phase A; committed under HEAD_A; packet Phase B pins its path+sha and the emitted manifest HEAD_A JSON. Inline-only generator is FORBIDDEN \u2014 must be a repo-tracked pinnable artifact.",
+    "generator_output_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json",
+    "generator_script_relpath": "scripts/lands_ab_science_source_manifest.py",
+    "generator_success_stdout_contains": "SCIENCE_SOURCE_MANIFEST_OK",
+    "hostiles_count": 7,
+    "hostiles_required": [
+      {
+        "id": "H_MANIFEST_DETERMINISTIC_SORTED",
+        "spec": "two runs identical bytes; paths sorted"
+      },
+      {
+        "id": "H_MANIFEST_SCHEMA_PATH_SHA",
+        "spec": "each entry path+lowercase-64-hex"
+      },
+      {
+        "id": "H_MANIFEST_MANDATORY_PATHS_PRESENT",
+        "spec": "mandatory minimum includes: lands_ab_eval_cuda_sites.py, lands_ab_eval_twin_apply.py, lands_ab_eval_oracle_sites.py, lands_ab_eval_site_measurement.py, lands_ab_eval_production_post_state.py, lands_ab_eval_production_binding.py, lands_ab_eval_schema.py, lands_ab_eval_branch_reducer.py, phase/topology/enforcer modules, scripts/lands_ab_eval_run.py, scripts/lands_ab_plan_v4_characterization.py, scripts/lands_ab_packet_dry_exec.py, scripts/lands_ab_science_source_manifest.py"
+      },
+      {
+        "id": "H_MANIFEST_MISSING_ENTRY_FAIL",
+        "spec": "missing/unimportable entry \u2192 exit nonzero"
+      },
+      {
+        "id": "H_MANIFEST_HASHES_FROM_DISK",
+        "spec": "sandbox tree modify copy \u2192 hash follows disk bytes not HEAD blob"
+      },
+      {
+        "id": "H_MANIFEST_ESCAPE_OR_DUP_FAIL",
+        "spec": "duplicate/escape/out-of-root path fail-closed"
+      },
+      {
+        "id": "H_MANIFEST_PACKET_DRY_EXEC_INTEGRATION",
+        "spec": "remove one required path from manifest copy \u2192 packet dry-exec exits nonzero"
+      }
+    ],
+    "hostiles_test_command_exact": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py -q",
+    "hostiles_test_relpath": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py",
+    "manifest_artifact_after_phase_A": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json",
+    "method": "Deterministic local-module import walk: start from scripts/lands_ab_eval_run.py + lands_ab_eval_cuda_sites + lands_ab_eval_site_measurement + lands_ab_eval_measurement; recurse imports under calm/hrm_text_158/native_full_stack/ and scripts/lands_ab_*; emit sorted path+sha256 manifest JSON; exclude TSA/BDL/NRB/BDA/sve from writable set but INCLUDE them in RO pin section of manifest with rehash_pre_and_post. MUST include at minimum: cuda_sites, twin_apply, oracle_sites, production_post_state, production_binding, site_measurement, fixture_source, schema, branch_reducer, phase/topology/enforcer modules, measurement entrypoints, scripts/lands_ab_eval_run.py, scripts/lands_ab_plan_v4_characterization.py, scripts/lands_ab_packet_dry_exec.py, scripts/lands_ab_science_source_manifest.py, and any consumer module the packet imports.",
+    "packet_binds_full_manifest": true,
+    "pre_and_post_formal_run_equality": true
+  },
+  "stop_conditions": [
+    "characterization missing any tabled S1/S2/oracle field for a family",
+    "S1 injective uses path-map equality alone",
+    "B2/B3 S1 recompute unreachable without expanding RO emission",
+    "flag True without real compare",
+    "RO pin drift on TSA/BDL/NRB/BDA/sve",
+    "schema/branch_reducer behavior change without separate gate",
+    "packet mint before Phase A commit+push clean HEAD_A",
+    "formal run by plan-dev",
+    "EQUIVALENT without completeness checklist all true",
+    "GPU smoke that only runs fused-only landing as oracle proof",
+    "G_CPU_STATIC_AB required to hold B1 named-receipt fields",
+    "science_claim true on implement/packet",
+    "ellipsis or unreplayable receipt commands",
+    "retroactive approval of prior commit by later receipt",
+    "packet dry-exec unfrozen fallback branch or Phase-B tooling CREATE",
+    "oracle row required to author S1/S2 or inherit apply predicates",
+    "oracle_sites.py edited without activated RO-unless condition",
+    "manifest generator without hostiles a-g green",
+    "lands_ab_eval_run.py mutated for dry-exec flags"
+  ],
+  "supersedes": {
+    "plan_v1": {
+      "gate2_block": "1785326715983-7c41da41",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v1.json",
+      "sha256": "176ee9198fc12709e9b5d9b1340271abf7944619bce21fbb2ac01ca7fed82074",
+      "status": "DEAD_immutable"
+    },
+    "plan_v2": {
+      "gate2_block": "1785327406787-2d1d9547",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v2.json",
+      "sha256": "9391caf69f40c297392d8d3f9f7ae46039a5ea28b7316862dc01b0b55afd5e2c",
+      "status": "DEAD_immutable"
+    },
+    "plan_v3": {
+      "gate1_bounce": "1785327884331-0be23e43",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v3.json",
+      "sha256": "b64fafc71261629993683718a988c0604139c21533b22743fe434ccdbdbf95cb",
+      "status": "DEAD_immutable"
+    },
+    "plan_v4": {
+      "gate2_block": "1785328399697-8735f20f",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v4.json",
+      "sha256": "799aea331397bea211df71de2ec6010a04494446527cef5712debcaf0e578848",
+      "status": "DEAD_immutable"
+    }
+  },
+  "task_id": "1785325867711-078fb733",
+  "validation_plan": {
+    "characterization_artifact_fields_required": [
+      "B1_fused.sparse_event_map_binding_sha256_by_key",
+      "B1_fused.candidate_bounded_decode_sha256_after_sample",
+      "B2_roundtrip.sparse_event_map_binding_sha256_by_key",
+      "B2_roundtrip.post_update_authoritative_state_payload_sha256",
+      "B3_landing_fused.sparse_event_map_binding_sha256_by_key",
+      "B3_landing_fused.post_update_payload_sha256",
+      "B3_landing_oracle_on.events_equal_by_key",
+      "B3_landing_oracle_on.oracle_only_absent_under_fused"
+    ],
+    "characterization_command_exact": "PYTHONPATH=. python3 scripts/lands_ab_plan_v4_characterization.py --out artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_plan_v4_characterization.json",
+    "characterization_fail_exit_nonzero_on_missing": true,
+    "characterization_gate1_dry_exec": {
+      "command_shape": "PYTHONPATH=. python3 <scratch_script> --out <scratch_out>",
+      "exit_code": 0,
+      "materialize_embedded_to_scratch": true,
+      "proven_ro_at_remint": true,
+      "scratch_out_hint": "/tmp/lands_ab_plan_v4_char_gate1_out.json",
+      "scratch_script_hint": "/tmp/lands_ab_plan_v4_char_gate1_materialized.py",
+      "success_stdout_contains": "CHAR_ALL_FAMILIES_OK"
+    },
+    "characterization_must_construct": [
+      "build_trainer_sub2_authority_local_update_receipt (B1 fused)",
+      "build_trainer_sub2_authority_roundtrip_receipt (B2)",
+      "save_trainer_sub2_live_checkpoint_envelope + build_sparse_vote_authority_landing_receipt fused_only (B3 fused; requires plan_sha256, task_id, p1_checkpoint, p1_envelope_bytes, fresh_model_fn, batch, forward_loss_fn, forward_output_fn, parity_max_abs_diff_by_site \u2014 NOT model=)",
+      "same landing builder with SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON (B3 oracle_on)"
+    ],
+    "characterization_script_byte_identity_invariant": "Phase-A CREATE of scripts/lands_ab_plan_v4_characterization.py MUST be byte-identical to characterization_script_content_embedded (sha256=ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33). implement receipt_A must rehash file and assert equality. Gate-1 dry-exec: materialize embedded bytes to a scratch path, run the same argv shape with --out redirected to scratch; require stdout contains CHAR_ALL_FAMILIES_OK and exit 0. Repo --out path artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_plan_v4_characterization.json remains operative for Phase-A committed receipt.",
+    "characterization_script_content_embedded": "#!/usr/bin/env python3\n\"\"\"Gate-1 dry-executable all-family characterization (proven 2026-07-29).\"\"\"\nfrom __future__ import annotations\nimport argparse, json, sys\nfrom pathlib import Path\nimport torch\nfrom calm.hrm_text_158.bit_linear import BitLinear\nfrom calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (\n    build_trainer_sub2_authority_local_update_receipt,\n    build_trainer_sub2_authority_roundtrip_receipt,\n    build_sparse_vote_authority_landing_receipt,\n    save_trainer_sub2_live_checkpoint_envelope,\n    SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,\n    SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON,\n)\n\nclass T(torch.nn.Module):\n    def __init__(self):\n        super().__init__(); self.lin = BitLinear(4, 4, bias=False)\n    def forward(self, x):\n        return self.lin(x)\n\ndef loss_fn(m, b):\n    return torch.nn.functional.mse_loss(m(b[\"x\"]), b[\"target\"])\n\ndef output_fn(m, b):\n    return m(b[\"x\"])\n\ndef mk():\n    m = T(); m.lin.weight.data.zero_(); m.lin.weight.data.add_(0.1)\n    return m, {\"x\": torch.randn(2, 4), \"target\": torch.randn(2, 4)}\n\ndef landing(mode: str):\n    m, b = mk()\n    p1 = save_trainer_sub2_live_checkpoint_envelope(\n        m, use_ternary_bulk=True, step=0, config={\"proof\": \"char\"}, source_pin=\"char\", epoch=0\n    )\n    return build_sparse_vote_authority_landing_receipt(\n        plan_sha256=\"0\" * 64,\n        task_id=\"char_v4\",\n        p1_checkpoint=p1,\n        p1_envelope_bytes=b\"{}\",\n        fresh_model_fn=lambda: mk()[0],\n        batch=b,\n        forward_loss_fn=loss_fn,\n        forward_output_fn=output_fn,\n        parity_max_abs_diff_by_site={\"cache_builder\": 0.0, \"main_kl\": 0.0, \"retained_fallback\": 0.0},\n        use_ternary_bulk=True,\n        device=torch.device(\"cpu\"),\n        sparse_vote_authority_mode=mode,\n    )\n\ndef main() -> int:\n    ap = argparse.ArgumentParser()\n    ap.add_argument(\"--out\", required=True)\n    args = ap.parse_args()\n    art: dict = {}\n    m, b = mk()\n    r1 = build_trainer_sub2_authority_local_update_receipt(\n        model=m, batch=b, forward_loss_fn=loss_fn, use_ternary_bulk=True,\n        device=torch.device(\"cpu\"), sparse_vote_authority_mode=SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,\n    )\n    vp = r1.vote_projection_proof\n    s1 = vp.get(\"sparse_event_map_binding_sha256_by_key\")\n    if not isinstance(s1, dict) or not s1:\n        print(\"MISSING B1 S1\", file=sys.stderr); return 2\n    pk = next(iter(r1.candidate_step_summary[\"candidate_local_update_proof_by_key\"].values()))\n    s2 = pk.get(\"candidate_bounded_decode_sha256_after\")\n    if not isinstance(s2, str) or len(s2) != 64:\n        print(\"MISSING B1 S2\", file=sys.stderr); return 2\n    art[\"B1_fused\"] = {\n        \"sparse_event_map_binding_sha256_by_key\": s1,\n        \"candidate_bounded_decode_sha256_after_sample\": s2,\n        \"S1_n\": len(s1),\n    }\n    m, b = mk()\n    r2 = build_trainer_sub2_authority_roundtrip_receipt(\n        model=m, fresh_model_fn=lambda: mk()[0], batch=b, forward_loss_fn=loss_fn,\n        use_ternary_bulk=True, device=torch.device(\"cpu\"),\n        sparse_vote_authority_mode=SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY,\n    )\n    pr = r2.post_resume_update_proof\n    cps = r2.checkpoint_payload_summary\n    pre = cps.get(\"authoritative_state_payload_sha256\")\n    post = cps.get(\"post_update_authoritative_state_payload_sha256\")\n    s1b = pr.get(\"sparse_event_map_binding_sha256_by_key\")\n    if not isinstance(s1b, dict) or not s1b:\n        print(\"MISSING B2 S1\", file=sys.stderr); return 2\n    if not (isinstance(pre, str) and len(pre) == 64 and isinstance(post, str) and len(post) == 64 and pre != post):\n        print(\"MISSING B2 payload VALUE change\", file=sys.stderr); return 2\n    art[\"B2_roundtrip\"] = {\n        \"sparse_event_map_binding_sha256_by_key\": s1b,\n        \"authoritative_state_payload_sha256\": pre,\n        \"post_update_authoritative_state_payload_sha256\": post,\n        \"payload_changed\": True,\n    }\n    r3 = landing(SPARSE_VOTE_AUTHORITY_MODE_FUSED_ONLY)\n    sub = dict(r3.sparse_vote_authority_subproof)\n    core = dict(r3.core_execution_identity)\n    s1c = sub.get(\"sparse_event_map_binding_sha256_by_key\")\n    post3 = core.get(\"post_update_payload_sha256\")\n    if not isinstance(s1c, dict) or not s1c:\n        print(\"MISSING B3 fused S1\", file=sys.stderr); return 2\n    if sub.get(\"oracle_only\"):\n        print(\"UNEXPECTED oracle_only under fused\", file=sys.stderr); return 2\n    if not (isinstance(post3, str) and len(post3) == 64):\n        print(\"MISSING B3 fused post payload\", file=sys.stderr); return 2\n    art[\"B3_landing_fused\"] = {\n        \"sparse_event_map_binding_sha256_by_key\": s1c,\n        \"post_update_payload_sha256\": post3,\n        \"oracle_only_absent_under_fused\": True,\n    }\n    r4 = landing(SPARSE_VOTE_AUTHORITY_MODE_ORACLE_ON)\n    sub = dict(r4.sparse_vote_authority_subproof)\n    oo = dict(sub.get(\"oracle_only\") or {})\n    eeq = oo.get(\"events_equal_by_key\")\n    if not isinstance(eeq, dict) or not eeq:\n        print(\"MISSING B3 oracle events_equal_by_key\", file=sys.stderr); return 2\n    if oo.get(\"dense_reference_tagged\") != \"oracle_only\":\n        print(\"MISSING B3 oracle tag\", file=sys.stderr); return 2\n    art[\"B3_landing_oracle_on\"] = {\n        \"sparse_event_map_binding_sha256_by_key\": sub.get(\"sparse_event_map_binding_sha256_by_key\"),\n        \"events_equal_by_key\": eeq,\n        \"dense_reference_tagged\": oo.get(\"dense_reference_tagged\"),\n        \"events_equal_fused_vs_dense_derived\": oo.get(\"events_equal_fused_vs_dense_derived\"),\n        \"oracle_only_absent_under_fused\": False,\n    }\n    out = Path(args.out)\n    out.parent.mkdir(parents=True, exist_ok=True)\n    out.write_text(json.dumps(art, indent=2, sort_keys=True) + \"\\n\")\n    print(\"CHAR_ALL_FAMILIES_OK\")\n    return 0\n\nif __name__ == \"__main__\":\n    raise SystemExit(main())\n",
+    "characterization_script_relpath": "scripts/lands_ab_plan_v4_characterization.py",
+    "characterization_script_sha256": "ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33",
+    "characterization_success_stdout_contains": "CHAR_ALL_FAMILIES_OK",
+    "existing_regressions": [
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py -q",
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_topology.py -q"
+    ],
+    "formal_matrix": "FORBIDDEN in plan-dev; claude test-operator after Phase B dual-accept + persisted go",
+    "gpu_smokes_mandatory": [
+      {
+        "cmd": "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL=/tmp/lands_ab_adapt_gpu/phase_b1_adapt.jsonl PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py::test_gpu_adapt_measure_b1_local_update_site_injective -q",
+        "env": {
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_adapt_gpu/phase_b1_adapt.jsonl"
+        },
+        "must_call": "lands_ab_eval_cuda_sites.measure_b1_local_update_site",
+        "name": "B1_adapted_consumer_measure_site"
+      },
+      {
+        "cmd": "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL=/tmp/lands_ab_adapt_gpu/phase_b3_oracle.jsonl PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py::test_gpu_adapt_measure_b3_oracle_on_named_map -q",
+        "env": {
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_adapt_gpu/phase_b3_oracle.jsonl"
+        },
+        "must_assert": "oracle_only.events_equal_by_key present under oracle_on consumption path",
+        "must_not_be_sole_proof": "test_gpu_live_b3_landing_wrapper_default_fused_only",
+        "name": "B3_oracle_on_named_map_consumer"
+      },
+      {
+        "cmd": "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL=/tmp/lands_ab_adapt_gpu/phase_b2_adapt.jsonl PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py::test_gpu_adapt_measure_b2_roundtrip_site_injective -q",
+        "env": {
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_adapt_gpu/phase_b2_adapt.jsonl"
+        },
+        "name": "B2_adapted_site_if_E1_changed",
+        "required_if": "E1 changes measure_b2_roundtrip_site dataflow (yes under this plan)"
+      }
+    ],
+    "new_suite_cpu": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py -q",
+    "packet_dry_exec_exact": "PYTHONPATH=. python3 scripts/lands_ab_packet_dry_exec.py --packet artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v7.json --verify-source-manifest artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json --repo-root .",
+    "packet_dry_exec_success_stdout_contains": "PACKET_DRY_EXEC_OK",
+    "packet_dry_exec_tool": {
+      "choice_frozen": "CREATE_REPO_SCRIPT_PHASE_A",
+      "contract": [
+        "load packet JSON from --packet path",
+        "validate schema starts with LANDS_AB_EVAL_launch_packet and v7 as declared",
+        "validate exact set(gating_rows)==GATING_ROWS 7-tuple",
+        "load science-source-manifest JSON from --verify-source-manifest path",
+        "validate manifest schema: sorted unique relative paths + lowercase 64-hex sha256 each",
+        "re-hash EVERY manifest path from DISK under repo root; compare to pinned sha",
+        "fail-closed on missing path, sha mismatch, non-lowercase hex, unsorted if sorted required",
+        "print PACKET_DRY_EXEC_OK on success",
+        "exit nonzero on ANY mismatch"
+      ],
+      "included_in_science_source_manifest": true,
+      "lands_ab_eval_run_py": "RO \u2014 no --dry-exec/--packet/--verify-source-manifest flags added",
+      "phase": "CREATE and commit under HEAD_A (Phase A); Phase B only invokes committed tool",
+      "relpath": "scripts/lands_ab_packet_dry_exec.py"
+    }
+  },
+  "work_repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "write_surface": {
+    "Phase_A_after_plus1_implement": {
+      "allowed_paths": [
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_binding.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+        "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py",
+        "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py",
+        "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py",
+        "scripts/lands_ab_plan_v4_characterization.py",
+        "scripts/lands_ab_science_source_manifest.py",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_IMPLEMENT_receipt_A_v1.json",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_FINAL_SNAPSHOT_A_v1.json",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_plan_v4_characterization.json",
+        "scripts/lands_ab_packet_dry_exec.py",
+        "calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py"
+      ],
+      "dirty_trainer_test_run_only": "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority.py",
+      "explicitly_readonly": {
+        "BDA": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357",
+        "BDL": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+        "NRB": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6",
+        "TSA": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0",
+        "sparse_vote_events": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+      },
+      "lands_ab_eval_run_py": "RO \u2014 F1 forbids adding dry-exec flags; use scripts/lands_ab_packet_dry_exec.py",
+      "oracle_sites_edit_condition": "RO THIS SLICE \u2014 characterization proved named map exists; RO-unless never activates; do not edit",
+      "schema_and_branch_reducer": "RO \u2014 banked PRIORITY_ORDER authority; no behavior change this slice",
+      "twin_apply_edit_condition": "RO unless E1 chosen seam cannot reach SparseVoteEvents without it; record observation before any edit"
+    },
+    "Phase_B_packet": {
+      "allowed_paths": [
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v7.json",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PACKET_receipt_B_v1.json"
+      ]
+    },
+    "plan_phase_only": [
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v5.json"
+    ]
+  }
+}

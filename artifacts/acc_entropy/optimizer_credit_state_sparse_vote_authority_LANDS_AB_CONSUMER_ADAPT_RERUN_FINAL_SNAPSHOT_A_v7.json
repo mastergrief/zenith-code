@@ -1,0 +1,62 @@
+{
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "files_changed_sha256": {
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py": "67e5e3a018de478ee91797af0e4ce2f7effa06bb41caacbf1a5f0ddd8cd782dc",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py": "f79ac0eff64a831a92b1e93101b2ce5dbaaaa03f56c32ced4bf69c548b0209a0",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py": "e73084fc1e1c833d555eaf64fcd4c61a1af1631fd1696db70977ce86e0fd4ffc",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py": "8ca9ee61a8988f1ba48fb3e0d31d91a3344d3cb59f8840ef989ce70528eba7f9",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py": "a6699d018e45eea586436971647bcce5ef9a944afa8ea36138d834676efa66a7",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py": "c1006a06e1aad03f6d5bee91c8c011e1c1c5372e8fc8866c10f31e066aaf9493",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py": "023e6b075e6d77683bdac1fe1438937c60187942cd018787ce7554519364bcdb",
+    "scripts/lands_ab_packet_dry_exec.py": "b5d9816c85d707e1b627ac9934df54de61175a342f47e7c1ec7e7c86c08f799b",
+    "scripts/lands_ab_plan_v4_characterization.py": "ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33",
+    "scripts/lands_ab_science_source_manifest.py": "16bb5bf079396ab70b797f1f301c3d7679eb12cec35db8b18a6c9eaccf3ea3c9"
+  },
+  "minted_at_utc": "2026-07-29T16:27:26.798214+00:00",
+  "phase": "A_defect_cycle_v7_H1_H4_source_set_closure",
+  "plan_sha256": "e421aecdf1cc4b9a94d118a0563e7d8ac8516f97da998d38af3b8c60ac88a41c",
+  "prior_receipts_DEAD": {
+    "v1": "f58d7862919c826073d32b81dd6a24bd7f637a75de7414dc4d1b5f7ce8075854",
+    "v2": "a9fe779e0437ff3adca4b84fc425f981432eeac4df584a8b5ce187d7bf79c335",
+    "v3": "b1a61b44131eba3d9448d110d485cf245f53bb1eaa5a0d63e04326450fd1825d",
+    "v4": "0d85d0e7934796fd6e8d839dd887ca3b3563e9b3285a085d5aa20c2c62b18463",
+    "v5": "bbc530c38b76ac1690eee638b75c80a22325aa30099de70f93dd254a6c03e014",
+    "v6": "d3dfe6e424e47feae13ad78cb981a756a4e448188f0a4538ffb2e428353964b3"
+  },
+  "receipt_schema": "LANDS_AB_CONSUMER_ADAPT_RERUN_IMPLEMENT_receipt/v7",
+  "ro_pins_post": {
+    "BDA": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357",
+    "BDL": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+    "NRB": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6",
+    "TSA": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0",
+    "sve": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+  },
+  "schema": "LANDS_AB_CONSUMER_ADAPT_RERUN_FINAL_SNAPSHOT/v7",
+  "source_set_closure_proof": {
+    "argv_repo_paths_from_packet_v6": [
+      "bin/watch-wrap",
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
+      "scripts/lands_ab_eval_run.py",
+      "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py"
+    ],
+    "argv_uncovered": [],
+    "external_system_binary_allowlist": [
+      "python3",
+      "timeout"
+    ],
+    "manifest_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json",
+    "manifest_sha256": "d8fdf71cee63545906bfe674830913cc90dd2e3f65c5ccbe3b36b7fabdd40970",
+    "membership": {
+      "bin/watch-wrap": true,
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py": true,
+      "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py": true
+    },
+    "n_entries": 88
+  },
+  "task_id": "1785325867711-078fb733"
+}

@@ -1,0 +1,119 @@
+{
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "readiness_claim": false,
+    "science_claim": false,
+    "sub2_claim": false
+  },
+  "corrections": {
+    "D1": {
+      "blocker": "B2/B3 unreachable via empty receipt_proof fail-close",
+      "file_line": "lands_ab_eval_production_post_state.py crosscheck family branches; site_measurement passes family=",
+      "fix": "crosscheck_production_q_vs_receipt_proof family=; B2/B3 = S1+S2 only; B1 keeps transition proof"
+    },
+    "D2": {
+      "blocker": "GPU smokes presence-only",
+      "file": "test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py",
+      "fix": "assert fixture_contract_raw_fail False + crosscheck_ok True + s1_ok/s2_ok True; negative shape mutation unit"
+    },
+    "D3": {
+      "blocker": "dry-exec optional/no-op contract checks",
+      "file": "scripts/lands_ab_packet_dry_exec.py",
+      "fix": "mandatory PRIORITY_ORDER exact, claim_ceiling all fields false, executor identity, harvest/execution_order/one_terminal, env SCRATCH+RUN_ROOT, unique argv, CUDA enforcer required, banked path ban, watch-wrap non-empty values"
+    },
+    "D4": {
+      "blocker": "missing hostiles for dry-exec contract",
+      "file": "test_hrm_text_158_lands_ab_science_source_manifest.py",
+      "fix": "H_PACKET_CLAIM_CEILING_MISSING_FAIL, PRIORITY_ORDER_TAMPER, EXECUTOR_PLANDEV, MISSING_CUDA_ENFORCER, MISSING_SCRATCH_ENV, BANKED_PATH"
+    },
+    "D5": {
+      "blocker": "S1 intersection + absent shape soft-ok",
+      "file_line": "production_post_state.recompute_s1_and_compare; consumer_injective_adapt_cpu hostiles",
+      "fix": "four-way non-empty key equality; absent shape fails; H_MISSING_SHAPE_MAP_FAIL + H_DROPPED_EVENT_KEY_FAIL"
+    },
+    "D6": {
+      "blocker": "docstring said intercept",
+      "file": "scripts/lands_ab_packet_dry_exec.py load_runner_parser",
+      "fix": "docstring states AST-extract+exec of live main parser-build prefix; unused scaffolding removed"
+    }
+  },
+  "executor": "plan-dev via codex",
+  "files_changed_sha256": {
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py": "67e5e3a018de478ee91797af0e4ce2f7effa06bb41caacbf1a5f0ddd8cd782dc",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py": "f79ac0eff64a831a92b1e93101b2ce5dbaaaa03f56c32ced4bf69c548b0209a0",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py": "e73084fc1e1c833d555eaf64fcd4c61a1af1631fd1696db70977ce86e0fd4ffc",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py": "8ca9ee61a8988f1ba48fb3e0d31d91a3344d3cb59f8840ef989ce70528eba7f9",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py": "a6699d018e45eea586436971647bcce5ef9a944afa8ea36138d834676efa66a7",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py": "c1006a06e1aad03f6d5bee91c8c011e1c1c5372e8fc8866c10f31e066aaf9493",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py": "517b0bb077497e7eae5e3ceecb44070dc308d2cba9bc69951fd29ef80d1900af",
+    "scripts/lands_ab_packet_dry_exec.py": "c02d7f575fccc47ce4e48db78e851e5b40cd60d7b41b8589a6a49525bbf4aba2",
+    "scripts/lands_ab_plan_v4_characterization.py": "ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33",
+    "scripts/lands_ab_science_source_manifest.py": "cd4bc6244a9b9f7539b832250167bb792a4c18b5b6daf92479ddc33b08bba89e"
+  },
+  "forbidden_not_done": [
+    "Phase B packet_v7",
+    "formal matrix",
+    "commit/push",
+    "RO emission edits"
+  ],
+  "gate2_block_msg_id": "1785333568349-c293620a",
+  "head_pin_pre_implement": "95097a8d53f9bf086d614e55bf8794bee9f44447",
+  "minted_at_utc": "2026-07-29T14:10:36.952167+00:00",
+  "next_gate": "claude gate-1 verify+freeze receipt_A_v2; co_lead gate-2 on frozen handoff; +1 commit after dual accept",
+  "phase": "A_defect_cycle_v2",
+  "plan_id": "LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v6",
+  "plan_sha256": "e421aecdf1cc4b9a94d118a0563e7d8ac8516f97da998d38af3b8c60ac88a41c",
+  "plus1_implement_msg_id": "1785331688803-4b2f0217",
+  "prior_receipt_A_v1_DEAD": {
+    "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_IMPLEMENT_receipt_A_v1.json",
+    "sha256": "f58d7862919c826073d32b81dd6a24bd7f637a75de7414dc4d1b5f7ce8075854",
+    "status": "DEAD_immutable_lineage"
+  },
+  "redispatch_msg_id": "1785333633244-47e494cc",
+  "report_to": [
+    "claude"
+  ],
+  "ro_pins_match_plan": true,
+  "ro_pins_post": {
+    "BDA": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357",
+    "BDL": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+    "NRB": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6",
+    "TSA": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0",
+    "sve": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+  },
+  "schema": "LANDS_AB_CONSUMER_ADAPT_RERUN_IMPLEMENT_receipt_A/v2",
+  "science_source_manifest": {
+    "n_entries": 85,
+    "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json",
+    "sha256": "ecbc25e8e48de9e2bf09ad4491b95252afc151214920e2cec65a2e24fcdff0af"
+  },
+  "task_id": "1785325867711-078fb733",
+  "validation": {
+    "characterization": {
+      "cmd": "PYTHONPATH=. python3 scripts/lands_ab_plan_v4_characterization.py --out /tmp/lands_ab_char_v2.json",
+      "result": "CHAR_ALL_FAMILIES_OK rc=0",
+      "script_sha": "ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33"
+    },
+    "combined_cpu_count_note": "consumer+pipeline 16 + manifest 15 = 31 hostiles/suite tests (grew from 22)",
+    "consumer_pipeline": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py -q",
+      "result": "16 passed"
+    },
+    "gpu_smokes": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_adapt_gpu_smoke.py -q",
+      "device_name": "NVIDIA GeForce RTX 4070 Laptop GPU",
+      "pass_path_asserts": true,
+      "result": "4 passed"
+    },
+    "manifest_dryexec_hostiles": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source_manifest.py -q",
+      "result": "15 passed"
+    },
+    "regressions": {
+      "cmd": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_landing.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_core.py calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_reducer.py -q",
+      "result": "61 passed"
+    }
+  }
+}

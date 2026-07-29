@@ -130,19 +130,18 @@ def test_b1_full_pipeline_branch_good_and_divergence():
         fixture_contract_raw_fail=bool(obs["fixture_contract_raw_fail"]),
     )
     assert claimed == recomputed, (claimed, recomputed)
-    # IMPLEMENT_v14: injective post-acc RO surface absent on named receipt →
-    # crosscheck fail-closed; B1 cannot mint production_sparse_matches_twin True.
+    # PLAN_v6 Phase A: injective S1/S2 compare path live → good B1 can mint
+    # production_sparse_matches_twin True when maps match + transition equal.
     xcheck = obs["metrics"].get("production_reapply_crosscheck") or {}
-    assert xcheck.get("transition_fields_equal") is True or xcheck.get("crosscheck_ok") is False
-    assert obs["metrics"]["production_sparse_matches_twin"] is False
-    assert claimed.get("s3") is False
-    # fixture_fail from injective absence may zero all surfaces via recompute;
-    # s4/s6 polarity is secondary to the injective fail-closed claim.
+    assert xcheck.get("injective_post_acc_binding_ro_available") is True
+    assert xcheck.get("s1_compare") is not None and xcheck.get("s2_compare") is not None
+    assert xcheck.get("crosscheck_ok") is True
+    assert xcheck.get("transition_fields_equal") is True
+    assert xcheck.get("s1_compare", {}).get("s1_ok") is True
+    assert xcheck.get("s2_compare", {}).get("s2_ok") is True
+    assert obs["metrics"]["production_sparse_matches_twin"] is True
+    assert claimed.get("s3") is True
     assert "s4" in claimed and "s6" in claimed
-    assert (
-        "neither_full" in str(xcheck.get("reason") or "")
-        or xcheck.get("injective_post_acc_binding_ro_available") is False
-    )
     # phase topology good + update duration real work
     topo = obs.get("phase_topology") or {}
     assert topo.get("good_topology") is True
@@ -211,7 +210,10 @@ def test_builder_pass_empty_receipt_proof_cannot_match_twin():
         builder_receipt_pass=True,
     )
     assert x1["crosscheck_ok"] is False
-    assert "no_receipt_proof" in x1["reason"]
+    assert (
+        "no_receipt_proof" in x1["reason"]
+        or "injective_flag_true_without_maps" in x1["reason"]
+    )
     x2 = crosscheck_production_q_vs_receipt_proof(
         production_post_q_sha256_by_key={"lin": "a" * 64},
         receipt_proof_by_key={"lin": {"other": 1}},
@@ -312,10 +314,11 @@ def test_transition_proof_residual_mutation_rejects():
         builder_receipt_pass=True,
         reapply_proof_by_key=reapply,
     )
-    # 12-field equality holds but injective RO surface absent → still fail-closed
+    # 12-field equality holds but maps absent while flag True → H_VACUOUS fail-closed
     assert ok.get("transition_fields_equal") is True
     assert ok["crosscheck_ok"] is False
-    assert "injective" in ok["reason"] or "neither_full" in ok["reason"]
+    assert ok.get("injective_post_acc_binding_ro_available") is True
+    assert "injective_flag_true_without_maps" in ok["reason"] or "injective" in ok["reason"]
 
     mut = copy.deepcopy(named)
     mut["lin"]["residual_after_threshold_sha256"] = "0" * 64  # same q, different residual
@@ -359,8 +362,8 @@ def test_cap_collision_legacy_fields_equal_injective_rejects():
     Spec: threshold_abs=1, max_abs_per_tensor=2; events A={0:127,1:126,2:1}
     vs B={0:127,1:126,2:2} → same applied top-2, equal q, equal residual/applied
     digests as currently defined, but logical acc differs on sub-threshold row.
-    New binding MUST reject (injective layer fail-closed while surface absent OR
-    reject when surface present and digests differ).
+    New binding MUST reject (flag True + missing S1/S2 maps fail-closed, OR
+    reject when maps present and digests differ).
     """
     import copy
     from calm.hrm_text_158.native_full_stack.lands_ab_eval_production_post_state import (
@@ -407,11 +410,16 @@ def test_cap_collision_legacy_fields_equal_injective_rejects():
         reapply_proof_by_key=reapply_B,
     )
     assert res.get("transition_fields_equal") is True
-    # MUST reject: either injective surface unavailable (current) or digests differ
+    # PLAN_v6: flag True; without S1/S2 maps compare still fail-closed (H_VACUOUS)
     assert res["crosscheck_ok"] is False
-    assert INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE is False
-    assert "neither_full" in res["reason"] or "injective" in res["reason"]
-    assert res.get("injective_post_acc_binding_ro_available") is False
-    assert "named_receipt.full_sparse_event_carrier_or_hash_per_key" in res.get(
-        "injective_post_acc_binding_missing_surfaces", []
+    assert INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE is True
+    assert res.get("injective_post_acc_binding_ro_available") is True
+    assert (
+        "injective_flag_true_without_maps" in res["reason"]
+        or "injective" in res["reason"]
+        or "s1_" in res["reason"]
+        or "s2_" in res["reason"]
     )
+    assert "s1_compare" in res.get("injective_post_acc_binding_missing_surfaces", []) or res.get(
+        "injective_post_acc_binding_missing_surfaces"
+    ) == []

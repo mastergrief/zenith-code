@@ -1,0 +1,378 @@
+{
+  "DEVELOPER_STEPS": 6,
+  "DEVELOPER_STEP_LIST": [
+    {
+      "name": "CHARACTERIZE_POST_DW_SURFACES",
+      "step": 1,
+      "work": "CPU fixture: fused resolve path has S1 maps; fused candidate proof has S2 decode sha; oracle_on landing subproof has real events_equal_by_key. Freeze characterization in implement receipt (commands exact). If any surface missing \u2192 STOP (DW incomplete)."
+    },
+    {
+      "name": "THREAD_NAMED_SURFACES_TO_CONSUMER",
+      "step": 2,
+      "work": "C-THREAD-PATH-NAMED + C-EXTRACT-S1-S2 on post_state/binding/measurement."
+    },
+    {
+      "name": "REAL_INJECTIVE_COMPARE_AND_FLAG",
+      "step": 3,
+      "work": "C-REAL-INJECTIVE-COMPARE then C-FLAG-FLIP; C-B3-ORACLE-MAP verify/adjust."
+    },
+    {
+      "name": "CPU_HOSTILES_AND_REGRESSIONS",
+      "step": 4,
+      "work": "New suite test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py: H_FLAG_TRUE_WITHOUT_MAPS_FAIL, H_BINDING_MISMATCH_FAIL, H_DECODE_MISMATCH_FAIL, H_EQUAL_PASS, H_B3_NAMED_MAP_REQUIRED. Plus existing lands_ab CPU binding/pipeline/phase_topology regressions; pin-bump fixture_source if needed; phase_topology green."
+    },
+    {
+      "name": "PACKET_V7_O_EXCL",
+      "step": 5,
+      "work": "Mint launch_packet_v7 with reachable branch classifier, RO pins at 95097a8d, fresh scratch prefix, exact argv+env, no locked FIXTURE-CONTRACT-FAIL expected branch, claim_ceiling false on packet body. Dry-execute argv templates against live CLI (lands_ab_eval_run.py --help / import consumer) fail-closed."
+    },
+    {
+      "name": "IMPLEMENT_RECEIPT_AND_GATE1",
+      "step": 6,
+      "work": "O_EXCL IMPLEMENT_receipt_v1 + FINAL_SNAPSHOT_v1; full validation matrix; RO rehash; cmd\u2194result replay-checked (no ellipsis, no 87-style mismatch). Receipt \u2192 claude gate-1 only."
+    }
+  ],
+  "SIZING": "LARGE",
+  "acceptance_for_plan_gate": [
+    "RO pins match live disk for TSA/BDL/NRB at mint",
+    "consumer design forbids flag-only vacuous True",
+    "packet_v7 classifier names EQUIVALENT as reachable among complete branch set",
+    "formal run out of plan-dev scope",
+    "claim ceiling false on plan/implement/packet",
+    "write surface excludes TSA/BDL/nrb",
+    "6 developer steps / LARGE asserted"
+  ],
+  "autonomy_rung": "L4",
+  "claim_ceiling": {
+    "at_formal_terminal_only": {
+      "rule": "terminal_branch_id is the sole mint authority; if BR-LANDS-AB-EQUIVALENT lands under prereg checks, terminal may set equivalent_minted=true for that branch record only; science_claim remains false unless a later dual-gated science synthesis explicitly raises it. No claim upgrade from implement/packet alone."
+    },
+    "during_plan_implement_packet": {
+      "LANDS_AB": false,
+      "equivalent_minted": false,
+      "full_sub2_runtime_ready_for_science": false,
+      "readiness_claim": false,
+      "science_claim": false,
+      "sub2_claim": false
+    }
+  },
+  "confidence": "high",
+  "cross_thread_required": true,
+  "decision_contract": {
+    "authority": "dispatch 1785325909735-b594ac29 + Gabe standing directive + null terminal f872c0b4\u2026 naming this follow-on",
+    "autonomy_rung": "L4",
+    "confidence": "high",
+    "escalation_rule": "any TSA/BDL/nrb edit, vacuous flag flip, unregistered branch, or formal run by plan-dev \u2192 STOP",
+    "executor": "plan-dev plan+implement after dual-accept; claude test-operator formal run",
+    "intent": "adapt LANDS-AB consumer to DW named-receipt surfaces with non-vacuous injective sufficiency and dual-gate a 7-row packet whose EQUIVALENT branch is reachable",
+    "mode": "planning",
+    "receipt_sink": "claude gate-1 only; co_lead gate-2 on frozen handoffs",
+    "required_gates": [
+      "plan",
+      "diff",
+      "validation",
+      "commit",
+      "push"
+    ],
+    "risk": "high",
+    "validation_proof": "characterize DW surfaces; CPU hostiles 6; existing LANDS-AB CPU regressions; packet dry-exec; RO rehash"
+  },
+  "design": {
+    "consumer_adaptation": {
+      "files": [
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_binding.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py"
+      ],
+      "forbidden": [
+        "flip flag True without implementing real S1+S2 compare",
+        "edit TSA/BDL/nrb to invent alternate emission paths",
+        "trust counts/mode flags as injective substitutes for binding+decode shas"
+      ],
+      "live_null_sites": {
+        "binding_extract_comment": "production_binding.py:34 fused-only typically empty logical-acc (pre-DW; now S2 always-on)",
+        "crosscheck_fail_closed": "lines 269-283 (fields_ok AND not injective_ok \u2192 reason UNAVAILABLE)",
+        "flag": "lands_ab_eval_production_post_state.py:36 INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE=False",
+        "missing_surfaces": "lines 37-40 (carrier hash + decoded logical int16 sha)"
+      },
+      "name": "REAL_INJECTIVE_SUFFICIENCY_NOT_FLAG_ONLY",
+      "steps": [
+        {
+          "desc": "production_fused_apply_post_states: after resolve_sparse_vote_authority_path, return path named surfaces on the apply result dict: sparse_event_map_binding_sha256_by_key, sparse_event_count_by_key, sparse_event_logical_shape_by_key, s1_binding_interval_seconds, oracle_only_serializable (None under fused). No recompute of bindings outside path.",
+          "id": "C-THREAD-PATH-NAMED"
+        },
+        {
+          "desc": "extract_local_update_binding (and measurement callers as needed): (S2) candidate_bounded_decode_sha256_after is always-on after DW \u2014 require it on fused proof_by_key for logical-acc RO observability when builder pass; (S1) extract sparse_event_map_binding_sha256_by_key from vote_projection_proof (B1) / post_resume_update_proof (B2) / landing subproof (B3) into binding payload as production_named_sparse_event_binding_sha256_by_key.",
+          "id": "C-EXTRACT-S1-S2"
+        },
+        {
+          "desc": "crosscheck_production_q_vs_receipt_proof: when builder_receipt_pass and transition fields equal, compute injective_ok by ACTUAL compare, not static True alone: (1) named S1 binding map present, lowercase 64-hex, key-set == production keys; (2) reapply/path binding map equal to named (or recompute via pure facade named_receipt_binding.sparse_event_map_binding_sha256 on reapply events+shapes \u2014 call-only RO on nrb); (3) named S2 candidate_bounded_decode_sha256_after per key equals production_post_logical_acc_sha256_by_key[k]; (4) only then injective_ok=True. If surfaces missing \u2192 keep fail-closed UNAVAILABLE reason (do not soft-pass).",
+          "id": "C-REAL-INJECTIVE-COMPARE"
+        },
+        {
+          "desc": "Set INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE=True and clear MISSING_SURFACES / UNAVAILABLE_REASON ONLY after C-REAL-INJECTIVE-COMPARE is implemented and CPU hostiles prove non-vacuous behavior. Flag True + empty maps must still fail closed inside the compare function (defense in depth).",
+          "id": "C-FLAG-FLIP"
+        },
+        {
+          "desc": "Verify lands_ab_eval_oracle_sites already consumes real events_equal_by_key from subproof after DW; add/adjust only if named_map_present still false under oracle_on landing. No tag-only acceptance.",
+          "id": "C-B3-ORACLE-MAP"
+        }
+      ]
+    },
+    "execution_split": {
+      "claude_test_operator": "formal 7-row matrix after packet dual-accept + go; terminal receipt O_EXCL",
+      "codex_co_lead": "gate-2 on frozen plan then frozen implement/packet handoffs",
+      "plan_dev": "draft plan; after dual-accept + +1 implement: consumer adaptation + packet_v7 + tests + implement receipt"
+    },
+    "rerun_packet": {
+      "branch_classifier_reachable": {
+        "branches": {
+          "BR-LANDS-AB-DIVERGENT-APPLY": {
+            "next": "shippable negative; classify apply divergence; no equivalence mint",
+            "when": "injective surfaces available; apply-site surface fails bit-exact q/acc/transition after real compare"
+          },
+          "BR-LANDS-AB-DIVERGENT-EVENT": {
+            "next": "shippable negative; classify event divergence",
+            "when": "event-surface failure under available named event binding"
+          },
+          "BR-LANDS-AB-DIVERGENT-ORACLE-LIVE": {
+            "next": "shippable negative; classify oracle divergence",
+            "when": "oracle live rows fail events_equal_by_key / named map under oracle_on"
+          },
+          "BR-LANDS-AB-EQUIVALENT": {
+            "next": "terminal mint equivalent_minted for this branch record; no auto science_claim raise; open dual-gated synthesis separately if desired",
+            "when": "scope_creep=false AND fixture_contract_raw_fail=false AND all 7 surface_pass_by_row true AND injective_post_acc_binding satisfied on apply rows requiring it AND oracle rows named_map_present with events_equal"
+          },
+          "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL": {
+            "next": "shippable residual structural null; reclassify before another science claim",
+            "when": "fixture_contract_raw_fail or residual structural incomplete surfaces despite DW"
+          },
+          "BR-LANDS-AB-SCOPE-CREEP-STOP": {
+            "next": "STOP; no claim",
+            "when": "DEFAULT_SOURCE_PINS / RO pin drift / unauthorized surface"
+          },
+          "BR-LANDS-AB-VACUOUS": {
+            "next": "not equivalence; fix fixture",
+            "when": "vacuous pass / empty key universe / no meaningful apply"
+          }
+        },
+        "liveness_stop": "row timeout / enforcer topology fail / O_EXCL collision \u2192 STOP deviation, not a science branch",
+        "locked_expected_branch": null,
+        "note": "Unlike packet_v6, expected_terminal_branch is NOT locked to FIXTURE-CONTRACT-FAIL. The reducer output is the branch of interest among the named set. Any branch outside the named set = DEVIATION.",
+        "rule": "every terminal branch NAMED; no verdict the prereg didn't define; EQUIVALENT is REACHABLE"
+      },
+      "env_load_bearing": {
+        "CUDA_rows": {
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "<run_root>/phase_<row>_<nonce>.jsonl",
+          "note": "load-bearing; without it gpu_live/enforcer fails (DW receipt lesson)"
+        },
+        "all_rows": {
+          "LANDS_AB_RUNTIME_SCRATCH": "<scratch>",
+          "LANDS_AB_RUN_ROOT": "<nonce run root>",
+          "PYTHONPATH": "."
+        }
+      },
+      "gating_rows_exact": [
+        "G_CPU_STATIC_AB",
+        "G_CUDA_B1_APPLY",
+        "G_CUDA_B2_APPLY",
+        "G_CUDA_B3_APPLY",
+        "G_CUDA_ORACLE_B1",
+        "G_CUDA_ORACLE_B2",
+        "G_CUDA_ORACLE_B3"
+      ],
+      "inherits_from": {
+        "mechanics_carried": [
+          "O_EXCL raw obs + enforcer receipts",
+          "nonce run root under LANDS_AB_RUNTIME_SCRATCH",
+          "exact argv+env (no ellipsis)",
+          "8-event enforcer topology for 6 CUDA rows",
+          "exactly-one harvest per gating row",
+          "build_eval_receipt_from_raw_artifacts sole science consumer",
+          "GATING_ROWS exact 7-tuple"
+        ],
+        "packet_v6_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v6.json",
+        "packet_v6_sha256": "6a97928392384d1769164c8c6bc3ef86c6474deb5086153ccf5d17dcb66f9722",
+        "status": "DEAD immutable lineage; v7 supersedes"
+      },
+      "name": "LANDS_AB_EVAL_launch_packet_v7",
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v7.json",
+      "pins_at_mint_required": {
+        "BDL": {
+          "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+          "read_only": true,
+          "rehash_pre_and_post": true,
+          "sha256": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707"
+        },
+        "DW_COMMIT": "95097a8d53f9bf086d614e55bf8794bee9f44447",
+        "NRB": {
+          "path": "calm/hrm_text_158/native_full_stack/named_receipt_binding.py",
+          "read_only": true,
+          "rehash_pre_and_post": true,
+          "role": "pure facade call-only for recompute/compare if needed",
+          "sha256": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6"
+        },
+        "TSA": {
+          "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+          "read_only": true,
+          "rehash_pre_and_post": true,
+          "sha256": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0"
+        },
+        "null_terminal_dead": "f872c0b42a45338e30c9d0b8e5c0573a5a49a0f7838cea8deca90e58c882bcad",
+        "packet_v6_dead": "6a97928392384d1769164c8c6bc3ef86c6474deb5086153ccf5d17dcb66f9722"
+      },
+      "scratch_layout": {
+        "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785325867711-078fb733/95097a8d53f9bf08",
+        "note": "fresh task+commit prefix; never reuse prior null nonces",
+        "run_root_template": "/tmp/lands_ab_runtime_scratch/1785325867711-078fb733/95097a8d53f9bf08/test-operator/<nonce>"
+      }
+    }
+  },
+  "dispatch_id": "1785325909735-b594ac29",
+  "drafted_by": "plan-dev via codex",
+  "fast_path": false,
+  "head_pin": {
+    "branch": "feature/hrm-text-1.58",
+    "note": "DW_INJECTIVE landed; HEAD==origin at plan mint",
+    "sha": "95097a8d53f9bf086d614e55bf8794bee9f44447"
+  },
+  "minted_at_utc": "2026-07-29T11:54:38.070658+00:00",
+  "mode": "planning",
+  "named_hostiles": [
+    {
+      "id": "H_FLAG_TRUE_WITHOUT_MAPS_FAIL",
+      "spec": "flag True but missing S1/S2 \u2192 crosscheck fail-closed"
+    },
+    {
+      "id": "H_BINDING_MISMATCH_FAIL",
+      "spec": "named S1 binding != reapply/path binding \u2192 fail"
+    },
+    {
+      "id": "H_DECODE_MISMATCH_FAIL",
+      "spec": "named S2 decode sha != production logical int16 sha \u2192 fail"
+    },
+    {
+      "id": "H_EQUAL_PASS",
+      "spec": "S1+S2 equal + transition fields equal \u2192 injective_ok true"
+    },
+    {
+      "id": "H_B3_NAMED_MAP_REQUIRED",
+      "spec": "oracle_on without events_equal_by_key map \u2192 fail (no tag-only)"
+    },
+    {
+      "id": "H_VACUOUS_FLAG_ONLY_FORBIDDEN",
+      "spec": "static True without compare path is a plan stop if found in review"
+    }
+  ],
+  "named_hostiles_count": 6,
+  "out_of_scope": [
+    "formal 7-row run (test-operator)",
+    "science synthesis beyond terminal branch id",
+    "TSA/BDL/nrb emission redesign",
+    "LANDS_AB readiness debt-row flips unrelated to this matrix"
+  ],
+  "owner_block": {
+    "PROCEED_UNDER_GRANT": "dual-accepted THIS frozen plan (path+sha) + persisted Claude +1 implement citing that sha",
+    "packet_go": "separate dual-accept on packet_v7 + claude go for formal matrix"
+  },
+  "plan_id": "LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v1",
+  "plan_revision": 1,
+  "problem": {
+    "non_goals": [
+      "edit TSA/BDL/named_receipt_binding.py (RO pins at 95097a8d)",
+      "mint science claim in plan/implement/packet artifacts before formal terminal",
+      "flip full_sub2_runtime_ready_for_science or bank/acquisition claims",
+      ".pt commits",
+      "consumer flag flip without real injective compare (vacuous True is FORBIDDEN)"
+    ],
+    "summary": "LANDS-AB formal 7-row matrix terminated BR-LANDS-AB-FIXTURE-CONTRACT-FAIL as a preregistered structural null: INJECTIVE_POST_ACC_BINDING_RO_AVAILABLE=False and named emission surfaces for full sparse-event carrier hash + decoded logical-int16 sha were absent. DW_INJECTIVE landed those emission surfaces. This plan adapts the consumer and re-runs the matrix with a branch classifier where EQUIVALENT is REACHABLE."
+  },
+  "provenance": {
+    "dispatch_msg_id": "1785325909735-b594ac29",
+    "dw_injective_unblock": {
+      "commit": "95097a8d53f9bf086d614e55bf8794bee9f44447",
+      "plan_v7_consumer_followon": "LANDS_AB_RERUN_UNDER_INJECTIVE_SURFACES (not authorized by PLAN_v7; authorized now)",
+      "surfaces": [
+        "S1 sparse_event_map_binding_sha256_by_key (+ count/shape) on path and B1/B2/B3",
+        "S2 candidate_bounded_decode_sha256_after always-on streaming via facade/BDA",
+        "S3 real B3 oracle_only events_equal_by_key via witness (not tag-only)"
+      ]
+    },
+    "gabe_authority": "standing auto-research directive; peer gates full HIGH; his gates waived",
+    "parent_null": {
+      "code_commit_at_null": "92f8f2020dc99e10f2492900cfeb26c1028e5045",
+      "packet_v6_sha256": "6a97928392384d1769164c8c6bc3ef86c6474deb5086153ccf5d17dcb66f9722",
+      "terminal_branch_id": "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+      "terminal_receipt_sha256": "f872c0b42a45338e30c9d0b8e5c0573a5a49a0f7838cea8deca90e58c882bcad"
+    }
+  },
+  "report_to": [
+    "claude"
+  ],
+  "risk": "high",
+  "schema": "LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN/v1",
+  "sizing_and_step_assertions": {
+    "DEVELOPER_STEPS": 6,
+    "SIZING": "LARGE",
+    "rationale": "consumer multi-file + real compare + packet remint + hostiles; claim-adjacent HIGH"
+  },
+  "stop_conditions": [
+    "DW surfaces absent on path after characterize (S1 maps or S2 decode missing)",
+    "flag True without real injective compare implementation",
+    "TSA/BDL/NRB/BDA/sparse_vote_events hash drift or edit attempt",
+    "packet_v7 locks expected branch to FIXTURE-CONTRACT-FAIL only",
+    "ellipsis in receipt commands or unreplayable result fields",
+    "formal 7-row launch by plan-dev",
+    "science_claim true on implement/packet",
+    ".pt commit",
+    "edit dirty trainer_sub2 test"
+  ],
+  "task_id": "1785325867711-078fb733",
+  "validation_plan": {
+    "characterization_commands": [
+      "PYTHONPATH=. python3 -c '<characterize path S1 maps + fused S2 decode sha presence>'"
+    ],
+    "existing_regressions": [
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py -q",
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_phase_topology.py -q",
+      "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding.py -q"
+    ],
+    "formal_matrix": "FORBIDDEN in plan-dev; claude test-operator only after go",
+    "gpu_smokes": "optional 1-step B1 fused + B3 oracle_on after consumer change if measurement path touches builders; env SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL required",
+    "new_suite": "PYTHONPATH=. python3 -m pytest calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py -q",
+    "packet_dry_exec": "import + argv structural dry-run of packet_v7 templates; no formal matrix in plan-dev",
+    "receipt_discipline": "exact replayable argv; result must replay from own command; O_EXCL artifacts"
+  },
+  "work_repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "write_surface": {
+    "after_plus1_implement": {
+      "allowed_paths": [
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_binding.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+        "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py",
+        "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_cpu_binding_local_pipeline.py",
+        "calm/llm_computer/tests/test_hrm_text_158_lands_ab_consumer_injective_adapt_cpu.py",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v7.json",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_IMPLEMENT_receipt_v1.json",
+        "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_FINAL_SNAPSHOT_v1.json"
+      ],
+      "dirty_trainer_test": {
+        "path": "calm/llm_computer/tests/test_hrm_text_158_trainer_sub2_authority.py",
+        "rule": "run-only never stage; rehash unchanged"
+      },
+      "explicitly_readonly": {
+        "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357",
+        "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707",
+        "calm/hrm_text_158/native_full_stack/named_receipt_binding.py": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6",
+        "calm/hrm_text_158/native_full_stack/sparse_vote_events.py": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf",
+        "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0"
+      },
+      "fixture_source_pin_bump": "only DEFAULT_SOURCE_PINS literals that must track post_state/oracle_sites/consumer hashes after adaptation \u2014 same discipline as DW pin addendum; nothing else in file"
+    },
+    "plan_phase_only": [
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v1.json"
+    ]
+  }
+}
