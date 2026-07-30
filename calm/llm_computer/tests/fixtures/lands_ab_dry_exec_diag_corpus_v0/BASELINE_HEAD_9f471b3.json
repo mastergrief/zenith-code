@@ -2,7 +2,7 @@
  "generated_from_rows": {
   "artifact": "A0_DIAGNOSTIC_CLASS_CORPUS_v4",
   "generator": "gen_rows.py (non-tracked, plan-dev scratch)",
-  "method": "direct field projection from the frozen artifact's rows[]; NO reconstruction from predecessor increments",
+  "method": "direct field projection from the frozen artifact's rows[]; NO reconstruction from predecessor increments; EXCEPT the enumerated normalization(s) recorded in top-level `normalizations`",
   "sha256": "b011fb91dc61593ef27081c50fdbb75962ff7c237eb818d23daa97df5bdaaa8c"
  },
  "harness_sha256": "5e4396dfa4409cfced4d523da35debddc491fb02fbfa6ba40bfe4d79eb288ab5",
@@ -605,7 +605,7 @@
    "rc": 2
   }
  },
- "rows_sha256": "6587725e0ebd2441c4c1a7e9bde57f4d5372ab5f69e904985c64351d26394ff8",
+ "rows_sha256": "0100d08707f4322f56d024ffa230eb80d5123a84dce1b231c72415befa79e315",
  "schema": "LANDS_AB_dry_exec_diag_corpus_baseline/v0",
  "tool_sha256": "1d34fc06581a19a3655dbeef58bff137ee9ac9a28a67abe4b00a8c8af3d294cf"
 }

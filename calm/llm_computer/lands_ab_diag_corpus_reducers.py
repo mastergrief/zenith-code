@@ -22,6 +22,43 @@ OP_KINDS = {"set", "delete", "list_pop", "list_append", "reverse",
             "filter_out_entry_paths", "resync_n_entries"}
 TOKEN_RE = re.compile(r"^([A-Z][0-9]+[a-z]?(?:/[A-Z][0-9]+[a-z]?)*)\b")
 
+STEP_POLICY_KEYS = {"A5": "A5+", "A6": "A5+"}
+
+MUTATION_AXES = {"packet", "cli", "cli+packet", "manifest", "packet-file"}
+EVIDENCE_TIERS = {"preregistered", "post_observation_source_derived",
+                  "post_observation_corrected"}
+# Phase C / b5: presence is not enough -- an evidence field nothing consumes can be
+# null or wrong-typed and still ride through. "int" rejects bool (bool is an int
+# subclass in Python, so `expected_rc: true` would otherwise validate).
+FIELD_TYPES = {
+    "row_id": "str", "intended_site_id": "str", "conduit_site_id": "str",
+    "mutation_axis": "axis", "mutation_spec": "dict", "fixture_id": "str",
+    "expected_rc": "int", "expected_class_token": "str", "expected_msg_key": "str",
+    "observed_rc_at_authoring": "int", "observed_msg_key_at_authoring": "str",
+    "evidence_tier": "tier", "baseline_equivalence_eligible": "bool",
+    "independent_correctness_eligible": "bool", "derivation_cite": "str",
+    "source_increment": "str",
+}
+
+
+def _type_fault(kind: str, value) -> str | None:
+    """Return a fault label, or None when the value satisfies the declared type."""
+    if value is None:
+        return "null"
+    if kind == "str":
+        return None if isinstance(value, str) and value.strip() else "not_non_empty_str"
+    if kind == "int":
+        return None if isinstance(value, int) and not isinstance(value, bool) else "not_int"
+    if kind == "bool":
+        return None if isinstance(value, bool) else "not_bool"
+    if kind == "dict":
+        return None if isinstance(value, dict) else "not_object"
+    if kind == "axis":
+        return None if value in MUTATION_AXES else "not_a_declared_axis"
+    if kind == "tier":
+        return None if value in EVIDENCE_TIERS else "not_a_declared_tier"
+    return None
+
 
 # --------------------------------------------------------------------- normalization
 
@@ -97,6 +134,21 @@ def preflight_schema(corpus: dict) -> list:
         bad("required_field_absent", fields=missing, of_rows=len(rows),
             required_count=len(required))
 
+    # b5: non-null + basic type for every required field that declares one
+    faults = {}
+    for row in rows:
+        for field in required:
+            kind = FIELD_TYPES.get(field)
+            if kind is None or field not in row:
+                continue
+            fault = _type_fault(kind, row[field])
+            if fault:
+                key = f"{field}:{fault}"
+                faults.setdefault(key, []).append(row.get("row_id"))
+    if faults:
+        bad("required_field_null_or_bad_type",
+            faults={k: {"count": len(v), "rows": v[:5]} for k, v in sorted(faults.items())})
+
     ids = [r.get("row_id") for r in rows]
     if len(set(ids)) != len(rows):
         dupes = sorted({i for i in ids if ids.count(i) > 1})
@@ -145,6 +197,11 @@ def preflight_schema(corpus: dict) -> list:
         if led.get("n_class_tokens") != len(toks):
             bad("ledger_token_count", ledger=name, declared=led.get("n_class_tokens"),
                 actual=len(toks))
+        # b7: declared `sites` was previously unvalidated and could drift green
+        actual_sites = len({r.get("intended_site_id") for r in subset})
+        if led.get("sites") != actual_sites:
+            bad("ledger_site_count", ledger=name, declared=led.get("sites"),
+                actual=actual_sites)
 
     census = corpus.get("census") or {}
     residual = corpus.get("residual_sites")
@@ -157,10 +214,91 @@ def preflight_schema(corpus: dict) -> list:
         bad("census_reconciliation", declared=census.get("total"),
             actual=len(rows) + n_res)
 
+    # b6: counts alone admit duplicated or row-overlapping residual records --
+    # 31 residuals that repeat an id still satisfy 149 + 31 == 180.
+    if isinstance(residual, list):
+        res_ids = [r.get("site_id") if isinstance(r, dict) else None for r in residual]
+        if len(set(res_ids)) != len(res_ids):
+            dupes = sorted({s for s in res_ids if res_ids.count(s) > 1}, key=str)
+            bad("residual_site_not_unique", unique=len(set(res_ids)),
+                residuals=len(res_ids), duplicates=dupes[:10])
+        row_sites = {r.get("intended_site_id") for r in rows}
+        overlap = sorted(set(res_ids) & row_sites, key=str)
+        if overlap:
+            bad("row_residual_overlap", sites=overlap[:10], count=len(overlap))
+        combined = len(row_sites | set(res_ids))
+        if census.get("total") != combined:
+            bad("census_unique_site_reconciliation", declared=census.get("total"),
+                unique_combined=combined)
+
     gen = (corpus.get("generated_from") or {}).get("sha256")
     if gen != V4_SHA:
         bad("generated_from_identity", expected=V4_SHA, got=gen)
     return fails
+
+
+def resolve_allowlist_policy_key(step: str) -> str:
+    """Map a DECLARED step to the frozen allowlist POLICY key.
+
+    EXPLICIT MAP ONLY -- deliberately not a prefix or ordering rule. A numeric
+    "step >= A5 -> A5+" rule would also swallow A9, the undeclared step the
+    unknown-step negative relies on, making that case unfailable. Anything not
+    named here stays unmapped and is rejected by preflight_step_allowlist.
+
+    The policy key governs only which STRUCTURE allowlist applies. The declared
+    step remains the truth in identity mode, verdict naming and receipts, so an
+    A5 run is never recorded as A5+ evidence.
+    """
+    return STEP_POLICY_KEYS.get(step, step)
+
+
+def preflight_step_allowlist(corpus: dict, step: str) -> list:
+    """The declared step must resolve to a structure allowlist entry.
+
+    Fail-closed on purpose: an A1+ slice has to DECLARE its allowlist rather than
+    silently inherit A0's, so a step label can never widen what is structurally
+    permitted without that widening being written down. A5/A6 resolve to the frozen
+    A5+ policy key by explicit map; every other unlisted step still fails here.
+    """
+    per_step = (corpus.get("ast_allowlist") or {}).get("per_step") or {}
+    policy = resolve_allowlist_policy_key(step)
+    if policy not in per_step:
+        return [{"code": "allowlist_missing_for_step", "step": step,
+                 "policy_key": policy, "declared_steps": sorted(per_step)}]
+    return []
+
+
+def preflight_normalization_register(corpus: dict) -> list:
+    """When generated_from.method declares exceptions, the register must be present.
+
+    Makes the tracked corpus SELF-DESCRIBING: a fixed-field equality check against
+    the frozen v4 artifact would otherwise see an unexplained divergence, with the
+    explanation living only in a room message the artifact cannot cite.
+    """
+    gen = corpus.get("generated_from") or {}
+    method = gen.get("method") or ""
+    register = corpus.get("normalizations")
+    declares = "except" in method.lower()
+    if not declares:
+        return [] if not register else [
+            {"code": "normalization_register_undeclared",
+             "why": "register present but generated_from.method claims unqualified projection"}]
+    if not isinstance(register, list) or not register:
+        return [{"code": "normalization_register_absent",
+                 "why": "generated_from.method declares enumerated exceptions; the "
+                        "enumeration itself must be in the artifact"}]
+    required = ("row_id", "field", "old_value", "new_value", "reason", "ruling_msg_id")
+    bad = []
+    for i, entry in enumerate(register):
+        if not isinstance(entry, dict):
+            bad.append({"index": i, "missing": list(required)})
+            continue
+        missing = [k for k in required if k not in entry]
+        if missing:
+            bad.append({"index": i, "missing": missing})
+    if bad:
+        return [{"code": "normalization_register_malformed", "entries": bad[:5]}]
+    return []
 
 
 # --------------------------------------------------------------------- ledgers

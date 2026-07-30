@@ -96,7 +96,7 @@
  "generated_from": {
   "artifact": "A0_DIAGNOSTIC_CLASS_CORPUS_v4",
   "generator": "gen_rows.py (non-tracked, plan-dev scratch)",
-  "method": "direct field projection from the frozen artifact's rows[]; NO reconstruction from predecessor increments",
+  "method": "direct field projection from the frozen artifact's rows[]; NO reconstruction from predecessor increments; EXCEPT the enumerated normalization(s) recorded in top-level `normalizations`",
   "sha256": "b011fb91dc61593ef27081c50fdbb75962ff7c237eb818d23daa97df5bdaaa8c"
  },
  "ledgers": {
@@ -150,6 +150,18 @@
    "B": "ONLY pre-observation-derived expectations; post-observation rows are EXCLUDED and are never described as preregistered"
   }
  },
+ "normalizations": [
+  {
+   "field": "conduit_site_id",
+   "new_value": "main#97",
+   "old_value": [
+    "main#97"
+   ],
+   "reason": "v4 carried a single-element list where the frozen plan's row schema specifies a non-empty str; normalized to the declared type. Behavior of the row is unchanged -- the site identity is identical, only its container type was non-conforming.",
+   "row_id": "R_L3_cli_bad_expected_plan_sha",
+   "ruling_msg_id": "1785437631492-081d734a"
+  }
+ ],
  "residual_sites": [
   {
    "evidence": {
@@ -3651,9 +3663,7 @@
   },
   {
    "baseline_equivalence_eligible": true,
-   "conduit_site_id": [
-    "main#97"
-   ],
+   "conduit_site_id": "main#97",
    "derivation_cite": "_require_hex64 :21 f\"{field} must be lowercase 64-hex\"; field bound at :1380 to 'expected_operative_plan_sha256'; wrapped at :1384 as f\"L3 {e}\"",
    "evidence_tier": "preregistered",
    "expected_class_token": "L3",

@@ -85,9 +85,90 @@ def import_fixture_builder(repo: Path, expected_sha: str):
     return mod
 
 
+def tool_identity(repo: Path, corpus: dict, baseline: dict | None) -> dict:
+    """The three tool-sha values, kept explicitly distinct.
+
+    PROVENANCE -- "is this the tool the baseline was captured from?" True only at A0.
+      rows_bound_to : ROWS.bound_to.tool_sha256   (provenance of authoring)
+      baseline_tool : BASELINE.tool_sha256        (provenance of capture)
+    CURRENCY -- "do we know exactly which tool bytes we are testing?" Every step.
+      candidate     : sha256 of the tool as it exists right now
+
+    The two provenance values record the SAME authoring event and must always agree.
+    Only `candidate` is permitted to move, and only at A1+.
+    """
+    return {
+        "candidate_tool_sha256": sha256_file(repo / TOOL_REL),
+        "rows_bound_to_tool_sha256": (corpus.get("bound_to") or {}).get("tool_sha256"),
+        "baseline_tool_sha256": (baseline or {}).get("tool_sha256"),
+    }
+
+
+def preflight_manifest_currency(repo: Path, corpus: dict) -> list:
+    """Candidate currency: every manifest entry must match its on-disk bytes.
+
+    This is the SOLE candidate authority at A1+. The manifest pins the tool, so a
+    refactor without a manifest regen lands here -- pre-subprocess -- instead of
+    corrupting all 149 rows with the validator's own source-pin diagnostic.
+    """
+    rel = (corpus.get("bound_to") or {}).get("base_manifest")
+    if not rel:
+        return [{"code": "manifest_binding_absent"}]
+    path = repo / rel
+    if not path.is_file():
+        return [{"code": "manifest_absent", "path": rel}]
+    try:
+        manifest = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        return [{"code": "manifest_unparseable", "path": rel, "error": str(exc)}]
+    stale, missing = [], []
+    for entry in manifest.get("entries") or []:
+        entry_path = repo / entry.get("path", "")
+        if not entry_path.is_file():
+            missing.append(entry.get("path"))
+        elif sha256_file(entry_path) != entry.get("sha256"):
+            stale.append(entry.get("path"))
+    if stale or missing:
+        return [{"code": "manifest_stale", "manifest": rel,
+                 "stale_entries": sorted(stale)[:10], "stale_count": len(stale),
+                 "missing_entries": sorted(missing)[:10], "missing_count": len(missing),
+                 "cure": "regenerate the science-source manifest against the candidate"}]
+    return []
+
+
+def preflight_identity(repo: Path, corpus: dict, baseline: dict | None, step: str) -> list:
+    """Step-aware tool identity. See tool_identity() for the provenance/currency split."""
+    fails = []
+    ident = tool_identity(repo, corpus, baseline)
+    candidate = ident["candidate_tool_sha256"]
+    rows_prov = ident["rows_bound_to_tool_sha256"]
+    base_prov = ident["baseline_tool_sha256"]
+
+    # Provenance internal consistency -- ALL steps. These two are records of the same
+    # authoring event; a disagreement means one was REWRITTEN, which is exactly the
+    # reference-refresh bypass (operator "repairs" an A1 failure by editing bound_to).
+    if baseline is not None and rows_prov != base_prov:
+        fails.append({"code": "provenance_internal_mismatch",
+                      "rows_bound_to_tool_sha256": rows_prov,
+                      "baseline_tool_sha256": base_prov,
+                      "why": "ROWS.bound_to and BASELINE record the same authoring event; "
+                             "a mismatch means a frozen reference was rewritten"})
+
+    if step == "A0":
+        if candidate != rows_prov:
+            fails.append({"code": "candidate_sha_not_baseline_at_A0", "step": step,
+                          "candidate_tool_sha256": candidate,
+                          "provenance_tool_sha256": rows_prov})
+    # A1+: NO equality against either provenance value. Divergence there is CORRECT
+    # AND EXPECTED, not drift; candidate authority is manifest currency alone.
+    return fails
+
+
 def preflight_bindings(repo: Path, corpus: dict, baseline: dict | None,
                        require_baseline: bool = True) -> list:
-    """Source-set pinning + baseline binding. Reads bytes; no import, no subprocess.
+    """Baseline binding + fixture-builder pin. Reads bytes; no import, no subprocess.
+
+    Tool identity is NOT checked here -- see preflight_identity(), which is step-aware.
 
     require_baseline=False is used ONLY by the mint path, where no baseline can exist
     yet by construction; every source pin is still enforced.
@@ -98,9 +179,6 @@ def preflight_bindings(repo: Path, corpus: dict, baseline: dict | None,
         fails.append(dict(code=code, **kw))
 
     bound = corpus.get("bound_to") or {}
-    tool_sha = sha256_file(repo / TOOL_REL)
-    if tool_sha != bound.get("tool_sha256"):
-        bad("tool_sha_drift", expected=bound.get("tool_sha256"), got=tool_sha)
     harness_pin = bound.get("harness_sha256")
     if not harness_pin:
         bad("harness_pin_absent")
@@ -121,10 +199,12 @@ def preflight_bindings(repo: Path, corpus: dict, baseline: dict | None,
     rows_sha = sha256_file(rows_path(repo))
     if baseline.get("rows_sha256") != rows_sha:
         bad("baseline_rows_sha", expected=rows_sha, got=baseline.get("rows_sha256"))
-    for field in ("tool_sha256", "harness_sha256"):
-        if baseline.get(field) != bound.get(field):
-            bad("baseline_source_pin", field=field, baseline=baseline.get(field),
-                corpus=bound.get(field))
+    # tool_sha256 is deliberately NOT compared here: baseline-vs-corpus tool provenance
+    # is owned by preflight_identity's provenance_internal_consistency check, so the
+    # receipt names that relationship once with its own code instead of twice.
+    if baseline.get("harness_sha256") != bound.get("harness_sha256"):
+        bad("baseline_source_pin", field="harness_sha256",
+            baseline=baseline.get("harness_sha256"), corpus=bound.get("harness_sha256"))
     if baseline.get("generated_from_rows") != corpus.get("generated_from"):
         bad("baseline_generated_from")
     bmap = baseline.get("map")

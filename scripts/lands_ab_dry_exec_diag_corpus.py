@@ -121,13 +121,37 @@ def make_ctx(repo: Path, corpus: dict):
             "base_manifest": json.loads(manifest.read_text())}
 
 
-def preflight(repo: Path, corpus: dict, baseline: dict | None, need_baseline: bool):
-    """Every contract check, ordered before dynamic import and before any subprocess."""
-    return R.preflight_schema(corpus) + S.preflight_bindings(
-        repo, corpus, baseline, require_baseline=need_baseline)
+def resolved_mode(step: str) -> str:
+    """The declared step IS the mode. A0 is strict; there is no independent flag."""
+    return "A0_strict_candidate_equals_provenance" if step == "A0" \
+        else "A1plus_candidate_currency_via_manifest"
 
 
-def measure(repo: Path, corpus: dict, baseline: dict | None):
+def preflight(repo: Path, corpus: dict, baseline: dict | None, need_baseline: bool,
+              step: str, baseline_path: Path | None = None):
+    """Every contract check, ordered before dynamic import and before any subprocess.
+
+    Composable standalone: callers may invoke this without measure() to obtain a
+    preflight-only terminal (eligible-to-proceed) verdict.
+    """
+    fails = []
+    if baseline_path is not None:
+        canonical = S.canonical_baseline_path(repo)
+        if baseline_path.resolve() != canonical.resolve():
+            fails.append({"code": "baseline_path_not_canonical",
+                          "supplied": str(baseline_path), "canonical": str(canonical),
+                          "why": "a caller-supplied observation map can carry valid bindings "
+                                 "and still bypass the committed baseline's authority"})
+    fails += R.preflight_schema(corpus)
+    fails += R.preflight_normalization_register(corpus)
+    fails += R.preflight_step_allowlist(corpus, step)
+    fails += S.preflight_identity(repo, corpus, baseline, step)
+    fails += S.preflight_manifest_currency(repo, corpus)
+    fails += S.preflight_bindings(repo, corpus, baseline, require_baseline=need_baseline)
+    return fails
+
+
+def measure(repo: Path, corpus: dict, baseline: dict | None, step: str):
     """Run the corpus twice and compute every ledger. Preflight must already have passed."""
     ctx = make_ctx(repo, corpus)
     rows = corpus["rows"]
@@ -135,13 +159,17 @@ def measure(repo: Path, corpus: dict, baseline: dict | None):
     second = run_all(ctx, rows)
     census = R.census_from_source(S.tool_source(repo))
     result = {
+        "step": step,
+        "allowlist_policy_key": R.resolve_allowlist_policy_key(step),
+        "resolved_mode": resolved_mode(step),
+        "tool_identity": S.tool_identity(repo, corpus, baseline),
         "rows": len(rows),
         "prereg_ledger_failures": R.check_observed_vs_prereg(rows, first),
         "baseline_ledger_failures": R.check_observed_vs_baseline(rows, first, baseline) if baseline else None,
         "determinism_pair_diffs": R.check_determinism(first, second),
         "token_rule": R.check_tokens(rows, first),
         "vacuity": R.check_vacuity(first),
-        "structure": R.ast_structure_report(S.tool_source(repo), "A0", corpus["ast_allowlist"]),
+        "structure": R.ast_structure_report(S.tool_source(repo), step, corpus["ast_allowlist"]),
         "census": census,
         "census_identity_ok": census["total"] == corpus["census"]["total"],
     }
@@ -161,42 +189,68 @@ def cmd_assert_structure(repo: Path, corpus: dict, step: str):
     return 0 if report["verdict"] == "PASS" else 1
 
 
-def cmd_accept(repo: Path, corpus: dict, baseline_path: Path, quiet: bool = False):
-    """Normal acceptance. The committed baseline is a REQUIRED INPUT; nothing is written."""
-    baseline = S.load_baseline(baseline_path)
-    fails = preflight(repo, corpus, baseline, need_baseline=True)
+def cmd_accept(repo: Path, corpus: dict, step: str = "A0", quiet: bool = False,
+               baseline_path: Path | None = None, preflight_only: bool = False):
+    """Normal acceptance. The committed baseline is a REQUIRED INPUT; nothing is written.
+
+    baseline_path is NOT a production knob: production callers pass None and the
+    canonical repo path is resolved internally. Only the negative battery supplies an
+    alternate, and it is rejected as non-canonical -- it can never mint an ACCEPT.
+    """
+    resolved = baseline_path if baseline_path is not None else S.canonical_baseline_path(repo)
+    baseline = S.load_baseline(resolved)
+    fails = preflight(repo, corpus, baseline, need_baseline=True, step=step,
+                      baseline_path=baseline_path)
     if fails:
-        out = {"verdict": "A0_PREFLIGHT_FAIL", "preflight_failures": fails,
+        out = {"verdict": f"{step}_PREFLIGHT_FAIL", "step": step,
+               "allowlist_policy_key": R.resolve_allowlist_policy_key(step),
+               "resolved_mode": resolved_mode(step), "preflight_failures": fails,
                "subprocesses_spawned": 0,
-               "note": "schema/ledger/source-pin contract failed before dynamic import and before the first subprocess"}
+               "note": "schema/ledger/identity/currency contract failed before dynamic import and before the first subprocess"}
         if not quiet:
             print(json.dumps(out, indent=1))
         return 1, out
-    result, _ = measure(repo, corpus, baseline)
+    if preflight_only:
+        out = {"verdict": f"{step}_PREFLIGHT_OK", "step": step,
+               "allowlist_policy_key": R.resolve_allowlist_policy_key(step),
+               "resolved_mode": resolved_mode(step), "preflight_failures": [],
+               "subprocesses_spawned": 0,
+               "tool_identity": S.tool_identity(repo, corpus, baseline),
+               "note": "eligible to proceed to corpus comparison; no measurement performed"}
+        if not quiet:
+            print(json.dumps(out, indent=1))
+        return 0, out
+    result, _ = measure(repo, corpus, baseline, step)
     result["preflight_failures"] = []
-    result["baseline_path"] = str(baseline_path)
-    result["baseline_sha256"] = S.sha256_file(baseline_path)
-    result["verdict"] = "A0_ACCEPT" if R.acceptance_verdict(result, True) else "A0_FAIL"
+    result["baseline_path"] = str(resolved)
+    result["baseline_sha256"] = S.sha256_file(resolved)
+    result["verdict"] = f"{step}_ACCEPT" if R.acceptance_verdict(result, True) else f"{step}_FAIL"
     if not quiet:
         print(json.dumps(result, indent=1))
-    return (0 if result["verdict"] == "A0_ACCEPT" else 1), result
+    return (0 if result["verdict"] == f"{step}_ACCEPT" else 1), result
 
 
-def cmd_mint_baseline(repo: Path, corpus: dict, baseline_path: Path, quiet: bool = False):
-    """Creation-only baseline mint. Refuses if the target exists; never rewrites."""
-    if baseline_path.exists():
+def cmd_mint_baseline(repo: Path, corpus: dict, quiet: bool = False,
+                      baseline_path: Path | None = None):
+    """Creation-only baseline mint. Refuses if the target exists; never rewrites.
+
+    Minting is an A0-only operation: a baseline captured against anything other than
+    the provenance tool would not be a HEAD-9f471b3 reference at all.
+    """
+    resolved = baseline_path if baseline_path is not None else S.canonical_baseline_path(repo)
+    if resolved.exists():
         if not quiet:
             print(json.dumps({"verdict": "A0_MINT_REFUSED",
                               "reason": "baseline already exists; the frozen baseline is immutable",
-                              "path": str(baseline_path),
-                              "existing_sha256": S.sha256_file(baseline_path)}, indent=1))
+                              "path": str(resolved),
+                              "existing_sha256": S.sha256_file(resolved)}, indent=1))
         return 1
-    fails = preflight(repo, corpus, None, need_baseline=False)
+    fails = preflight(repo, corpus, None, need_baseline=False, step="A0")
     if fails:
         print(json.dumps({"verdict": "A0_PREFLIGHT_FAIL", "preflight_failures": fails,
                           "subprocesses_spawned": 0}, indent=1))
         return 1
-    result, first = measure(repo, corpus, None)
+    result, first = measure(repo, corpus, None, "A0")
     if not R.acceptance_verdict(result, False):
         result["verdict"] = "A0_FAIL"
         print(json.dumps(result, indent=1))
@@ -208,81 +262,28 @@ def cmd_mint_baseline(repo: Path, corpus: dict, baseline_path: Path, quiet: bool
                "generated_from_rows": corpus["generated_from"], "map": first}
     text = json.dumps(payload, indent=1, sort_keys=True) + "\n"
     json.loads(text)
-    fd = os.open(str(baseline_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    fd = os.open(str(resolved), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
     with os.fdopen(fd, "w") as handle:
         handle.write(text)
     result["verdict"] = "A0_BASELINE_MINTED"
-    result["baseline_written"] = str(baseline_path.relative_to(repo))
-    result["baseline_sha256"] = S.sha256_file(baseline_path)
-    print(json.dumps(result, indent=1))
+    result["baseline_written"] = str(resolved)
+    result["baseline_sha256"] = S.sha256_file(resolved)
+    if not quiet:
+        print(json.dumps(result, indent=1))
     return 0
 
 
-def cmd_self_test(repo: Path, corpus: dict, baseline_path: Path):
-    """Negative-case battery. No subprocess is legitimate here; spawning is a failure."""
-    baseline = S.load_baseline(baseline_path)
-    cases, real_run = [], subprocess.run
+def cmd_self_test(repo: Path):
+    """Delegate to the battery module.
 
-    def record(name, ok, detail):
-        cases.append({"case": name, "ok": bool(ok), "detail": detail})
-
-    def guard(*a, **k):
-        raise AssertionError("subprocess spawned during a pre-execution negative case")
-
-    def preflight_codes(mutate):
-        bad_corpus = copy.deepcopy(corpus)
-        mutate(bad_corpus)
-        subprocess.run = guard
-        try:
-            _, out = cmd_accept(repo, bad_corpus, baseline_path, quiet=True)
-        finally:
-            subprocess.run = real_run
-        return {f["code"] for f in out.get("preflight_failures", [])}, out
-
-    # (a) baseline map tamper -> BASELINE ledger specifically
-    if baseline:
-        tampered = copy.deepcopy(baseline)
-        victim = corpus["rows"][0]["row_id"]
-        tampered["map"][victim] = {"rc": 99, "msg_key": "TAMPERED"}
-        observed = {r["row_id"]: dict(baseline["map"][r["row_id"]]) for r in corpus["rows"]}
-        b_fail = R.check_observed_vs_baseline(corpus["rows"], observed, tampered)
-        p_fail = R.check_observed_vs_prereg(corpus["rows"], observed)
-        record("a_baseline_tamper_isolated_to_baseline_ledger",
-               len(b_fail) == 1 and b_fail[0]["row_id"] == victim and not p_fail,
-               {"baseline_ledger": b_fail, "prereg_ledger_failures": len(p_fail)})
-    # (b) mint refuses over an existing baseline, bytes unchanged
-    tmp = Path(tempfile.mkdtemp(prefix="a0selftest_"))
-    try:
-        existing = tmp / S.BASELINE_NAME
-        existing.write_text('{"schema":"decoy"}\n')
-        before = S.sha256_file(existing)
-        rc = cmd_mint_baseline(repo, corpus, existing, quiet=True)
-        record("b_mint_refuses_existing_baseline",
-               rc == 1 and S.sha256_file(existing) == before,
-               {"rc": rc, "sha_before": before, "sha_after": S.sha256_file(existing)})
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-    # (c) fixture-builder hash mismatch -> fails before import/subprocess
-    codes, _ = preflight_codes(lambda c: c["bound_to"].update(harness_sha256="0" * 64))
-    record("c_fixture_builder_hash_mismatch", "harness_sha_drift" in codes, sorted(codes))
-    # (d) duplicate row_id
-    codes, _ = preflight_codes(lambda c: c["rows"][1].update(row_id=c["rows"][0]["row_id"]))
-    record("d_duplicate_row_id", "row_id_not_unique" in codes, sorted(codes))
-    # (e) missing required field -- pops observed_rc_at_authoring, i.e. exactly the
-    # defect class the projection actually shipped and this preflight caught pre-commit
-    codes, _ = preflight_codes(lambda c: c["rows"][0].pop("observed_rc_at_authoring", None))
-    record("e_missing_required_field", "required_field_absent" in codes, sorted(codes))
-    # (e2) popping the IDENTIFIER field must classify, not traceback
-    codes, _ = preflight_codes(lambda c: c["rows"][0].pop("row_id", None))
-    record("e2_missing_row_id_classifies_not_raises", "required_field_absent" in codes, sorted(codes))
-    # (f) tier / Ledger-B crossover
-    codes, _ = preflight_codes(lambda c: c["rows"][0].update(independent_correctness_eligible=not c["rows"][0]["independent_correctness_eligible"]))
-    record("f_tier_ledger_crossover", "tier_ledger_crossover" in codes, sorted(codes))
-
-    passed = all(c["ok"] for c in cases)
-    print(json.dumps({"check_id": "A0_NEGATIVE_BATTERY", "cases": cases,
-                      "verdict": "PASS" if passed else "FAIL"}, indent=1))
-    return 0 if passed else 1
+    Seam: battery / negative-case + transition-proof orchestration is owned by
+    calm/llm_computer/tests/test_lands_ab_diag_corpus_battery.py, which sits ABOVE
+    this harness in the import order. This entry stays thin on purpose.
+    """
+    from calm.llm_computer.tests import test_lands_ab_diag_corpus_battery as B
+    report = B.run_negative_battery(repo)
+    print(json.dumps(report, indent=1))
+    return 0 if report["verdict"] == "PASS" else 1
 
 
 def main(argv=None):
@@ -293,20 +294,22 @@ def main(argv=None):
     parser.add_argument("--accept", action="store_true")
     parser.add_argument("--mint-baseline", action="store_true")
     parser.add_argument("--self-test-negatives", action="store_true")
-    parser.add_argument("--baseline-path", default=None,
-                        help="override the committed baseline (negative-case replay only)")
+    parser.add_argument("--preflight-only", action="store_true",
+                        help="stop after the contract checks; emit an eligible-to-proceed verdict")
     args = parser.parse_args(argv)
     repo = Path(args.repo_root).resolve()
     corpus = S.load_corpus(repo)
-    baseline_path = Path(args.baseline_path) if args.baseline_path else S.canonical_baseline_path(repo)
+    # The committed baseline is resolved INTERNALLY for every production command.
+    # There is deliberately no --baseline-path: an alternate map is reachable only
+    # from the negative battery, which cannot emit an ACCEPT.
     if args.assert_structure:
         return cmd_assert_structure(repo, corpus, args.step)
     if args.self_test_negatives:
-        return cmd_self_test(repo, corpus, baseline_path)
+        return cmd_self_test(repo)
     if args.mint_baseline:
-        return cmd_mint_baseline(repo, corpus, baseline_path)
+        return cmd_mint_baseline(repo, corpus)
     if args.accept:
-        return cmd_accept(repo, corpus, baseline_path)[0]
+        return cmd_accept(repo, corpus, step=args.step, preflight_only=args.preflight_only)[0]
     parser.error("choose --assert-structure, --accept, --mint-baseline or --self-test-negatives")
 
 
