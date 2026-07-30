@@ -120,6 +120,27 @@ rediscover them — 2 tool comments in the LANDS-AB validator (`:599`, `:1104`) 
 in the pre-existing test-module corpus. `:1104` is a cross-reference to specific
 tests, so the rename must keep that pointer resolvable.
 
+## v4 — remove the remaining self-referential eager rationale
+
+Gabe (chat-side, in substance): how can the rule file itself be improved so it does not
+trigger the fallbacks it exists to reduce?
+
+Assessment: after the correctness-frame rewrite, the body vocabulary was clean, but the
+**rationale paragraph** still explained the rule as managing how automated classifiers
+read our artifacts. That self-description is a **plausible remaining eager residue** —
+no ranking is claimed, because the ranking would be unmeasured: one observed fallback
+event, no controlled comparison, no classifier visibility. The edit needs no ranking to
+justify it: the paragraph was self-referential motivation rather than an operative
+instruction, and the currency split already assigns motivation to the atlas.
+
+Resolution: the rule now motivates itself purely as engineering style — durable artifacts
+are read out of context, and check-describing wording stays exact without the
+surrounding conversation. That claim is true and sufficient on its own merits. The
+classifier/fallback motivation lives HERE, in the query-triggered atlas, per the
+currency split. One stray descriptor ("charged reading" on the `_FAIL` line) removed in
+the same pass. Epistemic status unchanged: hypothesis; whether ANY eager residue matters,
+or which mattered most, remains unmeasured.
+
 ## Why the "precision first" clause exists
 
 The findings being described were genuine fail-open defects with demonstrated rc=0

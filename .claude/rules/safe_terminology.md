@@ -4,9 +4,10 @@
 > `MEMORY/atlas/safe_terminology_arc.md`.
 
 Hardening work produces **long-lived artifacts** — committed tests, tool comments,
-frozen receipts, commit messages, room posts — read later by other models and by
-classifiers. Charged vocabulary in them is a false-positive magnet that can stall a
-gate mid-slice.
+frozen receipts, commit messages, room posts — that are read later, out of their
+original context. Wording that describes our own checks travels well: it stays exact
+without the surrounding conversation and names the defect where the fix goes.
+Rationale receipts: the atlas.
 
 **Precision first.** Neutral wording must be *equally exact*. Never soften a finding,
 downgrade a severity, or blur a failure class to sound calmer. If a neutral phrasing
@@ -56,8 +57,8 @@ prior history".
 
 ## The governed set
 
-`_FAIL` is **kept**: a pure outcome marker with no charged reading, and the
-most-cited identifier suffix across frozen gate records.
+`_FAIL` is **kept**: a pure outcome marker, and the most-cited identifier suffix
+across frozen gate records.
 
 Governed: terms the principle catches in **defect context**. Not governed: `_FAIL`,
 and ordinary uses that are not describing a defect — precision-first forbids
