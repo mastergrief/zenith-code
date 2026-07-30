@@ -10,6 +10,7 @@ Fork of `ultraworkers/claw-code` with a Python agent harness, CALM reasoning eng
 - Default workflow: `.codex/rules/workflow.md`.
 - Active HRM lane: `.codex/rules/hrm-158.md` and `.codex/rules/training.md`.
 - Config/rules edits: `.codex/rules/config_editing.md`.
+- Neutral vocabulary in durable artifacts: `.codex/rules/safe_terminology.md`.
 - ai-room collab: `.codex/rules/AI_ROOM_COLLAB.md` and `.codex/rules/CLAUDEX_ORCHESTRATION.md`.
 - Long-running shell jobs: `.codex/rules/shell_monitor.md`.
 
