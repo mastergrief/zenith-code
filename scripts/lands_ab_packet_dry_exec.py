@@ -1007,24 +1007,13 @@ def _validate_i_series_consistency(
     # lacks is how this survived several rounds, so the invariant is now enforced
     # by the code below rather than described above it.
     auth_pre = packet.get("authority_chain")
-    if isinstance(auth_pre, dict):
-        _auth_plan_rel = str(expected_operative_plan_path).replace("\\", "/").lstrip("./")
-        _auth_plan_sha = str(expected_operative_plan_sha256).lower()
-        _auth_verifiable = {
-            _auth_plan_rel,
-            _auth_plan_rel.lower(),
-            _auth_plan_sha,
-            src,
-        }
-        for _k, _v in auth_pre.items():
-            if not isinstance(_v, str):
-                continue
-            _t = _v.strip()
-            if not _t:
-                continue
-            if _t in _auth_verifiable or _t.lower() in _auth_verifiable:
-                known_refs.add(_t)
-                known_refs.add(_t.lower())
+    _seed_known_refs_from_authority_chain(
+        known_refs,
+        auth_pre,
+        expected_operative_plan_path=expected_operative_plan_path,
+        expected_operative_plan_sha256=expected_operative_plan_sha256,
+        src=src,
+    )
     # ---- Q9: harvest is strictly DOWNSTREAM of validation ----
     # The operative-plan family (`operative_plan_id` / `_sha256` and the
     # `operative_adaptation_*` alternative naming) is NO LONGER harvested from the
@@ -1048,48 +1037,16 @@ def _validate_i_series_consistency(
 
     # O2: expand known-reference value set from validated path+sha pins / maps (exact values only).
     # _add_ref / _disk_sha_ok / _check_path_sha are module-level (A1 Tier-2 lift).
-    for pk, pv in pins.items():
-        if isinstance(pv, dict) and isinstance(pv.get("path"), str) and isinstance(
-            pv.get("sha256"), str
-        ):
-            rel = _norm_path(str(pv["path"]))
-            sha = str(pv["sha256"]).lower()
-            if f"pins.{pk}" in exempt_pin_paths:
-                _add_ref(known_refs, rel)
-                _add_ref(known_refs, sha)
-            elif rel.startswith("artifacts/") and _disk_sha_ok(repo, rel, sha):
-                _add_ref(known_refs, rel)
-                _add_ref(known_refs, sha)
-            elif (
-                rel.startswith(("calm/", "scripts/", "bin/", "rust/"))
-                and rel in man_path_set
-                and man_sha_by_path.get(rel, "").lower() == sha
-            ):
-                _add_ref(known_refs, rel)
-                _add_ref(known_refs, sha)
-        elif isinstance(pv, dict) and pk in (
-            "runner_and_harness_shas",
-            "default_source_pins_for_consumer",
-        ):
-            for rel, sha in pv.items():
-                rel_n = _norm_path(str(rel))
-                sha_n = str(sha).lower()
-                if (
-                    rel_n in man_path_set
-                    and man_sha_by_path.get(rel_n, "").lower() == sha_n
-                ):
-                    _add_ref(known_refs, rel_n)
-                    _add_ref(known_refs, sha_n)
-                elif rel_n.startswith("artifacts/") and _disk_sha_ok(repo, rel_n, sha_n):
-                    _add_ref(known_refs, rel_n)
-                    _add_ref(known_refs, sha_n)
-    for k in (
-        "science_source_manifest_sha256",
-        "generator_script_sha256",
-        "dry_exec_tool_sha256",
-        "source_commit_sha",
-    ):
-        _add_ref(known_refs, packet.get(k))
+    # pin/map expansion is module-level (A2 P2 pure peel).
+    _expand_known_refs_from_validated_pins(
+        known_refs,
+        pins,
+        exempt_pin_paths=exempt_pin_paths,
+        man_path_set=man_path_set,
+        man_sha_by_path=man_sha_by_path,
+        repo=repo,
+        packet=packet,
+    )
 
     # NOTE (Q3'): the universal Q3/I1 hex-token backstop runs LAST, after every
     # specific structural check below. It is a catch-all, and a catch-all that ran
@@ -1544,6 +1501,108 @@ def _validate_i_series_consistency(
         )
 
 
+def _seed_known_refs_from_authority_chain(
+    known_refs: set,
+    auth_pre: object,
+    *,
+    expected_operative_plan_path: str,
+    expected_operative_plan_sha256: str,
+    src: str,
+) -> None:
+    if not isinstance(auth_pre, dict):
+        return
+    _auth_plan_rel = str(expected_operative_plan_path).replace("\\", "/").lstrip("./")
+    _auth_plan_sha = str(expected_operative_plan_sha256).lower()
+    _auth_verifiable = {
+        _auth_plan_rel,
+        _auth_plan_rel.lower(),
+        _auth_plan_sha,
+        src,
+    }
+    for _k, _v in auth_pre.items():
+        if not isinstance(_v, str):
+            continue
+        _t = _v.strip()
+        if not _t:
+            continue
+        if _t in _auth_verifiable or _t.lower() in _auth_verifiable:
+            known_refs.add(_t)
+            known_refs.add(_t.lower())
+
+
+def _expand_known_refs_from_validated_pins(
+    known_refs: set,
+    pins: dict,
+    *,
+    exempt_pin_paths: set,
+    man_path_set: set,
+    man_sha_by_path: dict,
+    repo: Path,
+    packet: dict,
+) -> None:
+    for pk, pv in pins.items():
+        if isinstance(pv, dict) and isinstance(pv.get("path"), str) and isinstance(
+            pv.get("sha256"), str
+        ):
+            rel = _norm_path(str(pv["path"]))
+            sha = str(pv["sha256"]).lower()
+            if f"pins.{pk}" in exempt_pin_paths:
+                _add_ref(known_refs, rel)
+                _add_ref(known_refs, sha)
+            elif rel.startswith("artifacts/") and _disk_sha_ok(repo, rel, sha):
+                _add_ref(known_refs, rel)
+                _add_ref(known_refs, sha)
+            elif (
+                rel.startswith(("calm/", "scripts/", "bin/", "rust/"))
+                and rel in man_path_set
+                and man_sha_by_path.get(rel, "").lower() == sha
+            ):
+                _add_ref(known_refs, rel)
+                _add_ref(known_refs, sha)
+        elif isinstance(pv, dict) and pk in (
+            "runner_and_harness_shas",
+            "default_source_pins_for_consumer",
+        ):
+            for rel, sha in pv.items():
+                rel_n = _norm_path(str(rel))
+                sha_n = str(sha).lower()
+                if (
+                    rel_n in man_path_set
+                    and man_sha_by_path.get(rel_n, "").lower() == sha_n
+                ):
+                    _add_ref(known_refs, rel_n)
+                    _add_ref(known_refs, sha_n)
+                elif rel_n.startswith("artifacts/") and _disk_sha_ok(repo, rel_n, sha_n):
+                    _add_ref(known_refs, rel_n)
+                    _add_ref(known_refs, sha_n)
+    for k in (
+        "science_source_manifest_sha256",
+        "generator_script_sha256",
+        "dry_exec_tool_sha256",
+        "source_commit_sha",
+    ):
+        _add_ref(known_refs, packet.get(k))
+
+
+def _build_dry_exec_arg_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(description="LANDS-AB packet dry-exec")
+    ap.add_argument("--packet", required=True)
+    ap.add_argument("--verify-source-manifest", required=True)
+    ap.add_argument("--expected-source-commit", required=True)
+    ap.add_argument(
+        "--expected-operative-plan-path",
+        default=EXPECTED_OPERATIVE_PLAN_REL,
+        help="L3 exact operative plan path (this packet family default frozen)",
+    )
+    ap.add_argument(
+        "--expected-operative-plan-sha256",
+        default=EXPECTED_OPERATIVE_PLAN_SHA256,
+        help="L3 exact operative plan sha256 (this packet family default frozen)",
+    )
+    ap.add_argument("--repo-root", default=".")
+    return ap
+
+
 def _add_ref(known_refs: set, val: object) -> None:
     if isinstance(val, str) and val.strip():
         known_refs.add(val.strip())
@@ -1627,21 +1686,7 @@ def _scan_write_paths_from_row(inv: dict, argv: list[str], env: dict) -> list[st
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="LANDS-AB packet dry-exec")
-    ap.add_argument("--packet", required=True)
-    ap.add_argument("--verify-source-manifest", required=True)
-    ap.add_argument("--expected-source-commit", required=True)
-    ap.add_argument(
-        "--expected-operative-plan-path",
-        default=EXPECTED_OPERATIVE_PLAN_REL,
-        help="L3 exact operative plan path (this packet family default frozen)",
-    )
-    ap.add_argument(
-        "--expected-operative-plan-sha256",
-        default=EXPECTED_OPERATIVE_PLAN_SHA256,
-        help="L3 exact operative plan sha256 (this packet family default frozen)",
-    )
-    ap.add_argument("--repo-root", default=".")
+    ap = _build_dry_exec_arg_parser()
     args = ap.parse_args(argv)
     repo = Path(args.repo_root).resolve()
     packet_path = Path(args.packet)
