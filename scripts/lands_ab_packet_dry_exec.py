@@ -1685,591 +1685,495 @@ def _scan_write_paths_from_row(inv: dict, argv: list[str], env: dict) -> list[st
     return paths
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = _build_dry_exec_arg_parser()
-    args = ap.parse_args(argv)
-    repo = Path(args.repo_root).resolve()
-    packet_path = Path(args.packet)
-    if not packet_path.is_absolute():
-        packet_path = repo / packet_path
-    # F7: resolve absolute AND relative manifests; reject any resolved path outside repo
-    # (including relative `../` escapes). Normalize before equality later.
+import types
+
+# Value-based control-flow sentinel (NOT an Exception — census-neutral).
+# Leaf hosts return int exit codes; R3 children may return this to mean loop-continue.
+_DRY_EXEC_CONTINUE = object()
+
+def _dry_exec_validate_row_env_paths_raw(ctx):
+    if not isinstance(ctx.rc, dict):
+        print('error: row_command not object', file=sys.stderr)
+        return 2
+    ctx.gr = ctx.rc.get('gating_row')
+    if ctx.gr not in GATING_ROWS or ctx.gr in ctx.seen_rows:
+        print(f'error: bad/dup gating_row {ctx.gr!r}', file=sys.stderr)
+        return 2
+    ctx.seen_rows.add(ctx.gr)
+    ctx.inv = ctx.rc.get('invocation') or {}
+    if not isinstance(ctx.inv, dict):
+        print(f'error: {ctx.gr} invocation must be object', file=sys.stderr)
+        return 2
+    ctx.argv = ctx.inv.get('argv_template') or ctx.inv.get('argv')
+    if not isinstance(ctx.argv, list) or not ctx.argv or (not all((isinstance(x, str) for x in ctx.argv))):
+        print(f'error: missing argv for {ctx.gr}', file=sys.stderr)
+        return 2
+    ctx.argv_key = json.dumps(ctx.argv)
+    if ctx.argv_key in ctx.seen_argv:
+        print(f'error: duplicate argv for {ctx.gr}', file=sys.stderr)
+        return 2
+    ctx.seen_argv.add(ctx.argv_key)
+    for ctx.tok in ctx.argv:
+        if _is_repo_path_token(ctx.tok):
+            ctx.formal_argv_repo_paths.add(_repo_path_from_token(ctx.tok))
+    ctx.env = ctx.inv.get('env_required') or {}
+    if not isinstance(ctx.env, dict):
+        print(f'error: {ctx.gr} env_required must be object', file=sys.stderr)
+        return 2
+    for ctx.req_env in ('PYTHONPATH', 'LANDS_AB_RUNTIME_SCRATCH', 'LANDS_AB_RUN_ROOT'):
+        if ctx.req_env not in ctx.env or not str(ctx.env.get(ctx.req_env) or '').strip():
+            print(f'error: {ctx.gr} missing env {ctx.req_env}', file=sys.stderr)
+            return 2
+    ctx.scratch = str(ctx.env['LANDS_AB_RUNTIME_SCRATCH']).strip()
+    ctx.run_root = str(ctx.env['LANDS_AB_RUN_ROOT']).strip()
+    if not any((tok in ctx.run_root for tok in NONCE_TOKENS)):
+        print(f"error: {ctx.gr} LANDS_AB_RUN_ROOT missing frozen nonce template token (<{NONCE_TOKENS[0].strip('<>')}> or similar): {ctx.run_root!r}", file=sys.stderr)
+        return 2
+    if not _is_descendant(ctx.run_root, ctx.scratch):
+        print(f'error: {ctx.gr} LANDS_AB_RUN_ROOT must be descendant of LANDS_AB_RUNTIME_SCRATCH', file=sys.stderr)
+        return 2
+    if str(ctx.run_root).startswith('/') and _is_descendant(ctx.run_root.replace('<nonce>', 'NONCE').replace('<run_local_nonce>', 'RUN_LOCAL_NONCE'), str(ctx.repo)):
+        print(f'error: {ctx.gr} LANDS_AB_RUN_ROOT must not be under repo root', file=sys.stderr)
+        return 2
+    if str(ctx.scratch).startswith('/') and _is_descendant(ctx.scratch, str(ctx.repo)):
+        print(f'error: {ctx.gr} LANDS_AB_RUNTIME_SCRATCH must not be under repo root', file=sys.stderr)
+        return 2
+    if ctx.scratch != ctx.pkt_scratch or ctx.run_root != ctx.pkt_run_root:
+        print(f'error: {ctx.gr} env scratch/run_root must equal packet runtime_scratch.env_binding', file=sys.stderr)
+        return 2
+    if ctx.shared_scratch is None:
+        ctx.shared_scratch, ctx.shared_run_root = (ctx.scratch, ctx.run_root)
+    elif ctx.scratch != ctx.shared_scratch or ctx.run_root != ctx.shared_run_root:
+        print(f'error: {ctx.gr} scratch/run_root differs from other gating rows (one formal run)', file=sys.stderr)
+        return 2
+    for ctx.tok in _scan_write_paths_from_row(ctx.inv, list(ctx.argv), ctx.env):
+        if _is_write_path_token(ctx.tok):
+            print(f'error: forbidden write path token in {ctx.gr}: {ctx.tok}', file=sys.stderr)
+            return 2
+    ctx.is_cuda = str(ctx.gr).startswith('G_CUDA')
+    ctx.raw_aliases = {'raw_obs_path_template': ctx.inv.get('raw_obs_path_template'), 'terminal_collection_raw_obs_path_template': ctx.inv.get('terminal_collection_raw_obs_path_template'), 'out_path_template': ctx.inv.get('out_path_template')}
+    ctx.present_raw = {k: str(v) for k, v in ctx.raw_aliases.items() if isinstance(v, str) and v.strip()}
+    if 'raw_obs_path_template' not in ctx.present_raw:
+        print(f'error: {ctx.gr} missing required raw_obs_path_template', file=sys.stderr)
+        return 2
+    ctx.raw = ctx.present_raw['raw_obs_path_template']
+    for ctx.k, ctx.v in ctx.present_raw.items():
+        if ctx.v != ctx.raw:
+            print(f'error: {ctx.gr} raw alias {ctx.k} != raw_obs_path_template', file=sys.stderr)
+            return 2
+    if ctx.raw in ctx.seen_raw:
+        print(f'error: duplicate raw path {ctx.raw}', file=sys.stderr)
+        return 2
+    ctx.seen_raw.add(ctx.raw)
+    if not _is_descendant(ctx.raw, ctx.run_root):
+        print(f'error: {ctx.gr} raw_obs path must be descendant of LANDS_AB_RUN_ROOT', file=sys.stderr)
+        return 2
+    if str(ctx.raw).startswith('/') and _is_descendant(ctx.raw.replace('<nonce>', 'NONCE').replace('<run_local_nonce>', 'RUN_LOCAL_NONCE'), str(ctx.repo)):
+        print(f'error: {ctx.gr} raw_obs path must not be under repo root', file=sys.stderr)
+        return 2
+    ctx.raw_base = Path(str(ctx.raw).replace('<nonce>', 'N').replace('<run_local_nonce>', 'R')).name
+    if not ctx.raw_base.startswith(f'lands_ab_raw_obs_{ctx.gr}_'):
+        print(f'error: {ctx.gr} raw basename must start with lands_ab_raw_obs_{ctx.gr}_ (harvest pattern)', file=sys.stderr)
+        return 2
+
+def _dry_exec_validate_row_cpu_cuda_budgets(ctx):
+    if ctx.raw_base in ctx.seen_raw_basenames:
+        print(f'error: {ctx.gr} duplicate raw basename {ctx.raw_base}', file=sys.stderr)
+        return 2
+    ctx.seen_raw_basenames.add(ctx.raw_base)
+    if ctx.argv[0] != 'timeout' or len(ctx.argv) < 3:
+        print(f'error: {ctx.gr} argv must start with timeout <budget>', file=sys.stderr)
+        return 2
     try:
-        man_cli, man_cli_rel = _resolve_under_repo(args.verify_source_manifest, repo=repo)
+        ctx.outer_to = _require_finite_positive(ctx.argv[1], field=f'{ctx.gr} outer timeout')
     except ValueError as e:
-        print(f"error: manifest outside repo ({e})", file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
         return 2
-
-    try:
-        packet = json.loads(packet_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"error: packet load: {e}", file=sys.stderr)
+    ctx.hard = _row_hard_timeout_seconds(ctx.rc, ctx.inv)
+    if ctx.hard is None:
+        print(f'error: {ctx.gr} missing duration_budget_seconds/hard_timeout_seconds for G6 bind', file=sys.stderr)
         return 2
-
-    # G2 required binding fields
-    required = [
-        "science_source_manifest_path",
-        "science_source_manifest_sha256",
-        "source_commit_sha",
-        "generator_script_path",
-        "generator_script_sha256",
-        "dry_exec_tool_path",
-        "dry_exec_tool_sha256",
-    ]
-    for f in required:
-        if f not in packet:
-            print(f"error: packet missing binding field {f}", file=sys.stderr)
+    if float(ctx.outer_to) != float(ctx.hard):
+        print(f'error: {ctx.gr} outer timeout {ctx.outer_to} != row hard bound {ctx.hard} (rule: argv[1] == inv.hard_timeout_seconds or row.duration_budget_seconds)', file=sys.stderr)
+        return 2
+    if not ctx.is_cuda:
+        try:
+            structural_preflight_row(list(ctx.argv), repo=ctx.repo, runner_parser=ctx.runner_parser)
+        except Exception as e:
+            print(f'error: structural preflight {ctx.gr}: {e}', file=sys.stderr)
             return 2
+        ctx.out_val = _flag_val(list(ctx.argv), '--out')
+        if ctx.out_val != ctx.raw:
+            print(f'error: {ctx.gr} --out must equal raw_obs_path_template', file=sys.stderr)
+            return 2
+        return _DRY_EXEC_CONTINUE
     try:
-        man_path = str(packet["science_source_manifest_path"])
-        man_sha = _require_hex64(packet["science_source_manifest_sha256"], field="science_source_manifest_sha256")
-        src_commit = _require_hex40(str(packet["source_commit_sha"]).lower(), field="source_commit_sha")
-        gen_path = str(packet["generator_script_path"])
-        gen_sha = _require_hex64(packet["generator_script_sha256"], field="generator_script_sha256")
-        dry_path = str(packet["dry_exec_tool_path"])
-        dry_sha = _require_hex64(packet["dry_exec_tool_sha256"], field="dry_exec_tool_sha256")
-        exp = _require_hex40(str(args.expected_source_commit).lower(), field="expected_source_commit")
+        ctx.chain = _validate_ordered_cuda_chain(list(ctx.argv), gr=str(ctx.gr))
     except ValueError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f'error: {e}', file=sys.stderr)
         return 2
-
-    # F7: normalize packet-relative (or absolute) manifest path under repo before equality
-    try:
-        _man_pkt_abs, man_path_norm = _resolve_under_repo(man_path, repo=repo)
-    except ValueError as e:
-        print(f"error: packet.science_source_manifest_path outside repo ({e})", file=sys.stderr)
-        return 2
-    if man_cli_rel != man_path_norm:
-        print(
-            f"error: CLI manifest path {man_cli_rel!r} != packet.science_source_manifest_path {man_path_norm!r}",
-            file=sys.stderr,
-        )
-        return 2
-    if exp != src_commit:
-        print("error: --expected-source-commit != packet.source_commit_sha", file=sys.stderr)
-        return 2
-    if not man_cli.is_file():
-        print(f"error: missing manifest file {man_cli}", file=sys.stderr)
-        return 2
-    live_man_sha = sha256_file(man_cli)
-    if live_man_sha != man_sha:
-        print("error: manifest file sha != packet.science_source_manifest_sha256", file=sys.stderr)
-        return 2
-    # E-G: frozen tool paths EXACT then self-rehash
-    if gen_path != "scripts/lands_ab_science_source_manifest.py":
-        print(f"error: generator_script_path must be scripts/lands_ab_science_source_manifest.py, got {gen_path!r}", file=sys.stderr)
-        return 2
-    if dry_path != "scripts/lands_ab_packet_dry_exec.py":
-        print(f"error: dry_exec_tool_path must be scripts/lands_ab_packet_dry_exec.py, got {dry_path!r}", file=sys.stderr)
-        return 2
-    for rel, expect in ((gen_path, gen_sha), (dry_path, dry_sha)):
-        fp = repo / rel
-        if not fp.is_file():
-            print(f"error: missing pinned tool/script {rel}", file=sys.stderr)
+    ctx.phase_argv = ctx.chain['phase_argv']
+    ctx.enf_argv = ctx.chain['enf_argv']
+    ctx.budget_map = ctx.chain['budget_map']
+    ctx.pb_decl = ctx.inv.get('phase_budgets_seconds')
+    if isinstance(ctx.pb_decl, dict):
+        if set(ctx.pb_decl.keys()) != set(REQUIRED_PHASE_BUDGET_NAMES):
+            print(f'error: {ctx.gr} declared phase_budgets_seconds keys mismatch required set', file=sys.stderr)
             return 2
-        if sha256_file(fp) != expect:
-            print(f"error: sha mismatch for {rel}", file=sys.stderr)
-            return 2
-
-    # load manifest entries
-    try:
-        man = json.loads(man_cli.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"error: manifest JSON: {e}", file=sys.stderr)
-        return 2
-    if man.get("schema") != "LANDS_AB_science_source_manifest/v1":
-        print(f"error: manifest schema must be LANDS_AB_science_source_manifest/v1, got {man.get('schema')!r}", file=sys.stderr)
-        return 2
-    entries = man.get("entries")
-    if not isinstance(entries, list) or not entries:
-        print("error: manifest entries missing", file=sys.stderr)
-        return 2
-    if man.get("n_entries") != len(entries):
-        print("error: manifest n_entries != len(entries)", file=sys.stderr)
-        return 2
-    paths = []
-    for ent in entries:
-        if not isinstance(ent, dict) or "path" not in ent or "sha256" not in ent:
-            print("error: bad manifest entry", file=sys.stderr)
-            return 2
-        rel = ent["path"]
-        if not isinstance(rel, str) or ".." in Path(rel).parts or rel.startswith("/"):
-            print(f"error: bad/escape path {rel!r}", file=sys.stderr)
-            return 2
-        try:
-            h = _require_hex64(ent["sha256"], field=f"manifest[{rel}].sha256")
-        except ValueError as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 2
-        paths.append(rel)
-        fp = repo / rel
-        if not fp.is_file():
-            print(f"error: missing source path {rel}", file=sys.stderr)
-            return 2
-        if sha256_file(fp) != h:
-            print(f"error: disk sha mismatch {rel}", file=sys.stderr)
-            return 2
-    if paths != sorted(paths) or len(paths) != len(set(paths)):
-        print("error: manifest paths not sorted unique", file=sys.stderr)
-        return 2
-
-    # H2: mandatory execution-source set must be present
-    man_path_set = set(paths)
-    missing_mand = [p for p in MANDATORY_EXECUTION_SOURCE_SET if p not in man_path_set]
-    if missing_mand:
-        print(
-            f"error: missing mandatory source: {missing_mand[0]}",
-            file=sys.stderr,
-        )
-        return 2
-
-    # packet schema / rows
-    schema = str(packet.get("schema") or "")
-    if not schema.startswith("LANDS_AB_EVAL_launch_packet"):
-        print(f"error: bad packet schema {schema!r}", file=sys.stderr)
-        return 2
-    rows = packet.get("gating_rows_exact") or packet.get("gating_rows")
-    if list(rows) != GATING_ROWS and set(rows) != set(GATING_ROWS):
-        # require exact set of 7
-        if set(rows) != set(GATING_ROWS) or len(rows) != 7:
-            print("error: gating_rows must be exact 7-tuple set", file=sys.stderr)
-            return 2
-    row_commands = packet.get("row_commands")
-    if not isinstance(row_commands, list) or len(row_commands) != 7:
-        print("error: row_commands must be list of 7", file=sys.stderr)
-        return 2
-
-    # claim ceiling REQUIRED all-false
-    if "claim_ceiling" not in packet:
-        print("error: claim_ceiling required", file=sys.stderr)
-        return 2
-    cc = packet.get("claim_ceiling")
-    if not isinstance(cc, dict):
-        print("error: claim_ceiling must be object", file=sys.stderr)
-        return 2
-    for k in (
-        "LANDS_AB",
-        "science_claim",
-        "equivalent_minted",
-        "full_sub2_runtime_ready_for_science",
-    ):
-        if k not in cc:
-            print(f"error: claim_ceiling missing field {k}", file=sys.stderr)
-            return 2
-        if cc.get(k) is not False:
-            print(f"error: claim_ceiling.{k} must be false", file=sys.stderr)
-            return 2
-    # Q13b (blocker B1v11-P2b): TYPE FIRST, then value. The retired
-    # `packet.get("science_claim") is True` was identity-bound, so `1`, `1.0`, `"true"`,
-    # `"True"`, `["yes"]` all passed the prohibition while any consumer testing
-    # truthiness would read them as asserting a science claim. This is the more
-    # consequential of the two P2 sites: the review-risk tier turns on "no science
-    # claim", so a packet the validator cleared could still be read as claiming one.
-    # Absent stays clean and literal `false` stays clean -- a packet is entitled to
-    # assert nothing. Present-but-non-bool is malformed, per the declared strictness.
-    if "science_claim" in packet:
-        try:
-            _sci = _require_packet_bool(
-                packet.get("science_claim"), field="science_claim", where="packet"
-            )
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-        if _sci is True:
-            print("error: science_claim true forbidden", file=sys.stderr)
-            return 2
-
-    # branch authority REQUIRED
-    LIVE_ORDER = [
-        "BR-LANDS-AB-SCOPE-CREEP-STOP",
-        "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
-        "BR-LANDS-AB-VACUOUS",
-        "BR-LANDS-AB-DIVERGENT-EVENT",
-        "BR-LANDS-AB-DIVERGENT-APPLY",
-        "BR-LANDS-AB-DIVERGENT-ORACLE-LIVE",
-        "BR-LANDS-AB-EQUIVALENT",
-    ]
-    po = packet.get("PRIORITY_ORDER") or packet.get("priority_order")
-    if not isinstance(po, (list, tuple)) or list(po) != LIVE_ORDER:
-        print("error: PRIORITY_ORDER must echo exact live order", file=sys.stderr)
-        return 2
-    bids = packet.get("branch_ids")
-    if not isinstance(bids, (list, tuple)) or set(bids) != set(LIVE_ORDER) or len(bids) != 7:
-        print("error: branch_ids must be exact live 7-set", file=sys.stderr)
-        return 2
-
-    # E-A: executor exact frozen spelling only
-    FROZEN_EXECUTOR_ROLE = "claude_as_test_operator"
-    ex = packet.get("executor")
-    if not isinstance(ex, dict):
-        print("error: executor required object", file=sys.stderr)
-        return 2
-    role = str(ex.get("role") or "")
-    if role != FROZEN_EXECUTOR_ROLE:
-        print(f"error: executor.role must be exactly {FROZEN_EXECUTOR_ROLE!r}, got {role!r}", file=sys.stderr)
-        return 2
-    forb = ex.get("forbidden_for_plan_dev")
-    if not isinstance(forb, (list, tuple)) or not forb:
-        print("error: executor.forbidden_for_plan_dev required non-empty", file=sys.stderr)
-        return 2
-    if not any("formal" in str(x).lower() for x in forb):
-        print("error: executor.forbidden_for_plan_dev must prohibit formal run", file=sys.stderr)
-        return 2
-    if ex.get("one_terminal_receipt") is not True and packet.get("one_terminal_receipt") is not True:
-        print("error: one_terminal_receipt must be true", file=sys.stderr)
-        return 2
-
-    # E-C harvest structural object
-    rs = packet.get("runtime_scratch")
-    if not isinstance(rs, dict):
-        print("error: runtime_scratch required object", file=sys.stderr)
-        return 2
-    harvest = rs.get("harvest_exactly_one_raw_obs")
-    if not isinstance(harvest, dict):
-        print("error: runtime_scratch.harvest_exactly_one_raw_obs must be object", file=sys.stderr)
-        return 2
-    if harvest.get("applies_to_each_of_7_gating_rows") is not True:
-        print("error: harvest applies_to_each_of_7_gating_rows must be true", file=sys.stderr)
-        return 2
-    helper = harvest.get("helper")
-    if not isinstance(helper, str) or "harvest_exactly_one_raw_obs" not in helper:
-        print("error: harvest.helper must name harvest_exactly_one_raw_obs", file=sys.stderr)
-        return 2
-    zom = str(harvest.get("zero_or_multiple") or "").upper()
-    if zom not in ("STOP", "FAIL", "ERROR"):
-        print("error: harvest.zero_or_multiple must be STOP semantics", file=sys.stderr)
-        return 2
-
-    # E-B execution_order subsequence + required lifecycle steps
-    REQUIRED_LIFECYCLE = {
-        "preflight",
-        "activate_fresh_nonce_run_root_must_not_exist",
-        "harvest_exactly_one_per_row",
-        "EVIDENCE_CONSUMER",
-        "terminal_classification_vs_prereg",
-        "FORMAL_RUNTIME_CREATE_terminal_receipt",
-    }
-    eo = packet.get("execution_order")
-    if not isinstance(eo, (list, tuple)) or not eo:
-        print("error: execution_order required non-empty list", file=sys.stderr)
-        return 2
-    eo_list = [str(x) for x in eo]
-    # seven gating rows exactly once each, in order as subsequence
-    positions = []
-    for gr in GATING_ROWS:
-        if eo_list.count(gr) != 1:
-            print(f"error: execution_order must contain gating row {gr} exactly once", file=sys.stderr)
-            return 2
-        positions.append(eo_list.index(gr))
-    if positions != sorted(positions):
-        print("error: gating rows in execution_order not in required order", file=sys.stderr)
-        return 2
-    missing_life = REQUIRED_LIFECYCLE - set(eo_list)
-    if missing_life:
-        print(f"error: execution_order missing lifecycle steps {sorted(missing_life)}", file=sys.stderr)
-        return 2
-    # seven-only list rejected by missing lifecycle above
-
-    # helpers for path extraction (module-level)
-    runner_parser, _, live_runner_sha = load_runner_parser(repo)
-    _ = live_runner_sha
-    seen_phase: set[str] = set()
-    seen_enforcer: set[str] = set()
-    seen_rows: set[str] = set()
-    seen_argv: set[str] = set()
-    seen_raw: set[str] = set()
-    seen_raw_basenames: set[str] = set()
-    seen_runtime_basenames: set[str] = set()
-    shared_scratch: str | None = None
-    shared_run_root: str | None = None
-    formal_argv_repo_paths: set[str] = set()
-
-    # G7 packet env binding (required for one formal run)
-    rs_bind = (packet.get("runtime_scratch") or {}).get("env_binding") or {}
-    if not isinstance(rs_bind, dict):
-        print("error: runtime_scratch.env_binding must be object", file=sys.stderr)
-        return 2
-    pkt_scratch = str(rs_bind.get("LANDS_AB_RUNTIME_SCRATCH") or "").strip()
-    pkt_run_root = str(rs_bind.get("LANDS_AB_RUN_ROOT") or "").strip()
-    if not pkt_scratch or not pkt_run_root:
-        print("error: runtime_scratch.env_binding missing LANDS_AB_RUNTIME_SCRATCH/RUN_ROOT", file=sys.stderr)
-        return 2
-
-    for rc in row_commands:
-        if not isinstance(rc, dict):
-            print("error: row_command not object", file=sys.stderr)
-            return 2
-        gr = rc.get("gating_row")
-        if gr not in GATING_ROWS or gr in seen_rows:
-            print(f"error: bad/dup gating_row {gr!r}", file=sys.stderr)
-            return 2
-        seen_rows.add(gr)
-        inv = rc.get("invocation") or {}
-        if not isinstance(inv, dict):
-            print(f"error: {gr} invocation must be object", file=sys.stderr)
-            return 2
-        argv = inv.get("argv_template") or inv.get("argv")
-        if not isinstance(argv, list) or not argv or not all(isinstance(x, str) for x in argv):
-            print(f"error: missing argv for {gr}", file=sys.stderr)
-            return 2
-        argv_key = json.dumps(argv)
-        if argv_key in seen_argv:
-            print(f"error: duplicate argv for {gr}", file=sys.stderr)
-            return 2
-        seen_argv.add(argv_key)
-        # H2: collect formal argv repo-path tokens for later coverage
-        for tok in argv:
-            if _is_repo_path_token(tok):
-                formal_argv_repo_paths.add(_repo_path_from_token(tok))
-
-        env = inv.get("env_required") or {}
-        if not isinstance(env, dict):
-            print(f"error: {gr} env_required must be object", file=sys.stderr)
-            return 2
-        for req_env in ("PYTHONPATH", "LANDS_AB_RUNTIME_SCRATCH", "LANDS_AB_RUN_ROOT"):
-            if req_env not in env or not str(env.get(req_env) or "").strip():
-                print(f"error: {gr} missing env {req_env}", file=sys.stderr)
-                return 2
-
-        # F5/F6 + G7: run-root / scratch / nonce shape
-        scratch = str(env["LANDS_AB_RUNTIME_SCRATCH"]).strip()
-        run_root = str(env["LANDS_AB_RUN_ROOT"]).strip()
-        if not any(tok in run_root for tok in NONCE_TOKENS):
-            print(
-                f"error: {gr} LANDS_AB_RUN_ROOT missing frozen nonce template token "
-                f"(<{NONCE_TOKENS[0].strip('<>')}> or similar): {run_root!r}",
-                file=sys.stderr,
-            )
-            return 2
-        if not _is_descendant(run_root, scratch):
-            print(
-                f"error: {gr} LANDS_AB_RUN_ROOT must be descendant of LANDS_AB_RUNTIME_SCRATCH",
-                file=sys.stderr,
-            )
-            return 2
-        if str(run_root).startswith("/") and _is_descendant(
-            run_root.replace("<nonce>", "NONCE").replace("<run_local_nonce>", "RUN_LOCAL_NONCE"),
-            str(repo),
-        ):
-            print(f"error: {gr} LANDS_AB_RUN_ROOT must not be under repo root", file=sys.stderr)
-            return 2
-        if str(scratch).startswith("/") and _is_descendant(scratch, str(repo)):
-            print(f"error: {gr} LANDS_AB_RUNTIME_SCRATCH must not be under repo root", file=sys.stderr)
-            return 2
-        # G7 one formal run: equal across rows + packet env_binding
-        if scratch != pkt_scratch or run_root != pkt_run_root:
-            print(
-                f"error: {gr} env scratch/run_root must equal packet runtime_scratch.env_binding",
-                file=sys.stderr,
-            )
-            return 2
-        if shared_scratch is None:
-            shared_scratch, shared_run_root = scratch, run_root
-        elif scratch != shared_scratch or run_root != shared_run_root:
-            print(f"error: {gr} scratch/run_root differs from other gating rows (one formal run)", file=sys.stderr)
-            return 2
-
-        # E-I write-path scan on this row's executable paths only
-        for tok in _scan_write_paths_from_row(inv, list(argv), env):
-            if _is_write_path_token(tok):
-                print(f"error: forbidden write path token in {gr}: {tok}", file=sys.stderr)
-                return 2
-
-        is_cuda = str(gr).startswith("G_CUDA")
-
-        # G8: raw aliases — all present must agree; canonical is required raw_obs_path_template
-        raw_aliases = {
-            "raw_obs_path_template": inv.get("raw_obs_path_template"),
-            "terminal_collection_raw_obs_path_template": inv.get("terminal_collection_raw_obs_path_template"),
-            "out_path_template": inv.get("out_path_template"),
-        }
-        present_raw = {k: str(v) for k, v in raw_aliases.items() if isinstance(v, str) and v.strip()}
-        if "raw_obs_path_template" not in present_raw:
-            print(f"error: {gr} missing required raw_obs_path_template", file=sys.stderr)
-            return 2
-        raw = present_raw["raw_obs_path_template"]
-        for k, v in present_raw.items():
-            if v != raw:
-                print(f"error: {gr} raw alias {k} != raw_obs_path_template", file=sys.stderr)
-                return 2
-        if raw in seen_raw:
-            print(f"error: duplicate raw path {raw}", file=sys.stderr)
-            return 2
-        seen_raw.add(raw)
-        if not _is_descendant(raw, run_root):
-            print(f"error: {gr} raw_obs path must be descendant of LANDS_AB_RUN_ROOT", file=sys.stderr)
-            return 2
-        if str(raw).startswith("/") and _is_descendant(
-            raw.replace("<nonce>", "NONCE").replace("<run_local_nonce>", "RUN_LOCAL_NONCE"),
-            str(repo),
-        ):
-            print(f"error: {gr} raw_obs path must not be under repo root", file=sys.stderr)
-            return 2
-        # G9: harvest pattern lands_ab_raw_obs_<gating_row>_*.json
-        raw_base = Path(str(raw).replace("<nonce>", "N").replace("<run_local_nonce>", "R")).name
-        if not raw_base.startswith(f"lands_ab_raw_obs_{gr}_"):
-            print(
-                f"error: {gr} raw basename must start with lands_ab_raw_obs_{gr}_ (harvest pattern)",
-                file=sys.stderr,
-            )
-            return 2
-        if raw_base in seen_raw_basenames:
-            print(f"error: {gr} duplicate raw basename {raw_base}", file=sys.stderr)
-            return 2
-        seen_raw_basenames.add(raw_base)
-
-        # G6: outer timeout == row hard bound (rule stated: == hard_timeout if present else duration_budget)
-        if argv[0] != "timeout" or len(argv) < 3:
-            print(f"error: {gr} argv must start with timeout <budget>", file=sys.stderr)
-            return 2
-        try:
-            outer_to = _require_finite_positive(argv[1], field=f"{gr} outer timeout")
-        except ValueError as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 2
-        hard = _row_hard_timeout_seconds(rc, inv)
-        if hard is None:
-            print(f"error: {gr} missing duration_budget_seconds/hard_timeout_seconds for G6 bind", file=sys.stderr)
-            return 2
-        if float(outer_to) != float(hard):
-            print(
-                f"error: {gr} outer timeout {outer_to} != row hard bound {hard} "
-                f"(rule: argv[1] == inv.hard_timeout_seconds or row.duration_budget_seconds)",
-                file=sys.stderr,
-            )
-            return 2
-
-        if not is_cuda:
+        for ctx.name in REQUIRED_PHASE_BUDGET_NAMES:
             try:
-                structural_preflight_row(list(argv), repo=repo, runner_parser=runner_parser)
-            except Exception as e:
-                print(f"error: structural preflight {gr}: {e}", file=sys.stderr)
+                ctx.decl_v = float(ctx.pb_decl[ctx.name])
+            except Exception:
+                print(f'error: {ctx.gr} declared budget {ctx.name} not numeric', file=sys.stderr)
                 return 2
-            out_val = _flag_val(list(argv), "--out")
-            if out_val != raw:
-                print(f"error: {gr} --out must equal raw_obs_path_template", file=sys.stderr)
+            if float(ctx.budget_map[ctx.name]) != float(ctx.decl_v):
+                print(f'error: {ctx.gr} argv budget {ctx.name}={ctx.budget_map[ctx.name]} != declared {ctx.decl_v}', file=sys.stderr)
                 return 2
+    for ctx.label, ctx.pth in (('phase', ctx.phase_argv), ('enforcer', ctx.enf_argv)):
+        if not _is_descendant(ctx.pth, ctx.run_root):
+            print(f'error: {ctx.gr} {ctx.label} path must be descendant of LANDS_AB_RUN_ROOT', file=sys.stderr)
+            return 2
+        if str(ctx.pth).startswith('/') and _is_descendant(ctx.pth.replace('<nonce>', 'NONCE').replace('<run_local_nonce>', 'RUN_LOCAL_NONCE'), str(ctx.repo)):
+            print(f'error: {ctx.gr} {ctx.label} path must not be under repo root', file=sys.stderr)
+            return 2
+        ctx.base = Path(str(ctx.pth).replace('<nonce>', 'N').replace('<run_local_nonce>', 'R')).name
+        if ctx.base in ctx.seen_runtime_basenames:
+            print(f'error: {ctx.gr} duplicate runtime basename {ctx.base}', file=sys.stderr)
+            return 2
+        ctx.seen_runtime_basenames.add(ctx.base)
+    ctx.phase_aliases = {'phase_events_jsonl_template': ctx.inv.get('phase_events_jsonl_template'), 'terminal_collection_phase_events_jsonl_path': ctx.inv.get('terminal_collection_phase_events_jsonl_path')}
+    for ctx.k, ctx.v in ctx.phase_aliases.items():
+        if isinstance(ctx.v, str) and ctx.v.strip() and (str(ctx.v) != ctx.phase_argv):
+            print(f'error: {ctx.gr} phase alias {ctx.k} != --phase-events-jsonl', file=sys.stderr)
+            return 2
+    ctx.enf_aliases = {'enforcer_receipt_path_template': ctx.inv.get('enforcer_receipt_path_template'), 'terminal_collection_enforcer_receipt_path': ctx.inv.get('terminal_collection_enforcer_receipt_path')}
+    ctx.present_enf = {k: str(v) for k, v in ctx.enf_aliases.items() if isinstance(v, str) and v.strip()}
+    if not ctx.present_enf:
+        print(f'error: {ctx.gr} missing enforcer metadata path', file=sys.stderr)
+        return 2
+    for ctx.k, ctx.v in ctx.present_enf.items():
+        if ctx.v != ctx.enf_argv:
+            print(f'error: {ctx.gr} enforcer alias {ctx.k} != --enforcer-receipt argv', file=sys.stderr)
+            return 2
+    ctx.phase_env = ctx.env.get('SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL')
+    if not ctx.phase_env:
+        print(f'error: {ctx.gr} missing phase env', file=sys.stderr)
+        return 2
+    if ctx.phase_env != ctx.phase_argv:
+        print(f'error: {ctx.gr} phase env != --phase-events-jsonl argv', file=sys.stderr)
+        return 2
+    if ctx.phase_env in ctx.seen_phase:
+        print(f'error: duplicate phase {ctx.phase_env}', file=sys.stderr)
+        return 2
+    ctx.seen_phase.add(ctx.phase_env)
+    if ctx.enf_argv in ctx.seen_enforcer:
+        print(f'error: duplicate enforcer {ctx.enf_argv}', file=sys.stderr)
+        return 2
+    ctx.seen_enforcer.add(ctx.enf_argv)
+
+def _dry_exec_validate_row_commands(ctx):
+    for rc in ctx.row_commands:
+        ctx.rc = rc
+        r = _dry_exec_validate_row_env_paths_raw(ctx)
+        if r is _DRY_EXEC_CONTINUE:
             continue
+        if r is not None:
+            return r
+        r = _dry_exec_validate_row_cpu_cuda_budgets(ctx)
+        if r is _DRY_EXEC_CONTINUE:
+            continue
+        if r is not None:
+            return r
 
-        # ---- CUDA rows: G1–G5 process segments + F2 node + budgets ----
-        try:
-            chain = _validate_ordered_cuda_chain(list(argv), gr=str(gr))
-        except ValueError as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 2
-        phase_argv = chain["phase_argv"]
-        enf_argv = chain["enf_argv"]
-        budget_map = chain["budget_map"]
-
-        # G5: declared phase_budgets_seconds values must equal argv budgets exactly
-        pb_decl = inv.get("phase_budgets_seconds")
-        if isinstance(pb_decl, dict):
-            if set(pb_decl.keys()) != set(REQUIRED_PHASE_BUDGET_NAMES):
-                print(f"error: {gr} declared phase_budgets_seconds keys mismatch required set", file=sys.stderr)
-                return 2
-            for name in REQUIRED_PHASE_BUDGET_NAMES:
-                try:
-                    decl_v = float(pb_decl[name])
-                except Exception:
-                    print(f"error: {gr} declared budget {name} not numeric", file=sys.stderr)
-                    return 2
-                if float(budget_map[name]) != float(decl_v):
-                    print(
-                        f"error: {gr} argv budget {name}={budget_map[name]} != declared {decl_v}",
-                        file=sys.stderr,
-                    )
-                    return 2
-
-        # F5/G8: phase + enforcer under run_root; alias equality
-        for label, pth in (("phase", phase_argv), ("enforcer", enf_argv)):
-            if not _is_descendant(pth, run_root):
-                print(f"error: {gr} {label} path must be descendant of LANDS_AB_RUN_ROOT", file=sys.stderr)
-                return 2
-            if str(pth).startswith("/") and _is_descendant(
-                pth.replace("<nonce>", "NONCE").replace("<run_local_nonce>", "RUN_LOCAL_NONCE"),
-                str(repo),
-            ):
-                print(f"error: {gr} {label} path must not be under repo root", file=sys.stderr)
-                return 2
-            base = Path(str(pth).replace("<nonce>", "N").replace("<run_local_nonce>", "R")).name
-            if base in seen_runtime_basenames:
-                print(f"error: {gr} duplicate runtime basename {base}", file=sys.stderr)
-                return 2
-            seen_runtime_basenames.add(base)
-
-        phase_aliases = {
-            "phase_events_jsonl_template": inv.get("phase_events_jsonl_template"),
-            "terminal_collection_phase_events_jsonl_path": inv.get("terminal_collection_phase_events_jsonl_path"),
-        }
-        for k, v in phase_aliases.items():
-            if isinstance(v, str) and v.strip() and str(v) != phase_argv:
-                print(f"error: {gr} phase alias {k} != --phase-events-jsonl", file=sys.stderr)
-                return 2
-        enf_aliases = {
-            "enforcer_receipt_path_template": inv.get("enforcer_receipt_path_template"),
-            "terminal_collection_enforcer_receipt_path": inv.get("terminal_collection_enforcer_receipt_path"),
-        }
-        present_enf = {k: str(v) for k, v in enf_aliases.items() if isinstance(v, str) and v.strip()}
-        if not present_enf:
-            print(f"error: {gr} missing enforcer metadata path", file=sys.stderr)
-            return 2
-        for k, v in present_enf.items():
-            if v != enf_argv:
-                print(f"error: {gr} enforcer alias {k} != --enforcer-receipt argv", file=sys.stderr)
-                return 2
-
-        phase_env = env.get("SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL")
-        if not phase_env:
-            print(f"error: {gr} missing phase env", file=sys.stderr)
-            return 2
-        if phase_env != phase_argv:
-            print(f"error: {gr} phase env != --phase-events-jsonl argv", file=sys.stderr)
-            return 2
-        if phase_env in seen_phase:
-            print(f"error: duplicate phase {phase_env}", file=sys.stderr)
-            return 2
-        seen_phase.add(phase_env)
-        if enf_argv in seen_enforcer:
-            print(f"error: duplicate enforcer {enf_argv}", file=sys.stderr)
-            return 2
-        seen_enforcer.add(enf_argv)
-
-    if seen_rows != set(GATING_ROWS):
-        print("error: row_commands incomplete vs GATING_ROWS", file=sys.stderr)
-        return 2
-    if len(seen_argv) != 7 or len(seen_raw) != 7:
-        print("error: argv/raw paths not unique 7", file=sys.stderr)
-        return 2
-    cuda_rows = [g for g in GATING_ROWS if g.startswith("G_CUDA")]
-    if len(seen_phase) != len(cuda_rows) or len(seen_enforcer) != len(cuda_rows):
-        print("error: phase/enforcer path count mismatch vs CUDA rows", file=sys.stderr)
-        return 2
-
-    # H2: every formal argv repo-path token covered by manifest (or was allowlisted already)
-    for rel in sorted(formal_argv_repo_paths):
-        if rel not in man_path_set:
-            print(f"error: formal argv path not covered by manifest: {rel}", file=sys.stderr)
-            return 2
-
-    # I-series: cross-field consistency (gate-2 BLOCK 1785344547405)
+def _dry_exec_bind_sources(ctx):
     try:
-        _validate_i_series_consistency(
-            packet,
-            man_path_set=man_path_set,
-            man_sha_by_path={
-                e["path"]: _require_hex64(e["sha256"], field=f"manifest[{e['path']}].sha256")
-                for e in entries
-            },
-            source_commit=src_commit,
-            repo=repo,
-            expected_operative_plan_path=args.expected_operative_plan_path,
-            expected_operative_plan_sha256=args.expected_operative_plan_sha256,
-        )
+        ctx.man_cli, ctx.man_cli_rel = _resolve_under_repo(ctx.args.verify_source_manifest, repo=ctx.repo)
     except ValueError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f'error: manifest outside repo ({e})', file=sys.stderr)
+        return 2
+    try:
+        ctx.packet = json.loads(ctx.packet_path.read_text(encoding='utf-8'))
+    except Exception as e:
+        print(f'error: packet load: {e}', file=sys.stderr)
+        return 2
+    ctx.required = ['science_source_manifest_path', 'science_source_manifest_sha256', 'source_commit_sha', 'generator_script_path', 'generator_script_sha256', 'dry_exec_tool_path', 'dry_exec_tool_sha256']
+    for ctx.f in ctx.required:
+        if ctx.f not in ctx.packet:
+            print(f'error: packet missing binding field {ctx.f}', file=sys.stderr)
+            return 2
+    try:
+        ctx.man_path = str(ctx.packet['science_source_manifest_path'])
+        ctx.man_sha = _require_hex64(ctx.packet['science_source_manifest_sha256'], field='science_source_manifest_sha256')
+        ctx.src_commit = _require_hex40(str(ctx.packet['source_commit_sha']).lower(), field='source_commit_sha')
+        ctx.gen_path = str(ctx.packet['generator_script_path'])
+        ctx.gen_sha = _require_hex64(ctx.packet['generator_script_sha256'], field='generator_script_sha256')
+        ctx.dry_path = str(ctx.packet['dry_exec_tool_path'])
+        ctx.dry_sha = _require_hex64(ctx.packet['dry_exec_tool_sha256'], field='dry_exec_tool_sha256')
+        ctx.exp = _require_hex40(str(ctx.args.expected_source_commit).lower(), field='expected_source_commit')
+    except ValueError as e:
+        print(f'error: {e}', file=sys.stderr)
+        return 2
+    try:
+        ctx._man_pkt_abs, ctx.man_path_norm = _resolve_under_repo(ctx.man_path, repo=ctx.repo)
+    except ValueError as e:
+        print(f'error: packet.science_source_manifest_path outside repo ({e})', file=sys.stderr)
+        return 2
+    if ctx.man_cli_rel != ctx.man_path_norm:
+        print(f'error: CLI manifest path {ctx.man_cli_rel!r} != packet.science_source_manifest_path {ctx.man_path_norm!r}', file=sys.stderr)
+        return 2
+    if ctx.exp != ctx.src_commit:
+        print('error: --expected-source-commit != packet.source_commit_sha', file=sys.stderr)
+        return 2
+    if not ctx.man_cli.is_file():
+        print(f'error: missing manifest file {ctx.man_cli}', file=sys.stderr)
+        return 2
+    ctx.live_man_sha = sha256_file(ctx.man_cli)
+    if ctx.live_man_sha != ctx.man_sha:
+        print('error: manifest file sha != packet.science_source_manifest_sha256', file=sys.stderr)
+        return 2
+    if ctx.gen_path != 'scripts/lands_ab_science_source_manifest.py':
+        print(f'error: generator_script_path must be scripts/lands_ab_science_source_manifest.py, got {ctx.gen_path!r}', file=sys.stderr)
+        return 2
+    if ctx.dry_path != 'scripts/lands_ab_packet_dry_exec.py':
+        print(f'error: dry_exec_tool_path must be scripts/lands_ab_packet_dry_exec.py, got {ctx.dry_path!r}', file=sys.stderr)
+        return 2
+    for ctx.rel, ctx.expect in ((ctx.gen_path, ctx.gen_sha), (ctx.dry_path, ctx.dry_sha)):
+        ctx.fp = ctx.repo / ctx.rel
+        if not ctx.fp.is_file():
+            print(f'error: missing pinned tool/script {ctx.rel}', file=sys.stderr)
+            return 2
+        if sha256_file(ctx.fp) != ctx.expect:
+            print(f'error: sha mismatch for {ctx.rel}', file=sys.stderr)
+            return 2
+    try:
+        ctx.man = json.loads(ctx.man_cli.read_text(encoding='utf-8'))
+    except Exception as e:
+        print(f'error: manifest JSON: {e}', file=sys.stderr)
+        return 2
+    if ctx.man.get('schema') != 'LANDS_AB_science_source_manifest/v1':
+        print(f"error: manifest schema must be LANDS_AB_science_source_manifest/v1, got {ctx.man.get('schema')!r}", file=sys.stderr)
+        return 2
+    ctx.entries = ctx.man.get('entries')
+    if not isinstance(ctx.entries, list) or not ctx.entries:
+        print('error: manifest entries missing', file=sys.stderr)
+        return 2
+    if ctx.man.get('n_entries') != len(ctx.entries):
+        print('error: manifest n_entries != len(entries)', file=sys.stderr)
+        return 2
+    ctx.paths = []
+    for ctx.ent in ctx.entries:
+        if not isinstance(ctx.ent, dict) or 'path' not in ctx.ent or 'sha256' not in ctx.ent:
+            print('error: bad manifest entry', file=sys.stderr)
+            return 2
+        ctx.rel = ctx.ent['path']
+        if not isinstance(ctx.rel, str) or '..' in Path(ctx.rel).parts or ctx.rel.startswith('/'):
+            print(f'error: bad/escape path {ctx.rel!r}', file=sys.stderr)
+            return 2
+        try:
+            ctx.h = _require_hex64(ctx.ent['sha256'], field=f'manifest[{ctx.rel}].sha256')
+        except ValueError as e:
+            print(f'error: {e}', file=sys.stderr)
+            return 2
+        ctx.paths.append(ctx.rel)
+        ctx.fp = ctx.repo / ctx.rel
+        if not ctx.fp.is_file():
+            print(f'error: missing source path {ctx.rel}', file=sys.stderr)
+            return 2
+        if sha256_file(ctx.fp) != ctx.h:
+            print(f'error: disk sha mismatch {ctx.rel}', file=sys.stderr)
+            return 2
+    if ctx.paths != sorted(ctx.paths) or len(ctx.paths) != len(set(ctx.paths)):
+        print('error: manifest paths not sorted unique', file=sys.stderr)
+        return 2
+    ctx.man_path_set = set(ctx.paths)
+    ctx.missing_mand = [p for p in MANDATORY_EXECUTION_SOURCE_SET if p not in ctx.man_path_set]
+    if ctx.missing_mand:
+        print(f'error: missing mandatory source: {ctx.missing_mand[0]}', file=sys.stderr)
         return 2
 
-    print("PACKET_DRY_EXEC_OK")
+def _dry_exec_validate_packet_contract(ctx):
+    ctx.schema = str(ctx.packet.get('schema') or '')
+    if not ctx.schema.startswith('LANDS_AB_EVAL_launch_packet'):
+        print(f'error: bad packet schema {ctx.schema!r}', file=sys.stderr)
+        return 2
+    ctx.rows = ctx.packet.get('gating_rows_exact') or ctx.packet.get('gating_rows')
+    if list(ctx.rows) != GATING_ROWS and set(ctx.rows) != set(GATING_ROWS):
+        if set(ctx.rows) != set(GATING_ROWS) or len(ctx.rows) != 7:
+            print('error: gating_rows must be exact 7-tuple set', file=sys.stderr)
+            return 2
+    ctx.row_commands = ctx.packet.get('row_commands')
+    if not isinstance(ctx.row_commands, list) or len(ctx.row_commands) != 7:
+        print('error: row_commands must be list of 7', file=sys.stderr)
+        return 2
+    if 'claim_ceiling' not in ctx.packet:
+        print('error: claim_ceiling required', file=sys.stderr)
+        return 2
+    ctx.cc = ctx.packet.get('claim_ceiling')
+    if not isinstance(ctx.cc, dict):
+        print('error: claim_ceiling must be object', file=sys.stderr)
+        return 2
+    for ctx.k in ('LANDS_AB', 'science_claim', 'equivalent_minted', 'full_sub2_runtime_ready_for_science'):
+        if ctx.k not in ctx.cc:
+            print(f'error: claim_ceiling missing field {ctx.k}', file=sys.stderr)
+            return 2
+        if ctx.cc.get(ctx.k) is not False:
+            print(f'error: claim_ceiling.{ctx.k} must be false', file=sys.stderr)
+            return 2
+    if 'science_claim' in ctx.packet:
+        try:
+            ctx._sci = _require_packet_bool(ctx.packet.get('science_claim'), field='science_claim', where='packet')
+        except ValueError as exc:
+            print(f'error: {exc}', file=sys.stderr)
+            return 2
+        if ctx._sci is True:
+            print('error: science_claim true forbidden', file=sys.stderr)
+            return 2
+    ctx.LIVE_ORDER = ['BR-LANDS-AB-SCOPE-CREEP-STOP', 'BR-LANDS-AB-FIXTURE-CONTRACT-FAIL', 'BR-LANDS-AB-VACUOUS', 'BR-LANDS-AB-DIVERGENT-EVENT', 'BR-LANDS-AB-DIVERGENT-APPLY', 'BR-LANDS-AB-DIVERGENT-ORACLE-LIVE', 'BR-LANDS-AB-EQUIVALENT']
+    ctx.po = ctx.packet.get('PRIORITY_ORDER') or ctx.packet.get('priority_order')
+    if not isinstance(ctx.po, (list, tuple)) or list(ctx.po) != ctx.LIVE_ORDER:
+        print('error: PRIORITY_ORDER must echo exact live order', file=sys.stderr)
+        return 2
+    ctx.bids = ctx.packet.get('branch_ids')
+    if not isinstance(ctx.bids, (list, tuple)) or set(ctx.bids) != set(ctx.LIVE_ORDER) or len(ctx.bids) != 7:
+        print('error: branch_ids must be exact live 7-set', file=sys.stderr)
+        return 2
+    ctx.FROZEN_EXECUTOR_ROLE = 'claude_as_test_operator'
+    ctx.ex = ctx.packet.get('executor')
+    if not isinstance(ctx.ex, dict):
+        print('error: executor required object', file=sys.stderr)
+        return 2
+    ctx.role = str(ctx.ex.get('role') or '')
+    if ctx.role != ctx.FROZEN_EXECUTOR_ROLE:
+        print(f'error: executor.role must be exactly {ctx.FROZEN_EXECUTOR_ROLE!r}, got {ctx.role!r}', file=sys.stderr)
+        return 2
+    ctx.forb = ctx.ex.get('forbidden_for_plan_dev')
+    if not isinstance(ctx.forb, (list, tuple)) or not ctx.forb:
+        print('error: executor.forbidden_for_plan_dev required non-empty', file=sys.stderr)
+        return 2
+    if not any(('formal' in str(x).lower() for x in ctx.forb)):
+        print('error: executor.forbidden_for_plan_dev must prohibit formal run', file=sys.stderr)
+        return 2
+    if ctx.ex.get('one_terminal_receipt') is not True and ctx.packet.get('one_terminal_receipt') is not True:
+        print('error: one_terminal_receipt must be true', file=sys.stderr)
+        return 2
+    ctx.rs = ctx.packet.get('runtime_scratch')
+    if not isinstance(ctx.rs, dict):
+        print('error: runtime_scratch required object', file=sys.stderr)
+        return 2
+    ctx.harvest = ctx.rs.get('harvest_exactly_one_raw_obs')
+    if not isinstance(ctx.harvest, dict):
+        print('error: runtime_scratch.harvest_exactly_one_raw_obs must be object', file=sys.stderr)
+        return 2
+    if ctx.harvest.get('applies_to_each_of_7_gating_rows') is not True:
+        print('error: harvest applies_to_each_of_7_gating_rows must be true', file=sys.stderr)
+        return 2
+    ctx.helper = ctx.harvest.get('helper')
+    if not isinstance(ctx.helper, str) or 'harvest_exactly_one_raw_obs' not in ctx.helper:
+        print('error: harvest.helper must name harvest_exactly_one_raw_obs', file=sys.stderr)
+        return 2
+    ctx.zom = str(ctx.harvest.get('zero_or_multiple') or '').upper()
+    if ctx.zom not in ('STOP', 'FAIL', 'ERROR'):
+        print('error: harvest.zero_or_multiple must be STOP semantics', file=sys.stderr)
+        return 2
+
+def _dry_exec_validate_execution_order(ctx):
+    ctx.REQUIRED_LIFECYCLE = {'preflight', 'activate_fresh_nonce_run_root_must_not_exist', 'harvest_exactly_one_per_row', 'EVIDENCE_CONSUMER', 'terminal_classification_vs_prereg', 'FORMAL_RUNTIME_CREATE_terminal_receipt'}
+    ctx.eo = ctx.packet.get('execution_order')
+    if not isinstance(ctx.eo, (list, tuple)) or not ctx.eo:
+        print('error: execution_order required non-empty list', file=sys.stderr)
+        return 2
+    ctx.eo_list = [str(x) for x in ctx.eo]
+    ctx.positions = []
+    for ctx.gr in GATING_ROWS:
+        if ctx.eo_list.count(ctx.gr) != 1:
+            print(f'error: execution_order must contain gating row {ctx.gr} exactly once', file=sys.stderr)
+            return 2
+        ctx.positions.append(ctx.eo_list.index(ctx.gr))
+    if ctx.positions != sorted(ctx.positions):
+        print('error: gating rows in execution_order not in required order', file=sys.stderr)
+        return 2
+    ctx.missing_life = ctx.REQUIRED_LIFECYCLE - set(ctx.eo_list)
+    if ctx.missing_life:
+        print(f'error: execution_order missing lifecycle steps {sorted(ctx.missing_life)}', file=sys.stderr)
+        return 2
+
+def _dry_exec_bind_runtime_and_order(ctx):
+    ctx.runner_parser, ctx._, ctx.live_runner_sha = load_runner_parser(ctx.repo)
+    ctx._ = ctx.live_runner_sha
+    ctx.seen_phase: set[str] = set()
+    ctx.seen_enforcer: set[str] = set()
+    ctx.seen_rows: set[str] = set()
+    ctx.seen_argv: set[str] = set()
+    ctx.seen_raw: set[str] = set()
+    ctx.seen_raw_basenames: set[str] = set()
+    ctx.seen_runtime_basenames: set[str] = set()
+    ctx.shared_scratch: str | None = None
+    ctx.shared_run_root: str | None = None
+    ctx.formal_argv_repo_paths: set[str] = set()
+    ctx.rs_bind = (ctx.packet.get('runtime_scratch') or {}).get('env_binding') or {}
+    if not isinstance(ctx.rs_bind, dict):
+        print('error: runtime_scratch.env_binding must be object', file=sys.stderr)
+        return 2
+    ctx.pkt_scratch = str(ctx.rs_bind.get('LANDS_AB_RUNTIME_SCRATCH') or '').strip()
+    ctx.pkt_run_root = str(ctx.rs_bind.get('LANDS_AB_RUN_ROOT') or '').strip()
+    if not ctx.pkt_scratch or not ctx.pkt_run_root:
+        print('error: runtime_scratch.env_binding missing LANDS_AB_RUNTIME_SCRATCH/RUN_ROOT', file=sys.stderr)
+        return 2
+
+def _dry_exec_validate_rowset_invariants(ctx):
+    if ctx.seen_rows != set(GATING_ROWS):
+        print('error: row_commands incomplete vs GATING_ROWS', file=sys.stderr)
+        return 2
+    if len(ctx.seen_argv) != 7 or len(ctx.seen_raw) != 7:
+        print('error: argv/raw paths not unique 7', file=sys.stderr)
+        return 2
+    ctx.cuda_rows = [g for g in GATING_ROWS if g.startswith('G_CUDA')]
+    if len(ctx.seen_phase) != len(ctx.cuda_rows) or len(ctx.seen_enforcer) != len(ctx.cuda_rows):
+        print('error: phase/enforcer path count mismatch vs CUDA rows', file=sys.stderr)
+        return 2
+    for ctx.rel in sorted(ctx.formal_argv_repo_paths):
+        if ctx.rel not in ctx.man_path_set:
+            print(f'error: formal argv path not covered by manifest: {ctx.rel}', file=sys.stderr)
+            return 2
+
+def _dry_exec_run_i_series(ctx):
+    try:
+        _validate_i_series_consistency(ctx.packet, man_path_set=ctx.man_path_set, man_sha_by_path={e['path']: _require_hex64(e['sha256'], field=f"manifest[{e['path']}].sha256") for e in ctx.entries}, source_commit=ctx.src_commit, repo=ctx.repo, expected_operative_plan_path=ctx.args.expected_operative_plan_path, expected_operative_plan_sha256=ctx.args.expected_operative_plan_sha256)
+    except ValueError as e:
+        print(f'error: {e}', file=sys.stderr)
+        return 2
+
+def main(argv: list[str] | None = None) -> int:
+    ctx = types.SimpleNamespace()
+    ctx.argv = argv
+    ctx.ap = _build_dry_exec_arg_parser()
+    ctx.args = ctx.ap.parse_args(ctx.argv)
+    ctx.repo = Path(ctx.args.repo_root).resolve()
+    ctx.packet_path = Path(ctx.args.packet)
+    if not ctx.packet_path.is_absolute():
+        ctx.packet_path = ctx.repo / ctx.packet_path
+    _rc = _dry_exec_bind_sources(ctx)
+    if _rc is not None:
+        return _rc
+    _rc = _dry_exec_validate_packet_contract(ctx)
+    if _rc is not None:
+        return _rc
+    _rc = _dry_exec_validate_execution_order(ctx)
+    if _rc is not None:
+        return _rc
+    _rc = _dry_exec_bind_runtime_and_order(ctx)
+    if _rc is not None:
+        return _rc
+    _rc = _dry_exec_validate_row_commands(ctx)
+    if _rc is not None:
+        return _rc
+    _rc = _dry_exec_validate_rowset_invariants(ctx)
+    if _rc is not None:
+        return _rc
+    _rc = _dry_exec_run_i_series(ctx)
+    if _rc is not None:
+        return _rc
+    print('PACKET_DRY_EXEC_OK')
     return 0
 
 

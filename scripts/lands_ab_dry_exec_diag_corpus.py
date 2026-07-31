@@ -128,7 +128,8 @@ def resolved_mode(step: str) -> str:
 
 
 def preflight(repo: Path, corpus: dict, baseline: dict | None, need_baseline: bool,
-              step: str, baseline_path: Path | None = None):
+              step: str, baseline_path: Path | None = None,
+              generation: str | None = None):
     """Every contract check, ordered before dynamic import and before any subprocess.
 
     Composable standalone: callers may invoke this without measure() to obtain a
@@ -136,18 +137,20 @@ def preflight(repo: Path, corpus: dict, baseline: dict | None, need_baseline: bo
     """
     fails = []
     if baseline_path is not None:
-        canonical = S.canonical_baseline_path(repo)
+        canonical = S.canonical_baseline_path(repo, generation)
         if baseline_path.resolve() != canonical.resolve():
             fails.append({"code": "baseline_path_not_canonical",
                           "supplied": str(baseline_path), "canonical": str(canonical),
                           "why": "a caller-supplied observation map can carry valid bindings "
                                  "and still bypass the committed baseline's authority"})
+    fails += S.preflight_generation(repo, generation, check_live_tool=False)
     fails += R.preflight_schema(corpus)
     fails += R.preflight_normalization_register(corpus)
     fails += R.preflight_step_allowlist(corpus, step)
     fails += S.preflight_identity(repo, corpus, baseline, step)
     fails += S.preflight_manifest_currency(repo, corpus)
-    fails += S.preflight_bindings(repo, corpus, baseline, require_baseline=need_baseline)
+    fails += S.preflight_bindings(repo, corpus, baseline, require_baseline=need_baseline,
+                                  generation=generation)
     return fails
 
 
@@ -178,29 +181,54 @@ def measure(repo: Path, corpus: dict, baseline: dict | None, step: str):
 
 # --------------------------------------------------------------------------- commands
 
-def cmd_assert_structure(repo: Path, corpus: dict, step: str):
+def cmd_assert_structure(repo: Path, corpus: dict, step: str,
+                         generation: str | None = None):
     report = R.ast_structure_report(S.tool_source(repo), step, corpus["ast_allowlist"])
     report["census"] = R.census_from_source(S.tool_source(repo))
     report["census_matches_corpus"] = report["census"]["total"] == corpus["census"]["total"]
     if not report["census_matches_corpus"]:
         report["verdict"] = "FAIL"
         report["violations"].append({"symbol": "<census>", "reason": "census_drift_vs_corpus"})
+    g = generation if generation is not None else S.ACTIVE_GENERATION
+    report["selected_generation"] = g
+    report["rows_path"] = str(S.rows_path(repo, g))
+    report["rows_sha256"] = S.sha256_file(S.rows_path(repo, g))
     print(json.dumps(report, indent=1))
     return 0 if report["verdict"] == "PASS" else 1
 
 
 def cmd_accept(repo: Path, corpus: dict, step: str = "A0", quiet: bool = False,
-               baseline_path: Path | None = None, preflight_only: bool = False):
+               baseline_path: Path | None = None, preflight_only: bool = False,
+               generation: str | None = None):
     """Normal acceptance. The committed baseline is a REQUIRED INPUT; nothing is written.
 
     baseline_path is NOT a production knob: production callers pass None and the
     canonical repo path is resolved internally. Only the negative battery supplies an
     alternate, and it is rejected as non-canonical -- it can never mint an ACCEPT.
     """
-    resolved = baseline_path if baseline_path is not None else S.canonical_baseline_path(repo)
+    g = generation if generation is not None else S.ACTIVE_GENERATION
+    resolved = baseline_path if baseline_path is not None else S.canonical_baseline_path(repo, g)
     baseline = S.load_baseline(resolved)
     fails = preflight(repo, corpus, baseline, need_baseline=True, step=step,
-                      baseline_path=baseline_path)
+                      baseline_path=baseline_path, generation=g)
+    # Accept-path live tool pin (N3): same validate_generation_receipt seam with
+    # check_live_tool=True. preflight_only probes stay free of generation_tool_mismatch
+    # (A1 dirty-candidate amendment). No second semantics body.
+    if (not preflight_only) and S.GENERATIONS.get(g, {}).get("has_generation_json"):
+        try:
+            receipt = S.load_generation_receipt(repo, g)
+            tool_fails = S.validate_generation_receipt(
+                repo, g, receipt, check_live_tool=True)
+            # Only append the live-tool code; pin/path codes already covered by preflight.
+            for f in tool_fails:
+                if f.get("code") == "generation_tool_mismatch":
+                    fails.append(f)
+        except RuntimeError as e:
+            msg = str(e)
+            code = ("generation_receipt_absent" if "absent" in msg
+                    else "generation_receipt_mismatch")
+            if not any(x.get("code") == code for x in fails):
+                fails.append({"code": code, "error": msg})
     if fails:
         out = {"verdict": f"{step}_PREFLIGHT_FAIL", "step": step,
                "allowlist_policy_key": R.resolve_allowlist_policy_key(step),
@@ -224,6 +252,17 @@ def cmd_accept(repo: Path, corpus: dict, step: str = "A0", quiet: bool = False,
     result["preflight_failures"] = []
     result["baseline_path"] = str(resolved)
     result["baseline_sha256"] = S.sha256_file(resolved)
+    g = generation if generation is not None else S.ACTIVE_GENERATION
+    result["active_generation"] = g
+    result["selected_generation"] = g
+    result["fixture_dir"] = S.GENERATIONS[g]["fixture_dir"]
+    result["rows_sha256"] = S.sha256_file(S.rows_path(repo, g))
+    try:
+        result["generation_receipt_sha256"] = S.sha256_file(
+            repo / S.GENERATIONS[g]["fixture_dir"] / "GENERATION.json"
+        ) if S.GENERATIONS[g].get("has_generation_json") else None
+    except Exception:
+        result["generation_receipt_sha256"] = None
     result["verdict"] = f"{step}_ACCEPT" if R.acceptance_verdict(result, True) else f"{step}_FAIL"
     if not quiet:
         print(json.dumps(result, indent=1))
@@ -231,21 +270,24 @@ def cmd_accept(repo: Path, corpus: dict, step: str = "A0", quiet: bool = False,
 
 
 def cmd_mint_baseline(repo: Path, corpus: dict, quiet: bool = False,
-                      baseline_path: Path | None = None):
+                      baseline_path: Path | None = None,
+                      generation: str | None = None):
     """Creation-only baseline mint. Refuses if the target exists; never rewrites.
 
     Minting is an A0-only operation: a baseline captured against anything other than
     the provenance tool would not be a HEAD-9f471b3 reference at all.
     """
-    resolved = baseline_path if baseline_path is not None else S.canonical_baseline_path(repo)
+    g = generation if generation is not None else S.ACTIVE_GENERATION
+    resolved = baseline_path if baseline_path is not None else S.canonical_baseline_path(repo, g)
     if resolved.exists():
         if not quiet:
             print(json.dumps({"verdict": "A0_MINT_REFUSED",
+                              "code": "baseline_exists_refuse",
                               "reason": "baseline already exists; the frozen baseline is immutable",
                               "path": str(resolved),
                               "existing_sha256": S.sha256_file(resolved)}, indent=1))
         return 1
-    fails = preflight(repo, corpus, None, need_baseline=False, step="A0")
+    fails = preflight(repo, corpus, None, need_baseline=False, step="A0", generation=g)
     if fails:
         print(json.dumps({"verdict": "A0_PREFLIGHT_FAIL", "preflight_failures": fails,
                           "subprocesses_spawned": 0}, indent=1))
@@ -256,9 +298,10 @@ def cmd_mint_baseline(repo: Path, corpus: dict, quiet: bool = False,
         print(json.dumps(result, indent=1))
         return 1
     bound = corpus["bound_to"]
-    payload = {"schema": S.BASELINE_SCHEMA, "head": S.BASELINE_HEAD,
+    meta = S.generation_meta(repo, g)
+    payload = {"schema": meta["baseline_schema"], "head": meta["baseline_head"],
                "tool_sha256": bound["tool_sha256"], "harness_sha256": bound["harness_sha256"],
-               "rows_sha256": S.sha256_file(S.rows_path(repo)),
+               "rows_sha256": S.sha256_file(S.rows_path(repo, g)),
                "generated_from_rows": corpus["generated_from"], "map": first}
     text = json.dumps(payload, indent=1, sort_keys=True) + "\n"
     json.loads(text)
@@ -296,20 +339,38 @@ def main(argv=None):
     parser.add_argument("--self-test-negatives", action="store_true")
     parser.add_argument("--preflight-only", action="store_true",
                         help="stop after the contract checks; emit an eligible-to-proceed verdict")
+    parser.add_argument("--generation", default=None,
+                        help="fixture generation (default: ACTIVE_GENERATION)")
     args = parser.parse_args(argv)
     repo = Path(args.repo_root).resolve()
-    corpus = S.load_corpus(repo)
+    gen = args.generation
+    # C1: classify ALL generation/ROWS load failures at ingress (single semantics body
+    # in S.classify_corpus_load_error). Never traceback on damaged/absent carriers.
+    try:
+        corpus = S.load_corpus(repo, gen)
+    except Exception as exc:
+        fail = S.classify_corpus_load_error(exc)
+        if fail is not None:
+            if gen is not None and "generation" not in fail:
+                fail = dict(fail, generation=gen)
+            out = {"verdict": "PREFLIGHT_FAIL",
+                   "preflight_failures": [fail],
+                   "subprocesses_spawned": 0}
+            print(json.dumps(out, indent=1))
+            return 2
+        raise
     # The committed baseline is resolved INTERNALLY for every production command.
     # There is deliberately no --baseline-path: an alternate map is reachable only
     # from the negative battery, which cannot emit an ACCEPT.
     if args.assert_structure:
-        return cmd_assert_structure(repo, corpus, args.step)
+        return cmd_assert_structure(repo, corpus, args.step, generation=gen)
     if args.self_test_negatives:
         return cmd_self_test(repo)
     if args.mint_baseline:
-        return cmd_mint_baseline(repo, corpus)
+        return cmd_mint_baseline(repo, corpus, generation=gen)
     if args.accept:
-        return cmd_accept(repo, corpus, step=args.step, preflight_only=args.preflight_only)[0]
+        return cmd_accept(repo, corpus, step=args.step, preflight_only=args.preflight_only,
+                          generation=gen)[0]
     parser.error("choose --assert-structure, --accept, --mint-baseline or --self-test-negatives")
 
 

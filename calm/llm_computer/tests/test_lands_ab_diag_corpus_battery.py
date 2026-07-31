@@ -17,6 +17,9 @@ The transition proofs build a CANDIDATE WORKSPACE of HARDLINKS. Hardlinks, not
 symlinks: the fixture builder derives DRY from `Path(__file__).resolve()`, and a
 symlinked builder resolves back to the real repo -- which would silently point the
 whole run at the real tool. The real tool is NEVER written.
+
+Generation v1 active: workspace materialize includes GENERATION.json via transition builder.
+Gen-auth negatives live in lands_ab_diag_gen_auth_negatives (plan v8).
 """
 from __future__ import annotations
 
@@ -35,6 +38,8 @@ from calm.llm_computer import lands_ab_diag_corpus_reducers as R  # noqa: E402
 from calm.llm_computer import lands_ab_diag_corpus_sources as S  # noqa: E402
 from calm.llm_computer.tests.test_lands_ab_diag_corpus_transition import (  # noqa: E402
     _codes, build_candidate_workspace, regenerate_manifest, run_transition_proofs)
+from calm.llm_computer.tests.lands_ab_diag_gen_auth_negatives import (  # noqa: E402
+    GEN_AUTH_PREREG, run_generation_authority_negatives)
 
 sys.path.insert(0, str(REPO_DEFAULT / "scripts"))
 import lands_ab_dry_exec_diag_corpus as H  # noqa: E402
@@ -118,22 +123,15 @@ def reconcile_case_schema(cases: list) -> list:
     return faults
 
 
-def run_negative_battery(repo: Path) -> dict:
-    """Fast, pre-subprocess. Spawning a subprocess here is itself a failure."""
-    corpus = S.load_corpus(repo)
-    canonical = S.canonical_baseline_path(repo)
-    baseline = S.load_baseline(canonical)
-    cases, real_run = [], subprocess.run
+
+def battery_probe(repo: Path, corpus: dict, baseline: dict):
+    """Factory: fast-tier probe with subprocess guard (plan v8 ≤150)."""
+    real_run = subprocess.run
 
     def guard(*a, **k):
         raise AssertionError("subprocess spawned during a pre-execution negative case")
 
     def probe(mutate, step="A0", alt_baseline=None, mutate_baseline=None):
-        """Fast tier: the raising guard PROVES no subprocess is spawned.
-
-        mutate_baseline writes a temporary baseline so a single provenance CARRIER can
-        be moved on its own -- required to isolate n7b from n7a.
-        """
         bad = copy.deepcopy(corpus)
         mutate(bad)
         tmpdir = None
@@ -161,26 +159,30 @@ def run_negative_battery(repo: Path) -> dict:
         finally:
             if tmpdir:
                 shutil.rmtree(tmpdir, ignore_errors=True)
+    return probe
 
-    def record(name, observed, extra=None, tier=FAST_TIER):
-        """Preregistered and post-observation-corrected cases are never conflated.
 
-        A corrected case emits `expected_set` + evidence_tier and deliberately does NOT
-        emit a `preregistered` field, so no downstream reader can mistake a
-        characterization fix for an independent preregistration claim.
-        """
-        corrected = name in CORRECTED
-        want = CORRECTED[name] if corrected else PREREG[name]
-        entry = {"case": name, "observed": sorted(observed), "set_equal": observed == want,
-                 "stage": STAGE, "subprocesses": 0, "tier": tier,
-                 "evidence_tier": "post_observation_corrected" if corrected else "preregistered",
-                 "ok": observed == want}
-        entry["expected_set" if corrected else "preregistered"] = sorted(want)
-        if extra:
-            entry["detail"] = extra
-        cases.append(entry)
+def battery_record(cases: list, name: str, observed, extra=None, tier=FAST_TIER):
+    """Append one prereg/corrected case entry (plan v8 ≤150)."""
+    corrected = name in CORRECTED
+    want = CORRECTED[name] if corrected else PREREG[name]
+    entry = {"case": name, "observed": sorted(observed), "set_equal": observed == want,
+             "stage": STAGE, "subprocesses": 0, "tier": tier,
+             "evidence_tier": "post_observation_corrected" if corrected else "preregistered",
+             "ok": observed == want}
+    entry["expected_set" if corrected else "preregistered"] = sorted(want)
+    if extra:
+        entry["detail"] = extra
+    cases.append(entry)
 
-    # (a) baseline tamper isolates to the BASELINE ledger (pure-reducer level)
+
+def run_fast_preregistered_cases(repo: Path, corpus: dict, baseline: dict) -> list:
+    """Fast preregistered a..p4 cases (plan v8 ≤150)."""
+    cases = []
+    probe = battery_probe(repo, corpus, baseline)
+    record = lambda name, observed, extra=None, tier=FAST_TIER: battery_record(
+        cases, name, observed, extra, tier)
+
     tampered = copy.deepcopy(baseline)
     victim = corpus["rows"][0]["row_id"]
     tampered["map"][victim] = {"rc": 99, "msg_key": "TAMPERED"}
@@ -195,7 +197,6 @@ def run_negative_battery(repo: Path) -> dict:
     record("a_baseline_tamper_isolated_to_baseline_ledger", tokens_a,
            {"baseline_ledger": b_fail, "prereg_ledger_failures": len(p_fail),
             "stage_detail": "reducer"})
-    # (b) mint refuses an existing target, bytes unchanged
     tmp = Path(tempfile.mkdtemp(prefix="a0selftest_"))
     try:
         existing = tmp / S.BASELINE_NAME
@@ -224,7 +225,6 @@ def run_negative_battery(repo: Path) -> dict:
     record("f_tier_ledger_crossover",
            _codes(probe(lambda c: c["rows"][0].update(
                independent_correctness_eligible=not c["rows"][0]["independent_correctness_eligible"]))))
-
     alt_dir = Path(tempfile.mkdtemp(prefix="a0altbase_"))
     try:
         alt = alt_dir / S.BASELINE_NAME
@@ -232,7 +232,6 @@ def run_negative_battery(repo: Path) -> dict:
         record("n1_alternate_baseline_rejected", _codes(probe(lambda c: None, alt_baseline=alt)))
     finally:
         shutil.rmtree(alt_dir, ignore_errors=True)
-
     record("n2_null_provenance_field",
            _codes(probe(lambda c: c["rows"][0].update(source_increment=None))))
     record("n3_wrong_typed_field",
@@ -244,10 +243,6 @@ def run_negative_battery(repo: Path) -> dict:
     record("n6_ledger_site_count",
            _codes(probe(lambda c: c["ledgers"]["A_equivalence"].update(
                sites=c["ledgers"]["A_equivalence"]["sites"] - 1))))
-    # n7b: ONE provenance carrier moves (baseline side). Candidate still equals ROWS
-    # provenance, so ONLY the internal-consistency code may fire. n7a (candidate bytes
-    # move, provenance frozen) lives in the workspace tier -- a merged case proves the
-    # union, never the isolation, which is the whole point of these two.
     record("n7b_provenance_carrier_only",
            _codes(probe(lambda c: None,
                         mutate_baseline=lambda b: b.update(tool_sha256="1" * 64))))
@@ -257,23 +252,25 @@ def run_negative_battery(repo: Path) -> dict:
     record("n9_allowlist_missing_for_step", _codes(probe(lambda c: None, step="A9")))
     record("n10_reference_refresh_bypass_blocked",
            _codes(probe(lambda c: c["bound_to"].update(tool_sha256="2" * 64), step="A1")))
-
-    # A5/A6 resolve to the frozen A5+ POLICY key; the declared step stays the truth.
     for name, step in (("p1_A5_policy_resolution", "A5"), ("p2_A6_policy_resolution", "A6")):
         out = probe(lambda c: None, step=step)
         record(name, _codes(out),
                {"declared_step": step, "policy_key": R.resolve_allowlist_policy_key(step),
                 "verdict": out.get("verdict")})
-    # Unknown steps stay rejected. This is the regression guard on the resolver itself:
-    # a numeric "step >= A5" rule would swallow these and make the case unfailable.
     record("p3_unknown_step_A7_rejected", _codes(probe(lambda c: None, step="A7")))
-    # The register is REQUIRED whenever generated_from.method declares exceptions.
     record("p4_normalization_register_absent",
            _codes(probe(lambda c: c.pop("normalizations", None))))
+    return cases
 
-    # ---- workspace tier: subprocess-permitted, counted separately ----
+
+def run_negative_battery(repo: Path) -> dict:
+    """Fast + workspace + gen-auth orchestration (plan v8 ≤150)."""
+    corpus = S.load_corpus(repo)
+    canonical = S.canonical_baseline_path(repo)
+    baseline = S.load_baseline(canonical)
+    cases = run_fast_preregistered_cases(repo, corpus, baseline)
     cases.extend(run_workspace_cases(repo, corpus))
-
+    cases.extend(run_generation_authority_negatives(repo))
     schema_faults = reconcile_case_schema(cases)
     passed = all(c["ok"] for c in cases) and not schema_faults
     fast = [c for c in cases if c.get("tier", FAST_TIER) == FAST_TIER]
@@ -291,6 +288,7 @@ def run_negative_battery(repo: Path) -> dict:
                 "workspace_tier_verdict": "PASS" if all(c["ok"] for c in ws) else "FAIL"},
             "schema_faults": schema_faults,
             "verdict": "PASS" if passed else "FAIL"}
+
 
 
 def run_workspace_cases(repo: Path, corpus: dict) -> list:
@@ -342,6 +340,17 @@ def test_negative_battery():
     """pytest entry: the fast battery only. Transition proofs are opt-in (minutes)."""
     report = run_negative_battery(REPO_DEFAULT)
     assert report["verdict"] == "PASS", json.dumps(report, indent=1)
+
+
+def test_generation_authority_negatives():
+    """pytest entry: committed generation-authority N1–N4 + pin mutations (CURE-2)."""
+    cases = run_generation_authority_negatives(REPO_DEFAULT)
+    failed = [c for c in cases if not c.get("ok")]
+    assert not failed, json.dumps(failed, indent=1)
+    # Also require every preregistered name was exercised
+    got = {c["case"] for c in cases}
+    missing = set(GEN_AUTH_PREREG) - got
+    assert not missing, f"missing cases: {sorted(missing)}"
 
 
 if __name__ == "__main__":

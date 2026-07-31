@@ -1,0 +1,1230 @@
+{
+  "artifact": "A4_EMISSION_ORDINAL_BASELINE_v1",
+  "tool_path": "/tmp/authoring_slice_ws/scripts/lands_ab_packet_dry_exec.py",
+  "tool_sha256": "6d2978d3a7cf526ee8e2815b5688ef586e9608a640a3eda7398577a0b77977c9",
+  "total_emissions": 180,
+  "hosts": {
+    "_check_path_sha": {
+      "count": 2,
+      "fingerprint_sha256": "3b0c7bcb47528f8c490fa5a72da66d68b621b91d99b1c4b824a61bc428fb3a20",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I2 pin path absent from manifest: '), FormattedValue(value=Name(id='rel_n', ctx=Load()), conversion=-1), Constant(value=' ('), FormattedValue(value=Name(id='where', ctx=Load()), conversion=-1), Constant(value=')')])]))",
+          "lineno_report_only": 1632
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I2 pin sha != manifest for '), FormattedValue(value=Name(id='rel_n', ctx=Load()), conversion=-1), Constant(value=' at '), FormattedValue(value=Name(id='where', ctx=Load()), conversion=-1), Constant(value=': pin='), FormattedValue(value=Name(id='got', ctx=Load()), conversion=-1), Constant(value=' manifest='), FormattedValue(value=Name(id='exp', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1636
+        }
+      ]
+    },
+    "_collect_validated_lineage_identities": {
+      "count": 1,
+      "fingerprint_sha256": "0d59d6ab0d01a537cae0c4d37b4af4712c1cfcd693684ff7b19844b238b02ed1",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value=\"Q4 lineage pin 'pins.\"), FormattedValue(value=Name(id='pk', ctx=Load()), conversion=-1), Constant(value=\"' carries non-schema field(s) \"), FormattedValue(value=Name(id='bad_fields', ctx=Load()), conversion=-1), Constant(value=' \u2014 exemption covers the closed lineage schema only')])]))",
+          "lineno_report_only": 759
+        }
+      ]
+    },
+    "_dry_exec_bind_runtime_and_order": {
+      "count": 2,
+      "fingerprint_sha256": "7692d9d4f31915c001faf77f3101c73f2b5e5edb85ced98c05f43391f5aee260",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: runtime_scratch.env_binding must be object')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2115
+        },
+        {
+          "ordinal": 2,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: runtime_scratch.env_binding missing LANDS_AB_RUNTIME_SCRATCH/RUN_ROOT')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2120
+        }
+      ]
+    },
+    "_dry_exec_bind_sources": {
+      "count": 24,
+      "fingerprint_sha256": "617beeaeff8fb437c21bdd33ae4e088a0a4eb4bb381a7c17d8f3d714077a58fa",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: manifest outside repo ('), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1), Constant(value=')')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1892
+        },
+        {
+          "ordinal": 2,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: packet load: '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1897
+        },
+        {
+          "ordinal": 3,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: packet missing binding field '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='f', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1902
+        },
+        {
+          "ordinal": 4,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1914
+        },
+        {
+          "ordinal": 5,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: packet.science_source_manifest_path outside repo ('), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1), Constant(value=')')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1919
+        },
+        {
+          "ordinal": 6,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: CLI manifest path '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='man_cli_rel', ctx=Load()), conversion=114), Constant(value=' != packet.science_source_manifest_path '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='man_path_norm', ctx=Load()), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1922
+        },
+        {
+          "ordinal": 7,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: --expected-source-commit != packet.source_commit_sha')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1925
+        },
+        {
+          "ordinal": 8,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: missing manifest file '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='man_cli', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1928
+        },
+        {
+          "ordinal": 9,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: manifest file sha != packet.science_source_manifest_sha256')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1932
+        },
+        {
+          "ordinal": 10,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: generator_script_path must be scripts/lands_ab_science_source_manifest.py, got '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gen_path', ctx=Load()), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1935
+        },
+        {
+          "ordinal": 11,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: dry_exec_tool_path must be scripts/lands_ab_packet_dry_exec.py, got '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='dry_path', ctx=Load()), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1938
+        },
+        {
+          "ordinal": 12,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: missing pinned tool/script '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='rel', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1943
+        },
+        {
+          "ordinal": 13,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: sha mismatch for '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='rel', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1946
+        },
+        {
+          "ordinal": 14,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: manifest JSON: '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1951
+        },
+        {
+          "ordinal": 15,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: manifest schema must be LANDS_AB_science_source_manifest/v1, got '), FormattedValue(value=Call(func=Attribute(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='man', ctx=Load()), attr='get', ctx=Load()), args=[Constant(value='schema')]), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1954
+        },
+        {
+          "ordinal": 16,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: manifest entries missing')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1958
+        },
+        {
+          "ordinal": 17,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: manifest n_entries != len(entries)')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1961
+        },
+        {
+          "ordinal": 18,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: bad manifest entry')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1966
+        },
+        {
+          "ordinal": 19,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: bad/escape path '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='rel', ctx=Load()), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1970
+        },
+        {
+          "ordinal": 20,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1975
+        },
+        {
+          "ordinal": 21,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: missing source path '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='rel', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1980
+        },
+        {
+          "ordinal": 22,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: disk sha mismatch '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='rel', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1983
+        },
+        {
+          "ordinal": 23,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: manifest paths not sorted unique')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1986
+        },
+        {
+          "ordinal": 24,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: missing mandatory source: '), FormattedValue(value=Subscript(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='missing_mand', ctx=Load()), slice=Constant(value=0), ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1991
+        }
+      ]
+    },
+    "_dry_exec_run_i_series": {
+      "count": 1,
+      "fingerprint_sha256": "73e043d9c2c13c2d274911ca4e971fd66a034d47ddcb8b3911e0db867e37a179",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2143
+        }
+      ]
+    },
+    "_dry_exec_validate_execution_order": {
+      "count": 4,
+      "fingerprint_sha256": "616738815224f53bc0a175e44a11b91a1bce55a03d0171cc905dce00e50d29ac",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: execution_order required non-empty list')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2083
+        },
+        {
+          "ordinal": 2,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: execution_order must contain gating row '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' exactly once')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2089
+        },
+        {
+          "ordinal": 3,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: gating rows in execution_order not in required order')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2093
+        },
+        {
+          "ordinal": 4,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: execution_order missing lifecycle steps '), FormattedValue(value=Call(func=Name(id='sorted', ctx=Load()), args=[Attribute(value=Name(id='ctx', ctx=Load()), attr='missing_life', ctx=Load())]), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2097
+        }
+      ]
+    },
+    "_dry_exec_validate_packet_contract": {
+      "count": 21,
+      "fingerprint_sha256": "8b4b5053a7bf60882e55c4ba17f45590d6b5d18cccd32e0217697660244f9f7e",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: bad packet schema '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='schema', ctx=Load()), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1997
+        },
+        {
+          "ordinal": 2,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: gating_rows must be exact 7-tuple set')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2002
+        },
+        {
+          "ordinal": 3,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: row_commands must be list of 7')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2006
+        },
+        {
+          "ordinal": 4,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: claim_ceiling required')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2009
+        },
+        {
+          "ordinal": 5,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: claim_ceiling must be object')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2013
+        },
+        {
+          "ordinal": 6,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: claim_ceiling missing field '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='k', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2017
+        },
+        {
+          "ordinal": 7,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: claim_ceiling.'), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='k', ctx=Load()), conversion=-1), Constant(value=' must be false')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2020
+        },
+        {
+          "ordinal": 8,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Name(id='exc', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2026
+        },
+        {
+          "ordinal": 9,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: science_claim true forbidden')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2029
+        },
+        {
+          "ordinal": 10,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: PRIORITY_ORDER must echo exact live order')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2034
+        },
+        {
+          "ordinal": 11,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: branch_ids must be exact live 7-set')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2038
+        },
+        {
+          "ordinal": 12,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: executor required object')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2043
+        },
+        {
+          "ordinal": 13,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: executor.role must be exactly '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='FROZEN_EXECUTOR_ROLE', ctx=Load()), conversion=114), Constant(value=', got '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='role', ctx=Load()), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2047
+        },
+        {
+          "ordinal": 14,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: executor.forbidden_for_plan_dev required non-empty')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2051
+        },
+        {
+          "ordinal": 15,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: executor.forbidden_for_plan_dev must prohibit formal run')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2054
+        },
+        {
+          "ordinal": 16,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: one_terminal_receipt must be true')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2057
+        },
+        {
+          "ordinal": 17,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: runtime_scratch required object')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2061
+        },
+        {
+          "ordinal": 18,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: runtime_scratch.harvest_exactly_one_raw_obs must be object')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2065
+        },
+        {
+          "ordinal": 19,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: harvest applies_to_each_of_7_gating_rows must be true')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2068
+        },
+        {
+          "ordinal": 20,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: harvest.helper must name harvest_exactly_one_raw_obs')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2072
+        },
+        {
+          "ordinal": 21,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: harvest.zero_or_multiple must be STOP semantics')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2076
+        }
+      ]
+    },
+    "_dry_exec_validate_row_commands": {
+      "count": 0,
+      "fingerprint_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "items": []
+    },
+    "_dry_exec_validate_row_cpu_cuda_budgets": {
+      "count": 21,
+      "fingerprint_sha256": "1264a6166e662dc0aafa8e4f0e5e1ef84a996a07086f5152b0b340d70f9f8787",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' duplicate raw basename '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='raw_base', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1781
+        },
+        {
+          "ordinal": 2,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' argv must start with timeout <budget>')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1785
+        },
+        {
+          "ordinal": 3,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1790
+        },
+        {
+          "ordinal": 4,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' missing duration_budget_seconds/hard_timeout_seconds for G6 bind')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1794
+        },
+        {
+          "ordinal": 5,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' outer timeout '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='outer_to', ctx=Load()), conversion=-1), Constant(value=' != row hard bound '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='hard', ctx=Load()), conversion=-1), Constant(value=' (rule: argv[1] == inv.hard_timeout_seconds or row.duration_budget_seconds)')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1797
+        },
+        {
+          "ordinal": 6,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: structural preflight '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=': '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1803
+        },
+        {
+          "ordinal": 7,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' --out must equal raw_obs_path_template')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1807
+        },
+        {
+          "ordinal": 8,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1813
+        },
+        {
+          "ordinal": 9,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' declared phase_budgets_seconds keys mismatch required set')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1821
+        },
+        {
+          "ordinal": 10,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' declared budget '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='name', ctx=Load()), conversion=-1), Constant(value=' not numeric')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1827
+        },
+        {
+          "ordinal": 11,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' argv budget '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='name', ctx=Load()), conversion=-1), Constant(value='='), FormattedValue(value=Subscript(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='budget_map', ctx=Load()), slice=Attribute(value=Name(id='ctx', ctx=Load()), attr='name', ctx=Load()), ctx=Load()), conversion=-1), Constant(value=' != declared '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='decl_v', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1830
+        },
+        {
+          "ordinal": 12,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='label', ctx=Load()), conversion=-1), Constant(value=' path must be descendant of LANDS_AB_RUN_ROOT')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1834
+        },
+        {
+          "ordinal": 13,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='label', ctx=Load()), conversion=-1), Constant(value=' path must not be under repo root')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1837
+        },
+        {
+          "ordinal": 14,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' duplicate runtime basename '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='base', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1841
+        },
+        {
+          "ordinal": 15,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' phase alias '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='k', ctx=Load()), conversion=-1), Constant(value=' != --phase-events-jsonl')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1847
+        },
+        {
+          "ordinal": 16,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' missing enforcer metadata path')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1852
+        },
+        {
+          "ordinal": 17,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' enforcer alias '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='k', ctx=Load()), conversion=-1), Constant(value=' != --enforcer-receipt argv')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1856
+        },
+        {
+          "ordinal": 18,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' missing phase env')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1860
+        },
+        {
+          "ordinal": 19,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' phase env != --phase-events-jsonl argv')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1863
+        },
+        {
+          "ordinal": 20,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: duplicate phase '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='phase_env', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1866
+        },
+        {
+          "ordinal": 21,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: duplicate enforcer '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='enf_argv', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1870
+        }
+      ]
+    },
+    "_dry_exec_validate_row_env_paths_raw": {
+      "count": 20,
+      "fingerprint_sha256": "31c0506198dfc9eafacc054a65f3d39d48467fac6f653d072fccbb3534dae8c1",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: row_command not object')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1696
+        },
+        {
+          "ordinal": 2,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: bad/dup gating_row '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1700
+        },
+        {
+          "ordinal": 3,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' invocation must be object')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1705
+        },
+        {
+          "ordinal": 4,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: missing argv for '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1709
+        },
+        {
+          "ordinal": 5,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: duplicate argv for '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1713
+        },
+        {
+          "ordinal": 6,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' env_required must be object')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1721
+        },
+        {
+          "ordinal": 7,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' missing env '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='req_env', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1725
+        },
+        {
+          "ordinal": 8,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' LANDS_AB_RUN_ROOT missing frozen nonce template token (<'), FormattedValue(value=Call(func=Attribute(value=Subscript(value=Name(id='NONCE_TOKENS', ctx=Load()), slice=Constant(value=0), ctx=Load()), attr='strip', ctx=Load()), args=[Constant(value='<>')]), conversion=-1), Constant(value='> or similar): '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='run_root', ctx=Load()), conversion=114)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1730
+        },
+        {
+          "ordinal": 9,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' LANDS_AB_RUN_ROOT must be descendant of LANDS_AB_RUNTIME_SCRATCH')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1733
+        },
+        {
+          "ordinal": 10,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' LANDS_AB_RUN_ROOT must not be under repo root')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1736
+        },
+        {
+          "ordinal": 11,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' LANDS_AB_RUNTIME_SCRATCH must not be under repo root')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1739
+        },
+        {
+          "ordinal": 12,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' env scratch/run_root must equal packet runtime_scratch.env_binding')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1742
+        },
+        {
+          "ordinal": 13,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' scratch/run_root differs from other gating rows (one formal run)')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1747
+        },
+        {
+          "ordinal": 14,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: forbidden write path token in '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=': '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='tok', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1751
+        },
+        {
+          "ordinal": 15,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' missing required raw_obs_path_template')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1757
+        },
+        {
+          "ordinal": 16,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' raw alias '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='k', ctx=Load()), conversion=-1), Constant(value=' != raw_obs_path_template')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1762
+        },
+        {
+          "ordinal": 17,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: duplicate raw path '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='raw', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1765
+        },
+        {
+          "ordinal": 18,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' raw_obs path must be descendant of LANDS_AB_RUN_ROOT')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1769
+        },
+        {
+          "ordinal": 19,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' raw_obs path must not be under repo root')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1772
+        },
+        {
+          "ordinal": 20,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value=' raw basename must start with lands_ab_raw_obs_'), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='gr', ctx=Load()), conversion=-1), Constant(value='_ (harvest pattern)')])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 1776
+        }
+      ]
+    },
+    "_dry_exec_validate_rowset_invariants": {
+      "count": 4,
+      "fingerprint_sha256": "2a9e815fd9f77b1a423c47e14502c6658c9277a052b5b07f958a9365b09b20ca",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: row_commands incomplete vs GATING_ROWS')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2125
+        },
+        {
+          "ordinal": 2,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: argv/raw paths not unique 7')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2128
+        },
+        {
+          "ordinal": 3,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[Constant(value='error: phase/enforcer path count mismatch vs CUDA rows')], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2132
+        },
+        {
+          "ordinal": 4,
+          "kind": "print",
+          "canonical_ast": "Call(func=Name(id='print', ctx=Load()), args=[JoinedStr(values=[Constant(value='error: formal argv path not covered by manifest: '), FormattedValue(value=Attribute(value=Name(id='ctx', ctx=Load()), attr='rel', ctx=Load()), conversion=-1)])], keywords=[keyword(arg='file', value=Attribute(value=Name(id='sys', ctx=Load()), attr='stderr', ctx=Load()))])",
+          "lineno_report_only": 2136
+        }
+      ]
+    },
+    "_parse_budget_token": {
+      "count": 2,
+      "fingerprint_sha256": "9c5cd60729f1418daa9631efd63b7b23ed95e6d576332126ab3f50546114fa6b",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='budget token must be name=value, got '), FormattedValue(value=Name(id='tok', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 248
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='empty budget name in '), FormattedValue(value=Name(id='tok', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 252
+        }
+      ]
+    },
+    "_require_finite_positive": {
+      "count": 2,
+      "fingerprint_sha256": "6d8b52b3a97c4864a16c4fa5e348545f3383c6efa08dc40ef0aa0ad5f715074d",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='field', ctx=Load()), conversion=-1), Constant(value=' not numeric: '), FormattedValue(value=Name(id='val', ctx=Load()), conversion=114)])]), cause=Name(id='e', ctx=Load()))",
+          "lineno_report_only": 197
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='field', ctx=Load()), conversion=-1), Constant(value=' must be finite and >0: '), FormattedValue(value=Name(id='val', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 199
+        }
+      ]
+    },
+    "_require_flag_once_in_open_interval": {
+      "count": 4,
+      "fingerprint_sha256": "ac5acd3ad7fda3bc9b44599c6cb46acea9d33bbf36182e484e8e9c7014162c80",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' '), FormattedValue(value=Name(id='flag', ctx=Load()), conversion=-1), Constant(value=' must appear exactly once (got '), FormattedValue(value=Call(func=Name(id='len', ctx=Load()), args=[Name(id='idxs', ctx=Load())]), conversion=-1), Constant(value=')')])]))",
+          "lineno_report_only": 273
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' '), FormattedValue(value=Name(id='flag', ctx=Load()), conversion=-1), Constant(value=' must sit inside '), FormattedValue(value=Name(id='segment', ctx=Load()), conversion=-1), Constant(value=' segment (index '), FormattedValue(value=Name(id='i', ctx=Load()), conversion=-1), Constant(value=' not in ('), FormattedValue(value=Name(id='lo', ctx=Load()), conversion=-1), Constant(value=','), FormattedValue(value=Name(id='hi', ctx=Load()), conversion=-1), Constant(value='))')])]))",
+          "lineno_report_only": 276
+        },
+        {
+          "ordinal": 3,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' '), FormattedValue(value=Name(id='flag', ctx=Load()), conversion=-1), Constant(value=' value must sit inside '), FormattedValue(value=Name(id='segment', ctx=Load()), conversion=-1), Constant(value=' segment')])]))",
+          "lineno_report_only": 278
+        },
+        {
+          "ordinal": 4,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' '), FormattedValue(value=Name(id='flag', ctx=Load()), conversion=-1), Constant(value=' requires non-empty non-flag value inside '), FormattedValue(value=Name(id='segment', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 281
+        }
+      ]
+    },
+    "_require_hex40": {
+      "count": 1,
+      "fingerprint_sha256": "390abe31f23125fcaf96dba61ca475162fb1c3899ab0596045ec68964022dd38",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='field', ctx=Load()), conversion=-1), Constant(value=' must be 40-hex commit sha')])]))",
+          "lineno_report_only": 27
+        }
+      ]
+    },
+    "_require_hex64": {
+      "count": 1,
+      "fingerprint_sha256": "85c117ff8f77d3d8f1d007cc6a4e6e3a76b6064f8b710d4e613f8a31cd1d3477",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='field', ctx=Load()), conversion=-1), Constant(value=' must be lowercase 64-hex')])]))",
+          "lineno_report_only": 21
+        }
+      ]
+    },
+    "_require_packet_bool": {
+      "count": 1,
+      "fingerprint_sha256": "9ffb53fd8cb5109158740b225c68aa0932f2cfdb5ef20a282ffc1fd1040f183a",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I1/Q13 '), FormattedValue(value=Name(id='where', ctx=Load()), conversion=-1), Constant(value=' assertion field '), FormattedValue(value=Name(id='field', ctx=Load()), conversion=114), Constant(value=' must be a JSON boolean (true/false), got '), FormattedValue(value=Attribute(value=Call(func=Name(id='type', ctx=Load()), args=[Name(id='value', ctx=Load())]), attr='__name__', ctx=Load()), conversion=-1), Constant(value=' '), FormattedValue(value=Name(id='value', ctx=Load()), conversion=114), Constant(value='. Assertion fields are read for truthiness by consumers, so a non-boolean would let the validator and a consumer disagree about whether a claim was made.')])]))",
+          "lineno_report_only": 490
+        }
+      ]
+    },
+    "_require_watch_wrap_flag_value": {
+      "count": 2,
+      "fingerprint_sha256": "c6364dab3c011cdb28b965ee250a909305bf14cd7958be72d4e60c50bbca8412",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='watch-wrap missing '), FormattedValue(value=Name(id='flag', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 185
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='watch-wrap '), FormattedValue(value=Name(id='flag', ctx=Load()), conversion=-1), Constant(value=' requires non-empty value')])]))",
+          "lineno_report_only": 188
+        }
+      ]
+    },
+    "_resolve_under_repo": {
+      "count": 1,
+      "fingerprint_sha256": "541eed108cb3fcee31334d82419a3850ce404dbce680b532be57b262d350cb63",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='path outside repo: '), FormattedValue(value=Name(id='path_s', ctx=Load()), conversion=-1)])]), cause=Name(id='e', ctx=Load()))",
+          "lineno_report_only": 242
+        }
+      ]
+    },
+    "_validate_i_series_consistency": {
+      "count": 37,
+      "fingerprint_sha256": "57b4d5e6f16034f485f3d0b0e06f5919e8d2923de15e90ea26e8b13501de7543",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='I3 packet_revision required')]))",
+          "lineno_report_only": 924
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='L1 operative_packet_revision required (must equal packet_revision)')]))",
+          "lineno_report_only": 928
+        },
+        {
+          "ordinal": 3,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='L1 operative_packet_revision='), FormattedValue(value=Name(id='opr', ctx=Load()), conversion=114), Constant(value=' must equal packet_revision='), FormattedValue(value=Name(id='rev', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 933
+        },
+        {
+          "ordinal": 4,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I3 path does not match packet_revision: path='), FormattedValue(value=Name(id='path_s', ctx=Load()), conversion=114), Constant(value=' rev='), FormattedValue(value=Name(id='rev', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 939
+        },
+        {
+          "ordinal": 5,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='I2 pins object required for pin-vs-manifest binding')]))",
+          "lineno_report_only": 946
+        },
+        {
+          "ordinal": 6,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J1 packet lineage pin '), FormattedValue(value=Name(id='pk', ctx=Load()), conversion=114), Constant(value=' must be object with do_not_activate=true')])]))",
+          "lineno_report_only": 965
+        },
+        {
+          "ordinal": 7,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J1 packet lineage pin '), FormattedValue(value=Name(id='pk', ctx=Load()), conversion=114), Constant(value=' (v'), FormattedValue(value=Name(id='other', ctx=Load()), conversion=-1), Constant(value=') missing do_not_activate=true')])]))",
+          "lineno_report_only": 969
+        },
+        {
+          "ordinal": 8,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J1 packet lineage pin '), FormattedValue(value=Name(id='pk', ctx=Load()), conversion=114), Constant(value=' missing independent DEAD/historical status (do_not_activate alone is insufficient)')])]))",
+          "lineno_report_only": 973
+        },
+        {
+          "ordinal": 9,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J1/O1 packet lineage pin '), FormattedValue(value=Name(id='pk', ctx=Load()), conversion=114), Constant(value=' requires path+sha256 identity fields')])]))",
+          "lineno_report_only": 979
+        },
+        {
+          "ordinal": 10,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J1/O1 '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])]), cause=Name(id='e', ctx=Load()))",
+          "lineno_report_only": 985
+        },
+        {
+          "ordinal": 11,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I1/Q14 self_check must be a JSON object, got '), FormattedValue(value=Attribute(value=Call(func=Name(id='type', ctx=Load()), args=[Name(id='sc', ctx=Load())]), attr='__name__', ctx=Load()), conversion=-1), Constant(value='. A non-mapping self_check would skip every pin and assertion check in this section rather than failing, so it is malformed by contract.')])]))",
+          "lineno_report_only": 1101
+        },
+        {
+          "ordinal": 12,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I1/Q13 self_check value for '), FormattedValue(value=Name(id='k', ctx=Load()), conversion=114), Constant(value=' must be a scalar, got '), FormattedValue(value=Attribute(value=Call(func=Name(id='type', ctx=Load()), args=[Name(id='v', ctx=Load())]), attr='__name__', ctx=Load()), conversion=-1), Constant(value='. Nested self_check containers are not part of the schema and would hide pin-shaped keys from this check.')])]))",
+          "lineno_report_only": 1117
+        },
+        {
+          "ordinal": 13,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I1/Q14 self_check pin key '), FormattedValue(value=Name(id='k', ctx=Load()), conversion=114), Constant(value=' names no referent: the key is only the pin marker, so it asserts pinning without identifying a head. Use pinned_to_<head-or-descriptor>.')])]))",
+          "lineno_report_only": 1153
+        },
+        {
+          "ordinal": 14,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I1/Q11 self_check pin is head-only by contract, but '), FormattedValue(value=Name(id='k', ctx=Load()), conversion=-1), Constant(value=' carries a '), FormattedValue(value=Call(func=Name(id='len', ctx=Load()), args=[Name(id='_tok', ctx=Load())]), conversion=-1), Constant(value='-char hex token which cannot be a commit head (max '), FormattedValue(value=Name(id='_PIN_HEAD_MAX_LEN', ctx=Load()), conversion=-1), Constant(value='): '), FormattedValue(value=Name(id='_tok', ctx=Load()), conversion=114), Constant(value='. Pin non-head values through a typed path/sha structure that binds to disk, not through a boolean key name.')])]))",
+          "lineno_report_only": 1175
+        },
+        {
+          "ordinal": 15,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I1/Q11 self_check pin claims non-source head: '), FormattedValue(value=Name(id='k', ctx=Load()), conversion=-1), Constant(value=' (hex-shaped token '), FormattedValue(value=Name(id='_tok', ctx=Load()), conversion=114), Constant(value=' is not a prefix of the source commit)')])]))",
+          "lineno_report_only": 1182
+        },
+        {
+          "ordinal": 16,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='I2 pins.runner_and_harness_shas empty')]))",
+          "lineno_report_only": 1194
+        },
+        {
+          "ordinal": 17,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='L1/J2 non-current packet_v'), FormattedValue(value=Name(id='other', ctx=Load()), conversion=-1), Constant(value=' reference outside DEAD lineage at '), FormattedValue(value=Name(id='path', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1237
+        },
+        {
+          "ordinal": 18,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='I4 branch_ids/PRIORITY_ORDER required')]))",
+          "lineno_report_only": 1247
+        },
+        {
+          "ordinal": 19,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='J3 terminal_branch_allow_set required (must equal branch_ids exactly)')]))",
+          "lineno_report_only": 1251
+        },
+        {
+          "ordinal": 20,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='J3 terminal_branch_allow_set must equal branch_ids exactly (set equality)')]))",
+          "lineno_report_only": 1256
+        },
+        {
+          "ordinal": 21,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='J3 procedural_stop_reasons must be a list when present')]))",
+          "lineno_report_only": 1263
+        },
+        {
+          "ordinal": 22,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J3 procedural_stop_reasons must not reference branch id '), FormattedValue(value=Name(id='bid', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1268
+        },
+        {
+          "ordinal": 23,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J3/I4 stop_conditions restricts preregistered branch '), FormattedValue(value=Name(id='bid', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1304
+        },
+        {
+          "ordinal": 24,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='L3 '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])]), cause=Name(id='e', ctx=Load()))",
+          "lineno_report_only": 1316
+        },
+        {
+          "ordinal": 25,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I5/Q9 '), FormattedValue(value=Name(id='_prim', ctx=Load()), conversion=-1), Constant(value=' and '), FormattedValue(value=Name(id='_alt', ctx=Load()), conversion=-1), Constant(value=' both present and disagree: '), FormattedValue(value=Call(func=Attribute(value=Name(id='_pv', ctx=Load()), attr='strip', ctx=Load())), conversion=114), Constant(value=' != '), FormattedValue(value=Call(func=Attribute(value=Name(id='_av', ctx=Load()), attr='strip', ctx=Load())), conversion=114), Constant(value=' \u2014 the alternative naming must not carry a second, unvalidated identity')])]))",
+          "lineno_report_only": 1335
+        },
+        {
+          "ordinal": 26,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='I5 operative plan id+sha required (operative_plan_id/operative_plan_sha256 or authority_chain.plan_*)')]))",
+          "lineno_report_only": 1345
+        },
+        {
+          "ordinal": 27,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='I5 '), FormattedValue(value=Name(id='e', ctx=Load()), conversion=-1)])]), cause=Name(id='e', ctx=Load()))",
+          "lineno_report_only": 1351
+        },
+        {
+          "ordinal": 28,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='L3/J5 operative_plan_id must be EXACT '), FormattedValue(value=Name(id='expected_plan_rel', ctx=Load()), conversion=114), Constant(value=', got '), FormattedValue(value=Name(id='op_id', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 1354
+        },
+        {
+          "ordinal": 29,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='L3/J5 operative_plan_sha256 must be EXACT '), FormattedValue(value=Name(id='expected_plan_sha', ctx=Load()), conversion=-1), Constant(value=', got '), FormattedValue(value=Name(id='op_sha', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1358
+        },
+        {
+          "ordinal": 30,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='L3/J5 DEAD plan lineage rejected: '), FormattedValue(value=Name(id='op_id', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1364
+        },
+        {
+          "ordinal": 31,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J5 operative_plan_id must be repo-relative, got '), FormattedValue(value=Name(id='op_id', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 1366
+        },
+        {
+          "ordinal": 32,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J5 operative_plan_id escapes repo: '), FormattedValue(value=Name(id='op_id', ctx=Load()), conversion=-1)])]), cause=Name(id='e', ctx=Load()))",
+          "lineno_report_only": 1371
+        },
+        {
+          "ordinal": 33,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J5 operative plan missing on disk: '), FormattedValue(value=Name(id='op_id', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1373
+        },
+        {
+          "ordinal": 34,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J5 operative_plan_sha256 mismatch for '), FormattedValue(value=Name(id='op_id', ctx=Load()), conversion=-1), Constant(value=': packet='), FormattedValue(value=Name(id='op_sha', ctx=Load()), conversion=-1), Constant(value=' disk='), FormattedValue(value=Name(id='live_op_sha', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1376
+        },
+        {
+          "ordinal": 35,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='L3 disk rehash of operative plan != expected: disk='), FormattedValue(value=Name(id='live_op_sha', ctx=Load()), conversion=-1), Constant(value=' expected='), FormattedValue(value=Name(id='expected_plan_sha', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1380
+        },
+        {
+          "ordinal": 36,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='J4/L2 ambiguous/foreign plan reference at '), FormattedValue(value=Name(id='path', ctx=Load()), conversion=-1), Constant(value=' (need DEAD/historical marker or exact operative PLAN_v6)')])]))",
+          "lineno_report_only": 1475
+        },
+        {
+          "ordinal": 37,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='Q3/I1 unbound hex token outside known-reference set at '), FormattedValue(value=Name(id='path', ctx=Load()), conversion=-1), Constant(value=': '), FormattedValue(value=Name(id='hx', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 1499
+        }
+      ]
+    },
+    "_validate_ordered_cuda_chain": {
+      "count": 20,
+      "fingerprint_sha256": "156d3ea0ab07c6a16b04fa3a58865d707abf87c42cf97661d3b88875f394f511",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' CUDA argv must start with timeout <budget>')])]))",
+          "lineno_report_only": 289
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' missing bin/watch-wrap')])]))",
+          "lineno_report_only": 298
+        },
+        {
+          "ordinal": 3,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' watch-wrap must appear exactly once')])]))",
+          "lineno_report_only": 300
+        },
+        {
+          "ordinal": 4,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' watch-wrap must immediately follow timeout <budget> (index 2), got '), FormattedValue(value=Name(id='ww_i', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 303
+        },
+        {
+          "ordinal": 5,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' CUDA chain requires exactly two `--` delimiters, got '), FormattedValue(value=Call(func=Name(id='len', ctx=Load()), args=[Name(id='dash_idxs', ctx=Load())]), conversion=-1)])]))",
+          "lineno_report_only": 308
+        },
+        {
+          "ordinal": 6,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' delimiter order invalid vs watch-wrap index')])]))",
+          "lineno_report_only": 311
+        },
+        {
+          "ordinal": 7,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' enforcer child segment too short')])]))",
+          "lineno_report_only": 315
+        },
+        {
+          "ordinal": 8,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' enforcer child must begin with python3 immediately after first `--`')])]))",
+          "lineno_report_only": 317
+        },
+        {
+          "ordinal": 9,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' enforcer child must be exactly scripts/'), FormattedValue(value=Name(id='ENFORCER_SCRIPT_SUBSTR', ctx=Load()), conversion=-1), Constant(value=' immediately after python3, got '), FormattedValue(value=Name(id='enf_tok', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 320
+        },
+        {
+          "ordinal": 10,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' pytest child segment too short')])]))",
+          "lineno_report_only": 327
+        },
+        {
+          "ordinal": 11,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' pytest child must begin with python3 immediately after second `--`')])]))",
+          "lineno_report_only": 329
+        },
+        {
+          "ordinal": 12,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' pytest child must be `python3 -m pytest` immediately after second `--`')])]))",
+          "lineno_report_only": 331
+        },
+        {
+          "ordinal": 13,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' missing pytest node after `python3 -m pytest`')])]))",
+          "lineno_report_only": 334
+        },
+        {
+          "ordinal": 14,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' not in frozen CUDA pytest node map')])]))",
+          "lineno_report_only": 337
+        },
+        {
+          "ordinal": 15,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' pytest node '), FormattedValue(value=Name(id='node', ctx=Load()), conversion=114), Constant(value=' != frozen '), FormattedValue(value=Name(id='expected', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 339
+        },
+        {
+          "ordinal": 16,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' --expected-node-id must equal gating_row')])]))",
+          "lineno_report_only": 359
+        },
+        {
+          "ordinal": 17,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' requires exactly four --budget flags, got '), FormattedValue(value=Call(func=Name(id='len', ctx=Load()), args=[Name(id='budget_idxs', ctx=Load())]), conversion=-1)])]))",
+          "lineno_report_only": 363
+        },
+        {
+          "ordinal": 18,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' --budget must sit entirely inside enforcer segment')])]))",
+          "lineno_report_only": 367
+        },
+        {
+          "ordinal": 19,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' duplicate phase budget name '), FormattedValue(value=Name(id='bname', ctx=Load()), conversion=114)])]))",
+          "lineno_report_only": 370
+        },
+        {
+          "ordinal": 20,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[FormattedValue(value=Name(id='gr', ctx=Load()), conversion=-1), Constant(value=' phase budget names '), FormattedValue(value=Call(func=Name(id='sorted', ctx=Load()), args=[Name(id='budget_map', ctx=Load())]), conversion=-1), Constant(value=' != '), FormattedValue(value=Call(func=Name(id='list', ctx=Load()), args=[Name(id='REQUIRED_PHASE_BUDGET_NAMES', ctx=Load())]), conversion=-1)])]))",
+          "lineno_report_only": 373
+        }
+      ]
+    },
+    "load_runner_parser": {
+      "count": 5,
+      "fingerprint_sha256": "0b0f785925da1a2180f365fa630361850ef84e3d00b34b191fd61d0ddaf6bc99",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='FileNotFoundError', ctx=Load()), args=[Call(func=Name(id='str', ctx=Load()), args=[Name(id='path', ctx=Load())])]))",
+          "lineno_report_only": 128
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='RuntimeError', ctx=Load()), args=[Constant(value='live runner missing main()')]))",
+          "lineno_report_only": 142
+        },
+        {
+          "ordinal": 3,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='RuntimeError', ctx=Load()), args=[Constant(value='could not extract live ArgumentParser build from main')]))",
+          "lineno_report_only": 162
+        },
+        {
+          "ordinal": 4,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='RuntimeError', ctx=Load()), args=[Constant(value=\"live main did not bind ArgumentParser to name 'ap'\")]))",
+          "lineno_report_only": 170
+        },
+        {
+          "ordinal": 5,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='RuntimeError', ctx=Load()), args=[JoinedStr(values=[Constant(value='live mode choices mismatch: '), FormattedValue(value=Call(func=Name(id='getattr', ctx=Load()), args=[Name(id='mode', ctx=Load()), Constant(value='choices'), Constant(value=None)]), conversion=-1)])]))",
+          "lineno_report_only": 179
+        }
+      ]
+    },
+    "main": {
+      "count": 0,
+      "fingerprint_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "items": []
+    },
+    "structural_preflight_row": {
+      "count": 4,
+      "fingerprint_sha256": "b11e3dc3436ac7020f0f1039c7cc9ae0f93895088501eb7cd5f63d48b34f8948",
+      "items": [
+        {
+          "ordinal": 1,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='row argv must be non-empty list[str]')]))",
+          "lineno_report_only": 431
+        },
+        {
+          "ordinal": 2,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[JoinedStr(values=[Constant(value='placeholder/ellipsis in argv: '), FormattedValue(value=Name(id='argv', ctx=Load()), conversion=-1)])]))",
+          "lineno_report_only": 438
+        },
+        {
+          "ordinal": 3,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='runner path not found')]))",
+          "lineno_report_only": 444
+        },
+        {
+          "ordinal": 4,
+          "kind": "raise",
+          "canonical_ast": "Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='watch-wrap empty error/progress')]))",
+          "lineno_report_only": 457
+        }
+      ]
+    }
+  }
+}

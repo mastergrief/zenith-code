@@ -338,7 +338,7 @@
     },
     {
       "path": "scripts/lands_ab_packet_dry_exec.py",
-      "sha256": "82cb299f047e4d6894e6644e4db8a29669111a5e4cb81d6b586cadff9d8f523b"
+      "sha256": "6d2978d3a7cf526ee8e2815b5688ef586e9608a640a3eda7398577a0b77977c9"
     },
     {
       "path": "scripts/lands_ab_plan_v4_characterization.py",
@@ -354,6 +354,6 @@
     }
   ],
   "n_entries": 88,
-  "repo_root_note": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "repo_root_note": "/tmp/authoring_slice_ws",
   "schema": "LANDS_AB_science_source_manifest/v1"
 }

@@ -17,6 +17,7 @@ would silently point the run at the real tool. The real tool is never opened for
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -59,51 +60,135 @@ MANIFEST_ARGV = [
 MATERIALIZE_MODE = {"mode": None}
 
 
-def _materialize(src: Path, dst: Path) -> None:
+def _materialize(src: Path, dst: Path, *, force_copy: bool = False) -> None:
     """Hardlink when possible, copy otherwise. NEVER symlink.
 
-    The repo lives on drvfs and tempfile lives on ext4, so os.link raises EXDEV
-    across them. A copy is an equally real file and preserves the only invariant
-    that matters here: the fixture builder must resolve INSIDE the workspace, which
-    a symlink would defeat by resolving back to the real repo.
+    force_copy=True always copies (C3): required for any path a hostile will mutate so
+    a same-fs hardlink cannot share the live tracked inode.
+
+    Non-force is idempotent (materializer defect cycle): if dst already exists, accept
+    only when it already represents src — same (st_dev, st_ino) hardlink, OR a
+    byte-equal distinct copy. Never catch EEXIST and blind-copy over an existing inode
+    (SameFileError on same-fs re-materialize). Other errors still raise.
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.link(src, dst)
-        MATERIALIZE_MODE["mode"] = MATERIALIZE_MODE["mode"] or "hardlink"
-    except OSError:
+    if force_copy:
+        if dst.exists() or dst.is_symlink():
+            dst.unlink()
         shutil.copy2(src, dst)
-        MATERIALIZE_MODE["mode"] = "copy"
+        MATERIALIZE_MODE["mode"] = "force_copy"
+    else:
+        if dst.exists() or dst.is_symlink():
+            if dst.is_symlink():
+                raise RuntimeError(f"workspace entry is a symlink: {dst}")
+            src_st, dst_st = os.stat(src), os.stat(dst)
+            same_inode = (src_st.st_dev, src_st.st_ino) == (dst_st.st_dev, dst_st.st_ino)
+            if same_inode:
+                MATERIALIZE_MODE["mode"] = MATERIALIZE_MODE["mode"] or "hardlink"
+                return
+            if src_st.st_size == dst_st.st_size and src.read_bytes() == dst.read_bytes():
+                MATERIALIZE_MODE["mode"] = MATERIALIZE_MODE["mode"] or "copy"
+                return
+            raise RuntimeError(
+                f"materialize dst exists but does not represent src: {dst} vs {src}"
+            )
+        try:
+            os.link(src, dst)
+            MATERIALIZE_MODE["mode"] = MATERIALIZE_MODE["mode"] or "hardlink"
+        except OSError as exc:
+            # EXDEV / unsupported link → copy. Never treat "dst exists" as copy-over.
+            if getattr(exc, "errno", None) in (errno.EEXIST, errno.EISDIR):
+                raise
+            shutil.copy2(src, dst)
+            MATERIALIZE_MODE["mode"] = "copy"
     assert not dst.is_symlink(), f"workspace entry is a symlink: {dst}"
 
 
+def assert_non_aliased(ws_path: Path, live_path: Path) -> None:
+    """Fail-closed: workspace file must not share the live tracked inode (C3).
+
+    Accepts either st_nlink==1 on the workspace file OR (st_dev, st_ino) distinct
+    from the live file. Assertion failure = case error.
+    """
+    if not ws_path.is_file():
+        raise AssertionError(f"workspace path missing for non-alias check: {ws_path}")
+    if not live_path.is_file():
+        raise AssertionError(f"live path missing for non-alias check: {live_path}")
+    ws_st = os.stat(ws_path)
+    live_st = os.stat(live_path)
+    same_inode = (ws_st.st_dev, ws_st.st_ino) == (live_st.st_dev, live_st.st_ino)
+    if same_inode:
+        raise AssertionError(
+            f"workspace file aliases live inode: {ws_path} == {live_path} "
+            f"dev={ws_st.st_dev} ino={ws_st.st_ino} nlink={ws_st.st_nlink}"
+        )
+    # Prefer nlink==1 when same filesystem family; not required if already distinct inodes.
+    # Distinct (dev,ino) alone is sufficient proof of non-aliasing.
+
+
+def ensure_mutable_workspace_file(repo: Path, ws: Path, rel: str) -> Path:
+    """Force-copy `rel` into ws and assert non-aliasing before any hostile mutation (C3)."""
+    src, dst = repo / rel, ws / rel
+    if not src.is_file():
+        raise FileNotFoundError(f"live source missing for mutable materialize: {rel}")
+    _materialize(src, dst, force_copy=True)
+    assert_non_aliased(dst, src)
+    return dst
+
+
 def build_candidate_workspace(repo: Path, ws: Path, tool_suffix: str,
-                              lineage: bool = True) -> Path:
+                              lineage: bool = True,
+                              mutable_paths: list | None = None) -> Path:
     """Hardlink farm + a REAL copy of the tool carrying tool_suffix.
 
     Only the bounded set the run touches is materialized: the manifest's entries, the
     fixture builder, the corpus fixtures, and the manifest itself. The real tool is
     never opened for writing -- the candidate is always a fresh file.
+
+    mutable_paths: repo-relative paths that a hostile will mutate — force-copied and
+    non-alias asserted (C3). Read-only paths may still hardlink.
     """
+    mutable = set(mutable_paths or ())
     corpus = S.load_corpus(repo)
     man_rel = corpus["bound_to"]["base_manifest"]
     manifest = json.loads((repo / man_rel).read_text())
     wanted = [e["path"] for e in manifest["entries"]]
     wanted += [S.HARNESS_REL, man_rel,
-               f"{S.FIXTURE_DIR}/ROWS.json", f"{S.FIXTURE_DIR}/{S.BASELINE_NAME}"]
+               f"{S.FIXTURE_DIR}/ROWS.json", f"{S.FIXTURE_DIR}/{S.BASELINE_NAME}",
+               f"{S.FIXTURE_DIR}/GENERATION.json",
+               f"{S.FIXTURE_DIR}/MIGRATION_v0_to_v1.json",
+               f"{S.FIXTURE_DIR}/A4_EMISSION_ORDINAL_BASELINE.json",
+               # Parent v0 fixtures required by validate_generation_receipt disk pins
+               f"{S.GENERATIONS['v0']['fixture_dir']}/ROWS.json",
+               f"{S.GENERATIONS['v0']['fixture_dir']}/{S.GENERATIONS['v0']['baseline_name']}",
+               "calm/llm_computer/lands_ab_diag_corpus_sources.py",
+               "calm/llm_computer/lands_ab_diag_corpus_reducers.py",
+               "scripts/lands_ab_dry_exec_diag_corpus.py"]
     # The fixture builder's file closure is IMPLICIT (module-level constants, not
     # manifest entries): it reads the v6 base packet it derives every fixture from,
     # and shas the manifest generator. Omitting them fails mid-run, not at preflight.
     wanted += ["artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority"
                "_LANDS_AB_EVAL_launch_packet_v6.json",
                "scripts/lands_ab_science_source_manifest.py"]
+    # Deterministic dedup (materializer defect cycle): preserve first-seen order;
+    # re-materializing the same rel must not hit FileExistsError on same-fs hardlinks.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for rel in wanted:
+        if rel in seen:
+            continue
+        seen.add(rel)
+        deduped.append(rel)
+    wanted = deduped
     for rel in wanted:
         if rel == S.TOOL_REL:
             continue  # candidate is written fresh below; never hardlink the real tool
         src, dst = repo / rel, ws / rel
         if not src.is_file():
             continue
-        _materialize(src, dst)
+        _materialize(src, dst, force_copy=(rel in mutable))
+        if rel in mutable:
+            assert_non_aliased(dst, src)
     # packages the closure walker needs to import
     for pkg in ("calm/__init__.py", "calm/hrm_text_158/__init__.py",
                 "calm/hrm_text_158/native_full_stack/__init__.py",
@@ -239,9 +324,62 @@ def run_transition_proofs(repo: Path, full: bool = True) -> dict:
             "verdict": "PASS" if passed else "FAIL"}
 
 
+def run_materialize_same_fs_idempotence() -> dict:
+    """Same-fs duplicate non-force materialize: no exception, bytes stable, not symlink.
+
+    Proves the materializer defect-cycle cure: second _materialize of an already-linked
+    or already-copied dst does not raise and does not rewrite bytes.
+    """
+    td = Path(tempfile.mkdtemp(prefix="mat_samefs_"))
+    try:
+        src = td / "src.txt"
+        dst = td / "dst.txt"
+        payload = b"materialize-idempotence-payload-v1\n"
+        src.write_bytes(payload)
+        MATERIALIZE_MODE["mode"] = None
+        _materialize(src, dst, force_copy=False)
+        mode1 = MATERIALIZE_MODE["mode"]
+        before = dst.read_bytes()
+        st1 = os.stat(dst)
+        # second call — must be a no-op success
+        _materialize(src, dst, force_copy=False)
+        mode2 = MATERIALIZE_MODE["mode"]
+        after = dst.read_bytes()
+        st2 = os.stat(dst)
+        ok = (
+            before == after == payload
+            and not dst.is_symlink()
+            and (st1.st_dev, st1.st_ino) == (st2.st_dev, st2.st_ino)
+            and mode1 in ("hardlink", "copy")
+        )
+        return {
+            "case": "materialize_same_fs_idempotence",
+            "ok": ok,
+            "mode_first": mode1,
+            "mode_second": mode2,
+            "bytes_unchanged": before == after,
+            "not_symlink": not dst.is_symlink(),
+            "inode_stable": (st1.st_dev, st1.st_ino) == (st2.st_dev, st2.st_ino),
+            "same_inode_as_src": (st1.st_dev, st1.st_ino) == (
+                os.stat(src).st_dev, os.stat(src).st_ino),
+        }
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
+def test_materialize_same_fs_idempotence():
+    """pytest entry: same-fs duplicate non-force materialize regression."""
+    report = run_materialize_same_fs_idempotence()
+    assert report["ok"], report
+
 
 if __name__ == "__main__":
     repo = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else REPO_DEFAULT
+    mode = sys.argv[2] if len(sys.argv) > 2 else "transition"
+    if mode == "materialize-idempotence":
+        out = run_materialize_same_fs_idempotence()
+        print(json.dumps(out, indent=1))
+        raise SystemExit(0 if out.get("ok") else 1)
     out = run_transition_proofs(repo)
     print(json.dumps(out, indent=1))
     raise SystemExit(0 if out["verdict"] == "PASS" else 1)

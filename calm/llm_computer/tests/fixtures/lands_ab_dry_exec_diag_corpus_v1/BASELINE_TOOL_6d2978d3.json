@@ -1,0 +1,611 @@
+{
+ "generated_from_rows": {
+  "artifact": "A0_DIAGNOSTIC_CLASS_CORPUS_v4",
+  "generator": "gen_rows.py (non-tracked, plan-dev scratch)",
+  "method": "direct field projection from the frozen artifact's rows[]; NO reconstruction from predecessor increments; EXCEPT the enumerated normalization(s) recorded in top-level `normalizations`",
+  "sha256": "b011fb91dc61593ef27081c50fdbb75962ff7c237eb818d23daa97df5bdaaa8c"
+ },
+ "harness_sha256": "5e4396dfa4409cfced4d523da35debddc491fb02fbfa6ba40bfe4d79eb288ab5",
+ "head": "6d2978d3",
+ "map": {
+  "G02_missing_watchwrap": {
+   "msg_key": "G_CUDA_B1_APPLY missing bin/watch-wrap",
+   "rc": 2
+  },
+  "G03_watchwrap_twice": {
+   "msg_key": "G_CUDA_B1_APPLY watch-wrap must appear exactly once",
+   "rc": 2
+  },
+  "G04_watchwrap_not_index2": {
+   "msg_key": "G_CUDA_B1_APPLY watch-wrap must immediately follow timeout <budget> (index 2), got 3",
+   "rc": 2
+  },
+  "G05_one_delimiter": {
+   "msg_key": "G_CUDA_B1_APPLY CUDA chain requires exactly two `--` delimiters, got 1",
+   "rc": 2
+  },
+  "G07_enforcer_segment_short": {
+   "msg_key": "G_CUDA_B1_APPLY enforcer child segment too short",
+   "rc": 2
+  },
+  "G08_enforcer_not_python3": {
+   "msg_key": "G_CUDA_B1_APPLY enforcer child must begin with python3 immediately after first `--`",
+   "rc": 2
+  },
+  "G09_enforcer_wrong_script": {
+   "msg_key": "G_CUDA_B1_APPLY enforcer child must be exactly scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py immediately after python3, got 'scripts/other_enforcer.py'",
+   "rc": 2
+  },
+  "G10_pytest_segment_short": {
+   "msg_key": "G_CUDA_B1_APPLY pytest child segment too short",
+   "rc": 2
+  },
+  "G11_pytest_not_python3": {
+   "msg_key": "G_CUDA_B1_APPLY pytest child must begin with python3 immediately after second `--`",
+   "rc": 2
+  },
+  "G12_pytest_not_m_pytest": {
+   "msg_key": "G_CUDA_B1_APPLY pytest child must be `python3 -m pytest` immediately after second `--`",
+   "rc": 2
+  },
+  "G13_missing_pytest_node": {
+   "msg_key": "G_CUDA_B1_APPLY missing pytest node after `python3 -m pytest`",
+   "rc": 2
+  },
+  "G15_pytest_node_mismatch": {
+   "msg_key": "G_CUDA_B1_APPLY pytest node 'calm/x.py::test_other' != frozen 'calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_b1_apply_twin_s3_s4_s6'",
+   "rc": 2
+  },
+  "G16_expected_node_id_wrong": {
+   "msg_key": "G_CUDA_B1_APPLY --expected-node-id must equal gating_row",
+   "rc": 2
+  },
+  "G17_three_budgets": {
+   "msg_key": "G_CUDA_B1_APPLY requires exactly four --budget flags, got 3",
+   "rc": 2
+  },
+  "G18_budget_outside_enforcer": {
+   "msg_key": "G_CUDA_B1_APPLY --budget must sit entirely inside enforcer segment",
+   "rc": 2
+  },
+  "G19_duplicate_budget_name": {
+   "msg_key": "G_CUDA_B1_APPLY duplicate phase budget name 'forward_backward'",
+   "rc": 2
+  },
+  "G20_budget_names_mismatch": {
+   "msg_key": "G_CUDA_B1_APPLY phase budget names ['emission', 'flushx', 'forward_backward', 'update'] != ['forward_backward', 'update', 'emission', 'flush']",
+   "rc": 2
+  },
+  "Gbud01_budget_no_equals": {
+   "msg_key": "budget token must be name=value, got 'noequals'",
+   "rc": 2
+  },
+  "Gbud02_budget_empty_name": {
+   "msg_key": "empty budget name in '=60.0'",
+   "rc": 2
+  },
+  "Gfin01_outer_timeout_not_numeric": {
+   "msg_key": "G_CUDA_B1_APPLY outer timeout not numeric: 'abc'",
+   "rc": 2
+  },
+  "Gfin02_outer_timeout_zero": {
+   "msg_key": "G_CUDA_B1_APPLY outer timeout must be finite and >0: '0'",
+   "rc": 2
+  },
+  "Gfo01_heartbeat_twice": {
+   "msg_key": "G_CUDA_B1_APPLY --heartbeat must appear exactly once (got 2)",
+   "rc": 2
+  },
+  "Gfo02_tail_append": {
+   "msg_key": "G_CUDA_B1_APPLY --heartbeat must sit inside watch-wrap segment (index 35 not in (2,11))",
+   "rc": 2
+  },
+  "Gfo03_heartbeat_value_outside": {
+   "msg_key": "G_CUDA_B1_APPLY --heartbeat value must sit inside watch-wrap segment",
+   "rc": 2
+  },
+  "Gfo04_heartbeat_value_is_flag": {
+   "msg_key": "G_CUDA_B1_APPLY --heartbeat requires non-empty non-flag value inside watch-wrap",
+   "rc": 2
+  },
+  "Gww01_missing_error": {
+   "msg_key": "structural preflight G_CPU_STATIC_AB: watch-wrap missing --error",
+   "rc": 2
+  },
+  "Gww02_error_value_is_flag": {
+   "msg_key": "structural preflight G_CPU_STATIC_AB: watch-wrap --error requires non-empty value",
+   "rc": 2
+  },
+  "H2a_quarantine_cleared": {
+   "msg_key": "I1/Q13 packet assertion field 'science_claim' must be a JSON boolean (true/false), got str 'notabool'. Assertion fields are read for truthiness by consumers, so a non-boolean would let the validator and a consumer disagree about whether a claim was made.",
+   "rc": 2
+  },
+  "M_main01": {
+   "msg_key": "manifest outside repo (path outside repo: <TMP>/outside_man.json)",
+   "rc": 2
+  },
+  "M_main02": {
+   "msg_key": "packet load: Expecting property name enclosed in double quotes: line 2 column 1 (char 2)",
+   "rc": 2
+  },
+  "M_main04": {
+   "msg_key": "generator_script_sha256 must be lowercase 64-hex",
+   "rc": 2
+  },
+  "M_main05": {
+   "msg_key": "packet.science_source_manifest_path outside repo (path outside repo: /etc/passwd)",
+   "rc": 2
+  },
+  "M_main32": {
+   "msg_key": "I1/Q13 packet assertion field 'science_claim' must be a JSON boolean (true/false), got str 'yes'. Assertion fields are read for truthiness by consumers, so a non-boolean would let the validator and a consumer disagree about whether a claim was made.",
+   "rc": 2
+  },
+  "M_main74": {
+   "msg_key": "G_CUDA_B1_APPLY outer timeout not numeric: 'abc'",
+   "rc": 2
+  },
+  "M_main81": {
+   "msg_key": "G_CUDA_B1_APPLY declared budget emission not numeric",
+   "rc": 2
+  },
+  "M_main_03": {
+   "msg_key": "packet missing binding field dry_exec_tool_sha256",
+   "rc": 2
+  },
+  "M_main_06": {
+   "msg_key": "CLI manifest path 'artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json' != packet.science_source_manifest_path 'artifacts/acc_entropy/other.json'",
+   "rc": 2
+  },
+  "M_main_07": {
+   "msg_key": "--expected-source-commit != packet.source_commit_sha",
+   "rc": 2
+  },
+  "M_main_08": {
+   "msg_key": "missing manifest file <REPO>/artifacts/acc_entropy/_a0_absent_manifest_probe.json",
+   "rc": 2
+  },
+  "M_main_09": {
+   "msg_key": "manifest file sha != packet.science_source_manifest_sha256",
+   "rc": 2
+  },
+  "M_main_10": {
+   "msg_key": "generator_script_path must be scripts/lands_ab_science_source_manifest.py, got 'scripts/other.py'",
+   "rc": 2
+  },
+  "M_main_11": {
+   "msg_key": "dry_exec_tool_path must be scripts/lands_ab_packet_dry_exec.py, got 'scripts/other.py'",
+   "rc": 2
+  },
+  "M_main_13": {
+   "msg_key": "sha mismatch for scripts/lands_ab_science_source_manifest.py",
+   "rc": 2
+  },
+  "M_main_14": {
+   "msg_key": "manifest JSON: Expecting property name enclosed in double quotes: line 2 column 1 (char 2)",
+   "rc": 2
+  },
+  "M_main_15": {
+   "msg_key": "manifest schema must be LANDS_AB_science_source_manifest/v1, got 'BOGUS/v1'",
+   "rc": 2
+  },
+  "M_main_16": {
+   "msg_key": "manifest entries missing",
+   "rc": 2
+  },
+  "M_main_17": {
+   "msg_key": "manifest n_entries != len(entries)",
+   "rc": 2
+  },
+  "M_main_18": {
+   "msg_key": "bad manifest entry",
+   "rc": 2
+  },
+  "M_main_19": {
+   "msg_key": "bad/escape path '../escape.py'",
+   "rc": 2
+  },
+  "M_main_20": {
+   "msg_key": "manifest[bin/watch-wrap].sha256 must be lowercase 64-hex",
+   "rc": 2
+  },
+  "M_main_21": {
+   "msg_key": "missing source path scripts/a0_absent_source.py",
+   "rc": 2
+  },
+  "M_main_22": {
+   "msg_key": "disk sha mismatch bin/watch-wrap",
+   "rc": 2
+  },
+  "M_main_23": {
+   "msg_key": "manifest paths not sorted unique",
+   "rc": 2
+  },
+  "M_main_24": {
+   "msg_key": "missing mandatory source: scripts/lands_ab_eval_run.py",
+   "rc": 2
+  },
+  "M_main_25": {
+   "msg_key": "bad packet schema 'BOGUS/v1'",
+   "rc": 2
+  },
+  "M_main_26": {
+   "msg_key": "gating_rows must be exact 7-tuple set",
+   "rc": 2
+  },
+  "M_main_27": {
+   "msg_key": "row_commands must be list of 7",
+   "rc": 2
+  },
+  "M_main_28": {
+   "msg_key": "claim_ceiling required",
+   "rc": 2
+  },
+  "M_main_29": {
+   "msg_key": "claim_ceiling must be object",
+   "rc": 2
+  },
+  "M_main_30": {
+   "msg_key": "claim_ceiling missing field LANDS_AB",
+   "rc": 2
+  },
+  "M_main_31": {
+   "msg_key": "claim_ceiling.LANDS_AB must be false",
+   "rc": 2
+  },
+  "M_main_33": {
+   "msg_key": "science_claim true forbidden",
+   "rc": 2
+  },
+  "M_main_34": {
+   "msg_key": "PRIORITY_ORDER must echo exact live order",
+   "rc": 2
+  },
+  "M_main_35": {
+   "msg_key": "branch_ids must be exact live 7-set",
+   "rc": 2
+  },
+  "M_main_36": {
+   "msg_key": "executor required object",
+   "rc": 2
+  },
+  "M_main_37": {
+   "msg_key": "executor.role must be exactly 'claude_as_test_operator', got 'wrong-role'",
+   "rc": 2
+  },
+  "M_main_38": {
+   "msg_key": "executor.forbidden_for_plan_dev required non-empty",
+   "rc": 2
+  },
+  "M_main_39": {
+   "msg_key": "executor.forbidden_for_plan_dev must prohibit formal run",
+   "rc": 2
+  },
+  "M_main_40": {
+   "msg_key": "one_terminal_receipt must be true",
+   "rc": 2
+  },
+  "M_main_41": {
+   "msg_key": "runtime_scratch required object",
+   "rc": 2
+  },
+  "M_main_42": {
+   "msg_key": "runtime_scratch.harvest_exactly_one_raw_obs must be object",
+   "rc": 2
+  },
+  "M_main_43": {
+   "msg_key": "harvest applies_to_each_of_7_gating_rows must be true",
+   "rc": 2
+  },
+  "M_main_44": {
+   "msg_key": "harvest.helper must name harvest_exactly_one_raw_obs",
+   "rc": 2
+  },
+  "M_main_45": {
+   "msg_key": "harvest.zero_or_multiple must be STOP semantics",
+   "rc": 2
+  },
+  "M_main_46": {
+   "msg_key": "execution_order required non-empty list",
+   "rc": 2
+  },
+  "M_main_47": {
+   "msg_key": "execution_order must contain gating row G_CUDA_B1_APPLY exactly once",
+   "rc": 2
+  },
+  "M_main_48": {
+   "msg_key": "gating rows in execution_order not in required order",
+   "rc": 2
+  },
+  "M_main_49": {
+   "msg_key": "execution_order missing lifecycle steps ['preflight']",
+   "rc": 2
+  },
+  "M_main_50": {
+   "msg_key": "runtime_scratch.env_binding must be object",
+   "rc": 2
+  },
+  "M_main_51": {
+   "msg_key": "runtime_scratch.env_binding missing LANDS_AB_RUNTIME_SCRATCH/RUN_ROOT",
+   "rc": 2
+  },
+  "M_main_52": {
+   "msg_key": "row_command not object",
+   "rc": 2
+  },
+  "M_main_53": {
+   "msg_key": "bad/dup gating_row 'G_BOGUS'",
+   "rc": 2
+  },
+  "M_main_54": {
+   "msg_key": "G_CUDA_B1_APPLY invocation must be object",
+   "rc": 2
+  },
+  "M_main_55": {
+   "msg_key": "missing argv for G_CUDA_B1_APPLY",
+   "rc": 2
+  },
+  "M_main_56": {
+   "msg_key": "duplicate argv for G_CUDA_B2_APPLY",
+   "rc": 2
+  },
+  "M_main_57": {
+   "msg_key": "G_CUDA_B1_APPLY env_required must be object",
+   "rc": 2
+  },
+  "M_main_58": {
+   "msg_key": "G_CUDA_B1_APPLY missing env PYTHONPATH",
+   "rc": 2
+  },
+  "M_main_59": {
+   "msg_key": "G_CUDA_B1_APPLY LANDS_AB_RUN_ROOT missing frozen nonce template token (<nonce> or similar): '<TMP>/norun'",
+   "rc": 2
+  },
+  "M_main_60": {
+   "msg_key": "G_CUDA_B1_APPLY LANDS_AB_RUN_ROOT must be descendant of LANDS_AB_RUNTIME_SCRATCH",
+   "rc": 2
+  },
+  "M_main_61": {
+   "msg_key": "G_CUDA_B1_APPLY LANDS_AB_RUN_ROOT must not be under repo root",
+   "rc": 2
+  },
+  "M_main_63": {
+   "msg_key": "G_CPU_STATIC_AB env scratch/run_root must equal packet runtime_scratch.env_binding",
+   "rc": 2
+  },
+  "M_main_65": {
+   "msg_key": "forbidden write path token in G_CUDA_B1_APPLY: <TMP>/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_B1_APPLY_x.pt",
+   "rc": 2
+  },
+  "M_main_66": {
+   "msg_key": "G_CUDA_B1_APPLY missing required raw_obs_path_template",
+   "rc": 2
+  },
+  "M_main_67": {
+   "msg_key": "G_CUDA_B1_APPLY raw alias out_path_template != raw_obs_path_template",
+   "rc": 2
+  },
+  "M_main_68": {
+   "msg_key": "duplicate raw path <TMP>/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_B1_APPLY_<run_local_nonce>.json",
+   "rc": 2
+  },
+  "M_main_69": {
+   "msg_key": "G_CUDA_B1_APPLY raw_obs path must be descendant of LANDS_AB_RUN_ROOT",
+   "rc": 2
+  },
+  "M_main_71": {
+   "msg_key": "G_CUDA_B1_APPLY raw basename must start with lands_ab_raw_obs_G_CUDA_B1_APPLY_ (harvest pattern)",
+   "rc": 2
+  },
+  "M_main_73": {
+   "msg_key": "G_CUDA_B1_APPLY argv must start with timeout <budget>",
+   "rc": 2
+  },
+  "M_main_75": {
+   "msg_key": "G_CUDA_B1_APPLY missing duration_budget_seconds/hard_timeout_seconds for G6 bind",
+   "rc": 2
+  },
+  "M_main_76": {
+   "msg_key": "G_CUDA_B1_APPLY outer timeout 999.0 != row hard bound 260.0 (rule: argv[1] == inv.hard_timeout_seconds or row.duration_budget_seconds)",
+   "rc": 2
+  },
+  "M_main_78": {
+   "msg_key": "G_CPU_STATIC_AB --out must equal raw_obs_path_template",
+   "rc": 2
+  },
+  "M_main_80": {
+   "msg_key": "G_CUDA_B1_APPLY declared phase_budgets_seconds keys mismatch required set",
+   "rc": 2
+  },
+  "M_main_82": {
+   "msg_key": "G_CUDA_B1_APPLY argv budget forward_backward=60.0 != declared 61.0",
+   "rc": 2
+  },
+  "M_main_83": {
+   "msg_key": "G_CUDA_B1_APPLY phase path must be descendant of LANDS_AB_RUN_ROOT",
+   "rc": 2
+  },
+  "M_main_85": {
+   "msg_key": "G_CUDA_B1_APPLY duplicate runtime basename phase_events_G_CUDA_B1_APPLY.jsonl",
+   "rc": 2
+  },
+  "M_main_86": {
+   "msg_key": "G_CUDA_B1_APPLY phase alias terminal_collection_phase_events_jsonl_path != --phase-events-jsonl",
+   "rc": 2
+  },
+  "M_main_87": {
+   "msg_key": "G_CUDA_B1_APPLY missing enforcer metadata path",
+   "rc": 2
+  },
+  "M_main_88": {
+   "msg_key": "G_CUDA_B1_APPLY enforcer alias terminal_collection_enforcer_receipt_path != --enforcer-receipt argv",
+   "rc": 2
+  },
+  "M_main_89": {
+   "msg_key": "G_CUDA_B1_APPLY missing phase env",
+   "rc": 2
+  },
+  "M_main_90": {
+   "msg_key": "G_CUDA_B1_APPLY phase env != --phase-events-jsonl argv",
+   "rc": 2
+  },
+  "M_main_96": {
+   "msg_key": "formal argv path not covered by manifest: scripts/a0_uncovered_probe.py",
+   "rc": 2
+  },
+  "R_H01_argv_empty_string_element": {
+   "msg_key": "structural preflight G_CPU_STATIC_AB: row argv must be non-empty list[str]",
+   "rc": 2
+  },
+  "R_H02_placeholder_in_argv": {
+   "msg_key": "structural preflight G_CPU_STATIC_AB: placeholder/ellipsis in argv: ['timeout', '180', 'python3', 'scripts/lands_ab_eval_run.py', '--mode', 'cpu-static-ab', '--out', '<TMP>/1785244883605-c7c0b0a3/a258f3142e5e9af1/test-operator/<nonce>/lands_ab_raw_obs_G_CPU_STATIC_AB_<run_local_nonce>.json', '...']",
+   "rc": 2
+  },
+  "R_H_hex40_source_commit": {
+   "msg_key": "source_commit_sha must be 40-hex commit sha",
+   "rc": 2
+  },
+  "R_H_hex64_gen_sha": {
+   "msg_key": "generator_script_sha256 must be lowercase 64-hex",
+   "rc": 2
+  },
+  "R_H_resolve_under_repo": {
+   "msg_key": "packet.science_source_manifest_path outside repo (path outside repo: /etc/passwd)",
+   "rc": 2
+  },
+  "R_L3_cli_bad_expected_plan_sha": {
+   "msg_key": "L3 expected_operative_plan_sha256 must be lowercase 64-hex",
+   "rc": 2
+  },
+  "R_V01_packet_revision_empty": {
+   "msg_key": "I3 packet_revision required",
+   "rc": 2
+  },
+  "R_V02_opr_missing": {
+   "msg_key": "L1 operative_packet_revision required (must equal packet_revision)",
+   "rc": 2
+  },
+  "R_V03_opr_ne_rev": {
+   "msg_key": "L1 operative_packet_revision='v7' must equal packet_revision='v8'",
+   "rc": 2
+  },
+  "R_V04_path_rev_mismatch": {
+   "msg_key": "I3 path does not match packet_revision: path='artifacts/acc_entropy/nope.json' rev='v8'",
+   "rc": 2
+  },
+  "R_V05_pins_not_object": {
+   "msg_key": "I2 pins object required for pin-vs-manifest binding",
+   "rc": 2
+  },
+  "R_V06_lineage_pin_not_dict": {
+   "msg_key": "J1 packet lineage pin 'packet_v1_dead_lineage' must be object with do_not_activate=true",
+   "rc": 2
+  },
+  "R_V07_lineage_pin_dna_false": {
+   "msg_key": "J1 packet lineage pin 'packet_v1_dead_lineage' (v1) missing do_not_activate=true",
+   "rc": 2
+  },
+  "R_V08_lineage_pin_no_dead_status": {
+   "msg_key": "J1 packet lineage pin 'packet_v1_dead_lineage' missing independent DEAD/historical status (do_not_activate alone is insufficient)",
+   "rc": 2
+  },
+  "R_V09_lineage_pin_path_not_str": {
+   "msg_key": "J1/O1 packet lineage pin 'packet_v1_dead_lineage' requires path+sha256 identity fields",
+   "rc": 2
+  },
+  "R_V10_lineage_pin_sha_not_hex": {
+   "msg_key": "J1/O1 pins.packet_v1_dead_lineage.sha256 must be lowercase 64-hex",
+   "rc": 2
+  },
+  "R_V11_selfcheck_is_list": {
+   "msg_key": "I1/Q14 self_check must be a JSON object, got list. A non-mapping self_check would skip every pin and assertion check in this section rather than failing, so it is malformed by contract.",
+   "rc": 2
+  },
+  "R_V12_selfcheck_nested_dict": {
+   "msg_key": "I1/Q13 self_check value for 'nested_probe' must be a scalar, got dict. Nested self_check containers are not part of the schema and would hide pin-shaped keys from this check.",
+   "rc": 2
+  },
+  "R_V13_pin_marker_only": {
+   "msg_key": "I1/Q14 self_check pin key 'pinned_to' names no referent: the key is only the pin marker, so it asserts pinning without identifying a head. Use pinned_to_<head-or-descriptor>.",
+   "rc": 2
+  },
+  "R_V14_pin_token_too_long": {
+   "msg_key": "I1/Q11 self_check pin is head-only by contract, but pinned_to_<SHA64> carries a 64-char hex token which cannot be a commit head (max 40): '<SHA64>'. Pin non-head values through a typed path/sha structure that binds to disk, not through a boolean key name.",
+   "rc": 2
+  },
+  "R_V15_pin_foreign_head": {
+   "msg_key": "I1/Q11 self_check pin claims non-source head: pinned_to_deadbeefcafe (hex-shaped token 'deadbeefcafe' is not a prefix of the source commit)",
+   "rc": 2
+  },
+  "R_V16_runner_harness_shas_empty": {
+   "msg_key": "I2 pins.runner_and_harness_shas empty",
+   "rc": 2
+  },
+  "R_V17_noncurrent_packet_ref": {
+   "msg_key": "L1/J2 non-current packet_v7 reference outside DEAD lineage at alias_note",
+   "rc": 2
+  },
+  "R_V19_allow_set_empty": {
+   "msg_key": "J3 terminal_branch_allow_set required (must equal branch_ids exactly)",
+   "rc": 2
+  },
+  "R_V20_allow_set_ne_branch_ids": {
+   "msg_key": "J3 terminal_branch_allow_set must equal branch_ids exactly (set equality)",
+   "rc": 2
+  },
+  "R_V21_proc_stop_not_list": {
+   "msg_key": "J3 procedural_stop_reasons must be a list when present",
+   "rc": 2
+  },
+  "R_V22_proc_stop_names_branch": {
+   "msg_key": "J3 procedural_stop_reasons must not reference branch id BR-LANDS-AB-EQUIVALENT",
+   "rc": 2
+  },
+  "R_V23_stop_restricts_branch": {
+   "msg_key": "J3/I4 stop_conditions restricts preregistered branch BR-LANDS-AB-EQUIVALENT",
+   "rc": 2
+  },
+  "R_V25_alt_plan_id_disagrees": {
+   "msg_key": "I5/Q9 operative_plan_id and operative_adaptation_plan_id both present and disagree: 'artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v6.json' != 'artifacts/acc_entropy/other_plan.json' \u2014 the alternative naming must not carry a second, unvalidated identity",
+   "rc": 2
+  },
+  "R_V26b_all_plan_sources_cleared": {
+   "msg_key": "I5 operative plan id+sha required (operative_plan_id/operative_plan_sha256 or authority_chain.plan_*)",
+   "rc": 2
+  },
+  "R_V27_operative_sha_not_hex": {
+   "msg_key": "I5 operative_plan_sha256 must be lowercase 64-hex",
+   "rc": 2
+  },
+  "R_V28_plan_id_not_exact": {
+   "msg_key": "L3/J5 operative_plan_id must be EXACT 'artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v6.json', got 'artifacts/acc_entropy/other.json'",
+   "rc": 2
+  },
+  "R_V29_plan_sha_not_exact": {
+   "msg_key": "L3/J5 operative_plan_sha256 must be EXACT <SHA64>, got <SHA64>",
+   "rc": 2
+  },
+  "R_V36_foreign_plan_ref": {
+   "msg_key": "J4/L2 ambiguous/foreign plan reference at stray_plan_note (need DEAD/historical marker or exact operative PLAN_v6)",
+   "rc": 2
+  },
+  "R_V37_unbound_hex_token": {
+   "msg_key": "Q3/I1 unbound hex token outside known-reference set at stray_hex_note: <SHA64>",
+   "rc": 2
+  },
+  "R_VCPS01_pin_path_absent_from_manifest": {
+   "msg_key": "I2 pin path absent from manifest: not/in/manifest.py (pins.runner_and_harness_shas)",
+   "rc": 2
+  },
+  "R_VCPS02_pin_sha_ne_manifest": {
+   "msg_key": "I2 pin sha != manifest for bin/watch-wrap at pins.runner_and_harness_shas: pin=<SHA64> manifest=<SHA64>",
+   "rc": 2
+  },
+  "R_VQ4_lineage_pin_extra_field": {
+   "msg_key": "Q4 lineage pin 'pins.packet_v1_dead_lineage' carries non-schema field(s) ['extra_nonschema_field'] \u2014 exemption covers the closed lineage schema only",
+   "rc": 2
+  }
+ },
+ "rows_sha256": "d61530c0dfeadc67d610ac6cc9b043f3c1d0bb2a490e356594f0047fe1923b89",
+ "schema": "LANDS_AB_dry_exec_diag_corpus_baseline/v1",
+ "tool_sha256": "6d2978d3a7cf526ee8e2815b5688ef586e9608a640a3eda7398577a0b77977c9"
+}

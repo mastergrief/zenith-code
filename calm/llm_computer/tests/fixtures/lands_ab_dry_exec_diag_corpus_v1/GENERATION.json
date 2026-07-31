@@ -1,0 +1,17 @@
+{
+  "generation": "v1",
+  "schema_rows": "LANDS_AB_dry_exec_diag_corpus_rows/v1",
+  "schema_baseline": "LANDS_AB_dry_exec_diag_corpus_baseline/v1",
+  "baseline_name": "BASELINE_TOOL_6d2978d3.json",
+  "baseline_head": "6d2978d3",
+  "tool_sha256_at_authoring": "6d2978d3a7cf526ee8e2815b5688ef586e9608a640a3eda7398577a0b77977c9",
+  "migration_carrier_sha256": "ee4840708923e8e89c10374e104c9811d5ff059e72d6639ba6fb60e6b2703ae2",
+  "parent_generation": "v0",
+  "parent_rows_sha256": "0100d08707f4322f56d024ffa230eb80d5123a84dce1b231c72415befa79e315",
+  "parent_baseline_sha256": "5cfe9db70105e6c740c96f55d46ac997f917baf9de283e95e9c33ce0c3b04c9c",
+  "prep_package_sha256": "9d6eeb0407b55ea2d03435e45f1fde03a69250d642d5bd8ff5cca2dcae7820ee",
+  "ast_allowlist_A4_allowed_over_150": [
+    "_validate_i_series_consistency"
+  ],
+  "v1_rows_sha256": "d61530c0dfeadc67d610ac6cc9b043f3c1d0bb2a490e356594f0047fe1923b89"
+}
