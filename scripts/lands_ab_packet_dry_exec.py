@@ -1047,25 +1047,7 @@ def _validate_i_series_consistency(
     known_refs.add(EXPECTED_OPERATIVE_PLAN_SHA256)
 
     # O2: expand known-reference value set from validated path+sha pins / maps (exact values only).
-    def _add_ref(val: object) -> None:
-        if isinstance(val, str) and val.strip():
-            known_refs.add(val.strip())
-            known_refs.add(val.strip().lower())
-
-    def _disk_sha_ok(rel: str, sha: str) -> bool:
-        # Q5: containment + canonicality BEFORE any disk read, so a traversal pin
-        # cannot bind an out-of-repo file and inject its path/sha into known_refs.
-        rel_n = _canonical_repo_relpath(rel, repo=repo)
-        if rel_n is None:
-            return False
-        fp = repo.resolve() / rel_n
-        if not fp.is_file():
-            return False
-        try:
-            return sha256_file(fp) == str(sha).lower()
-        except Exception:
-            return False
-
+    # _add_ref / _disk_sha_ok / _check_path_sha are module-level (A1 Tier-2 lift).
     for pk, pv in pins.items():
         if isinstance(pv, dict) and isinstance(pv.get("path"), str) and isinstance(
             pv.get("sha256"), str
@@ -1073,18 +1055,18 @@ def _validate_i_series_consistency(
             rel = _norm_path(str(pv["path"]))
             sha = str(pv["sha256"]).lower()
             if f"pins.{pk}" in exempt_pin_paths:
-                _add_ref(rel)
-                _add_ref(sha)
-            elif rel.startswith("artifacts/") and _disk_sha_ok(rel, sha):
-                _add_ref(rel)
-                _add_ref(sha)
+                _add_ref(known_refs, rel)
+                _add_ref(known_refs, sha)
+            elif rel.startswith("artifacts/") and _disk_sha_ok(repo, rel, sha):
+                _add_ref(known_refs, rel)
+                _add_ref(known_refs, sha)
             elif (
                 rel.startswith(("calm/", "scripts/", "bin/", "rust/"))
                 and rel in man_path_set
                 and man_sha_by_path.get(rel, "").lower() == sha
             ):
-                _add_ref(rel)
-                _add_ref(sha)
+                _add_ref(known_refs, rel)
+                _add_ref(known_refs, sha)
         elif isinstance(pv, dict) and pk in (
             "runner_and_harness_shas",
             "default_source_pins_for_consumer",
@@ -1096,18 +1078,18 @@ def _validate_i_series_consistency(
                     rel_n in man_path_set
                     and man_sha_by_path.get(rel_n, "").lower() == sha_n
                 ):
-                    _add_ref(rel_n)
-                    _add_ref(sha_n)
-                elif rel_n.startswith("artifacts/") and _disk_sha_ok(rel_n, sha_n):
-                    _add_ref(rel_n)
-                    _add_ref(sha_n)
+                    _add_ref(known_refs, rel_n)
+                    _add_ref(known_refs, sha_n)
+                elif rel_n.startswith("artifacts/") and _disk_sha_ok(repo, rel_n, sha_n):
+                    _add_ref(known_refs, rel_n)
+                    _add_ref(known_refs, sha_n)
     for k in (
         "science_source_manifest_sha256",
         "generator_script_sha256",
         "dry_exec_tool_sha256",
         "source_commit_sha",
     ):
-        _add_ref(packet.get(k))
+        _add_ref(known_refs, packet.get(k))
 
     # NOTE (Q3'): the universal Q3/I1 hex-token backstop runs LAST, after every
     # specific structural check below. It is a catch-all, and a catch-all that ran
@@ -1249,23 +1231,14 @@ def _validate_i_series_consistency(
     # ---- I2: pins.runner_and_harness_shas + TSA/BDL-like RO pins vs manifest ----
     man_map = man_sha_by_path
 
-    def _check_path_sha(rel: str, sha: str, *, where: str) -> None:
-        rel_n = str(rel).replace("\\", "/").lstrip("./")
-        if rel_n not in man_path_set:
-            raise ValueError(f"I2 pin path absent from manifest: {rel_n} ({where})")
-        exp = man_map[rel_n]
-        got = str(sha).lower()
-        if got != exp:
-            raise ValueError(
-                f"I2 pin sha != manifest for {rel_n} at {where}: pin={got} manifest={exp}"
-            )
-
     rhs = pins.get("runner_and_harness_shas")
     if isinstance(rhs, dict):
         if not rhs:
             raise ValueError("I2 pins.runner_and_harness_shas empty")
         for rel, sha in rhs.items():
-            _check_path_sha(str(rel), str(sha), where="pins.runner_and_harness_shas")
+            _check_path_sha(
+                man_map, man_path_set, str(rel), str(sha), where="pins.runner_and_harness_shas"
+            )
     SOURCE_PIN_PREFIXES = (
         "calm/",
         "scripts/",
@@ -1285,7 +1258,9 @@ def _validate_i_series_consistency(
             continue
         if not rel.startswith(SOURCE_PIN_PREFIXES):
             continue
-        _check_path_sha(rel, str(pv["sha256"]), where=f"pins.{pk}")
+        _check_path_sha(
+            man_map, man_path_set, rel, str(pv["sha256"]), where=f"pins.{pk}"
+        )
 
     # L1: ANY non-current packet_vN / bare vN token outside identity-bound DEAD FAILS.
     # O2: exact known-ref whole-string equality only (no key/shape carve-out).
@@ -1567,6 +1542,88 @@ def _validate_i_series_consistency(
         raise ValueError(
             f"Q3/I1 unbound hex token outside known-reference set at {path}: {hx}"
         )
+
+
+def _add_ref(known_refs: set, val: object) -> None:
+    if isinstance(val, str) and val.strip():
+        known_refs.add(val.strip())
+        known_refs.add(val.strip().lower())
+
+
+def _disk_sha_ok(repo: Path, rel: str, sha: str) -> bool:
+    # Q5: containment + canonicality BEFORE any disk read, so a traversal pin
+    # cannot bind an out-of-repo file and inject its path/sha into known_refs.
+    rel_n = _canonical_repo_relpath(rel, repo=repo)
+    if rel_n is None:
+        return False
+    fp = repo.resolve() / rel_n
+    if not fp.is_file():
+        return False
+    try:
+        return sha256_file(fp) == str(sha).lower()
+    except Exception:
+        return False
+
+
+def _check_path_sha(
+    man_map: dict, man_path_set: set, rel: str, sha: str, *, where: str
+) -> None:
+    rel_n = str(rel).replace("\\", "/").lstrip("./")
+    if rel_n not in man_path_set:
+        raise ValueError(f"I2 pin path absent from manifest: {rel_n} ({where})")
+    exp = man_map[rel_n]
+    got = str(sha).lower()
+    if got != exp:
+        raise ValueError(
+            f"I2 pin sha != manifest for {rel_n} at {where}: pin={got} manifest={exp}"
+        )
+
+
+def _flag_val(argv: list[str], flag: str) -> str | None:
+    if flag not in argv:
+        return None
+    i = argv.index(flag)
+    if i + 1 >= len(argv):
+        return None
+    return str(argv[i + 1])
+
+
+def _is_write_path_token(s: str) -> bool:
+    if not isinstance(s, str) or not s:
+        return False
+    # only treat path-like tokens (absolute or relative with separators / extension)
+    if not (s.startswith("/") or s.startswith("./") or "/" in s or s.endswith((".json", ".jsonl", ".pt", ".pth", ".log", ".txt"))):
+        return False
+    low = s.lower()
+    if low.endswith(".pt") or low.endswith(".pth"):
+        return True
+    if "/checkpoints/" in low or "calm/hrm/checkpoints" in low:
+        return True
+    if re.search(r"(^|/)banked(_|/|-|$)", low):
+        return True
+    return False
+
+
+def _scan_write_paths_from_row(inv: dict, argv: list[str], env: dict) -> list[str]:
+    paths: list[str] = []
+    for key in (
+        "raw_obs_path_template",
+        "out_path_template",
+        "terminal_collection_raw_obs_path_template",
+        "enforcer_receipt_path_template",
+        "terminal_collection_enforcer_receipt_path",
+        "phase_events_jsonl_template",
+    ):
+        v = inv.get(key)
+        if isinstance(v, str):
+            paths.append(v)
+    for a in argv:
+        if isinstance(a, str):
+            paths.append(a)
+    for v in env.values():
+        if isinstance(v, str):
+            paths.append(v)
+    return paths
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1868,51 +1925,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     # seven-only list rejected by missing lifecycle above
 
-    # helpers for path extraction
-    def _flag_val(argv: list[str], flag: str) -> str | None:
-        if flag not in argv:
-            return None
-        i = argv.index(flag)
-        if i + 1 >= len(argv):
-            return None
-        return str(argv[i + 1])
-
-    def _is_write_path_token(s: str) -> bool:
-        if not isinstance(s, str) or not s:
-            return False
-        # only treat path-like tokens (absolute or relative with separators / extension)
-        if not (s.startswith("/") or s.startswith("./") or "/" in s or s.endswith((".json", ".jsonl", ".pt", ".pth", ".log", ".txt"))):
-            return False
-        low = s.lower()
-        if low.endswith(".pt") or low.endswith(".pth"):
-            return True
-        if "/checkpoints/" in low or "calm/hrm/checkpoints" in low:
-            return True
-        if re.search(r"(^|/)banked(_|/|-|$)", low):
-            return True
-        return False
-
-    def _scan_write_paths_from_row(inv: dict, argv: list[str], env: dict) -> list[str]:
-        paths: list[str] = []
-        for key in (
-            "raw_obs_path_template",
-            "out_path_template",
-            "terminal_collection_raw_obs_path_template",
-            "enforcer_receipt_path_template",
-            "terminal_collection_enforcer_receipt_path",
-            "phase_events_jsonl_template",
-        ):
-            v = inv.get(key)
-            if isinstance(v, str):
-                paths.append(v)
-        for a in argv:
-            if isinstance(a, str):
-                paths.append(a)
-        for v in env.values():
-            if isinstance(v, str):
-                paths.append(v)
-        return paths
-
+    # helpers for path extraction (module-level)
     runner_parser, _, live_runner_sha = load_runner_parser(repo)
     _ = live_runner_sha
     seen_phase: set[str] = set()
