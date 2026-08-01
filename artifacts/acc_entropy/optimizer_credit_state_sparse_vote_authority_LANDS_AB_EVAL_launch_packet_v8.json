@@ -1,0 +1,4115 @@
+{
+  "PRIORITY_ORDER": [
+    "BR-LANDS-AB-SCOPE-CREEP-STOP",
+    "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+    "BR-LANDS-AB-VACUOUS",
+    "BR-LANDS-AB-DIVERGENT-EVENT",
+    "BR-LANDS-AB-DIVERGENT-APPLY",
+    "BR-LANDS-AB-DIVERGENT-ORACLE-LIVE",
+    "BR-LANDS-AB-EQUIVALENT"
+  ],
+  "alias_note": "Historical DEAD launch-plan lineage is preserved only under pins.packet_*_dead_lineage (identity-bound). Operative for this LEAN pin-plumbing dry-exec is packet_revision=v8 at task 1785580662332-ab6ceb57 / HEAD c2d7435 (post-O3). Prior revisions are not operative after v8 accept.",
+  "artifact_class": "POST_PUSH_PACKET_CREATE",
+  "authority_chain": {
+    "claude_confirm_enumeration": "1785591713243-931affbc",
+    "colead_revise": "1785591508380-bb216243",
+    "consolidated_remint_dispatch_v16": "1785591746156-ec93f18e",
+    "fixture_gen_v2_task": "1785573357300-502a4c0f",
+    "o3_pure": true,
+    "owner_module": "scripts/lands_ab_dry_exec_tool_module_set.py",
+    "packet_revision_unchanged": "v8",
+    "pcs_a_status": "NON_CURRENT",
+    "phase_b_complete_receipt": "1785580635533-be15e383",
+    "phase_b_sha": "c2d7435a63c6dc2d732dcd7c959d5b8418b81ea3",
+    "source_commit_sha": "c2d7435a63c6dc2d732dcd7c959d5b8418b81ea3",
+    "step0_done_by_claude_pre_freeze": true,
+    "task_id": "1785580662332-ab6ceb57",
+    "terminal_receipt_v14": "1785591317891-ebd6f1af",
+    "tier": "LEAN-MEASUREMENT",
+    "tool_module_set_via_manifest": true,
+    "v16_full_block_i_series_pass": true
+  },
+  "branch": "feature/hrm-text-1.58",
+  "branch_ids": [
+    "BR-LANDS-AB-SCOPE-CREEP-STOP",
+    "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+    "BR-LANDS-AB-VACUOUS",
+    "BR-LANDS-AB-DIVERGENT-EVENT",
+    "BR-LANDS-AB-DIVERGENT-APPLY",
+    "BR-LANDS-AB-DIVERGENT-ORACLE-LIVE",
+    "BR-LANDS-AB-EQUIVALENT"
+  ],
+  "claim_ceiling": {
+    "LANDS_AB": false,
+    "does_not_mint": [
+      "LANDS-AB equivalence / science verdict",
+      "current A4/PCS corpus-accept (NON-CURRENT until fixture-gen successor task 1785573357300)",
+      "readiness / debt-row / bank / acquisition flip",
+      "sub-2 / byte_savings / density_win",
+      "full_sub2_runtime_ready_for_science",
+      "mechanism branch selection"
+    ],
+    "emitted_receipts_must_have": {
+      "claim_ceiling.LANDS_AB": false,
+      "claim_class": "pin_plumbing_feasibility_only",
+      "science_claim": false
+    },
+    "equivalent_minted": false,
+    "full_sub2_runtime_ready_for_science": false,
+    "science_claim": false
+  },
+  "cross_thread_required": true,
+  "dispatch_msg_id": "1785591746156-ec93f18e",
+  "drafted_by": "plan-dev",
+  "dry_exec_tool_path": "scripts/lands_ab_packet_dry_exec.py",
+  "dry_exec_tool_sha256": "bc0d7f56e67cfbea58d7775f017d04ef01f2253f1c15f1b3867d67128fc52d02",
+  "evidence_consumer_command": {
+    "device": "cpu",
+    "duration_budget_seconds": 120,
+    "formal_entry": "build_eval_receipt_from_raw_artifacts (sole science consumer) + O_EXCL manifest/eval receipt; raw_artifact_paths entries are {path,sha256}; terminal binds operative_packet_path_and_sha256",
+    "gating_row": "EVIDENCE_CONSUMER",
+    "invocation": {
+      "argv_template": [
+        "timeout",
+        "120",
+        "python3",
+        "-c",
+        "import json,hashlib; from pathlib import Path; from calm.hrm_text_158.native_full_stack.lands_ab_eval_evidence_contract import build_eval_receipt_from_raw_artifacts; from calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io import o_excl_write_text, harvest_exactly_one_raw_obs; from calm.hrm_text_158.native_full_stack.lands_ab_eval_fixture_source import DEFAULT_SOURCE_PINS; from calm.hrm_text_158.native_full_stack.lands_ab_eval_schema import GATING_ROWS; run_root=Path(r'/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>'); paths={}; [paths.__setitem__(gr, {'path': str(p), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()})  for gr in GATING_ROWS for p in [harvest_exactly_one_raw_obs(run_root=run_root, gating_row=gr)]]; man={'raw_artifact_paths': paths, 'required_key_set': None, 'caveats': ['formal lineage-bound consumer; class-aware universe via raw obs; {path,sha256} entries'], 'run_root': str(run_root)}; universes={}; [universes.__setitem__(gr, (json.loads(Path(entry['path']).read_text()).get('key_universe') or json.loads(Path(entry['path']).read_text()).get('row_key_universe') or []))  for gr,entry in paths.items()]; cpu_u=sorted(set(universes.get('G_CPU_STATIC_AB') or [])); cuda_us=[tuple(sorted(set(universes[g] or []))) for g in GATING_ROWS if g.startswith('G_CUDA_')]; assert len(set(cuda_us))==1, 'cuda_row_universe_mismatch_within_class'; req=sorted(set(cpu_u)|set(cuda_us[0])); man['required_key_set']=req; man['row_key_universes']=universes; man_path=Path(r'/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/raw_artifact_manifest.json'); o_excl_write_text(man_path, json.dumps(man, indent=2, sort_keys=True)); receipt=build_eval_receipt_from_raw_artifacts(raw_artifact_paths=man['raw_artifact_paths'], source_pins=dict(DEFAULT_SOURCE_PINS), required_key_set=man['required_key_set'], caveats=man.get('caveats')); out=Path(r'/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/eval_receipt.json'); o_excl_write_text(out, json.dumps(receipt, indent=2, sort_keys=True)); print(json.dumps({'branch_id': receipt['reducer_output']['branch_id'], 'science_claim': receipt['science_claim'], 'LANDS_AB': receipt['claim_ceiling']['LANDS_AB'], 'eval_receipt_sha256': hashlib.sha256(out.read_bytes()).hexdigest(), 'manifest_sha256': hashlib.sha256(man_path.read_bytes()).hexdigest(), 'path': str(out), 'manifest_path': str(man_path)}, sort_keys=True))"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "env_required": {
+        "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+        "PYTHONPATH": "."
+      },
+      "eval_receipt_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/eval_receipt.json",
+      "expected_child_rc": 0,
+      "notes": [
+        "Consumer harvests exactly-one raw obs per gating row under the nonce run root (zero/multiple \u2192 STOP).",
+        "For each harvested file: entry = {path: str(p), sha256: sha256(bytes)}; this exact mapping is persisted in the O_EXCL manifest and passed to the consumer.",
+        "required_key_set is derived from harvested row key_universe fields via entry[\"path\"]; never hand-authored.",
+        "Manifest + eval receipt written via o_excl_write_text (retry = hard error).",
+        "Class-aware heterogeneous universes (CPU proj / CUDA lin) are accepted; within-class mismatch hard-rejects.",
+        "Consumer recomputes surface_pass_by_row from primitives; caller booleans never trusted."
+      ],
+      "o_excl": true,
+      "path_alias_policy": {
+        "canonical_eval_receipt_path": "eval_receipt_path_template",
+        "canonical_manifest_path": "raw_artifact_manifest_template"
+      },
+      "preflight_must_not_exist": [
+        "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/raw_artifact_manifest.json",
+        "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/eval_receipt.json"
+      ],
+      "raw_artifact_manifest_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/raw_artifact_manifest.json",
+      "raw_artifact_paths_entry_shape": {
+        "note": "entry-shape fix for gate-2 BLOCK 1785313904074-5e4db50c; string path entries are forbidden",
+        "per_row_required_keys": [
+          "path",
+          "sha256"
+        ],
+        "type": "Mapping[str, Mapping[str, str]]"
+      },
+      "terminal_collection_eval_receipt_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/eval_receipt.json",
+      "terminal_collection_manifest_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/raw_artifact_manifest.json"
+    }
+  },
+  "execution_order": [
+    "preflight",
+    "activate_fresh_nonce_run_root_must_not_exist",
+    "G_CPU_STATIC_AB",
+    "G_CUDA_B1_APPLY",
+    "G_CUDA_B2_APPLY",
+    "G_CUDA_B3_APPLY",
+    "G_CUDA_ORACLE_B1",
+    "G_CUDA_ORACLE_B2",
+    "G_CUDA_ORACLE_B3",
+    "harvest_exactly_one_per_row",
+    "EVIDENCE_CONSUMER",
+    "terminal_classification_vs_prereg",
+    "FORMAL_RUNTIME_CREATE_terminal_receipt"
+  ],
+  "executor": {
+    "forbidden_for_plan_dev": [
+      "formal dry-exec run execution under this plan gate",
+      "history-node / remote update without claude gates",
+      "fixture/baseline/GENERATION edits"
+    ],
+    "one_terminal_receipt": true,
+    "role": "claude_as_test_operator"
+  },
+  "gating_rows_exact": [
+    "G_CPU_STATIC_AB",
+    "G_CUDA_B1_APPLY",
+    "G_CUDA_B2_APPLY",
+    "G_CUDA_B3_APPLY",
+    "G_CUDA_ORACLE_B1",
+    "G_CUDA_ORACLE_B2",
+    "G_CUDA_ORACLE_B3"
+  ],
+  "generator_script_path": "scripts/lands_ab_science_source_manifest.py",
+  "generator_script_sha256": "6db82879b2b43b6c1dc22ce5fcb0cd175977297c08da4fe143fd9011d6aa5743",
+  "lean_dry_exec_exact_argv": {
+    "hard_timeout_seconds": 120,
+    "shell_line": "env PYTHONPATH=. timeout 120 python3 scripts/lands_ab_packet_dry_exec.py --packet /mnt/c/Users/gabes/projects/claw-code-hrm-text-158/artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v8.json --verify-source-manifest /mnt/c/Users/gabes/projects/claw-code-hrm-text-158/artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json --expected-source-commit c2d7435a63c6dc2d732dcd7c959d5b8418b81ea3 --repo-root /mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "timeout_argv_position": "timeout 120 before python3"
+  },
+  "manifest_semantics": {
+    "authority_record": "1785343735541-2e24ef19",
+    "mode": "dirty_imported_bytes_pinned_by_manifest",
+    "note": "Committed HEAD_A science source-set manifest pins the exact on-disk bytes the Phase-A validation imported/executed, including two dirty unstaged imported surfaces (event_coded_acc_live_carrier.py, event_coded_vote_update_adapter.py). Does NOT claim every manifest entry equals committed HEAD_A tree bytes. Commit membership is a separate ledger (source_commit_sha=HEAD_A)."
+  },
+  "materialization_authority": {
+    "copy_must_be_byte_identical_to_frozen_packet": true,
+    "materializer": "plan-dev",
+    "no_launch_gate_collapse": true,
+    "ordering": [
+      "0_DONE_by_claude_pre_freeze_dispose_stale_staged_target_single_path_git_restore_--staged_DST_evidenced_in_dispatch_1785585780054_HRM_index_cached_surface_EMPTY_target_untracked_drift_untouched",
+      "1_claude_gate1_freeze_this_frozen_plan_package",
+      "2_colead_gate2_plan_PASS",
+      "3_claude_+1_implement-materialize",
+      "4_plan-dev_byte_identical_copy_frozen_PACKET_json_overwrite_DST",
+      "5_plan-dev_receipt_post_copy_sha256_equals_PACKET_SHA",
+      "6_claude_inspect_worktree_stage_single_path_freeze_DIFF_DIGEST_sha256_of_git_diff_--cached",
+      "7_colead_implementation_diff_gate2_on_frozen_DIFF_DIGEST",
+      "8_claude_+1_launch",
+      "9_claude_run_only_exact_argv",
+      "10_one_terminal_receipt"
+    ],
+    "ordering_label_policy": "version-neutral (this frozen plan-package); step-0 marked DONE-by-claude-pre-freeze (truthful state)",
+    "pre_materialization_forbidden_names": [
+      "DIFF_DIGEST"
+    ],
+    "route": "a",
+    "runner": "claude_as_test_operator",
+    "step_0_dispose": {
+      "action": "git restore --staged <DST>",
+      "evidence_dispatch": "1785585780054-0530fe61",
+      "owner": "claude",
+      "plan_dev_must_not_unstage": true,
+      "post_state": "HRM index cached surface EMPTY; target ?? untracked; drift untouched",
+      "scope": "single-path only",
+      "status": "DONE_by_claude_pre_freeze",
+      "unrelated_drift_untouched": true
+    },
+    "target_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v8.json",
+    "vocabulary": {
+      "DIFF_DIGEST": "ONLY step-6 staged digest sha256(git diff --cached) after single-path stage; MUST NOT appear as a pre-materialization field name or pre-stage identity",
+      "PACKET_SHA": "sha256 of frozen package PACKET_v8.json blob; used for pre- and post-materialization identity checks"
+    }
+  },
+  "minted_at": "2026-08-01T13:44:52Z",
+  "no_pt": true,
+  "operative_authority_sweep_at_mint": {
+    "forbidden_regex": "^packet_v[0-9]+_sha256$",
+    "meaning": "terminal receipt records the operative packet selected by the persisted go record, as exact path+sha; never a DEAD lineage revision field name",
+    "subtree": "terminal_classification.operative_packet_binding",
+    "this_packet_vN_in_subtree": 0
+  },
+  "operative_packet_revision": "v8",
+  "operative_plan_id": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v6.json",
+  "operative_plan_sha256": "e421aecdf1cc4b9a94d118a0563e7d8ac8516f97da998d38af3b8c60ac88a41c",
+  "packet_revision": "v8",
+  "packet_v8_authority": {
+    "dispatch_msg_id": "1785591746156-ec93f18e",
+    "fixture_gen_v2_task": "1785573357300-502a4c0f",
+    "o3_pure": true,
+    "owner_module": "scripts/lands_ab_dry_exec_tool_module_set.py",
+    "pcs_a_status": "NON_CURRENT",
+    "phase_b_receipt": "1785580635533-be15e383",
+    "phase_b_sha": "c2d7435a63c6dc2d732dcd7c959d5b8418b81ea3",
+    "seven_binding_fields_only": true,
+    "task": "1785580662332-ab6ceb57",
+    "tier": "LEAN-MEASUREMENT",
+    "tool_module_set_via_manifest": true
+  },
+  "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v8.json",
+  "path_alias_sweep_at_mint": {
+    "enforcer_receipt_template_keys_present": 0,
+    "method": "argv --enforcer-receipt / --phase-events-jsonl vs retained templates + terminal_collection bindings",
+    "mismatch_count": 0
+  },
+  "pins": {
+    "BDL": {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "read_only": true,
+      "rehash_pre_and_post": true,
+      "sha256": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707"
+    },
+    "CONSUMER_ADAPT_PLAN_v6": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v6.json",
+      "read_only": true,
+      "sha256": "e421aecdf1cc4b9a94d118a0563e7d8ac8516f97da998d38af3b8c60ac88a41c"
+    },
+    "HEAD_A_commit": "c2d7435a63c6dc2d732dcd7c959d5b8418b81ea3",
+    "HEAD_A_science_source_manifest": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json",
+      "read_only": true,
+      "sha256": "7d111d527452820ad05431b34dc6ef5742361196ef188916e0e7d3c58fa43560"
+    },
+    "IMPLEMENT_v16": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_IMPLEMENT_receipt_v16.json",
+      "sha256": "2443128e3db97bab6e8addb84fe4af2746b8b38485bb254dbafd290e74ed750a"
+    },
+    "IMPLEMENT_v17": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_IMPLEMENT_receipt_v17.json",
+      "sha256": "d890df8f0340c90fe4d4f6e0a21819cc4ef835a019472bd85bba2b9e2c5d8245"
+    },
+    "PLAN_v6": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_PLAN_v6.json",
+      "sha256": "93645d31ea8a0cb0f89cfc4f1aedd38190a47f18433b6bc67c9b5d98da7093c5"
+    },
+    "SNAPSHOT_v16": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_FINAL_SNAPSHOT_v16.json",
+      "sha256": "655ea6aa1ddcfd824b0b356479557cfe7f1a50d822d787d572035088061ac02a"
+    },
+    "SNAPSHOT_v17": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_FINAL_SNAPSHOT_v17.json",
+      "sha256": "da7d16ba7ae10fc1dc2611ad66c335e2c96f745f6096d2ee4aadc318ecfcd66e"
+    },
+    "TSA": {
+      "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "read_only": true,
+      "rehash_pre_and_post": true,
+      "sha256": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0"
+    },
+    "default_source_pins_for_consumer": {
+      "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_FINAL_SNAPSHOT_v9.json": "e2d0c18dcf91d3fd13a197c61b110ad479bc2db2272623ee17d35f89ca4f203a",
+      "artifacts/acc_entropy/optimizer_credit_state_sparse_live_carrier_production_landing_GPU_SMOKE_packet_v4.json": "191176e2afa39d6148d7388ed504216629636ddad66df9271849ae105739253a",
+      "bin/watch-wrap": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0"
+    },
+    "fixture_recipe_name": "3C_C1_dry_run_fixture_seed158",
+    "packet_v1_dead_lineage": {
+      "block_msg_id": "1785276464193-24161356",
+      "do_not_activate": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v1.json",
+      "sha256": "a9a6ec6861e8c5406c9ebc4f59a4c8bf7c134c1cd6cd02664b185fc47cdfd7bc",
+      "status": "DEAD"
+    },
+    "packet_v2_dead_lineage": {
+      "block_msg_id": "1785313904074-5e4db50c",
+      "do_not_activate": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v2.json",
+      "sha256": "e0d0972010a052f50fc39145f9ec59703857d65590a1709c00a622ac57df2881",
+      "status": "DEAD"
+    },
+    "packet_v3_dead_lineage": {
+      "block_msg_id": "1785314520094-db746c74",
+      "do_not_activate": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v3.json",
+      "sha256": "7b24c77f4fcf2bc3f5309c68bd2ec7bda7e7a8b57f7a80206edce242fba99492",
+      "status": "DEAD"
+    },
+    "packet_v4_dead_lineage": {
+      "block_msg_id": "1785315069545-69f00bfc",
+      "do_not_activate": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v4.json",
+      "sha256": "afd6f4a41784663844905ee42605317d4b56b8cd5f987a3b3f707472f91caed7",
+      "status": "DEAD"
+    },
+    "packet_v5_dead_lineage": {
+      "block_msg_id": "1785315799719-cdb71d80",
+      "do_not_activate": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v5.json",
+      "sha256": "1652e2d39dea4de0bf47e7905a6a83320b6f6681c6ddace9733b9570689ccd85",
+      "status": "DEAD"
+    },
+    "packet_v6_dead_lineage": {
+      "do_not_activate": true,
+      "path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v6.json",
+      "sha256": "6a97928392384d1769164c8c6bc3ef86c6474deb5086153ccf5d17dcb66f9722",
+      "status": "DEAD"
+    },
+    "recarry_receipt": {
+      "path": "artifacts/acc_entropy/optimizer_credit_state_projected_moves_recarry_measurement_receipt_v1.json",
+      "sha256": "783f279986ebaa9bd7d170b5996146a319e9c8f1980939ec8ee49ac4b5d5db2f",
+      "untouched": true
+    },
+    "runner_and_harness_shas": {
+      "bin/watch-wrap": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py": "b82dd32ab72a82dce817932d5796e57510346d314f05afcffa96298ae945d5b2",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py": "67e5e3a018de478ee91797af0e4ce2f7effa06bb41caacbf1a5f0ddd8cd782dc",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py": "b193497b52d7835eddedc62b72d64650286a88894db7b4a218772cf4931f4690",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py": "fe56f497b06476cbd74c4e9dac57acbec50530f448e19041afe40906597a0417",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py": "7e47ce9b1ac5032ce4ed66d4607683fe96a196ad0e75d4f8f06c477a21d10165",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_metric_reducer.py": "88306ae7e0bc923ee15c82f4ad4dcc9d21686c8d621253e7ae3656490b88d3c4",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py": "b513189214ffc05396c5163777029f4878d1b38aa9d2eb1f17fcbb4544f53c47",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_jsonl.py": "adef162342859404fb8bdd8d29f472d2a694cd7e422407e7863b94cd4c827610",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_topology.py": "4226658b286359dd46459fa0f3d86f8b0a61e22b4f3c52942d5a07da239ec0ef",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_runtime_io.py": "968bdb8440342bb847d218738ca3f805c6ab8a30003529c0c7950a3e51d429cf",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py": "f15ff1f1c308f3752212236b33de89d151ef8e53569e52ff619ecbf323133a9d",
+      "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py": "e73084fc1e1c833d555eaf64fcd4c61a1af1631fd1696db70977ce86e0fd4ffc",
+      "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0",
+      "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py": "2514856d8497b3e740cdbdb8a47caba548e448c28602be37622d531ad276627e",
+      "scripts/lands_ab_eval_run.py": "a41887628b2a889cf6a96ec8a9ae68a223945fd7f0a31315daf0558f12016959",
+      "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py": "5e79d9cdb99f23a00fa5bb1bd5aed984b42980ca5697e201f2213873ae9aca0f"
+    }
+  },
+  "preflight_checklist": [
+    "HEAD must equal source_commit_sha c2d7435a63c6dc2d732dcd7c959d5b8418b81ea3",
+    "origin/feature/hrm-text-1.58 equals HEAD (non-force FF only if remote update later)",
+    "re-hash dry tool scripts/lands_ab_packet_dry_exec.py -> bc0d7f56e67cfbea58d7775f017d04ef01f2253f1c15f1b3867d67128fc52d02",
+    "re-hash generator scripts/lands_ab_science_source_manifest.py -> 6db82879b2b43b6c1dc22ce5fcb0cd175977297c08da4fe143fd9011d6aa5743",
+    "re-hash owner scripts/lands_ab_dry_exec_tool_module_set.py (must match science_source_manifest entry for owner module)",
+    "re-hash science_source_manifest HEAD_A -> 7d111d527452820ad05431b34dc6ef5742361196ef188916e0e7d3c58fa43560",
+    "re-hash operative plan artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PLAN_v6.json -> e421aecdf1cc4b9a94d118a0563e7d8ac8516f97da998d38af3b8c60ac88a41c",
+    "manifest n_entries includes owner+dry (tool-module set complete)",
+    "digest/pin mismatch at preflight or mid-run recheck = STOP",
+    "PCS-A/current A4 corpus-accept NOT claimed; LEAN pin-plumbing only"
+  ],
+  "preregistration": {
+    "forbidden_terminal_claims": [
+      "current A4/PCS corpus-accept",
+      "LANDS-AB equivalence science",
+      "formal 7-row matrix runtime execution as science",
+      "bank / acquisition / sub-2 / readiness",
+      "mechanism verdict"
+    ],
+    "question": "Does the dry-exec carrier/path work over the full post-O3 pinned source set (7 binding fields + HEAD_A man containing tool-module set)?",
+    "terminal_branches": {
+      "CLEAN_PASS": {
+        "rule": "S2",
+        "signal": "rc=0 and final stdout line exactly PACKET_DRY_EXEC_OK"
+      },
+      "EXEC_FAIL": {
+        "rule": "S7"
+      },
+      "EXEC_FAIL_TIMEOUT": {
+        "rule": "S1",
+        "signal": "rc=124"
+      },
+      "PACKET_CONTRACT_FAIL": {
+        "rule": "S5 when m_contract only"
+      },
+      "PIN_MISMATCH": {
+        "rule": "S5 when m_pin only"
+      },
+      "TOOL_DEFECT": {
+        "rule": "S3 or S4 overlap or S6 traceback-without-anchor"
+      }
+    },
+    "terminal_classifier": "terminal_classifier_v6",
+    "tier": "LEAN-MEASUREMENT"
+  },
+  "proposed_staging_list_for_packet_commit": [
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_launch_packet_v8.json",
+    "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_CONSUMER_ADAPT_RERUN_PACKET_receipt_B_v1.json"
+  ],
+  "report_to": [
+    "claude"
+  ],
+  "revision_sweep_at_mint": {
+    "forbidden_required_live_field_regex": "^packet_v[0-9]+_sha256$",
+    "method": "recursive scan for this packet_vN + dead-as-operative outside lineage/history; fail if any",
+    "operative_packet_binding_meaning_revision_neutral": true,
+    "operative_stale_count": 0,
+    "this_packet_vN_hits_outside_lineage_doc": 0
+  },
+  "row_commands": [
+    {
+      "device": "cpu",
+      "duration_budget_seconds": 180,
+      "formal_entry": "scripts/lands_ab_eval_run.py --mode cpu-static-ab \u2192 measure_g_cpu_static_ab",
+      "gating_row": "G_CPU_STATIC_AB",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "180",
+          "python3",
+          "scripts/lands_ab_eval_run.py",
+          "--mode",
+          "cpu-static-ab",
+          "--out",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CPU_STATIC_AB_<run_local_nonce>.json"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "env_required": {
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d",
+          "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+          "PYTHONPATH": "."
+        },
+        "expected_child_rc": 0,
+        "notes": [
+          "CPU row does NOT arm SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL (no CUDA phase stream).",
+          "Runner writes --out via o_excl_write_text (O_EXCL); retry FileExistsError = STOP.",
+          "LANDS_AB_RUN_ROOT must point at the nonce run root before invocation.",
+          "science_claim must be false; synthetic_only must be false on this path.",
+          "After write: harvest_exactly_one_raw_obs(run_root, G_CPU_STATIC_AB) must return exactly this file."
+        ],
+        "o_excl": true,
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CPU_STATIC_AB_<run_local_nonce>.json"
+        ],
+        "preflight_must_not_exist_note": "Paths equal actual argv/path templates (no extra -<nonce> suffix). Entire run root must also not exist at activation.",
+        "raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CPU_STATIC_AB_<run_local_nonce>.json",
+        "terminal_collection_raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CPU_STATIC_AB_<run_local_nonce>.json"
+      },
+      "surfaces": [
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s6"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_b1_apply_twin_s3_s4_s6 under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_B1_APPLY",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B1_APPLY.jsonl",
+          "--expected-node-id",
+          "G_CUDA_B1_APPLY",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B1_APPLY.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_b1_apply_twin_s3_s4_s6",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_8_event_contract": true,
+        "enforcer_receipt_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B1_APPLY.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d",
+          "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B1_APPLY.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "notes": [
+          "8-event enforcer contract mandatory; enforcer receipt path is O_EXCL under run root.",
+          "GPU tests honor LANDS_AB_RUN_ROOT via resolve_run_scratch_dir for raw obs emission.",
+          "After row: harvest_exactly_one_raw_obs(run_root, gating_row) must return exactly one file.",
+          "phase JSONL + enforcer receipt paths must not exist before row start (O_EXCL / first-write).",
+          "Per-row phase budgets ~180-260s; hard stop on timeout or enforcer non-OK."
+        ],
+        "o_excl": true,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "path_alias_policy": {
+          "canonical_enforcer_receipt_path": "argv --enforcer-receipt (== enforcer_receipt_path_template)",
+          "removed_alias": "enforcer_receipt_template",
+          "rule": "retained path fields must byte-equal argv after placeholder substitution"
+        },
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B1_APPLY.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B1_APPLY.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B1_APPLY.json",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_B1_APPLY_<run_local_nonce>.json"
+        ],
+        "preflight_must_not_exist_note": "Paths equal actual argv/path templates (no extra -<nonce> suffix). Entire run root must also not exist at activation.",
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_B1_APPLY (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/.",
+        "raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_B1_APPLY_<run_local_nonce>.json",
+        "terminal_collection_enforcer_receipt_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B1_APPLY.json",
+        "terminal_collection_phase_events_jsonl_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B1_APPLY.jsonl"
+      },
+      "surfaces": [
+        "s3",
+        "s4",
+        "s6"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_b2_apply_twin_s3_s4_s6 under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_B2_APPLY",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B2_APPLY.jsonl",
+          "--expected-node-id",
+          "G_CUDA_B2_APPLY",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B2_APPLY.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_b2_apply_twin_s3_s4_s6",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_8_event_contract": true,
+        "enforcer_receipt_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B2_APPLY.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d",
+          "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B2_APPLY.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "notes": [
+          "8-event enforcer contract mandatory; enforcer receipt path is O_EXCL under run root.",
+          "GPU tests honor LANDS_AB_RUN_ROOT via resolve_run_scratch_dir for raw obs emission.",
+          "After row: harvest_exactly_one_raw_obs(run_root, gating_row) must return exactly one file.",
+          "phase JSONL + enforcer receipt paths must not exist before row start (O_EXCL / first-write).",
+          "Per-row phase budgets ~180-260s; hard stop on timeout or enforcer non-OK."
+        ],
+        "o_excl": true,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "path_alias_policy": {
+          "canonical_enforcer_receipt_path": "argv --enforcer-receipt (== enforcer_receipt_path_template)",
+          "removed_alias": "enforcer_receipt_template",
+          "rule": "retained path fields must byte-equal argv after placeholder substitution"
+        },
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B2_APPLY.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B2_APPLY.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B2_APPLY.json",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_B2_APPLY_<run_local_nonce>.json"
+        ],
+        "preflight_must_not_exist_note": "Paths equal actual argv/path templates (no extra -<nonce> suffix). Entire run root must also not exist at activation.",
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_B2_APPLY (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/.",
+        "raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_B2_APPLY_<run_local_nonce>.json",
+        "terminal_collection_enforcer_receipt_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B2_APPLY.json",
+        "terminal_collection_phase_events_jsonl_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B2_APPLY.jsonl"
+      },
+      "surfaces": [
+        "s3",
+        "s4",
+        "s6"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_b3_apply_twin_s3_s4_s6 under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_B3_APPLY",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B3_APPLY.jsonl",
+          "--expected-node-id",
+          "G_CUDA_B3_APPLY",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B3_APPLY.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_b3_apply_twin_s3_s4_s6",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_8_event_contract": true,
+        "enforcer_receipt_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B3_APPLY.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d",
+          "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B3_APPLY.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "notes": [
+          "8-event enforcer contract mandatory; enforcer receipt path is O_EXCL under run root.",
+          "GPU tests honor LANDS_AB_RUN_ROOT via resolve_run_scratch_dir for raw obs emission.",
+          "After row: harvest_exactly_one_raw_obs(run_root, gating_row) must return exactly one file.",
+          "phase JSONL + enforcer receipt paths must not exist before row start (O_EXCL / first-write).",
+          "Per-row phase budgets ~180-260s; hard stop on timeout or enforcer non-OK."
+        ],
+        "o_excl": true,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "path_alias_policy": {
+          "canonical_enforcer_receipt_path": "argv --enforcer-receipt (== enforcer_receipt_path_template)",
+          "removed_alias": "enforcer_receipt_template",
+          "rule": "retained path fields must byte-equal argv after placeholder substitution"
+        },
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B3_APPLY.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B3_APPLY.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B3_APPLY.json",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_B3_APPLY_<run_local_nonce>.json"
+        ],
+        "preflight_must_not_exist_note": "Paths equal actual argv/path templates (no extra -<nonce> suffix). Entire run root must also not exist at activation.",
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_B3_APPLY (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/.",
+        "raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_B3_APPLY_<run_local_nonce>.json",
+        "terminal_collection_enforcer_receipt_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_B3_APPLY.json",
+        "terminal_collection_phase_events_jsonl_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_B3_APPLY.jsonl"
+      },
+      "surfaces": [
+        "s3",
+        "s4",
+        "s6"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_oracle_b1_events_equal under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_ORACLE_B1",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B1.jsonl",
+          "--expected-node-id",
+          "G_CUDA_ORACLE_B1",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B1.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_oracle_b1_events_equal",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_8_event_contract": true,
+        "enforcer_receipt_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B1.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d",
+          "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B1.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "notes": [
+          "8-event enforcer contract mandatory; enforcer receipt path is O_EXCL under run root.",
+          "GPU tests honor LANDS_AB_RUN_ROOT via resolve_run_scratch_dir for raw obs emission.",
+          "After row: harvest_exactly_one_raw_obs(run_root, gating_row) must return exactly one file.",
+          "phase JSONL + enforcer receipt paths must not exist before row start (O_EXCL / first-write).",
+          "Per-row phase budgets ~180-260s; hard stop on timeout or enforcer non-OK."
+        ],
+        "o_excl": true,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "path_alias_policy": {
+          "canonical_enforcer_receipt_path": "argv --enforcer-receipt (== enforcer_receipt_path_template)",
+          "removed_alias": "enforcer_receipt_template",
+          "rule": "retained path fields must byte-equal argv after placeholder substitution"
+        },
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B1.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B1.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B1.json",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_ORACLE_B1_<run_local_nonce>.json"
+        ],
+        "preflight_must_not_exist_note": "Paths equal actual argv/path templates (no extra -<nonce> suffix). Entire run root must also not exist at activation.",
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_ORACLE_B1 (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/.",
+        "raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_ORACLE_B1_<run_local_nonce>.json",
+        "terminal_collection_enforcer_receipt_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B1.json",
+        "terminal_collection_phase_events_jsonl_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B1.jsonl"
+      },
+      "surfaces": [
+        "s5"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_oracle_b2_events_equal under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_ORACLE_B2",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B2.jsonl",
+          "--expected-node-id",
+          "G_CUDA_ORACLE_B2",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B2.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_oracle_b2_events_equal",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_8_event_contract": true,
+        "enforcer_receipt_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B2.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d",
+          "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B2.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "notes": [
+          "8-event enforcer contract mandatory; enforcer receipt path is O_EXCL under run root.",
+          "GPU tests honor LANDS_AB_RUN_ROOT via resolve_run_scratch_dir for raw obs emission.",
+          "After row: harvest_exactly_one_raw_obs(run_root, gating_row) must return exactly one file.",
+          "phase JSONL + enforcer receipt paths must not exist before row start (O_EXCL / first-write).",
+          "Per-row phase budgets ~180-260s; hard stop on timeout or enforcer non-OK."
+        ],
+        "o_excl": true,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "path_alias_policy": {
+          "canonical_enforcer_receipt_path": "argv --enforcer-receipt (== enforcer_receipt_path_template)",
+          "removed_alias": "enforcer_receipt_template",
+          "rule": "retained path fields must byte-equal argv after placeholder substitution"
+        },
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B2.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B2.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B2.json",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_ORACLE_B2_<run_local_nonce>.json"
+        ],
+        "preflight_must_not_exist_note": "Paths equal actual argv/path templates (no extra -<nonce> suffix). Entire run root must also not exist at activation.",
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_ORACLE_B2 (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/.",
+        "raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_ORACLE_B2_<run_local_nonce>.json",
+        "terminal_collection_enforcer_receipt_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B2.json",
+        "terminal_collection_phase_events_jsonl_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B2.jsonl"
+      },
+      "surfaces": [
+        "s5"
+      ]
+    },
+    {
+      "device": "cuda:0",
+      "duration_budget_seconds": 260,
+      "formal_entry": "pytest gpu_live::test_gpu_live_lands_ab_oracle_b3_events_equal under enforcer (8-event contract)",
+      "gating_row": "G_CUDA_ORACLE_B3",
+      "invocation": {
+        "argv_template": [
+          "timeout",
+          "260",
+          "bin/watch-wrap",
+          "--heartbeat",
+          "30",
+          "--error",
+          "Traceback|Error|Killed|OOM|FAILED|assert|GPU-SMOKE-FAIL|LANDS-AB-FAIL",
+          "--progress",
+          "collected|PASSED|FAILED|phase=|terminal_class|device_type|gating_row|sha=",
+          "--success",
+          "passed|LANDS_AB_ROW_PASS",
+          "--replay",
+          "40",
+          "--",
+          "python3",
+          "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+          "--phase-events-jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B3.jsonl",
+          "--expected-node-id",
+          "G_CUDA_ORACLE_B3",
+          "--enforcer-receipt",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B3.json",
+          "--budget",
+          "forward_backward=60.0",
+          "--budget",
+          "update=60.0",
+          "--budget",
+          "emission=60.0",
+          "--budget",
+          "flush=30.0",
+          "--",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py::test_gpu_live_lands_ab_oracle_b3_events_equal",
+          "-q",
+          "-s"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "enforcer_8_event_contract": true,
+        "enforcer_receipt_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B3.json",
+        "env_required": {
+          "CUDA_VISIBLE_DEVICES": "0",
+          "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d",
+          "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+          "PYTHONPATH": ".",
+          "SPARSE_LIVE_CARRIER_PHASE_EVENTS_JSONL": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B3.jsonl"
+        },
+        "expected_child_rc": 0,
+        "expected_enforcer_exit_code": 0,
+        "expected_enforcer_terminal_class": "OK",
+        "hard_timeout_seconds": 260,
+        "notes": [
+          "8-event enforcer contract mandatory; enforcer receipt path is O_EXCL under run root.",
+          "GPU tests honor LANDS_AB_RUN_ROOT via resolve_run_scratch_dir for raw obs emission.",
+          "After row: harvest_exactly_one_raw_obs(run_root, gating_row) must return exactly one file.",
+          "phase JSONL + enforcer receipt paths must not exist before row start (O_EXCL / first-write).",
+          "Per-row phase budgets ~180-260s; hard stop on timeout or enforcer non-OK."
+        ],
+        "o_excl": true,
+        "pass_requires": [
+          "enforcer terminal_class == OK",
+          "enforcer exit 0",
+          "child_rc == 0",
+          "phases seen exactly forward_backward\u2192update\u2192emission\u2192flush (single pair each = 8 events)",
+          "pytest node PASS",
+          "raw observation validate_raw_row_observation OK with science_claim=false"
+        ],
+        "path_alias_policy": {
+          "canonical_enforcer_receipt_path": "argv --enforcer-receipt (== enforcer_receipt_path_template)",
+          "removed_alias": "enforcer_receipt_template",
+          "rule": "retained path fields must byte-equal argv after placeholder substitution"
+        },
+        "phase_budgets_seconds": {
+          "emission": 60.0,
+          "flush": 30.0,
+          "forward_backward": 60.0,
+          "update": 60.0
+        },
+        "phase_events_jsonl_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B3.jsonl",
+        "preflight_must_not_exist": [
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B3.jsonl",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B3.json",
+          "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_ORACLE_B3_<run_local_nonce>.json"
+        ],
+        "preflight_must_not_exist_note": "Paths equal actual argv/path templates (no extra -<nonce> suffix). Entire run root must also not exist at activation.",
+        "raw_obs_harvest_rule": "After child PASS + enforcer OK: collect the O_EXCL raw observation written under LANDS_AB_RUNTIME_SCRATCH for gating_row=G_CUDA_ORACLE_B3 (runtime_scratch_raw_path convention); re-hash bytes; refuse if path is under artifacts/.",
+        "raw_obs_path_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/lands_ab_raw_obs_G_CUDA_ORACLE_B3_<run_local_nonce>.json",
+        "terminal_collection_enforcer_receipt_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/enforcer_receipt_G_CUDA_ORACLE_B3.json",
+        "terminal_collection_phase_events_jsonl_path": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>/phase_events_G_CUDA_ORACLE_B3.jsonl"
+      },
+      "surfaces": [
+        "s5"
+      ]
+    }
+  ],
+  "runtime_scratch": {
+    "activation_contract": {
+      "create_mode": "mkdir parents only after go; never reuse a prior nonce root",
+      "forbid_precreate_of_raw_manifest_or_receipts": true,
+      "guard_symbol": "lands_ab_eval_runtime_io.o_excl_write_text / runtime_scratch_raw_path / resolve_run_scratch_dir",
+      "no_repo_artifacts_raw_obs": true,
+      "raw_obs_must_not_write_to_repo_artifacts": true,
+      "resolved_run_root_must_not_exist_before_activation": true
+    },
+    "env_binding": {
+      "LANDS_AB_RUNTIME_SCRATCH": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d",
+      "LANDS_AB_RUN_ROOT": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+      "preferred": "LANDS_AB_RUN_ROOT (lands_ab_eval_runtime_io.resolve_run_scratch_dir)"
+    },
+    "harvest_exactly_one_raw_obs": {
+      "applies_to_each_of_7_gating_rows": true,
+      "helper": "calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io.harvest_exactly_one_raw_obs",
+      "rule": "exactly ONE lands_ab_raw_obs_<gating_row>_*.json under run root per gating row",
+      "zero_or_multiple": "STOP"
+    },
+    "nonce_policy": "Replace <nonce> once per formal run with a fresh hex nonce; never reuse paths or run roots.",
+    "o_excl_everywhere": {
+      "cpu_raw_obs": true,
+      "cuda_raw_obs": true,
+      "enforcer_receipt": true,
+      "eval_receipt": true,
+      "helpers": [
+        "calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io.o_excl_write_text",
+        "calm.hrm_text_158.native_full_stack.lands_ab_eval_runtime_io.o_excl_write_json"
+      ],
+      "manifest": true,
+      "phase_jsonl": true,
+      "retry_semantics": "hard error FileExistsError / non-zero; never overwrite"
+    },
+    "path_pattern": "<scratch>/test-operator/<nonce>/",
+    "rule": "ALL raw observations, phase JSONL, enforcer receipts, manifest, eval receipt live under the nonce run root OUTSIDE artifacts/. Writing raw into artifacts/ is STOP. Entire run root must not exist before activation (co_lead pre-mortem residual on the first dead launch-plan lineage node).",
+    "run_root_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d/test-operator/<nonce>",
+    "scratch_base_template": "/tmp/lands_ab_runtime_scratch/1785580662332-ab6ceb57/c2d7435a63c6dc2d"
+  },
+  "schema": "LANDS_AB_EVAL_launch_packet/v8",
+  "science_claim": false,
+  "science_source_manifest_path": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_A.json",
+  "science_source_manifest_sha256": "7d111d527452820ad05431b34dc6ef5742361196ef188916e0e7d3c58fa43560",
+  "self_check": {
+    "LANDS_AB_false_locked": true,
+    "class_aware_heterogeneous_universes": true,
+    "consumer_entries_are_path_sha256_maps": true,
+    "consumer_present": true,
+    "cpu_plus_six_cuda": true,
+    "dirty_imported_bytes_manifest_semantics": true,
+    "does_not_execute": true,
+    "enforcer_8_event_budgets_named": true,
+    "enforcer_receipt_template_absent": true,
+    "equivalent_reachable": true,
+    "exact_argv_dry_exec_required": true,
+    "expected_branch_classifier_determined": true,
+    "expected_branch_locked_structural_null": false,
+    "harvest_exactly_one": true,
+    "nonce_run_root_must_not_exist": true,
+    "o_excl_everywhere": true,
+    "operative_packet_binding_revision_neutral": true,
+    "packet_v1_dead_lineage_referenced": true,
+    "packet_v2_dead_lineage_referenced": true,
+    "packet_v3_dead_lineage_referenced": true,
+    "packet_v4_dead_lineage_referenced": true,
+    "packet_v5_dead_lineage_referenced": true,
+    "packet_v6_dead_lineage_referenced": true,
+    "path_aliases_argv_equal": true,
+    "pinned_to_source_commit": true,
+    "preflight_must_not_exist_matches_argv": true,
+    "science_source_manifest_bound": true,
+    "scratch_outside_artifacts": true,
+    "seven_gating_rows_present": true,
+    "source_commit_bound_to_head_a": true,
+    "terminal_binds_operative_packet_not_dead_revision": true
+  },
+  "source_commit_sha": "c2d7435a63c6dc2d732dcd7c959d5b8418b81ea3",
+  "stop_conditions": [
+    "operative_packet_binding.meaning contains this packet_vN token or describes a DEAD revision as operative",
+    "any retained enforcer-receipt path field != argv --enforcer-receipt (stale alias class)",
+    "terminal receipt missing operative_packet_path_and_sha256 or binds a DEAD packet revision as the operative packet field",
+    "consumer raw_artifact_paths entry missing path/sha256 (raw_artifact_entry_incomplete) \u2014 packet binding defect class",
+    "resolved run root already exists at activation (retry/harvest ambiguity)",
+    "enforcer rc != 0 OR terminal_class != OK OR phase overrun / missing coverage / duplicate start",
+    "pytest/child rc != 0",
+    "O_EXCL collision / FileExistsError on any formal write",
+    "harvest_exactly_one_raw_obs zero or multiple for any gating row",
+    "digest/pin mismatch at preflight or mid-run recheck (HEAD/PLAN/SNAPSHOT/TSA/BDL/recarry/source_pins/harness)",
+    "any TSA/BDL byte drift vs pins (pre or post)",
+    "raw-artifact write into artifacts/ (or any path not outside artifacts/)",
+    "row wall time exceeds declared duration_budget_seconds",
+    "consumer raw_artifact_paths missing any of the 7 gating rows",
+    "within-class CUDA key-universe mismatch or hand-authored required_key_set",
+    "any attempt to emit LANDS_AB=true / EQUIVALENT mint language / readiness or debt flip",
+    ".pt commit or banked-parent mutation"
+  ],
+  "task_id": "1785580662332-ab6ceb57",
+  "terminal_branch_allow_set": [
+    "BR-LANDS-AB-SCOPE-CREEP-STOP",
+    "BR-LANDS-AB-FIXTURE-CONTRACT-FAIL",
+    "BR-LANDS-AB-VACUOUS",
+    "BR-LANDS-AB-DIVERGENT-EVENT",
+    "BR-LANDS-AB-DIVERGENT-APPLY",
+    "BR-LANDS-AB-DIVERGENT-ORACLE-LIVE",
+    "BR-LANDS-AB-EQUIVALENT"
+  ],
+  "terminal_classification": {
+    "FORMAL_RUNTIME_CREATE_path_after_go": "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_EVAL_terminal_receipt_consumer_adapt_v1.json",
+    "enforcer_receipt_hash_binding": {
+      "forbidden_aliases": [
+        "enforcer_receipt_template"
+      ],
+      "rows": [
+        "G_CUDA_B1_APPLY",
+        "G_CUDA_B2_APPLY",
+        "G_CUDA_B3_APPLY",
+        "G_CUDA_ORACLE_B1",
+        "G_CUDA_ORACLE_B2",
+        "G_CUDA_ORACLE_B3"
+      ],
+      "source": "canonical argv --enforcer-receipt path per CUDA row (enforcer_receipt_path_template)"
+    },
+    "expected_branch_id": "CLASSIFIER_DETERMINED",
+    "note": "Terminal receipt mint is FORMAL_RUNTIME_CREATE (claude-as-test-operator) after persisted go \u2014 not part of this packet create. expected_branch_id is classifier-determined (not structural-null locked).",
+    "on_match": "shippable structural null receipt; LANDS_AB remains false; opens separate HIGH TSA/BDL injective-emission follow-on only",
+    "on_match_equivalent": "record BR-LANDS-AB-EQUIVALENT under claim_ceiling; equivalent_minted may become true ONLY for the scoped seven-row fixture matrix; science_claim remains false; no readiness/sub-2/bank upgrade",
+    "on_mismatch": "DEVIATION \u2014 stop, report branch_id + reason_codes + raw artifact shas; no claim upgrade",
+    "on_named_negative": "record the exact PRIORITY_ORDER branch hit (SCOPE-CREEP/FIXTURE/VACUOUS/DIVERGENT-*); LANDS_AB remains false; shippable named negative",
+    "on_unlisted_or_protocol_fail": "DEVIATION \u2014 stop, report branch_id + reason_codes + raw artifact shas; no claim upgrade",
+    "operative_packet_binding": {
+      "field": "operative_packet_path_and_sha256",
+      "forbidden_as_required_live_fields": [
+        "packet_v[0-9]+_sha256 (any dead-revision packet_vN_sha256 field name)",
+        "any packet_vN_sha256 name for a DEAD revision"
+      ],
+      "forbidden_required_live_field_regex": "^packet_v[0-9]+_sha256$",
+      "meaning": "terminal receipt records the operative packet selected by the persisted go record, as exact path+sha; never a DEAD lineage revision field name"
+    },
+    "positive_hypothesis_branch": "BR-LANDS-AB-EQUIVALENT",
+    "terminal_receipt_required_fields": [
+      "run_root",
+      "raw_obs_paths_and_sha256_for_all_7_gating_rows",
+      "phase_jsonl_paths_and_sha256_for_6_cuda_rows",
+      "enforcer_receipt_paths_and_sha256_for_6_cuda_rows",
+      "manifest_path_and_sha256",
+      "eval_receipt_path_and_sha256",
+      "terminal_branch_id",
+      "per_row_durations_seconds",
+      "claim_ceiling",
+      "science_claim",
+      "HEAD_sha",
+      "operative_packet_path_and_sha256"
+    ]
+  },
+  "terminal_classifier_v6": {
+    "anchor_policy": {
+      "family_reraise_ordered_with_helper_static": true,
+      "kind": "ordered_static_on_final_diagnostic_line",
+      "multi_segment_body_echo_overlap": {
+        "branch": "S4_BOTH_TOOL_DEFECT",
+        "definition": "Any final-line ordered-static match where m_pin AND m_contract are both true classifies S4_BOTH_TOOL_DEFECT (fail_closed_overlap). The 68-entry regression seed is a named non-exhaustive sample of this mechanism class (prototype body ' must be lowercase 64-hex' / tmpl:44 under battery construction); it does NOT bound the class. Real-run S4 outside the seed is additional fail-closed overlap to RECORD in the terminal receipt, not classifier drift and not an independent tool defect.",
+        "regression_seed": {
+          "exhaustive": false,
+          "name": "s4_fail_closed_overlap_regression_seed",
+          "seed_not_exhaustive": true,
+          "size": 68
+        },
+        "report_as": "fail_closed_overlap",
+        "status": "fail_closed_class_by_mechanism"
+      },
+      "no_catch_all_error_prefix": true,
+      "no_phantoms": true,
+      "no_placeholder_braces": true,
+      "ordered_static_prevents_free_substring_family_flip": true,
+      "print_reraise_delegates_to_closed_underlying": true
+    },
+    "classification_input": {
+      "anchor_match_scope": "final_diagnostic_line_only",
+      "final_diagnostic_line": "last non-empty stderr line",
+      "injection_resistance": "ordered_static_segments_prevent_free_substring_family_flip; ordered-static double-match (m_pin AND m_contract) is always S4 fail_closed_overlap by mechanism (regression seed is non-exhaustive)",
+      "traceback_scope": "whole_stderr_only_after_final_line_anchor_miss"
+    },
+    "clean_pass_token": "PACKET_DRY_EXEC_OK",
+    "completeness": {
+      "criterion": "final_line_ordered_static_concrete",
+      "extractor_script": "extract_dry_exec_emissions.py",
+      "harness_argv": [
+        "python3",
+        "concrete_anchor_harness.py",
+        "--coverage",
+        "COVERAGE.json",
+        "--packet",
+        "PACKET_v8.json"
+      ],
+      "harness_script": "concrete_anchor_harness.py",
+      "n_contract_patterns": 157,
+      "n_emissions": 175,
+      "n_pin_patterns": 14,
+      "s4_class_definition": "Any final-line ordered-static match where m_pin AND m_contract are both true classifies S4_BOTH_TOOL_DEFECT (fail_closed_overlap). The 68-entry regression seed is a named non-exhaustive sample of this mechanism class (prototype body ' must be lowercase 64-hex' / tmpl:44 under battery construction); it does NOT bound the class. Real-run S4 outside the seed is additional fail-closed overlap to RECORD in the terminal receipt, not classifier drift and not an independent tool defect.",
+      "s4_seed_not_exhaustive": true,
+      "s4_seed_size": 68,
+      "tool_sha256": "bc0d7f56e67cfbea58d7775f017d04ef01f2253f1c15f1b3867d67128fc52d02"
+    },
+    "contract_patterns": [
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 44,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:44",
+        "rt_segments": [
+          "error: ",
+          " must be lowercase 64-hex"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} must be lowercase 64-hex"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 50,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:50",
+        "rt_segments": [
+          "error: ",
+          " must be 40-hex commit sha"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} must be 40-hex commit sha"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 212,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:212",
+        "rt_segments": [
+          "error: watch-wrap missing "
+        ],
+        "starts_static": true,
+        "template": "watch-wrap missing {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 215,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:215",
+        "rt_segments": [
+          "error: watch-wrap ",
+          " requires non-empty value"
+        ],
+        "starts_static": true,
+        "template": "watch-wrap {\u2026} requires non-empty value"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 224,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:224",
+        "rt_segments": [
+          "error: ",
+          " not numeric: "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} not numeric: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 226,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:226",
+        "rt_segments": [
+          "error: ",
+          " must be finite and >0: "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} must be finite and >0: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 269,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:269",
+        "rt_segments": [
+          "error: path outside repo: "
+        ],
+        "starts_static": true,
+        "template": "path outside repo: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 275,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:275",
+        "rt_segments": [
+          "error: budget token must be name=value, got "
+        ],
+        "starts_static": true,
+        "template": "budget token must be name=value, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 279,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:279",
+        "rt_segments": [
+          "error: empty budget name in "
+        ],
+        "starts_static": true,
+        "template": "empty budget name in {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 300,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:300",
+        "rt_segments": [
+          "error: ",
+          " ",
+          " must appear exactly once (got ",
+          ")"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} {\u2026} must appear exactly once (got {\u2026})"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 303,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:303",
+        "rt_segments": [
+          "error: ",
+          " ",
+          " must sit inside ",
+          " segment (index ",
+          " not in (",
+          ",",
+          "))"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} {\u2026} must sit inside {\u2026} segment (index {\u2026} not in ({\u2026},{\u2026}))"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 305,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:305",
+        "rt_segments": [
+          "error: ",
+          " ",
+          " value must sit inside ",
+          " segment"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} {\u2026} value must sit inside {\u2026} segment"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 308,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:308",
+        "rt_segments": [
+          "error: ",
+          " ",
+          " requires non-empty non-flag value inside "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} {\u2026} requires non-empty non-flag value inside {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 316,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:316",
+        "rt_segments": [
+          "error: ",
+          " CUDA argv must start with timeout <budget>"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} CUDA argv must start with timeout <budget>"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 325,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:325",
+        "rt_segments": [
+          "error: ",
+          " missing bin/watch-wrap"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} missing bin/watch-wrap"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 327,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:327",
+        "rt_segments": [
+          "error: ",
+          " watch-wrap must appear exactly once"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} watch-wrap must appear exactly once"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 330,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:330",
+        "rt_segments": [
+          "error: ",
+          " watch-wrap must immediately follow timeout <budget> (index 2), got "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} watch-wrap must immediately follow timeout <budget> (index 2), got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 335,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:335",
+        "rt_segments": [
+          "error: ",
+          " CUDA chain requires exactly two `--` delimiters, got "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} CUDA chain requires exactly two `--` delimiters, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 338,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:338",
+        "rt_segments": [
+          "error: ",
+          " delimiter order invalid vs watch-wrap index"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} delimiter order invalid vs watch-wrap index"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 342,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:342",
+        "rt_segments": [
+          "error: ",
+          " enforcer child segment too short"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} enforcer child segment too short"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 344,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:344",
+        "rt_segments": [
+          "error: ",
+          " enforcer child must begin with python3 immediately after first `--`"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} enforcer child must begin with python3 immediately after first `--`"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 347,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:347",
+        "rt_segments": [
+          "error: ",
+          " enforcer child must be exactly scripts/",
+          " immediately after python3, got "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} enforcer child must be exactly scripts/{\u2026} immediately after python3, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 354,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:354",
+        "rt_segments": [
+          "error: ",
+          " pytest child segment too short"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} pytest child segment too short"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 356,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:356",
+        "rt_segments": [
+          "error: ",
+          " pytest child must begin with python3 immediately after second `--`"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} pytest child must begin with python3 immediately after second `--`"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 358,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:358",
+        "rt_segments": [
+          "error: ",
+          " pytest child must be `python3 -m pytest` immediately after second `--`"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} pytest child must be `python3 -m pytest` immediately after second `--`"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 361,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:361",
+        "rt_segments": [
+          "error: ",
+          " missing pytest node after `python3 -m pytest`"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} missing pytest node after `python3 -m pytest`"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 364,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:364",
+        "rt_segments": [
+          "error: ",
+          " not in frozen CUDA pytest node map"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} not in frozen CUDA pytest node map"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 366,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:366",
+        "rt_segments": [
+          "error: ",
+          " pytest node ",
+          " != frozen "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} pytest node {\u2026} != frozen {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 386,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:386",
+        "rt_segments": [
+          "error: ",
+          " --expected-node-id must equal gating_row"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} --expected-node-id must equal gating_row"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 390,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:390",
+        "rt_segments": [
+          "error: ",
+          " requires exactly four --budget flags, got "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} requires exactly four --budget flags, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 394,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:394",
+        "rt_segments": [
+          "error: ",
+          " --budget must sit entirely inside enforcer segment"
+        ],
+        "starts_static": true,
+        "template": "{\u2026} --budget must sit entirely inside enforcer segment"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 397,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:397",
+        "rt_segments": [
+          "error: ",
+          " duplicate phase budget name "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} duplicate phase budget name {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 400,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:400",
+        "rt_segments": [
+          "error: ",
+          " phase budget names ",
+          " != "
+        ],
+        "starts_static": true,
+        "template": "{\u2026} phase budget names {\u2026} != {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 458,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:458",
+        "rt_segments": [
+          "error: row argv must be non-empty list[str]"
+        ],
+        "starts_static": true,
+        "template": "row argv must be non-empty list[str]"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 465,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:465",
+        "rt_segments": [
+          "error: placeholder/ellipsis in argv: "
+        ],
+        "starts_static": true,
+        "template": "placeholder/ellipsis in argv: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 471,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:471",
+        "rt_segments": [
+          "error: runner path not found"
+        ],
+        "starts_static": true,
+        "template": "runner path not found"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 484,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:484",
+        "rt_segments": [
+          "error: watch-wrap empty error/progress"
+        ],
+        "starts_static": true,
+        "template": "watch-wrap empty error/progress"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 517,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:517",
+        "rt_segments": [
+          "error: I1/Q13 ",
+          " assertion field ",
+          " must be a JSON boolean (true/false), got ",
+          " ",
+          ". Assertion fields are read for truthiness by consumers, so a non-boolean would let the validator and a consumer disagree about whether a claim was made."
+        ],
+        "starts_static": true,
+        "template": "I1/Q13 {\u2026} assertion field {\u2026} must be a JSON boolean (true/false), got {\u2026} {\u2026}. Assertion fields are read for truthiness by consumers, so a non-boolean would let the validator and a consumer disagree about whether a claim was made."
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 786,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:786",
+        "rt_segments": [
+          "error: Q4 lineage pin 'pins.",
+          "' carries non-schema field(s) ",
+          " \u2014 exemption covers the closed lineage schema only"
+        ],
+        "starts_static": true,
+        "template": "Q4 lineage pin 'pins.{\u2026}' carries non-schema field(s) {\u2026} \u2014 exemption covers the closed lineage schema only"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 951,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:951",
+        "rt_segments": [
+          "error: I3 packet_revision required"
+        ],
+        "starts_static": true,
+        "template": "I3 packet_revision required"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 955,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:955",
+        "rt_segments": [
+          "error: L1 operative_packet_revision required (must equal packet_revision)"
+        ],
+        "starts_static": true,
+        "template": "L1 operative_packet_revision required (must equal packet_revision)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 960,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:960",
+        "rt_segments": [
+          "error: L1 operative_packet_revision=",
+          " must equal packet_revision="
+        ],
+        "starts_static": true,
+        "template": "L1 operative_packet_revision={\u2026} must equal packet_revision={\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 966,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:966",
+        "rt_segments": [
+          "error: I3 path does not match packet_revision: path=",
+          " rev="
+        ],
+        "starts_static": true,
+        "template": "I3 path does not match packet_revision: path={\u2026} rev={\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 992,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:992",
+        "rt_segments": [
+          "error: J1 packet lineage pin ",
+          " must be object with do_not_activate=true"
+        ],
+        "starts_static": true,
+        "template": "J1 packet lineage pin {\u2026} must be object with do_not_activate=true"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 996,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:996",
+        "rt_segments": [
+          "error: J1 packet lineage pin ",
+          " (v",
+          ") missing do_not_activate=true"
+        ],
+        "starts_static": true,
+        "template": "J1 packet lineage pin {\u2026} (v{\u2026}) missing do_not_activate=true"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1000,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1000",
+        "rt_segments": [
+          "error: J1 packet lineage pin ",
+          " missing independent DEAD/historical status (do_not_activate alone is insufficient)"
+        ],
+        "starts_static": true,
+        "template": "J1 packet lineage pin {\u2026} missing independent DEAD/historical status (do_not_activate alone is insufficient)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1006,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1006",
+        "rt_segments": [
+          "error: J1/O1 packet lineage pin ",
+          " requires path+sha256 identity fields"
+        ],
+        "starts_static": true,
+        "template": "J1/O1 packet lineage pin {\u2026} requires path+sha256 identity fields"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1012,
+        "mode": "FAMILY_RERAISE_ORDERED",
+        "pattern_id": "family_reraise:1012",
+        "rt_segments": [
+          "error: J1/O1 ",
+          " must be lowercase 64-hex"
+        ],
+        "starts_static": true,
+        "template": "J1/O1 {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1128,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1128",
+        "rt_segments": [
+          "error: I1/Q14 self_check must be a JSON object, got ",
+          ". A non-mapping self_check would skip every pin and assertion check in this section rather than failing, so it is malformed by contract."
+        ],
+        "starts_static": true,
+        "template": "I1/Q14 self_check must be a JSON object, got {\u2026}. A non-mapping self_check would skip every pin and assertion check in this section rather than failing, so it is malformed by contract."
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1144,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1144",
+        "rt_segments": [
+          "error: I1/Q13 self_check value for ",
+          " must be a scalar, got ",
+          ". Nested self_check containers are not part of the schema and would hide pin-shaped keys from this check."
+        ],
+        "starts_static": true,
+        "template": "I1/Q13 self_check value for {\u2026} must be a scalar, got {\u2026}. Nested self_check containers are not part of the schema and would hide pin-shaped keys from this check."
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1180,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1180",
+        "rt_segments": [
+          "error: I1/Q14 self_check pin key ",
+          " names no referent: the key is only the pin marker, so it asserts pinning without identifying a head. Use pinned_to_<head-or-descriptor>."
+        ],
+        "starts_static": true,
+        "template": "I1/Q14 self_check pin key {\u2026} names no referent: the key is only the pin marker, so it asserts pinning without identifying a head. Use pinned_to_<head-or-descriptor>."
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1202,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1202",
+        "rt_segments": [
+          "error: I1/Q11 self_check pin is head-only by contract, but ",
+          " carries a ",
+          "-char hex token which cannot be a commit head (max ",
+          "): ",
+          ". Pin non-head values through a typed path/sha structure that binds to disk, not through a boolean key name."
+        ],
+        "starts_static": true,
+        "template": "I1/Q11 self_check pin is head-only by contract, but {\u2026} carries a {\u2026}-char hex token which cannot be a commit head (max {\u2026}): {\u2026}. Pin non-head values through a typed path/sha structure that binds to disk, not through a boolean key name."
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1209,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1209",
+        "rt_segments": [
+          "error: I1/Q11 self_check pin claims non-source head: ",
+          " (hex-shaped token ",
+          " is not a prefix of the source commit)"
+        ],
+        "starts_static": true,
+        "template": "I1/Q11 self_check pin claims non-source head: {\u2026} (hex-shaped token {\u2026} is not a prefix of the source commit)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1264,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1264",
+        "rt_segments": [
+          "error: L1/J2 non-current packet_v",
+          " reference outside DEAD lineage at "
+        ],
+        "starts_static": true,
+        "template": "L1/J2 non-current packet_v{\u2026} reference outside DEAD lineage at {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1274,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1274",
+        "rt_segments": [
+          "error: I4 branch_ids/PRIORITY_ORDER required"
+        ],
+        "starts_static": true,
+        "template": "I4 branch_ids/PRIORITY_ORDER required"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1278,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1278",
+        "rt_segments": [
+          "error: J3 terminal_branch_allow_set required (must equal branch_ids exactly)"
+        ],
+        "starts_static": true,
+        "template": "J3 terminal_branch_allow_set required (must equal branch_ids exactly)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1283,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1283",
+        "rt_segments": [
+          "error: J3 terminal_branch_allow_set must equal branch_ids exactly (set equality)"
+        ],
+        "starts_static": true,
+        "template": "J3 terminal_branch_allow_set must equal branch_ids exactly (set equality)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1290,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1290",
+        "rt_segments": [
+          "error: J3 procedural_stop_reasons must be a list when present"
+        ],
+        "starts_static": true,
+        "template": "J3 procedural_stop_reasons must be a list when present"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1295,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1295",
+        "rt_segments": [
+          "error: J3 procedural_stop_reasons must not reference branch id "
+        ],
+        "starts_static": true,
+        "template": "J3 procedural_stop_reasons must not reference branch id {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1331,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1331",
+        "rt_segments": [
+          "error: J3/I4 stop_conditions restricts preregistered branch "
+        ],
+        "starts_static": true,
+        "template": "J3/I4 stop_conditions restricts preregistered branch {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1343,
+        "mode": "FAMILY_RERAISE_ORDERED",
+        "pattern_id": "family_reraise:1343",
+        "rt_segments": [
+          "error: L3 ",
+          " must be lowercase 64-hex"
+        ],
+        "starts_static": true,
+        "template": "L3 {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1362,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1362",
+        "rt_segments": [
+          "error: I5/Q9 ",
+          " and ",
+          " both present and disagree: ",
+          " != ",
+          " \u2014 the alternative naming must not carry a second, unvalidated identity"
+        ],
+        "starts_static": true,
+        "template": "I5/Q9 {\u2026} and {\u2026} both present and disagree: {\u2026} != {\u2026} \u2014 the alternative naming must not carry a second, unvalidated identity"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1372,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1372",
+        "rt_segments": [
+          "error: I5 operative plan id+sha required (operative_plan_id/operative_plan_sha256 or authority_chain.plan_*)"
+        ],
+        "starts_static": true,
+        "template": "I5 operative plan id+sha required (operative_plan_id/operative_plan_sha256 or authority_chain.plan_*)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1378,
+        "mode": "FAMILY_RERAISE_ORDERED",
+        "pattern_id": "family_reraise:1378",
+        "rt_segments": [
+          "error: I5 ",
+          " must be lowercase 64-hex"
+        ],
+        "starts_static": true,
+        "template": "I5 {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1381,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1381",
+        "rt_segments": [
+          "error: L3/J5 operative_plan_id must be EXACT ",
+          ", got "
+        ],
+        "starts_static": true,
+        "template": "L3/J5 operative_plan_id must be EXACT {\u2026}, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1385,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1385",
+        "rt_segments": [
+          "error: L3/J5 operative_plan_sha256 must be EXACT ",
+          ", got "
+        ],
+        "starts_static": true,
+        "template": "L3/J5 operative_plan_sha256 must be EXACT {\u2026}, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1391,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1391",
+        "rt_segments": [
+          "error: L3/J5 DEAD plan lineage rejected: "
+        ],
+        "starts_static": true,
+        "template": "L3/J5 DEAD plan lineage rejected: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1393,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1393",
+        "rt_segments": [
+          "error: J5 operative_plan_id must be repo-relative, got "
+        ],
+        "starts_static": true,
+        "template": "J5 operative_plan_id must be repo-relative, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1398,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1398",
+        "rt_segments": [
+          "error: J5 operative_plan_id escapes repo: "
+        ],
+        "starts_static": true,
+        "template": "J5 operative_plan_id escapes repo: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1400,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1400",
+        "rt_segments": [
+          "error: J5 operative plan missing on disk: "
+        ],
+        "starts_static": true,
+        "template": "J5 operative plan missing on disk: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1403,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1403",
+        "rt_segments": [
+          "error: J5 operative_plan_sha256 mismatch for ",
+          ": packet=",
+          " disk="
+        ],
+        "starts_static": true,
+        "template": "J5 operative_plan_sha256 mismatch for {\u2026}: packet={\u2026} disk={\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1407,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1407",
+        "rt_segments": [
+          "error: L3 disk rehash of operative plan != expected: disk=",
+          " expected="
+        ],
+        "starts_static": true,
+        "template": "L3 disk rehash of operative plan != expected: disk={\u2026} expected={\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1502,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1502",
+        "rt_segments": [
+          "error: J4/L2 ambiguous/foreign plan reference at ",
+          " (need DEAD/historical marker or exact operative PLAN_v6)"
+        ],
+        "starts_static": true,
+        "template": "J4/L2 ambiguous/foreign plan reference at {\u2026} (need DEAD/historical marker or exact operative PLAN_v6)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1526,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1526",
+        "rt_segments": [
+          "error: Q3/I1 unbound hex token outside known-reference set at ",
+          ": "
+        ],
+        "starts_static": true,
+        "template": "Q3/I1 unbound hex token outside known-reference set at {\u2026}: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1723,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1723",
+        "rt_segments": [
+          "error: row_command not object"
+        ],
+        "starts_static": true,
+        "template": "error: row_command not object"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1727,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1727",
+        "rt_segments": [
+          "error: bad/dup gating_row "
+        ],
+        "starts_static": true,
+        "template": "error: bad/dup gating_row {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1732,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1732",
+        "rt_segments": [
+          "error: ",
+          " invocation must be object"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} invocation must be object"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1736,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1736",
+        "rt_segments": [
+          "error: missing argv for "
+        ],
+        "starts_static": true,
+        "template": "error: missing argv for {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1740,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1740",
+        "rt_segments": [
+          "error: duplicate argv for "
+        ],
+        "starts_static": true,
+        "template": "error: duplicate argv for {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1748,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1748",
+        "rt_segments": [
+          "error: ",
+          " env_required must be object"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} env_required must be object"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1752,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1752",
+        "rt_segments": [
+          "error: ",
+          " missing env "
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} missing env {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1757,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1757",
+        "rt_segments": [
+          "error: ",
+          " LANDS_AB_RUN_ROOT missing frozen nonce template token (<",
+          "> or similar): "
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} LANDS_AB_RUN_ROOT missing frozen nonce template token (<{\u2026}> or similar): {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1760,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1760",
+        "rt_segments": [
+          "error: ",
+          " LANDS_AB_RUN_ROOT must be descendant of LANDS_AB_RUNTIME_SCRATCH"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} LANDS_AB_RUN_ROOT must be descendant of LANDS_AB_RUNTIME_SCRATCH"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1763,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1763",
+        "rt_segments": [
+          "error: ",
+          " LANDS_AB_RUN_ROOT must not be under repo root"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} LANDS_AB_RUN_ROOT must not be under repo root"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1766,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1766",
+        "rt_segments": [
+          "error: ",
+          " LANDS_AB_RUNTIME_SCRATCH must not be under repo root"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} LANDS_AB_RUNTIME_SCRATCH must not be under repo root"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1769,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1769",
+        "rt_segments": [
+          "error: ",
+          " env scratch/run_root must equal packet runtime_scratch.env_binding"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} env scratch/run_root must equal packet runtime_scratch.env_binding"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1774,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1774",
+        "rt_segments": [
+          "error: ",
+          " scratch/run_root differs from other gating rows (one formal run)"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} scratch/run_root differs from other gating rows (one formal run)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1778,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1778",
+        "rt_segments": [
+          "error: forbidden write path token in ",
+          ": "
+        ],
+        "starts_static": true,
+        "template": "error: forbidden write path token in {\u2026}: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1784,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1784",
+        "rt_segments": [
+          "error: ",
+          " missing required raw_obs_path_template"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} missing required raw_obs_path_template"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1789,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1789",
+        "rt_segments": [
+          "error: ",
+          " raw alias ",
+          " != raw_obs_path_template"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} raw alias {\u2026} != raw_obs_path_template"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1792,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1792",
+        "rt_segments": [
+          "error: duplicate raw path "
+        ],
+        "starts_static": true,
+        "template": "error: duplicate raw path {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1796,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1796",
+        "rt_segments": [
+          "error: ",
+          " raw_obs path must be descendant of LANDS_AB_RUN_ROOT"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} raw_obs path must be descendant of LANDS_AB_RUN_ROOT"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1799,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1799",
+        "rt_segments": [
+          "error: ",
+          " raw_obs path must not be under repo root"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} raw_obs path must not be under repo root"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1803,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1803",
+        "rt_segments": [
+          "error: ",
+          " raw basename must start with lands_ab_raw_obs_",
+          "_ (harvest pattern)"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} raw basename must start with lands_ab_raw_obs_{\u2026}_ (harvest pattern)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1808,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1808",
+        "rt_segments": [
+          "error: ",
+          " duplicate raw basename "
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} duplicate raw basename {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1812,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1812",
+        "rt_segments": [
+          "error: ",
+          " argv must start with timeout <budget>"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} argv must start with timeout <budget>"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1821,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1821",
+        "rt_segments": [
+          "error: ",
+          " missing duration_budget_seconds/hard_timeout_seconds for G6 bind"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} missing duration_budget_seconds/hard_timeout_seconds for G6 bind"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1824,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1824",
+        "rt_segments": [
+          "error: ",
+          " outer timeout ",
+          " != row hard bound ",
+          " (rule: argv[1] == inv.hard_timeout_seconds or row.duration_budget_seconds)"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} outer timeout {\u2026} != row hard bound {\u2026} (rule: argv[1] == inv.hard_timeout_seconds or row.duration_budget_seconds)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1830,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1830",
+        "rt_segments": [
+          "error: structural preflight ",
+          ": "
+        ],
+        "starts_static": true,
+        "template": "error: structural preflight {\u2026}: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1834,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1834",
+        "rt_segments": [
+          "error: ",
+          " --out must equal raw_obs_path_template"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} --out must equal raw_obs_path_template"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1848,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1848",
+        "rt_segments": [
+          "error: ",
+          " declared phase_budgets_seconds keys mismatch required set"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} declared phase_budgets_seconds keys mismatch required set"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1854,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1854",
+        "rt_segments": [
+          "error: ",
+          " declared budget ",
+          " not numeric"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} declared budget {\u2026} not numeric"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1857,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1857",
+        "rt_segments": [
+          "error: ",
+          " argv budget ",
+          "=",
+          " != declared "
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} argv budget {\u2026}={\u2026} != declared {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1861,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1861",
+        "rt_segments": [
+          "error: ",
+          " ",
+          " path must be descendant of LANDS_AB_RUN_ROOT"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} {\u2026} path must be descendant of LANDS_AB_RUN_ROOT"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1864,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1864",
+        "rt_segments": [
+          "error: ",
+          " ",
+          " path must not be under repo root"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} {\u2026} path must not be under repo root"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1868,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1868",
+        "rt_segments": [
+          "error: ",
+          " duplicate runtime basename "
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} duplicate runtime basename {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1874,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1874",
+        "rt_segments": [
+          "error: ",
+          " phase alias ",
+          " != --phase-events-jsonl"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} phase alias {\u2026} != --phase-events-jsonl"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1879,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1879",
+        "rt_segments": [
+          "error: ",
+          " missing enforcer metadata path"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} missing enforcer metadata path"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1883,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1883",
+        "rt_segments": [
+          "error: ",
+          " enforcer alias ",
+          " != --enforcer-receipt argv"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} enforcer alias {\u2026} != --enforcer-receipt argv"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1887,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1887",
+        "rt_segments": [
+          "error: ",
+          " missing phase env"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} missing phase env"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1890,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1890",
+        "rt_segments": [
+          "error: ",
+          " phase env != --phase-events-jsonl argv"
+        ],
+        "starts_static": true,
+        "template": "error: {\u2026} phase env != --phase-events-jsonl argv"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1893,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1893",
+        "rt_segments": [
+          "error: duplicate phase "
+        ],
+        "starts_static": true,
+        "template": "error: duplicate phase {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1897,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1897",
+        "rt_segments": [
+          "error: duplicate enforcer "
+        ],
+        "starts_static": true,
+        "template": "error: duplicate enforcer {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1919,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1919",
+        "rt_segments": [
+          "error: manifest outside repo (",
+          ")"
+        ],
+        "starts_static": true,
+        "template": "error: manifest outside repo ({\u2026})"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1924,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1924",
+        "rt_segments": [
+          "error: packet load: "
+        ],
+        "starts_static": true,
+        "template": "error: packet load: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1929,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1929",
+        "rt_segments": [
+          "error: packet missing binding field "
+        ],
+        "starts_static": true,
+        "template": "error: packet missing binding field {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1946,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1946",
+        "rt_segments": [
+          "error: packet.science_source_manifest_path outside repo (",
+          ")"
+        ],
+        "starts_static": true,
+        "template": "error: packet.science_source_manifest_path outside repo ({\u2026})"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1949,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1949",
+        "rt_segments": [
+          "error: CLI manifest path ",
+          " != packet.science_source_manifest_path "
+        ],
+        "starts_static": true,
+        "template": "error: CLI manifest path {\u2026} != packet.science_source_manifest_path {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1962,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1962",
+        "rt_segments": [
+          "error: generator_script_path must be scripts/lands_ab_science_source_manifest.py, got "
+        ],
+        "starts_static": true,
+        "template": "error: generator_script_path must be scripts/lands_ab_science_source_manifest.py, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1965,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1965",
+        "rt_segments": [
+          "error: dry_exec_tool_path must be ",
+          ", got "
+        ],
+        "starts_static": true,
+        "template": "error: dry_exec_tool_path must be {\u2026}, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1978,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1978",
+        "rt_segments": [
+          "error: manifest JSON: "
+        ],
+        "starts_static": true,
+        "template": "error: manifest JSON: {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1981,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1981",
+        "rt_segments": [
+          "error: manifest schema must be LANDS_AB_science_source_manifest/",
+          ", got "
+        ],
+        "starts_static": true,
+        "template": "error: manifest schema must be LANDS_AB_science_source_manifest/{\u2026}, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1985,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1985",
+        "rt_segments": [
+          "error: manifest entries missing"
+        ],
+        "starts_static": true,
+        "template": "error: manifest entries missing"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1988,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1988",
+        "rt_segments": [
+          "error: manifest n_entries != len(entries)"
+        ],
+        "starts_static": true,
+        "template": "error: manifest n_entries != len(entries)"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1993,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1993",
+        "rt_segments": [
+          "error: bad manifest entry"
+        ],
+        "starts_static": true,
+        "template": "error: bad manifest entry"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 1997,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1997",
+        "rt_segments": [
+          "error: bad/escape path "
+        ],
+        "starts_static": true,
+        "template": "error: bad/escape path {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2013,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2013",
+        "rt_segments": [
+          "error: manifest paths not sorted unique"
+        ],
+        "starts_static": true,
+        "template": "error: manifest paths not sorted unique"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2024,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2024",
+        "rt_segments": [
+          "error: bad packet schema "
+        ],
+        "starts_static": true,
+        "template": "error: bad packet schema {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2029,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2029",
+        "rt_segments": [
+          "error: gating_rows must be exact 7-tuple set"
+        ],
+        "starts_static": true,
+        "template": "error: gating_rows must be exact 7-tuple set"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2033,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2033",
+        "rt_segments": [
+          "error: row_commands must be list of 7"
+        ],
+        "starts_static": true,
+        "template": "error: row_commands must be list of 7"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2036,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2036",
+        "rt_segments": [
+          "error: claim_ceiling required"
+        ],
+        "starts_static": true,
+        "template": "error: claim_ceiling required"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2040,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2040",
+        "rt_segments": [
+          "error: claim_ceiling must be object"
+        ],
+        "starts_static": true,
+        "template": "error: claim_ceiling must be object"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2044,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2044",
+        "rt_segments": [
+          "error: claim_ceiling missing field "
+        ],
+        "starts_static": true,
+        "template": "error: claim_ceiling missing field {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2047,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2047",
+        "rt_segments": [
+          "error: claim_ceiling.",
+          " must be false"
+        ],
+        "starts_static": true,
+        "template": "error: claim_ceiling.{\u2026} must be false"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2056,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2056",
+        "rt_segments": [
+          "error: science_claim true forbidden"
+        ],
+        "starts_static": true,
+        "template": "error: science_claim true forbidden"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2061,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2061",
+        "rt_segments": [
+          "error: PRIORITY_ORDER must echo exact live order"
+        ],
+        "starts_static": true,
+        "template": "error: PRIORITY_ORDER must echo exact live order"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2065,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2065",
+        "rt_segments": [
+          "error: branch_ids must be exact live 7-set"
+        ],
+        "starts_static": true,
+        "template": "error: branch_ids must be exact live 7-set"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2070,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2070",
+        "rt_segments": [
+          "error: executor required object"
+        ],
+        "starts_static": true,
+        "template": "error: executor required object"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2074,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2074",
+        "rt_segments": [
+          "error: executor.role must be exactly ",
+          ", got "
+        ],
+        "starts_static": true,
+        "template": "error: executor.role must be exactly {\u2026}, got {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2078,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2078",
+        "rt_segments": [
+          "error: executor.forbidden_for_plan_dev required non-empty"
+        ],
+        "starts_static": true,
+        "template": "error: executor.forbidden_for_plan_dev required non-empty"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2081,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2081",
+        "rt_segments": [
+          "error: executor.forbidden_for_plan_dev must prohibit formal run"
+        ],
+        "starts_static": true,
+        "template": "error: executor.forbidden_for_plan_dev must prohibit formal run"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2084,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2084",
+        "rt_segments": [
+          "error: one_terminal_receipt must be true"
+        ],
+        "starts_static": true,
+        "template": "error: one_terminal_receipt must be true"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2088,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2088",
+        "rt_segments": [
+          "error: runtime_scratch required object"
+        ],
+        "starts_static": true,
+        "template": "error: runtime_scratch required object"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2092,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2092",
+        "rt_segments": [
+          "error: runtime_scratch.harvest_exactly_one_raw_obs must be object"
+        ],
+        "starts_static": true,
+        "template": "error: runtime_scratch.harvest_exactly_one_raw_obs must be object"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2095,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2095",
+        "rt_segments": [
+          "error: harvest applies_to_each_of_7_gating_rows must be true"
+        ],
+        "starts_static": true,
+        "template": "error: harvest applies_to_each_of_7_gating_rows must be true"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2099,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2099",
+        "rt_segments": [
+          "error: harvest.helper must name harvest_exactly_one_raw_obs"
+        ],
+        "starts_static": true,
+        "template": "error: harvest.helper must name harvest_exactly_one_raw_obs"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2103,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2103",
+        "rt_segments": [
+          "error: harvest.zero_or_multiple must be STOP semantics"
+        ],
+        "starts_static": true,
+        "template": "error: harvest.zero_or_multiple must be STOP semantics"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2110,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2110",
+        "rt_segments": [
+          "error: execution_order required non-empty list"
+        ],
+        "starts_static": true,
+        "template": "error: execution_order required non-empty list"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2116,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2116",
+        "rt_segments": [
+          "error: execution_order must contain gating row ",
+          " exactly once"
+        ],
+        "starts_static": true,
+        "template": "error: execution_order must contain gating row {\u2026} exactly once"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2120,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2120",
+        "rt_segments": [
+          "error: gating rows in execution_order not in required order"
+        ],
+        "starts_static": true,
+        "template": "error: gating rows in execution_order not in required order"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2124,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2124",
+        "rt_segments": [
+          "error: execution_order missing lifecycle steps "
+        ],
+        "starts_static": true,
+        "template": "error: execution_order missing lifecycle steps {\u2026}"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2142,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2142",
+        "rt_segments": [
+          "error: runtime_scratch.env_binding must be object"
+        ],
+        "starts_static": true,
+        "template": "error: runtime_scratch.env_binding must be object"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2147,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2147",
+        "rt_segments": [
+          "error: runtime_scratch.env_binding missing LANDS_AB_RUNTIME_SCRATCH/RUN_ROOT"
+        ],
+        "starts_static": true,
+        "template": "error: runtime_scratch.env_binding missing LANDS_AB_RUNTIME_SCRATCH/RUN_ROOT"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2152,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2152",
+        "rt_segments": [
+          "error: row_commands incomplete vs GATING_ROWS"
+        ],
+        "starts_static": true,
+        "template": "error: row_commands incomplete vs GATING_ROWS"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2155,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2155",
+        "rt_segments": [
+          "error: argv/raw paths not unique 7"
+        ],
+        "starts_static": true,
+        "template": "error: argv/raw paths not unique 7"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2159,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2159",
+        "rt_segments": [
+          "error: phase/enforcer path count mismatch vs CUDA rows"
+        ],
+        "starts_static": true,
+        "template": "error: phase/enforcer path count mismatch vs CUDA rows"
+      },
+      {
+        "family": "PACKET_CONTRACT_FAIL",
+        "lineno": 2163,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2163",
+        "rt_segments": [
+          "error: formal argv path not covered by manifest: "
+        ],
+        "starts_static": true,
+        "template": "error: formal argv path not covered by manifest: {\u2026}"
+      }
+    ],
+    "deterministic_total_function": true,
+    "form": "if_elif_chain_S1_to_S7_disjoint_guards",
+    "kind": "terminal_classifier_v6",
+    "note_S5_before_traceback": true,
+    "pin_patterns": [
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 973,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:973",
+        "rt_segments": [
+          "error: I2 pins object required for pin-vs-manifest binding"
+        ],
+        "starts_static": true,
+        "template": "I2 pins object required for pin-vs-manifest binding"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 1221,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1221",
+        "rt_segments": [
+          "error: I2 pins.runner_and_harness_shas empty"
+        ],
+        "starts_static": true,
+        "template": "I2 pins.runner_and_harness_shas empty"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 1659,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1659",
+        "rt_segments": [
+          "error: I2 pin path absent from manifest: ",
+          " (",
+          ")"
+        ],
+        "starts_static": true,
+        "template": "I2 pin path absent from manifest: {\u2026} ({\u2026})"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 1663,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1663",
+        "rt_segments": [
+          "error: I2 pin sha != manifest for ",
+          " at ",
+          ": pin=",
+          " manifest="
+        ],
+        "starts_static": true,
+        "template": "I2 pin sha != manifest for {\u2026} at {\u2026}: pin={\u2026} manifest={\u2026}"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 1952,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1952",
+        "rt_segments": [
+          "error: --expected-source-commit != packet.source_commit_sha"
+        ],
+        "starts_static": true,
+        "template": "error: --expected-source-commit != packet.source_commit_sha"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 1955,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1955",
+        "rt_segments": [
+          "error: missing manifest file "
+        ],
+        "starts_static": true,
+        "template": "error: missing manifest file {\u2026}"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 1959,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1959",
+        "rt_segments": [
+          "error: manifest file sha != packet.science_source_manifest_sha256"
+        ],
+        "starts_static": true,
+        "template": "error: manifest file sha != packet.science_source_manifest_sha256"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 1970,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1970",
+        "rt_segments": [
+          "error: missing pinned tool/script "
+        ],
+        "starts_static": true,
+        "template": "error: missing pinned tool/script {\u2026}"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 1973,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:1973",
+        "rt_segments": [
+          "error: sha mismatch for "
+        ],
+        "starts_static": true,
+        "template": "error: sha mismatch for {\u2026}"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 2007,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2007",
+        "rt_segments": [
+          "error: missing source path "
+        ],
+        "starts_static": true,
+        "template": "error: missing source path {\u2026}"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 2010,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2010",
+        "rt_segments": [
+          "error: disk sha mismatch "
+        ],
+        "starts_static": true,
+        "template": "error: disk sha mismatch {\u2026}"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": 2018,
+        "mode": "ORDERED_STATIC",
+        "pattern_id": "tmpl:2018",
+        "rt_segments": [
+          "error: missing mandatory source: "
+        ],
+        "starts_static": true,
+        "template": "error: missing mandatory source: {\u2026}"
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": null,
+        "mode": "PIN_LEAD_CONSTANT",
+        "pattern_id": "pin_lead:81fb71ad",
+        "rt_segments": [
+          "error: I2 pin path absent from manifest: "
+        ],
+        "starts_static": true,
+        "template": "error: I2 pin path absent from manifest: "
+      },
+      {
+        "family": "PIN_MISMATCH",
+        "lineno": null,
+        "mode": "PIN_LEAD_CONSTANT",
+        "pattern_id": "pin_lead:30a1df01",
+        "rt_segments": [
+          "error: I2 pin sha != manifest for "
+        ],
+        "starts_static": true,
+        "template": "error: I2 pin sha != manifest for "
+      }
+    ],
+    "replaces": "terminal_classifier_v5",
+    "rules": [
+      {
+        "branch": "EXEC_FAIL_TIMEOUT",
+        "id": "S1",
+        "parent": "EXEC_FAIL",
+        "science": false,
+        "when": "rc==124"
+      },
+      {
+        "branch": "CLEAN_PASS",
+        "clean_pass_match": "final_stdout_line_exact",
+        "id": "S2",
+        "when": "rc==0 AND final stdout line exactly PACKET_DRY_EXEC_OK"
+      },
+      {
+        "branch": "TOOL_DEFECT",
+        "id": "S3",
+        "when": "rc==0 otherwise"
+      },
+      {
+        "branch": "TOOL_DEFECT",
+        "id": "S4",
+        "reason": "fail_closed_overlap",
+        "when": "final_diagnostic_line = last non-empty stderr line; m_contract/m_pin via ordered-static patterns on final_diagnostic_line only; both true"
+      },
+      {
+        "branch": "PACKET_CONTRACT_FAIL_or_PIN_MISMATCH",
+        "id": "S5",
+        "packet_contract_if": "m_contract",
+        "pin_mismatch_if": "m_pin",
+        "when": "exactly one of m_contract/m_pin true on final_diagnostic_line ordered-static match"
+      },
+      {
+        "branch": "TOOL_DEFECT",
+        "id": "S6",
+        "when": "neither m_contract nor m_pin on final_diagnostic_line AND whole stderr contains Traceback (most recent call last)"
+      },
+      {
+        "branch": "EXEC_FAIL",
+        "id": "S7",
+        "when": "otherwise"
+      }
+    ],
+    "s4_fail_closed_overlap_regression_seed": [
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha not numeric: error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_000",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:224",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 not numeric: error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_001",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:224",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha must be finite and >0: error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_002",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:226",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 must be finite and >0: error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_003",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:226",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha error: --expected-source-commit != packet.source_commit_sha must appear exactly once (got error: --expected-source-commit != packet.source_commit_sha)",
+        "enum_id": "s4_enum_004",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:300",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 error: manifest file sha != packet.science_source_manifest_sha256 must appear exactly once (got error: manifest file sha != packet.science_source_manifest_sha256)",
+        "enum_id": "s4_enum_005",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:300",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha error: --expected-source-commit != packet.source_commit_sha must sit inside error: --expected-source-commit != packet.source_commit_sha segment (index error: --expected-source-commit != packet.source_commit_sha not in (error: --expected-source-commit != packet.source_commit_sha,error: --expected-source-commit != packet.source_commit_sha))",
+        "enum_id": "s4_enum_006",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:303",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 error: manifest file sha != packet.science_source_manifest_sha256 must sit inside error: manifest file sha != packet.science_source_manifest_sha256 segment (index error: manifest file sha != packet.science_source_manifest_sha256 not in (error: manifest file sha != packet.science_source_manifest_sha256,error: manifest file sha != packet.science_source_manifest_sha256))",
+        "enum_id": "s4_enum_007",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:303",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha error: --expected-source-commit != packet.source_commit_sha value must sit inside error: --expected-source-commit != packet.source_commit_sha segment",
+        "enum_id": "s4_enum_008",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:305",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 error: manifest file sha != packet.science_source_manifest_sha256 value must sit inside error: manifest file sha != packet.science_source_manifest_sha256 segment",
+        "enum_id": "s4_enum_009",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:305",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha error: --expected-source-commit != packet.source_commit_sha requires non-empty non-flag value inside error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_010",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:308",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 error: manifest file sha != packet.science_source_manifest_sha256 requires non-empty non-flag value inside error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_011",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:308",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha CUDA argv must start with timeout <budget>",
+        "enum_id": "s4_enum_012",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:316",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 CUDA argv must start with timeout <budget>",
+        "enum_id": "s4_enum_013",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:316",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha missing bin/watch-wrap",
+        "enum_id": "s4_enum_014",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:325",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 missing bin/watch-wrap",
+        "enum_id": "s4_enum_015",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:325",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha watch-wrap must appear exactly once",
+        "enum_id": "s4_enum_016",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:327",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 watch-wrap must appear exactly once",
+        "enum_id": "s4_enum_017",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:327",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha watch-wrap must immediately follow timeout <budget> (index 2), got error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_018",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:330",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 watch-wrap must immediately follow timeout <budget> (index 2), got error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_019",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:330",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha CUDA chain requires exactly two `--` delimiters, got error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_020",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:335",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 CUDA chain requires exactly two `--` delimiters, got error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_021",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:335",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha delimiter order invalid vs watch-wrap index",
+        "enum_id": "s4_enum_022",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:338",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 delimiter order invalid vs watch-wrap index",
+        "enum_id": "s4_enum_023",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:338",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha enforcer child segment too short",
+        "enum_id": "s4_enum_024",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:342",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 enforcer child segment too short",
+        "enum_id": "s4_enum_025",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:342",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha enforcer child must begin with python3 immediately after first `--`",
+        "enum_id": "s4_enum_026",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:344",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 enforcer child must begin with python3 immediately after first `--`",
+        "enum_id": "s4_enum_027",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:344",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha enforcer child must be exactly scripts/error: --expected-source-commit != packet.source_commit_sha immediately after python3, got error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_028",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:347",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 enforcer child must be exactly scripts/error: manifest file sha != packet.science_source_manifest_sha256 immediately after python3, got error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_029",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:347",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha pytest child segment too short",
+        "enum_id": "s4_enum_030",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:354",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 pytest child segment too short",
+        "enum_id": "s4_enum_031",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:354",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha pytest child must begin with python3 immediately after second `--`",
+        "enum_id": "s4_enum_032",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:356",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 pytest child must begin with python3 immediately after second `--`",
+        "enum_id": "s4_enum_033",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:356",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha pytest child must be `python3 -m pytest` immediately after second `--`",
+        "enum_id": "s4_enum_034",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:358",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 pytest child must be `python3 -m pytest` immediately after second `--`",
+        "enum_id": "s4_enum_035",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:358",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha missing pytest node after `python3 -m pytest`",
+        "enum_id": "s4_enum_036",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:361",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 missing pytest node after `python3 -m pytest`",
+        "enum_id": "s4_enum_037",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:361",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha not in frozen CUDA pytest node map",
+        "enum_id": "s4_enum_038",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:364",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 not in frozen CUDA pytest node map",
+        "enum_id": "s4_enum_039",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:364",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha pytest node error: --expected-source-commit != packet.source_commit_sha != frozen error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_040",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:366",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 pytest node error: manifest file sha != packet.science_source_manifest_sha256 != frozen error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_041",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:366",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha --expected-node-id must equal gating_row",
+        "enum_id": "s4_enum_042",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:386",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 --expected-node-id must equal gating_row",
+        "enum_id": "s4_enum_043",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:386",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha requires exactly four --budget flags, got error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_044",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:390",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 requires exactly four --budget flags, got error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_045",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:390",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha --budget must sit entirely inside enforcer segment",
+        "enum_id": "s4_enum_046",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:394",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 --budget must sit entirely inside enforcer segment",
+        "enum_id": "s4_enum_047",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:394",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha duplicate phase budget name error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_048",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:397",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 duplicate phase budget name error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_049",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:397",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha phase budget names error: --expected-source-commit != packet.source_commit_sha != error: --expected-source-commit != packet.source_commit_sha",
+        "enum_id": "s4_enum_050",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:400",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 phase budget names error: manifest file sha != packet.science_source_manifest_sha256 != error: manifest file sha != packet.science_source_manifest_sha256",
+        "enum_id": "s4_enum_051",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:400",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha must be lowercase 64-hex",
+        "enum_id": "s4_enum_052",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:44",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 must be lowercase 64-hex",
+        "enum_id": "s4_enum_053",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:44",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: --expected-source-commit != packet.source_commit_sha must be 40-hex commit sha",
+        "enum_id": "s4_enum_054",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: --expected-source-commit != packet.source_commit_sha",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:50",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: manifest file sha != packet.science_source_manifest_sha256 must be 40-hex commit sha",
+        "enum_id": "s4_enum_055",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "error: manifest file sha != packet.science_source_manifest_sha256",
+        "kind": "con_gap_injection",
+        "pattern_id": "tmpl:50",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: missing manifest file x must be lowercase 64-hex",
+        "enum_id": "s4_enum_056",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "x must be lowercase 64-hex",
+        "kind": "pin_eol_injection",
+        "pattern_id": "tmpl:1955",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: missing pinned tool/script x must be lowercase 64-hex",
+        "enum_id": "s4_enum_057",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "x must be lowercase 64-hex",
+        "kind": "pin_eol_injection",
+        "pattern_id": "tmpl:1970",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: sha mismatch for x must be lowercase 64-hex",
+        "enum_id": "s4_enum_058",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "x must be lowercase 64-hex",
+        "kind": "pin_eol_injection",
+        "pattern_id": "tmpl:1973",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: missing source path x must be lowercase 64-hex",
+        "enum_id": "s4_enum_059",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "x must be lowercase 64-hex",
+        "kind": "pin_eol_injection",
+        "pattern_id": "tmpl:2007",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: disk sha mismatch x must be lowercase 64-hex",
+        "enum_id": "s4_enum_060",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "x must be lowercase 64-hex",
+        "kind": "pin_eol_injection",
+        "pattern_id": "tmpl:2010",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: missing mandatory source: x must be lowercase 64-hex",
+        "enum_id": "s4_enum_061",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": "x must be lowercase 64-hex",
+        "kind": "pin_eol_injection",
+        "pattern_id": "tmpl:2018",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: missing manifest file  must be lowercase 64-hex",
+        "enum_id": "s4_enum_062",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": " must be lowercase 64-hex",
+        "kind": "pin_gap_injection",
+        "pattern_id": "tmpl:1955",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: missing pinned tool/script  must be lowercase 64-hex",
+        "enum_id": "s4_enum_063",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": " must be lowercase 64-hex",
+        "kind": "pin_gap_injection",
+        "pattern_id": "tmpl:1970",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: sha mismatch for  must be lowercase 64-hex",
+        "enum_id": "s4_enum_064",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": " must be lowercase 64-hex",
+        "kind": "pin_gap_injection",
+        "pattern_id": "tmpl:1973",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: missing source path  must be lowercase 64-hex",
+        "enum_id": "s4_enum_065",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": " must be lowercase 64-hex",
+        "kind": "pin_gap_injection",
+        "pattern_id": "tmpl:2007",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: disk sha mismatch  must be lowercase 64-hex",
+        "enum_id": "s4_enum_066",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": " must be lowercase 64-hex",
+        "kind": "pin_gap_injection",
+        "pattern_id": "tmpl:2010",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      },
+      {
+        "concrete_stderr": "error: missing mandatory source:  must be lowercase 64-hex",
+        "enum_id": "s4_enum_067",
+        "exhaustive": false,
+        "expected_branch": "S4_BOTH_TOOL_DEFECT",
+        "filler": " must be lowercase 64-hex",
+        "kind": "pin_gap_injection",
+        "pattern_id": "tmpl:2018",
+        "report_as": "fail_closed_overlap",
+        "role": "regression_seed"
+      }
+    ],
+    "terminal_receipt_semantics": {
+      "S4_BOTH_TOOL_DEFECT": {
+        "binding": "Any final-line ordered-static overlap (m_pin AND m_contract both true) classifies S4 and MUST be reported fail_closed_overlap per prereg S4, MUST NOT be claimed an independent tool defect, and can NEVER yield PASS. A newly encountered real-run S4 outside the regression seed is an additional fail-closed overlap to RECORD (append to the recorded-overlap log in the receipt), not classifier drift and not a tool defect.",
+        "class_definition": "mechanism",
+        "must_not_claim": "independent_tool_defect",
+        "prereg_rule": "S4",
+        "reason": "fail_closed_overlap",
+        "report_as": "fail_closed_overlap"
+      },
+      "s4_beyond_seed_is_recordable_not_drift": true,
+      "s4_class_by_mechanism": true,
+      "s4_seed_not_exhaustive": true
+    },
+    "traceback_anchor": "Traceback (most recent call last)",
+    "version_note": "v6_amended_v11_s4_seed_nonexhaustive_mechanism_class"
+  },
+  "work_repo": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158"
+}
