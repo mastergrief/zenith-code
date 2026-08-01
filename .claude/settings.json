@@ -75,6 +75,15 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/worker_gate_wake_pairing_gate.py"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/god_file_growth_gate.py"
+          }
+        ]
       }
     ],
     "Stop": [

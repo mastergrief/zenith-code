@@ -1,0 +1,169 @@
+{
+ "_doc": "god_file_growth_gate.py baseline. Governed *.py under scripts/, calm/, agents/ may not grow past max(500, max_lines here). Entries are valid only with a true-int max_lines > 500 and a non-empty reason; keys must be git-tracked. Raising an entry requires a written reason and normal review gates.",
+ "files": {
+  "agents/agent.py": {
+   "max_lines": 563,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "agents/harness.py": {
+   "max_lines": 720,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "agents/tools.py": {
+   "max_lines": 1622,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/compiler.py": {
+   "max_lines": 546,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/engine.py": {
+   "max_lines": 552,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/expression.py": {
+   "max_lines": 657,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/hrm/code_dt_data.py": {
+   "max_lines": 987,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/hrm/data.py": {
+   "max_lines": 614,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/hrm/tests/test_code_dt_data.py": {
+   "max_lines": 539,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/ast_refactor.py": {
+   "max_lines": 984,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/copy_augmented_delta.py": {
+   "max_lines": 843,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/delta_rule.py": {
+   "max_lines": 1443,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/facades/ast_repair.py": {
+   "max_lines": 1448,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/facades/code_example_db.py": {
+   "max_lines": 753,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/facades/data_generators/bug_fix_pairs.py": {
+   "max_lines": 762,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/facades/data_generators/stdlib_usage.py": {
+   "max_lines": 612,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/facades/planner.py": {
+   "max_lines": 533,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/facades/retrieval.py": {
+   "max_lines": 604,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/gemma_substrate.py": {
+   "max_lines": 2518,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/r51/prompt_bank.py": {
+   "max_lines": 634,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/recursion.py": {
+   "max_lines": 716,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/ternary_triton.py": {
+   "max_lines": 605,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/tests/test_ast_repair.py": {
+   "max_lines": 1361,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/llm_computer/tq4_triton.py": {
+   "max_lines": 1303,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/router.py": {
+   "max_lines": 909,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/stack_vm.py": {
+   "max_lines": 522,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "calm/verifier.py": {
+   "max_lines": 559,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/dt_install_eval.py": {
+   "max_lines": 820,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/dt_rename_offline_eval.py": {
+   "max_lines": 590,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/generate_domain_examples.py": {
+   "max_lines": 2939,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/generate_multi_step_code_data.py": {
+   "max_lines": 1199,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/generate_react_security_examples.py": {
+   "max_lines": 1705,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/generate_tool_use_examples.py": {
+   "max_lines": 1099,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/needle_test.py": {
+   "max_lines": 561,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/r19b_e0_restricted_runner.py": {
+   "max_lines": 569,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/r52_train_student_kl.py": {
+   "max_lines": 584,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/r53_21_import_inject.py": {
+   "max_lines": 581,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/r53_eval_complex.py": {
+   "max_lines": 612,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/train_code_dt.py": {
+   "max_lines": 660,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/train_dt_gsm8k.py": {
+   "max_lines": 1360,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  },
+  "scripts/train_substrate_hrmlm_v2.py": {
+   "max_lines": 561,
+   "reason": "grandfathered at hook introduction 2026-08-01; may shrink, must not grow"
+  }
+ }
+}
