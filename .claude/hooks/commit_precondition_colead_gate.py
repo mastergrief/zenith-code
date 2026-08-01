@@ -26,13 +26,30 @@ markers is a documented residual limitation, not an unbounded parse chase.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
+
+# Pure room-record authorization seam (behavior-preserving import).
+_CLASSIFIER_PATH = Path(__file__).with_name("colead_commit_gate_classifier.py")
+_spec = importlib.util.spec_from_file_location(
+    "colead_commit_gate_classifier", _CLASSIFIER_PATH
+)
+assert _spec and _spec.loader
+_classifier = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_classifier)
+
+DIFF_DIGEST_RE = _classifier.DIFF_DIGEST_RE
+TASK_ID_RE = _classifier.TASK_ID_RE
+COLEAD_PASS_MARKERS = _classifier.COLEAD_PASS_MARKERS
+COLEAD_DEFERRAL_MARKERS = _classifier.COLEAD_DEFERRAL_MARKERS
+COLEAD_BLOCK_MARKERS = _classifier.COLEAD_BLOCK_MARKERS
 
 DEFAULT_CHANNEL_LOG = "/home/gabe/.ai-room/channels/claw-code/messages.jsonl"
 
@@ -41,28 +58,8 @@ GIT_PUSH_RE = re.compile(r"(?<![\w/.])git\b[^;\n|&]*\bpush\b", re.IGNORECASE)
 FORCE_PUSH_RE = re.compile(r"(?:--force(?:-with-lease)?|\s-f\b)")
 PLUS_REFSPEC_RE = re.compile(r"(?<![\w])\+[\w./:-]+")
 
-DIFF_DIGEST_RE = re.compile(r"(?im)^\s*DIFF_DIGEST\s*:\s*([0-9a-f]{64})\s*$")
 COLEAD_GATE_OVERRIDE_RE = re.compile(
     r"(?im)^\s*CO_LEAD_GATE_OVERRIDE\s*:\s*(.+?)\s*$"
-)
-TASK_ID_RE = re.compile(r"\b(\d{13}-[0-9a-f]{6,8})\b")
-
-COLEAD_PASS_MARKERS = (
-    re.compile(r"(?im)co_lead\s+gate-2\s+PASS"),
-    re.compile(r"(?im)validation/diff\s+(?:review\s*:\s*)?PASS"),
-    re.compile(r"(?im)\bgate-2\s+PASS\b"),
-)
-COLEAD_DEFERRAL_MARKERS = (
-    re.compile(r"(?im)\bno\s+(?:co_lead\s+)?approval\b"),
-    re.compile(r"(?im)\bno\s+dual-accept\b"),
-    re.compile(r"(?im)\bdeferred?\s+until\b"),
-    re.compile(r"(?im)\bholding\s+(?:for|until)\b"),
-    re.compile(r"(?im)\bvisibility\s+only\b"),
-)
-COLEAD_BLOCK_MARKERS = (
-    re.compile(r"(?im)co_lead\s+gate-2\s+(?:BLOCK|REVISE)"),
-    re.compile(r"(?im)\bgate-2\s+(?:BLOCK|REVISE)\b"),
-    re.compile(r"(?im)validation/diff\s+.*\b(?:BLOCK|REVISE)\b"),
 )
 
 MIN_COLEAD_GATE_OVERRIDE_REASON_CHARS = 10
@@ -127,29 +124,7 @@ def fail_open(reason: str) -> int:
 
 
 def _parse_ts(value: Any) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        v = float(value)
-        return v / (1000.0 if v > 1e12 else 1.0)
-    if isinstance(value, str):
-        try:
-            s = value.strip()
-            if s.endswith("Z"):
-                s = s[:-1] + "+00:00"
-            from datetime import datetime, timezone
-
-            dt = datetime.fromisoformat(s)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.timestamp()
-        except Exception:
-            try:
-                v = float(value)
-                return v / (1000.0 if v > 1e12 else 1.0)
-            except Exception:
-                return None
-    return None
+    return _classifier.parse_ts(value)
 
 
 def _read_records(path: str) -> list[dict[str, Any]] | None:
@@ -175,8 +150,7 @@ def _read_records(path: str) -> list[dict[str, Any]] | None:
 
 
 def _body(rec: dict[str, Any]) -> str:
-    body = rec.get("body")
-    return body if isinstance(body, str) else ""
+    return _classifier.body(rec)
 
 
 def _unquote_shell_token(token: str) -> str:
@@ -812,58 +786,21 @@ def _staged_digest(command: str) -> str | None:
 
 
 def _extract_digest(body: str) -> str | None:
-    m = DIFF_DIGEST_RE.search(body)
-    return m.group(1).lower() if m else None
+    return _classifier.extract_digest(body)
 
 
 def _is_worker_receipt(rec: dict[str, Any]) -> bool:
-    frm = str(rec.get("from", ""))
-    if frm in {"claude", "codex_co_lead", "gabe", "watchdog"}:
-        return False
-    kind = str(rec.get("kind", ""))
-    body = _body(rec)
-    if kind == "validation_receipt":
-        return True
-    return any(
-        marker in body
-        for marker in (
-            "VALIDATION RECEIPT",
-            "VALIDATION_RECEIPT",
-            "IMPLEMENTATION RECEIPT",
-            "TERMINAL RECEIPT",
-        )
-    )
+    return _classifier.is_worker_receipt(rec)
 
 
-def _is_claude_freeze(rec: dict[str, Any]) -> bool:
-    if rec.get("from") != "claude":
-        return False
-    body = _body(rec)
-    if _extract_digest(body) is None:
-        return False
-    return any(
-        tok in body
-        for tok in (
-            "gate-1 freeze",
-            "FREEZE LOCKED",
-            "frozen handoff",
-            "validation/diff handoff",
-            "review_request",
-        )
-    ) or str(rec.get("kind", "")) in {"review_request", "msg"}
+def _is_claude_freeze(
+    rec: dict[str, Any], staged_digest: str | None = None
+) -> bool:
+    return _classifier.is_claude_freeze(rec, staged_digest)
 
 
 def _colead_verdict(body: str) -> str:
-    for pat in COLEAD_BLOCK_MARKERS:
-        if pat.search(body):
-            return "block"
-    for pat in COLEAD_DEFERRAL_MARKERS:
-        if pat.search(body):
-            return "unknown"
-    for pat in COLEAD_PASS_MARKERS:
-        if pat.search(body):
-            return "pass"
-    return "unknown"
+    return _classifier.colead_verdict(body)
 
 
 def _has_force_plus_refspec(command: str) -> bool:
@@ -873,96 +810,14 @@ def _has_force_plus_refspec(command: str) -> bool:
 
 
 def _same_thread(rec: dict[str, Any], anchor_ids: set[str]) -> bool:
-    if not anchor_ids:
-        return True
-    rid = str(rec.get("id", ""))
-    reply_to = str(rec.get("reply_to", ""))
-    body = _body(rec)
-    if rid in anchor_ids or reply_to in anchor_ids:
-        return True
-    return any(aid in body for aid in anchor_ids)
+    return _classifier.same_thread(rec, anchor_ids)
 
 
 def _find_fresh_colead_pass(
     records: list[dict[str, Any]],
     staged_digest: str,
 ) -> tuple[bool, str]:
-    freeze_ts: float | None = None
-    freeze_ids: set[str] = set()
-    task_ids: set[str] = set()
-
-    for rec in records:
-        if not _is_claude_freeze(rec):
-            continue
-        digest = _extract_digest(_body(rec))
-        if digest != staged_digest:
-            continue
-        ts = _parse_ts(rec.get("ts"))
-        if freeze_ts is None or (ts is not None and ts >= freeze_ts):
-            freeze_ts = ts
-            freeze_ids = set()
-            rid = str(rec.get("id", ""))
-            if rid:
-                freeze_ids.add(rid)
-            reply_to = str(rec.get("reply_to", ""))
-            if reply_to:
-                freeze_ids.add(reply_to)
-            task_ids = set()
-            m = TASK_ID_RE.search(_body(rec))
-            if m:
-                task_ids.add(m.group(1))
-
-    if freeze_ts is None:
-        return False, "no claude freeze/handoff carrying matching DIFF_DIGEST"
-
-    anchor_ids = set(freeze_ids)
-    worker_ts: float | None = None
-    for rec in records:
-        if not _is_worker_receipt(rec):
-            continue
-        body = _body(rec)
-        if not (
-            _same_thread(rec, anchor_ids)
-            or (task_ids and any(tid in body for tid in task_ids))
-        ):
-            continue
-        ts = _parse_ts(rec.get("ts"))
-        if ts is not None and (worker_ts is None or ts > worker_ts):
-            worker_ts = ts
-            rid = str(rec.get("id", ""))
-            if rid:
-                anchor_ids.add(rid)
-
-    if worker_ts is not None and freeze_ts <= worker_ts:
-        return False, "claude freeze must be after scoped worker receipt on-thread"
-
-    best_pass_ts: float | None = None
-    for rec in records:
-        if rec.get("from") != "codex_co_lead":
-            continue
-        body = _body(rec)
-        digest = _extract_digest(body)
-        if digest != staged_digest:
-            continue
-        verdict = _colead_verdict(body)
-        if verdict != "pass":
-            continue
-        ts = _parse_ts(rec.get("ts"))
-        if ts is None or ts <= freeze_ts:
-            continue
-        if worker_ts is not None and ts <= worker_ts:
-            continue
-        if not (
-            _same_thread(rec, anchor_ids)
-            or (task_ids and any(tid in body for tid in task_ids))
-        ):
-            continue
-        if best_pass_ts is None or ts >= best_pass_ts:
-            best_pass_ts = ts
-
-    if best_pass_ts is None:
-        return False, "no codex_co_lead validation/diff PASS echoing staged DIFF_DIGEST on-thread after freeze"
-    return True, "fresh co_lead PASS matches staged DIFF_DIGEST"
+    return _classifier.find_fresh_colead_pass(records, staged_digest)
 
 
 def _bash_command(payload: dict[str, Any]) -> str:
