@@ -49,6 +49,8 @@ GEN_ARGV_BASE = [
     "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py",
     "--entry",
     "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
+    "--entry",
+    "scripts/lands_ab_packet_dry_exec.py",
     "--root-package",
     "calm.hrm_text_158.native_full_stack",
     "--also-include",

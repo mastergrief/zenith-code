@@ -333,12 +333,16 @@
       "sha256": "2514856d8497b3e740cdbdb8a47caba548e448c28602be37622d531ad276627e"
     },
     {
+      "path": "scripts/lands_ab_dry_exec_tool_module_set.py",
+      "sha256": "c047df896384134146bbfa30f93fcc89468e64550a0b57245711e729aafd9e4b"
+    },
+    {
       "path": "scripts/lands_ab_eval_run.py",
       "sha256": "a41887628b2a889cf6a96ec8a9ae68a223945fd7f0a31315daf0558f12016959"
     },
     {
       "path": "scripts/lands_ab_packet_dry_exec.py",
-      "sha256": "6d2978d3a7cf526ee8e2815b5688ef586e9608a640a3eda7398577a0b77977c9"
+      "sha256": "bc0d7f56e67cfbea58d7775f017d04ef01f2253f1c15f1b3867d67128fc52d02"
     },
     {
       "path": "scripts/lands_ab_plan_v4_characterization.py",
@@ -346,14 +350,14 @@
     },
     {
       "path": "scripts/lands_ab_science_source_manifest.py",
-      "sha256": "16bb5bf079396ab70b797f1f301c3d7679eb12cec35db8b18a6c9eaccf3ea3c9"
+      "sha256": "6db82879b2b43b6c1dc22ce5fcb0cd175977297c08da4fe143fd9011d6aa5743"
     },
     {
       "path": "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
       "sha256": "5e79d9cdb99f23a00fa5bb1bd5aed984b42980ca5697e201f2213873ae9aca0f"
     }
   ],
-  "n_entries": 88,
-  "repo_root_note": "/tmp/authoring_slice_ws",
+  "n_entries": 89,
+  "repo_root_note": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
   "schema": "LANDS_AB_science_source_manifest/v1"
 }

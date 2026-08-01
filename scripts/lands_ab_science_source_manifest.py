@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -68,6 +69,69 @@ def walk(entry_rel: str, *, repo: Path, root_package: str) -> set[str]:
     return seen
 
 
+# Non-tool force-includes. MUST NOT contain dry-exec tool modules —
+# those enter only via DRY_EXEC_TOOL_MODULE_SET union (O3 pure).
+MANDATORY_ALWAYS_BASE: tuple[str, ...] = (
+    "scripts/lands_ab_eval_run.py",
+    "scripts/lands_ab_plan_v4_characterization.py",
+    "scripts/lands_ab_science_source_manifest.py",
+    # H1: formal CUDA execution surfaces (repo-tracked executables)
+    "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+    "bin/watch-wrap",
+    "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_twin_apply.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_binding.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_jsonl.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_topology.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_metric_reducer.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py",
+    "calm/hrm_text_158/native_full_stack/lands_ab_eval_runtime_io.py",
+)
+
+
+def load_tool_module_set(*, owner_path: Path | None = None) -> tuple[str, ...]:
+    """Load DRY_EXEC_TOOL_MODULE_SET from the O3 owner module (path importlib)."""
+    if owner_path is None:
+        owner_path = Path(__file__).resolve().parent / "lands_ab_dry_exec_tool_module_set.py"
+    spec = importlib.util.spec_from_file_location(
+        "lands_ab_dry_exec_tool_module_set", owner_path
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load tool module set from {owner_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    tool_set = getattr(mod, "DRY_EXEC_TOOL_MODULE_SET", None)
+    if not isinstance(tool_set, tuple) or not tool_set:
+        raise RuntimeError("DRY_EXEC_TOOL_MODULE_SET missing or empty")
+    return tool_set
+
+
+def mandatory_always_union(
+    base: tuple[str, ...] | list[str],
+    tool_set: tuple[str, ...] | list[str],
+) -> tuple[str, ...]:
+    """Generator-owned force-include construction (pure; testable)."""
+    return tuple(sorted(set(base) | set(tool_set)))
+
+
+def generator_force_include_result(
+    *,
+    owner_path: Path | None = None,
+    base: tuple[str, ...] | None = None,
+) -> tuple[str, ...]:
+    """Live generator-owned MANDATORY_ALWAYS value after BASE ∪ tool-set."""
+    b = MANDATORY_ALWAYS_BASE if base is None else tuple(base)
+    return mandatory_always_union(b, load_tool_module_set(owner_path=owner_path))
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="LANDS-AB science source manifest")
     ap.add_argument("--entry", action="append", default=[], help="entry relative path (repeatable)")
@@ -112,33 +176,14 @@ def main(argv: list[str] | None = None) -> int:
     if len(args.also_include) != len(set(args.also_include)):
         print("error: duplicate also-include", file=sys.stderr)
         return 2
-    # PLAN_v6 science_source_closure method: force-include mandatory consumer + tool paths
-    # when present on disk (walk may miss non-imported scripts).
-    MANDATORY_ALWAYS = (
-        "scripts/lands_ab_eval_run.py",
-        "scripts/lands_ab_plan_v4_characterization.py",
-        "scripts/lands_ab_packet_dry_exec.py",
-        "scripts/lands_ab_science_source_manifest.py",
-        # H1: formal CUDA execution surfaces (repo-tracked executables)
-        "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
-        "bin/watch-wrap",
-        "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_twin_apply.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_binding.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_jsonl.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_topology.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_metric_reducer.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py",
-        "calm/hrm_text_158/native_full_stack/lands_ab_eval_runtime_io.py",
-    )
+    # O3 pure: force-include = non-tool BASE ∪ DRY_EXEC_TOOL_MODULE_SET (owner-set union).
+    # Dry path must NOT appear in MANDATORY_ALWAYS_BASE; it enters only via the union.
+    try:
+        owner_path = repo / "scripts" / "lands_ab_dry_exec_tool_module_set.py"
+        MANDATORY_ALWAYS = generator_force_include_result(owner_path=owner_path)
+    except Exception as exc:
+        print(f"error: tool module set load: {exc}", file=sys.stderr)
+        return 2
     for rel in MANDATORY_ALWAYS:
         if (repo / rel).is_file():
             paths.add(rel)

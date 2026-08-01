@@ -11,6 +11,29 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# O3 pure: AST walk pin so walk(entry=dry) can reach the owner under scripts.lands_ab*.
+# Runtime load is via path importlib below (scripts/ is not always a package).
+if False:  # pragma: no cover
+    import scripts.lands_ab_dry_exec_tool_module_set as _o3_tool_set_walk_pin  # noqa: F401
+
+
+def _load_dry_exec_tool_module_set():
+    """Load owner via path importlib; natural ImportError/AttributeError/etc. propagate.
+
+    A2.1: no explicit RuntimeError guard — census-neutral (keeps total=180);
+    unloadable owner still fails closed before any packet work.
+    """
+    owner = Path(__file__).resolve().parent / "lands_ab_dry_exec_tool_module_set.py"
+    spec = importlib.util.spec_from_file_location("lands_ab_dry_exec_tool_module_set", owner)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_O3_TOOL_SET_MOD = _load_dry_exec_tool_module_set()
+DRY_EXEC_TOOL_ENTRYPOINT: str = _O3_TOOL_SET_MOD.DRY_EXEC_TOOL_ENTRYPOINT
+DRY_EXEC_TOOL_MODULE_SET: tuple[str, ...] = _O3_TOOL_SET_MOD.DRY_EXEC_TOOL_MODULE_SET
+
 
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -82,11 +105,12 @@ REQUIRED_PHASE_BUDGET_NAMES = ("forward_backward", "update", "emission", "flush"
 ENFORCER_SCRIPT_SUBSTR = "sparse_live_carrier_gpu_phase_budget_enforcer.py"
 NONCE_TOKENS = ("<nonce>", "<run_local_nonce>")
 
-# H2: mandatory formal-execution source set (subset of generator MANDATORY_ALWAYS)
-MANDATORY_EXECUTION_SOURCE_SET = (
+# H2: mandatory formal-execution source set (subset of generator MANDATORY_ALWAYS).
+# Non-tool base MUST NOT re-list dry-exec tool modules — those enter only via
+# DRY_EXEC_TOOL_MODULE_SET union (O3 pure single-enumeration).
+_MANDATORY_EXECUTION_SOURCE_SET_BASE = (
     "scripts/lands_ab_eval_run.py",
     "scripts/lands_ab_plan_v4_characterization.py",
-    "scripts/lands_ab_packet_dry_exec.py",
     "scripts/lands_ab_science_source_manifest.py",
     "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
     "bin/watch-wrap",
@@ -106,6 +130,9 @@ MANDATORY_EXECUTION_SOURCE_SET = (
     "calm/hrm_text_158/native_full_stack/lands_ab_eval_metric_reducer.py",
     "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py",
     "calm/hrm_text_158/native_full_stack/lands_ab_eval_runtime_io.py",
+)
+MANDATORY_EXECUTION_SOURCE_SET = tuple(
+    sorted(set(_MANDATORY_EXECUTION_SOURCE_SET_BASE) | set(DRY_EXEC_TOOL_MODULE_SET))
 )
 
 # H2: external system binaries allowed as formal argv tokens without manifest pins
@@ -1934,8 +1961,8 @@ def _dry_exec_bind_sources(ctx):
     if ctx.gen_path != 'scripts/lands_ab_science_source_manifest.py':
         print(f'error: generator_script_path must be scripts/lands_ab_science_source_manifest.py, got {ctx.gen_path!r}', file=sys.stderr)
         return 2
-    if ctx.dry_path != 'scripts/lands_ab_packet_dry_exec.py':
-        print(f'error: dry_exec_tool_path must be scripts/lands_ab_packet_dry_exec.py, got {ctx.dry_path!r}', file=sys.stderr)
+    if ctx.dry_path != DRY_EXEC_TOOL_ENTRYPOINT:
+        print(f'error: dry_exec_tool_path must be {DRY_EXEC_TOOL_ENTRYPOINT}, got {ctx.dry_path!r}', file=sys.stderr)
         return 2
     for ctx.rel, ctx.expect in ((ctx.gen_path, ctx.gen_sha), (ctx.dry_path, ctx.dry_sha)):
         ctx.fp = ctx.repo / ctx.rel
