@@ -94,3 +94,9 @@ Serving, hardware, and VRAM details live in `.claude/rules/environment.md`. Turb
 ## Branch
 
 `feature/hrm-158` on `mastergrief/zenith-code` (forked from `ultraworkers/claw-code`).
+
+## IMPORTANT
+- No mutating subagent delegation — one mutating executor per slice owns every
+  edit, validation run, and receipt. Read-only `Explore` fan-out for discovery
+  is allowed (orchestration, not a role); results are pointers — fresh-read
+  before editing.
