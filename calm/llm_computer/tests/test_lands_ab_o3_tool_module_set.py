@@ -325,3 +325,105 @@ def test_O3_SIBLING_DRIFT_OWNER_DISK_SHA_MISMATCH_FAIL(tmp_path):
         assert live_post == live_pre, "live tracked bytes mutated"
         if rel.exists():
             rel.unlink()
+
+
+# --- HEAD_B dual-assert + structural validator (HEAD_B source-authority landing) ---
+HEAD_B = (
+    REPO
+    / "artifacts/acc_entropy/optimizer_credit_state_sparse_vote_authority_LANDS_AB_science_source_manifest_HEAD_B.json"
+)
+HEAD_A_SHA256 = (
+    "7d111d527452820ad05431b34dc6ef5742361196ef188916e0e7d3c58fa43560"
+)
+HEAD_B_TOP_KEYS = frozenset({"schema", "repo_root_note", "entries", "n_entries"})
+HEAD_B_ENTRY_KEYS = frozenset({"path", "sha256"})
+
+
+def validate_head_b_manifest(man: dict, *, repo: Path, head_ref: str = "HEAD") -> None:
+    """Fail-closed structural + committed-blob equality. Raises AssertionError on any defect."""
+    assert set(man.keys()) == HEAD_B_TOP_KEYS, f"top_keys={set(man.keys())}"
+    assert man["schema"] == "LANDS_AB_science_source_manifest/v1"
+    assert isinstance(man["repo_root_note"], str) and man["repo_root_note"]
+    assert isinstance(man["entries"], list)
+    assert isinstance(man["n_entries"], int)
+    assert man["n_entries"] == len(man["entries"]), (
+        f"n_entries={man['n_entries']} len_entries={len(man['entries'])}"
+    )
+    paths: list[str] = []
+    for i, e in enumerate(man["entries"]):
+        assert isinstance(e, dict), f"entry[{i}] not dict"
+        assert set(e.keys()) == HEAD_B_ENTRY_KEYS, f"entry[{i}] keys={set(e.keys())}"
+        path, digest = e["path"], e["sha256"]
+        assert isinstance(path, str) and path
+        assert not path.startswith("/") and not (len(path) >= 2 and path[1] == ":")
+        assert "\\" not in path and "\x00" not in path
+        assert ".." not in Path(path).parts
+        assert Path(path).as_posix() == path
+        assert isinstance(digest, str) and len(digest) == 64
+        assert all(c in "0123456789abcdef" for c in digest), "sha256 must be 64-lowerhex"
+        paths.append(path)
+    assert paths == sorted(paths), "paths not sorted"
+    assert len(paths) == len(set(paths)), "duplicate paths"
+    for e in man["entries"]:
+        blob = subprocess.check_output(
+            ["git", "-C", str(repo), "show", f"{head_ref}:{e['path']}"]
+        )
+        got = hashlib.sha256(blob).hexdigest()
+        assert got == e["sha256"], f"SHA_DRIFT path={e['path']} pin={e['sha256']} head={got}"
+
+
+def test_O3_HEAD_A_HISTORICAL_IMMUTABLE():
+    assert HEAD_A.is_file()
+    assert _sha(HEAD_A) == HEAD_A_SHA256
+    owner = _load_mod(OWNER, "o3_owner_ha")
+    tool_set = set(owner.DRY_EXEC_TOOL_MODULE_SET)
+    man = json.loads(HEAD_A.read_text(encoding="utf-8"))
+    paths = {e["path"] for e in man["entries"]}
+    assert tool_set <= paths
+
+
+def test_O3_HEAD_B_LIVE_COMMITTED_SOURCE_AUTHORITY():
+    assert HEAD_B.is_file(), "HEAD_B must exist for live authority test"
+    man = json.loads(HEAD_B.read_text(encoding="utf-8"))
+    validate_head_b_manifest(man, repo=REPO)
+    owner = _load_mod(OWNER, "o3_owner_hb")
+    tool_set = set(owner.DRY_EXEC_TOOL_MODULE_SET)
+    paths = {e["path"] for e in man["entries"]}
+    assert tool_set <= paths
+
+
+def test_O3_HEAD_B_ENTRY_SHA_DRIFT_FAILS(tmp_path: Path):
+    man = json.loads(HEAD_B.read_text(encoding="utf-8"))
+    man = json.loads(json.dumps(man))  # deep copy via json
+    man["entries"][0]["sha256"] = "0" * 64
+    try:
+        validate_head_b_manifest(man, repo=REPO)
+        raised = False
+    except AssertionError as e:
+        raised = True
+        assert "SHA_DRIFT" in str(e)
+    assert raised
+
+
+def test_O3_HEAD_B_N_ENTRIES_MISMATCH_FAILS():
+    man = json.loads(json.dumps(json.loads(HEAD_B.read_text(encoding="utf-8"))))
+    man["n_entries"] = len(man["entries"]) + 1
+    try:
+        validate_head_b_manifest(man, repo=REPO)
+        raised = False
+    except AssertionError:
+        raised = True
+    assert raised
+
+
+def test_O3_HEAD_B_DUPLICATE_PATH_FAILS():
+    man = json.loads(json.dumps(json.loads(HEAD_B.read_text(encoding="utf-8"))))
+    man["entries"].append(dict(man["entries"][0]))
+    man["n_entries"] = len(man["entries"])
+    try:
+        validate_head_b_manifest(man, repo=REPO)
+        raised = False
+    except AssertionError as e:
+        raised = True
+        assert "duplicate" in str(e).lower() or "paths" in str(e).lower()
+    assert raised

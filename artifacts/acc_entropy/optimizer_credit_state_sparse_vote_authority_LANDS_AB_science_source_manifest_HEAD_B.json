@@ -1,0 +1,363 @@
+{
+  "entries": [
+    {
+      "path": "bin/watch-wrap",
+      "sha256": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/acc_width_recorded_row_sweep.py",
+      "sha256": "22370e213ad661bf2a752d527c9df15cae13ac39d645a53637d16f4b1fd4e81f"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/accumulator_compression.py",
+      "sha256": "9e36c07a6bc55a28eeb1ad97e957e4ce50aa1ee914233369216107bf5acb8fee"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/accumulator_decision_density.py",
+      "sha256": "989b8069753c4707dde49c0ddd778e9f22d471c4627a7152a5d303b49e1a42d2"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/accumulator_policy_shadow_screen.py",
+      "sha256": "003b4cde7ab023b10600b05b377bf2d5a8b81bd490b93886e411ac56a666e92d"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/accumulator_real_dynamics_verdict.py",
+      "sha256": "44de6c4d96eb1d8e60c66aaa9c33a6a16500815057ed3b518a5725b910c0ae42"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/activation_relief.py",
+      "sha256": "107d73ec52b885669146aa3b38e4a47c20923329aed8d010fb35b9b945571333"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/activation_residuals_launch.py",
+      "sha256": "52986ca9f766c978aac7fce9217cbf8b27b447b891635f88421580aab7aa8960"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/activation_residuals_m1_remat.py",
+      "sha256": "730a03b7d4c561ba0ac0b062cded1c1502844c18aa34db6b42afab183147acb6"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/attention_kv_buffers.py",
+      "sha256": "bb25ba2c2f056c4e04182b3b42fd0af58fe25226743402fe7f07ad682b68b454"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_accumulator.py",
+      "sha256": "eb628b7e6f20d3ca249571697d0a2e29c99d8dff7e8d87773ee9fb4be8c6f357"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/bounded_delta_learner.py",
+      "sha256": "ae7a213cb8581153a756c131cf03786f7a04462b6508171b7e1e92a5f5fe3707"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/c4_retention_owner_census.py",
+      "sha256": "d5d3e2bb0d4b12bbfb7469cbced25d0db180a402a4217f8728c904f6f1bd944d"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/candidate_global_cap_bridge_receipt.py",
+      "sha256": "e0500b5c1bbecbc57db12e5022089d1793b9392d6ca60a00a97eda4a609b3ad6"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/candidate_global_cap_bridge_reference.py",
+      "sha256": "36a19d9f27249f2e1acb6aa73995b7347390a713e875c7a0b44c763921cbc3f7"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/candidate_global_cap_production_seam.py",
+      "sha256": "162aaacbb29a21e7aa1152a9a3d610f2d2c64e987ae225bcb615c94fb084889b"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/event_coded_acc_checkpoint_codec.py",
+      "sha256": "5b6832d3dbf8a088658358d1d658b464f7f8badcdab54f50e8f6c2d91a9dc91b"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/event_coded_acc_event_store.py",
+      "sha256": "c569a97c6c772c86a3cbb23b885b9dcbe2b4fdbfac7b02b028489329612e2820"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/event_coded_acc_live_carrier.py",
+      "sha256": "e30bbeb24c7f5ae358d832f2461318c51a2159ec7ac12ab6e193c6ea3540b554"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/event_coded_vote_update_adapter.py",
+      "sha256": "0bca086454e83c3a1bc1435095c9a33371cc8cbdc22bf8790eec459fa93dab8f"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgotten_accum_flip_deferral_apply.py",
+      "sha256": "fe1547d03a178f1f32d6cae26264e5acf949788877fefccb4ca1d2c5928baeb3"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgotten_accum_flip_deferral_contracts.py",
+      "sha256": "5e95fa6eb839e84c5accfb65c90318bc3b74b586b71e51aae314179f3e309378"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/forgotten_accum_flip_deferral_reducers.py",
+      "sha256": "15ebff85fe601f6c6c24eba1fb518098cc1e90fa70ed55b680dda3a78e244fa8"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/fp_exceptions.py",
+      "sha256": "f2e8baef75117005d6984a66397774f3ffe6158310a98cd92c45cb599b1499ad"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/full_loop_receipt.py",
+      "sha256": "5b36ca305da1b65976a7e862fa69db0a43fdf5055c90d7fe57322e5f3286f826"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/full_sub2_runtime_readiness.py",
+      "sha256": "0ecbabf1200ca6a9e001cbcc439bf6d7ba5a56f368711919e7de61a775e8f519"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/global_rate_cap.py",
+      "sha256": "46bb9db87cb426937278bcfa508b6b5c3a4bc3e20fc1a509a72ac5b51554ec70"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/global_rate_cap_gpu.py",
+      "sha256": "7f585632d8f4d2d65643f23be72a96f167eef28908fe54495c37de8dddcc3037"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/host_alloc_hook_probe.py",
+      "sha256": "fa8248abaeca77da9db3c574aa5bf87613c065e7e6c5aacbd4c8385ed75db401"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/host_allocator_probe.py",
+      "sha256": "6246f8302c2f6d8a068df1ad989726e9c7c2588e2ab22e98c2b44df0648de29b"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/host_tracemalloc_probe.py",
+      "sha256": "4a680f248569f93d5b665ff9581eaf5c3e227b65037fd1da3305a0b49a945cf1"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/integer_marginal_attribution.py",
+      "sha256": "ee4ae5e1b651f3bef148570177212bb5aca9e30cd2b241e87b570300a933a169"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/integer_sparse_rank_votes.py",
+      "sha256": "4623927c7ef3dc88a82a54d43df9e5f600b1c5131027c23d26a18360e96cb913"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_authoritative_payload.py",
+      "sha256": "237afbdaa0959f2128f48ec68451264a3c05e29790b70903da7d5e7a2866631d"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_branch_reducer.py",
+      "sha256": "b82dd32ab72a82dce817932d5796e57510346d314f05afcffa96298ae945d5b2"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_cuda_sites.py",
+      "sha256": "67e5e3a018de478ee91797af0e4ce2f7effa06bb41caacbf1a5f0ddd8cd782dc"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_evidence_contract.py",
+      "sha256": "b193497b52d7835eddedc62b72d64650286a88894db7b4a218772cf4931f4690"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_fixture_source.py",
+      "sha256": "fe56f497b06476cbd74c4e9dac57acbec50530f448e19041afe40906597a0417"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_measurement.py",
+      "sha256": "7e47ce9b1ac5032ce4ed66d4607683fe96a196ad0e75d4f8f06c477a21d10165"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_metric_reducer.py",
+      "sha256": "88306ae7e0bc923ee15c82f4ad4dcc9d21686c8d621253e7ae3656490b88d3c4"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_oracle_sites.py",
+      "sha256": "b513189214ffc05396c5163777029f4878d1b38aa9d2eb1f17fcbb4544f53c47"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_jsonl.py",
+      "sha256": "adef162342859404fb8bdd8d29f472d2a694cd7e422407e7863b94cd4c827610"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_phase_topology.py",
+      "sha256": "4226658b286359dd46459fa0f3d86f8b0a61e22b4f3c52942d5a07da239ec0ef"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_binding.py",
+      "sha256": "3a78762d8718c26715473689381ee617db3e140ba761c5614ff5648feb8c1e53"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_production_post_state.py",
+      "sha256": "f79ac0eff64a831a92b1e93101b2ce5dbaaaa03f56c32ced4bf69c548b0209a0"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_runtime_io.py",
+      "sha256": "968bdb8440342bb847d218738ca3f805c6ab8a30003529c0c7950a3e51d429cf"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_schema.py",
+      "sha256": "f15ff1f1c308f3752212236b33de89d151ef8e53569e52ff619ecbf323133a9d"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_site_measurement.py",
+      "sha256": "e73084fc1e1c833d555eaf64fcd4c61a1af1631fd1696db70977ce86e0fd4ffc"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/lands_ab_eval_twin_apply.py",
+      "sha256": "fc9bb013e9b77753929f34f036a3a8cc4eaa6cd13e06bb341415d15db1c9f2f4"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/named_receipt_binding.py",
+      "sha256": "693c2c1e39fa9198cf62c9671e614733213c7c7ca87912b041ef21e175eb47b6"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/narrow_accumulator_codec.py",
+      "sha256": "a84547c3a2f08449eeb9738b0d359f69ffe81aacc27b749fe388752b2aba08c9"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/narrow_carrier_trainer_integration.py",
+      "sha256": "8750d32fcf5794ebffda8b4e59101720554041e78509156c24c07e320efd7932"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/native_kernelized_hot_path.py",
+      "sha256": "11f11602521418c6f1778e53f029b4ea9ef2597c82498afea08ac259267a0656"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state.py",
+      "sha256": "68666f385ee5275454ea589cb5aeda1ce93d4b2d1a521455950294b7cbe1c230"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/optimizer_credit_state_no_hidden_fp_audit.py",
+      "sha256": "a16e259dc01962669cb83156654fc0520b4ab352ac109335caadcee0729ba28e"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/persistent_state_budget.py",
+      "sha256": "af455d4f37af4ddaa4873cadc8cfe042eaf825ba99ed59c4f985aa7b46e32f19"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/q_entropy_packing.py",
+      "sha256": "e9bb59fee42d2d5b5359d8c28717121150a6b5dd0e15e79f8f59e801b0e6aee4"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/qacc_apply_composition_dispatch.py",
+      "sha256": "b4109f9dfe44a33d822f7a8bd9e9e0006d5f1c303e6d6eed4c86f9aee1533877"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/qacc_apply_native_parity_receipt.py",
+      "sha256": "e07d9a380f8279e9ac5fe5fa0c0d3bdc46110ac6528112de17dd6365e6ff0996"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/qacc_apply_residency_guard.py",
+      "sha256": "f2fa3af80d3d7ba25f0a791add64edcc7814f855c19851780f1edd8da3ad8e10"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/qacc_apply_triton_kernel.py",
+      "sha256": "63d7cbd2d6bfa158fd7374108a810d42451ac77a613e808b79bed1d4642c7b9a"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/qscale_linear.py",
+      "sha256": "1187450e79e2209e93058c2534fbdfa97f745745ed037f298ed8aeccd3619cb2"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/r7_block_occupancy_b64.py",
+      "sha256": "b3df1c3c61b59f71c074fde1f7b81494999e46f30603c9ad49cba55597a7acc6"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/r7_selective_drain_eligibility_census.py",
+      "sha256": "fa86934d0500bb1e69127bfca8e000aef29c80b50a4fee8fab5f2a36e834cec3"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_evidence.py",
+      "sha256": "b82d30ffeee7121a3a07c19d9f6345173e7d6f9effbaeccfb90bf3907a06e1b0"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/recarry_measurement_validators.py",
+      "sha256": "00435afab1dc97c814e6ff1dcde22642af560a36aed231593e3d55b7e8a8ceae"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/recurrent_state_buffers.py",
+      "sha256": "9f301cc921a56df9836b241746691c13afbc708ea1e6de14e9b5065e841f10df"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/s1d7_band_counter.py",
+      "sha256": "1f2eabb8c3bc9c7b50745b7b73f92cacbd9484c6d1a910df6b933c2bf8693688"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/s1d7_tracemalloc_feasibility.py",
+      "sha256": "f1af399e75968a2752431abd556919bbfa61bd9d352a70d6b88f2bb541142794"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/selection_topk.py",
+      "sha256": "d33a3163d704040fa18c3d7a5211caa4810fd57bc4069048fcb39a39fbe71b20"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/source_pointers.py",
+      "sha256": "4d9765ae55fcad0da75fd37dd500bd994bcf591b6bf4cb95b588f8c06141fb37"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/sparse_cap_gpu_seam_adapter.py",
+      "sha256": "ab79f8bcb1abc800e3f5217247b187f83455c60b5a46427d1d3ae7a04eb865d1"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/sparse_vote_events.py",
+      "sha256": "ca744232437ea5fb14716e6157b305205cac5ee7120e0d42b3baa3721a57e3cf"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/sub2_native_birth_scaffold.py",
+      "sha256": "d6fcbe9a2cacef83518c9d54b80f1d62625d79deda539109cc17d59f6a8f4250"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/sub2_native_birth_sidecar_runtime.py",
+      "sha256": "21462aa45b9512104cb5e168041cee7d86539c567f2c4c20d0abbe5cfd432e71"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/trainer_sub2_authority.py",
+      "sha256": "3c6c3db2ea25233f0c842fca47d6539ed7376ee7a2bf969062d0b39bac958fa0"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/transient_selection_information_audit.py",
+      "sha256": "7eb1f262e4ae6c45fe94b22b05b9eee294bf26269d508a3ef1f58f04e530161f"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/two_tier_carry_reducers.py",
+      "sha256": "2513404daa368ce59eb132d2fbb7722ece5d2e4c3b8be82f60420f053c670086"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/two_tier_step_orchestrator.py",
+      "sha256": "f7ea6240f4a33d3b4d83f8b0a79108f91070daf1db231334de468523f7d7001e"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/two_tier_threshold_semantics.py",
+      "sha256": "fc59d2b19739cfb8a0f33f903d15b85e64d4e284bbbbca10bc41f9a9cc01b9ff"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/two_tier_transient_selection.py",
+      "sha256": "c41da84a14727781ce500365833e319394a18e06da6f7c09143b87e4a5035dad"
+    },
+    {
+      "path": "calm/hrm_text_158/native_full_stack/vote_update.py",
+      "sha256": "7cf70cdb24f4929a33a6fb4bcdbeac50c37f4fea5462096c06e730e32d860334"
+    },
+    {
+      "path": "calm/llm_computer/tests/test_hrm_text_158_lands_ab_eval_gpu_live.py",
+      "sha256": "2514856d8497b3e740cdbdb8a47caba548e448c28602be37622d531ad276627e"
+    },
+    {
+      "path": "scripts/lands_ab_dry_exec_tool_module_set.py",
+      "sha256": "c047df896384134146bbfa30f93fcc89468e64550a0b57245711e729aafd9e4b"
+    },
+    {
+      "path": "scripts/lands_ab_eval_run.py",
+      "sha256": "a41887628b2a889cf6a96ec8a9ae68a223945fd7f0a31315daf0558f12016959"
+    },
+    {
+      "path": "scripts/lands_ab_packet_dry_exec.py",
+      "sha256": "bc0d7f56e67cfbea58d7775f017d04ef01f2253f1c15f1b3867d67128fc52d02"
+    },
+    {
+      "path": "scripts/lands_ab_plan_v4_characterization.py",
+      "sha256": "ca6aa3ee5e9aa0e611c9845751d7759caa12e8c8a85e21b21e4070e60f696f33"
+    },
+    {
+      "path": "scripts/lands_ab_science_source_manifest.py",
+      "sha256": "6db82879b2b43b6c1dc22ce5fcb0cd175977297c08da4fe143fd9011d6aa5743"
+    },
+    {
+      "path": "scripts/sparse_live_carrier_gpu_phase_budget_enforcer.py",
+      "sha256": "5e79d9cdb99f23a00fa5bb1bd5aed984b42980ca5697e201f2213873ae9aca0f"
+    }
+  ],
+  "n_entries": 89,
+  "repo_root_note": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+  "schema": "LANDS_AB_science_source_manifest/v1"
+}
