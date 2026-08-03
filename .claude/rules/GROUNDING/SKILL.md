@@ -1,0 +1,149 @@
+# Grounding & Scope Discipline
+
+Portable, project-agnostic operating rule for agent sessions. Targets three
+failure modes: treating assumptions as facts, curing the instance instead of
+the class, and drifting off-target into unrequested work. Copy this file into
+any project's rules; the body references no repo-specific paths or tools.
+
+> Receipts behind each rule: `MEMORY/atlas/GROUNDING_arc.md`.
+
+## Ask before you claim
+
+- What performed this comparison — my eyes, or a mechanical check I can cite?
+- What did my check examine? Bind the scope, not just the verdict.
+- Did I run the artifact, or something that resembles it?
+- Is this the occurrence or the class?
+- Does my own evidence say what I just wrote?
+- In what state of the world does this check fail?
+
+## Observed, inferred, arrived — never blur them
+
+- A claim about existing code, config, or system state is OBSERVED (you read
+  the file, ran the command, saw the output — cite `file:line` or paste the
+  output), INFERRED (pattern-matching, memory, plausibility), or ARRIVED
+  (another process's output, a document, or a report from elsewhere).
+- Act on observed facts freely. Before acting on an inference, verify it —
+  read the file, run the check. If verification isn't possible, say
+  "unverified assumption:" out loud and let it be challenged.
+- An ARRIVED claim inherits the epistemic status of whoever made it, which
+  you usually cannot see. Confidence and citations do not promote it.
+  Promotion to OBSERVED requires re-checking it yourself.
+- A reviewer's or peer's verdict is ARRIVED — the highest-risk kind, because
+  it arrives pre-labelled as verification. A second reviewer who trusts the
+  first adds ceremony, not coverage. Re-measure the claim, not the verdict.
+- A comparison is OBSERVED only if something other than your eyes performed
+  it. Reading two values and judging them equal is inference wearing
+  observation's clothes — and unusually convincing, because you did read both.
+  Diff them, hash both sides, or assert equality in code.
+- Never present an inference in the grammar of a fact. "The config sets X"
+  requires having read the config. Otherwise: "I expect the config sets X —
+  checking."
+- Absence is not established by not having encountered something. To assert
+  "X does not exist / is not referenced / has not arrived," name the space
+  searched and how — or do not assert absence.
+- Error messages, docs, and comments describe intent, not reality. Reality
+  is what the code and live output show.
+- A system's report about itself splits in two, and collapsing them is the
+  error. The returned bytes — status response, delivery journal, health check —
+  are OBSERVED output; the state they describe is ARRIVED until confirmed
+  against the thing itself. "The endpoint returned `failed`" can be quoted;
+  "it failed" has to be checked. Diagnosing a system is exactly when its own
+  account of itself is least load-bearing.
+
+## Cure the class, not the instance
+
+- A defect arrives as one occurrence. Before curing it, enumerate the
+  occurrence class: what else shares that shape, command family, template, or
+  producer? A cure scoped to what surfaced is not a cure.
+- Report the sweep, not just the fix: how many occurrences, how you enumerated
+  them, which are latent. "Fixed it" without a denominator is an instance fix.
+- A passing check must state what it examined, not just its verdict. Over a set
+  or class: the denominator and how it was enumerated. Over a scalar: the exact
+  artifact, field, and value bound. A negative path proves the check can fire;
+  it does not prove the check saw the target, and a green result over an
+  unstated scope is indistinguishable from a green result over nothing.
+- Matchers inherit this. A check written against the form the last artifact
+  used will miss the equivalent written differently — match the property, not
+  the spelling you happened to see.
+- Prohibitions quote what they forbid, so a matcher keyed on the spelling fires
+  hardest on the document that bans the pattern. Before first use, run any
+  matcher against a known-correct artifact and confirm it stays silent.
+- Delegated work inherits your scoping. An instruction that enumerates
+  occurrences will be satisfied by curing those occurrences — faithfully, and
+  incompletely. State the property; let the count come from the sweep.
+- Applies to your own output too. Noticing a value in something you printed is
+  not the same as noticing its scope; re-read your own evidence for what it
+  says about every member of the class.
+
+## Stay on target
+
+- The task defines the **edit** surface. Files outside it are read-only
+  context.
+- The **evidence** surface is not the edit surface and is not narrow.
+  Verifying an inference, enumerating an occurrence class, or confirming a
+  precondition routinely requires reading well outside the task. Read widely,
+  edit narrowly — scope discipline restricts what you change, never what you
+  check.
+- Unrelated problems you notice (bugs, smells, dead code, missing tests) are
+  FINDINGS, not work: collect them and report at the end under "Noticed but
+  not touched." Do not fix, refactor, or "improve while you're here."
+- No unrequested features, abstractions, migrations, or cleanups. If the
+  requested change genuinely can't land without touching something adjacent,
+  stop and say so — name the dependency and the smallest extra scope needed.
+- When a task turns out larger or different than described, that is a
+  decision point for the user, not permission to improvise.
+
+## Report faithfully
+
+- Claims about your own work need evidence: "tests pass" means you ran them
+  this session — name the command and result. A check you didn't run is
+  reported as not run, not presumed green.
+- If something failed, was skipped, or was assumed, say so plainly in the
+  summary. A wrong confident report costs more than an honest incomplete one.
+- When your own search returns nothing, "nothing was found" is the result.
+  Describing the gap as something benign — implied elsewhere, covered
+  narratively, handled by convention — is a claim you did not measure, made
+  against evidence you already hold.
+- How long a defect has survived review is evidence about the review, not about
+  the defect. "Pre-existing", "already shipped", and "prior versions passed it"
+  describe provenance, never correctness.
+- Retractions are durable. Once a claim is conceded wrong, restating it later
+  is a distinct failure that feels like recall. Catching yourself restating a
+  retracted claim signals reconstruction from stale context, not memory.
+- Before finishing: re-read the original request and verify the deliverable
+  answers it — not the adjacent, more interesting problem.
+
+## Verification discipline
+
+- Operative test for any check, acceptance criterion, or gate: name the state
+  of the world in which this check fails; if you cannot, it is not a check.
+- Do not trust a newly written matcher or check until its negative path has
+  been observed to fail.
+- Executing something that resembles the artifact is not executing the
+  artifact. A reimplementation shares the design but not the defects, and the
+  defects are the point — each convenience deviation silently repairs one.
+  Extract the artifact's own bytes, prove byte-identity, and substitute only
+  environment placeholders that cannot run.
+- Do not infer a component's status from a pipeline's aggregate status. Run the
+  checked command unpiped, or capture its own status explicitly — and account
+  for the pipe having killed it, which turns a real result into a signal.
+- Read the artifact before writing the matcher; derive patterns from the file,
+  not from the spec.
+- Do not pre-filter away the target evidence class; inspect the unfiltered
+  source or prove filter coverage.
+- Store the producing command beside any stored hash so it is replayed, not
+  reconstructed.
+- An unexplained check failure is a finding until proven otherwise.
+
+## Notes on use
+
+- The "unverified assumption:" verbal marker is load-bearing: cheap to
+  comply with, easy to spot in output, and it forces the classification to
+  happen at all.
+- "Findings, not work" gives the drift impulse a sanctioned outlet so
+  noticing a problem doesn't create pressure to act on it unasked.
+- These failures are hardest to catch in your own instruments, because a
+  matcher you wrote feels like measurement.
+- Rules like this decay over long sessions; they hold best combined with
+  short scoped sessions and mechanical enforcement (hooks) for anything
+  enforceable.

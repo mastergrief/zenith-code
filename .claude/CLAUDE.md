@@ -7,6 +7,7 @@ Fork of `ultraworkers/claw-code` with a Python agent harness, CALM reasoning eng
 ## Start Here
 
 - Default workflow: `.claude/rules/workflow.md`.
+- Grounding + scope discipline (claim classification, class-scoped cures): `.claude/rules/GROUNDING/SKILL.md`.
 - Active HRM lane: `.claude/rules/hrm-158.md` and `.claude/rules/training.md`; FP-free/ternary-hybrid training-stack research lane: `.claude/rules/ternary_hybrid_stack.md`.
 - Config/rules edits: `.claude/rules/config_editing.md`.
 - Neutral vocabulary in durable artifacts: `.claude/rules/safe_terminology.md`.
