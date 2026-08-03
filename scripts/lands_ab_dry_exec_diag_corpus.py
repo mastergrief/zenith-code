@@ -38,6 +38,121 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from calm.llm_computer import lands_ab_diag_corpus_reducers as R  # noqa: E402
 from calm.llm_computer import lands_ab_diag_corpus_sources as S  # noqa: E402
 
+TYPED_REPO_REL_TAG = "$typed_repo_rel"  # exact key; no alias; no undocumented tags
+
+
+class TypedPathError(ValueError):
+    """Fail-closed typed repo-root-relative path resolution error."""
+
+    def __init__(self, code: str, **detail):
+        self.code = code
+        self.detail = detail
+        super().__init__(code)
+
+
+def resolve_typed_repo_rel_ops(ops, repo_root: Path) -> list:
+    """Resolve {"$typed_repo_rel": rel} carriers in op values before apply_ops.
+
+    Path algebra only against repo_root; no file IO. Sole owner (plan v58 §7.5).
+    """
+    root = Path(repo_root).resolve()
+
+    def _resolve_rel(rel: str) -> str:
+        if not isinstance(rel, str):
+            raise TypedPathError("typed_path_bad_type", got_type=type(rel).__name__)
+        if rel == "":
+            raise TypedPathError("typed_path_empty")
+        if chr(0) in rel:
+            raise TypedPathError("typed_path_nul")
+        if "\\" in rel:
+            raise TypedPathError("typed_path_backslash", rel=rel)
+        if rel.startswith("/") or rel.startswith("~"):
+            raise TypedPathError("typed_path_absolute_forbidden", rel=rel)
+        if len(rel) >= 2 and rel[1] == ":" and rel[0].isalpha():
+            raise TypedPathError("typed_path_absolute_forbidden", rel=rel)
+        parts = Path(rel).parts
+        if any(part == ".." for part in parts):
+            raise TypedPathError("typed_path_traversal", rel=rel)
+        resolved = (root / rel).resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise TypedPathError("typed_path_traversal", rel=rel) from exc
+        return resolved.as_posix()
+
+    def _walk(val):
+        if isinstance(val, dict):
+            keys = set(val.keys())
+            if TYPED_REPO_REL_TAG in keys:
+                if keys != {TYPED_REPO_REL_TAG}:
+                    raise TypedPathError("typed_path_malformed", keys=sorted(keys))
+                return _resolve_rel(val[TYPED_REPO_REL_TAG])
+            for k in keys:
+                if isinstance(k, str) and k != TYPED_REPO_REL_TAG and (
+                    k.startswith("$typed") or k in ("typed_repo_rel", "$typed_rel")
+                ):
+                    raise TypedPathError("typed_path_unregistered_tag", tag=k)
+            return {k: _walk(v) for k, v in val.items()}
+        if isinstance(val, list):
+            return [_walk(v) for v in val]
+        return val
+
+    if ops is None:
+        return ops
+    if not isinstance(ops, list):
+        raise TypedPathError("typed_path_bad_type", got_type=type(ops).__name__, where="ops")
+    out = []
+    for i, op in enumerate(ops):
+        if not isinstance(op, dict):
+            raise TypedPathError("typed_path_op_not_dict", index=i, got_type=type(op).__name__)
+        if "value" not in op:
+            raise TypedPathError("typed_path_op_missing_value", index=i, keys=sorted(op.keys()))
+        op2 = dict(op)
+        op2["value"] = _walk(op2["value"])
+        out.append(op2)
+    return out
+
+
+def run_typed_path_grammar_negatives(repo: Path) -> list:
+    """Observed-fail battery for typed-path grammar (plan v58 §7.5)."""
+    hostiles = [
+        ("typed_path_absolute_forbidden",
+         [{"op": "set", "path": ["x"], "value": {"$typed_repo_rel": "/etc/passwd"}}]),
+        ("typed_path_traversal",
+         [{"op": "set", "path": ["x"], "value": {"$typed_repo_rel": "../x"}}]),
+        ("typed_path_bad_type",
+         [{"op": "set", "path": ["x"], "value": {"$typed_repo_rel": 123}}]),
+        ("typed_path_empty",
+         [{"op": "set", "path": ["x"], "value": {"$typed_repo_rel": ""}}]),
+        ("typed_path_nul",
+         [{"op": "set", "path": ["x"], "value": {"$typed_repo_rel": "a" + chr(0) + "b"}}]),
+        ("typed_path_backslash",
+         [{"op": "set", "path": ["x"], "value": {"$typed_repo_rel": "a\\b"}}]),
+        ("typed_path_unregistered_tag",
+         [{"op": "set", "path": ["x"], "value": {"$typed_rel": "x"}}]),
+        ("typed_path_malformed",
+         [{"op": "set", "path": ["x"], "value": {"$typed_repo_rel": "ok", "extra": 1}}]),
+        ("typed_path_op_not_dict", ["bad"]),
+        ("typed_path_op_missing_value", [{"op": "set", "path": ["x"]}]),
+    ]
+    # fix backslash to real single backslash in value
+    hostiles[5] = (
+        "typed_path_backslash",
+        [{"op": "set", "path": ["x"], "value": {"$typed_repo_rel": "a" + chr(92) + "b"}}],
+    )
+    out = []
+    for name, ops in hostiles:
+        try:
+            resolve_typed_repo_rel_ops(ops, repo)
+            out.append({"case": name, "observed": [], "ok": False})
+        except TypedPathError as e:
+            out.append({"case": name, "observed": [e.code], "ok": e.code == name})
+        except Exception as e:  # pragma: no cover
+            out.append({"case": name, "observed": ["traceback"], "ok": False, "error": repr(e)})
+    return out
+
+
+
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 FIXTURE_PREFIX = "artifacts/acc_entropy/_tmp_host_man_"
 
@@ -51,7 +166,8 @@ def write_manifest_fixture(repo: Path, base_manifest: dict, spec_manifest: dict,
     if "raw" in spec_manifest:
         path.write_text(spec_manifest["raw"])
     else:
-        mutated = R.apply_ops(copy.deepcopy(base_manifest), spec_manifest["ops"])
+        ops = resolve_typed_repo_rel_ops(spec_manifest["ops"], repo)
+        mutated = R.apply_ops(copy.deepcopy(base_manifest), ops)
         path.write_text(json.dumps(mutated, indent=1) + "\n")
     return rel
 
@@ -73,7 +189,8 @@ def build_case(ctx, spec, tmp: Path, fixtures: list):
         manifest_arg = str(outside)
     elif cli.get("mode") == "absent_in_repo":
         manifest_arg = cli["rel"]
-    R.apply_ops(packet, spec.get("ops"))
+    ops = resolve_typed_repo_rel_ops(spec.get("ops"), ctx["repo"])
+    R.apply_ops(packet, ops)
     pkt_path = tmp / f"pkt_{uuid.uuid4().hex[:8]}.json"
     if spec.get("packet_raw") is not None:
         pkt_path.write_text(spec["packet_raw"])

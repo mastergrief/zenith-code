@@ -30,6 +30,10 @@ HARNESS_REL = "calm/llm_computer/tests/test_hrm_text_158_lands_ab_science_source
 
 # Active generation (activation commit sets "v1"; isolated authoring may pass generation= explicitly)
 ACTIVE_GENERATION = "v1"
+# Sealed v58 PLAN.md sha — prep_package pin authority (not receipt-sourced)
+SEALED_V58_PLAN_SHA256 = (
+    "228b8e817379e8286747cea7663012be1b29463b0a867ddc3400373dae9e9c1b"
+)
 
 GENERATIONS = {
     "v0": {
@@ -46,6 +50,14 @@ GENERATIONS = {
         "baseline_schema": "LANDS_AB_dry_exec_diag_corpus_baseline/v1",
         "baseline_head": "6d2978d3",
         "rows_schema": "LANDS_AB_dry_exec_diag_corpus_rows/v1",
+        "has_generation_json": True,
+    },
+    "v2": {
+        "fixture_dir": "calm/llm_computer/tests/fixtures/lands_ab_dry_exec_diag_corpus_v2",
+        "baseline_name": "BASELINE_TOOL_bc0d7f56.json",
+        "baseline_schema": "LANDS_AB_dry_exec_diag_corpus_baseline/v2",
+        "baseline_head": "bc0d7f56",
+        "rows_schema": "LANDS_AB_dry_exec_diag_corpus_rows/v2",
         "has_generation_json": True,
     },
 }
@@ -71,8 +83,82 @@ def _gen(generation: str | None = None) -> str:
 
 # --- plan v8 injection wrappers (≤10 physical body lines each; zero validation logic) ---
 
+def _validate_v2_generation_receipt(repo, receipt, *, check_live_tool=False):
+    """v2 exact-set + value pins + required carriers + migration shape (plan §7.6/§7.6a)."""
+    meta = GENERATIONS["v2"]
+    fixture_dir = meta["fixture_dir"]
+    fails = []
+    if not fixture_dir.endswith("_v2"):
+        fails.append({"code": "generation_path_mismatch", "fixture_dir": fixture_dir})
+        return fails
+    if not isinstance(receipt, dict):
+        return list(GA.validate_generation_exact_set(receipt))
+
+    rows_p = repo / fixture_dir / "ROWS.json"
+    mig_path = repo / fixture_dir / "MIGRATION_v1_to_v2.json"
+    rows_sha = None
+    mig_sha = None
+    migration = None
+    if not rows_p.is_file():
+        fails.append({
+            "code": "generation_pin_mismatch", "field": "v2_rows_sha256",
+            "reason": "rows_absent", "path": str(rows_p),
+        })
+    else:
+        rows_sha = sha256_file(rows_p)
+    if not mig_path.is_file():
+        fails.append({
+            "code": "generation_pin_mismatch", "field": "migration_carrier_sha256",
+            "reason": "migration_absent", "path": str(mig_path),
+        })
+    else:
+        mig_sha = sha256_file(mig_path)
+        try:
+            migration = json.loads(mig_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            fails.append({
+                "code": "migration_receipt_mismatch", "reason": "unparseable", "error": str(exc),
+            })
+            migration = None
+
+    tool_sha = None
+    tool_path = repo / TOOL_REL
+    if tool_path.is_file():
+        tool_sha = sha256_file(tool_path)
+    elif check_live_tool:
+        fails.append({"code": "generation_tool_mismatch", "reason": "tool_absent", "path": TOOL_REL})
+
+    exact_kw = {"prep_package_sha256": SEALED_V58_PLAN_SHA256}
+    if rows_sha is not None:
+        exact_kw["v2_rows_sha256"] = rows_sha
+    if mig_sha is not None:
+        exact_kw["migration_carrier_sha256"] = mig_sha
+    if tool_sha is not None:
+        exact_kw["tool_sha256_at_authoring"] = tool_sha
+    fails.extend(GA.validate_generation_exact_set(receipt, **exact_kw))
+
+    if migration is not None and rows_sha is not None:
+        fails.extend(GA.validate_migration_receipt_shape(
+            migration,
+            prep_package_sha256=SEALED_V58_PLAN_SHA256,
+            child_rows_sha256=rows_sha,
+            parent_rows_sha256=GA.PIN_V1_PARENT_ROWS_SHA256,
+            parent_baseline_sha256=GA.PIN_V1_PARENT_BASELINE_SHA256,
+        ))
+    if check_live_tool and tool_sha is not None:
+        want_tool = receipt.get("tool_sha256_at_authoring")
+        if tool_sha != want_tool:
+            fails.append({
+                "code": "generation_tool_mismatch",
+                "tool_sha256": tool_sha, "generation_tool_sha256": want_tool,
+            })
+    return fails
+
+
 def validate_generation_receipt(repo, generation, receipt, *, check_live_tool=False):
     g = _gen(generation)
+    if g == "v2":
+        return _validate_v2_generation_receipt(repo, receipt, check_live_tool=check_live_tool)
     meta, v0 = GENERATIONS[g], GENERATIONS["v0"]
     return GA.validate_generation_receipt(
         repo, g, receipt, contract=GA.V1_GENERATION_CONTRACT,
@@ -83,6 +169,26 @@ def validate_generation_receipt(repo, generation, receipt, *, check_live_tool=Fa
 
 def preflight_generation(repo, generation=None, tool_sha=None, check_live_tool=False):
     g = ACTIVE_GENERATION if generation is None else generation
+    if g == "v2":
+        fails = []
+        if g not in GENERATIONS:
+            return [{"code": "unknown_generation", "generation": g}]
+        meta = GENERATIONS[g]
+        fixture_dir = meta["fixture_dir"]
+        if not fixture_dir.endswith("_v2"):
+            fails.append({"code": "generation_path_mismatch", "fixture_dir": fixture_dir})
+            return fails
+        try:
+            receipt = load_generation_receipt(repo, g)
+        except RuntimeError as e:
+            msg = str(e)
+            if "absent" in msg:
+                fails.append({"code": "generation_receipt_absent", "error": msg})
+            else:
+                fails.append({"code": "generation_receipt_mismatch", "error": msg})
+            return fails
+        fails += validate_generation_receipt(repo, g, receipt, check_live_tool=check_live_tool)
+        return fails
     return GA.preflight_generation(
         repo, g, generations=GENERATIONS, active_generation=ACTIVE_GENERATION,
         contract=GA.V1_GENERATION_CONTRACT, required_field_types=GA._V1_REQUIRED_FIELD_TYPES,

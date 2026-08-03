@@ -76,6 +76,37 @@ GEN_AUTH_PREREG = {
         "tool_unchanged", "generation_unchanged", "rows_unchanged"},
 }
 
+_V2 = {
+    "v2_gen_extra_field": {"generation_receipt_mismatch"},
+    "v2_gen_missing_field": {"generation_receipt_mismatch"},
+    "v2_gen_generation_v9": {"generation_pin_mismatch"},
+    "v2_gen_parent_generation_v0": {"generation_pin_mismatch"},
+    "v2_gen_baseline_name_wrong": {"generation_pin_mismatch"},
+    "v2_gen_baseline_head_wrong": {"generation_pin_mismatch"},
+    "v2_gen_schema_rows_wrong": {"generation_pin_mismatch"},
+    "v2_gen_schema_baseline_wrong": {"generation_pin_mismatch"},
+    "v2_gen_parent_rows_ff": {"generation_pin_mismatch"},
+    "v2_gen_bad_type_generation": {"generation_receipt_mismatch"},
+    "v2_mig_extra_field": {"migration_receipt_mismatch"},
+    "v2_mig_missing_field": {"migration_receipt_mismatch"},
+    "v2_mig_literal_mismatch": {"migration_receipt_mismatch"},
+    "v2_mig_prep_mismatch": {"migration_receipt_mismatch"},
+    "v2_mig_child_mismatch": {"migration_receipt_mismatch"},
+    "v2_mig_parent_rows_ff": {"migration_receipt_mismatch"},
+    "v2_mig_parent_base_ff": {"migration_receipt_mismatch"},
+    "v2_mig_parent_rows_type": {"migration_receipt_mismatch"},
+    "v2_mig_parent_base_mal": {"migration_receipt_mismatch"},
+    "v2_mig_parent_rows_zero": {"migration_receipt_mismatch"},
+    "v2_path_misroute_fixture_dir": {"generation_path_mismatch"},
+}
+GEN_AUTH_PREREG.update(_V2)
+GEN_AUTH_PREREG.update({n: {n} for n in (
+    "typed_path_absolute_forbidden", "typed_path_traversal", "typed_path_bad_type",
+    "typed_path_empty", "typed_path_nul", "typed_path_backslash",
+    "typed_path_unregistered_tag", "typed_path_malformed",
+    "typed_path_op_not_dict", "typed_path_op_missing_value")})
+
+
 
 
 
@@ -432,4 +463,35 @@ def run_generation_authority_negatives(repo: Path) -> list:
     cases.extend(run_gen_auth_isolated_carrier_cases(repo, good))
     cases.extend(run_gen_auth_cli_cases(repo))
     cases.extend(run_gen_auth_selector_and_live_cases(repo, live_before))
+    cases.extend(run_v2_slice_a_negatives(repo))
+    return cases
+
+
+def run_v2_slice_a_negatives(repo: Path) -> list:
+    from calm.llm_computer import lands_ab_generation_authority as GA
+    from lands_ab_dry_exec_diag_corpus import run_typed_path_grammar_negatives
+    cases = []
+    suite = GA.run_slice_a_exact_set_and_parent_hash_negatives(
+        prep_package_sha256="c"*64, child_rows_sha256="d"*64,
+        tool_sha256_at_authoring="e"*64, migration_carrier_sha256="f"*64)
+    for c in suite["cases"]:
+        name = c["prereg_name"]
+        _record(cases, name, set(c["observed_codes"]),
+                {"reasons": c["observed_reasons"], "expected_reason": c["expected_reason"],
+                 "suite_ok": c["ok"], "pure_seam": True})
+        if not c["ok"]:
+            cases[-1]["ok"] = False; cases[-1]["set_equal"] = False
+    _svd = S.GENERATIONS["v2"]["fixture_dir"]
+    try:
+        S.GENERATIONS["v2"]["fixture_dir"] = _svd.replace("_v2", "_vX_misroute")
+        _codes = {f.get("code") for f in S.preflight_generation(repo, "v2", check_live_tool=False) if f.get("code")}
+        _record(cases, "v2_path_misroute_fixture_dir", _codes, {
+            "live_fixture_dir": _svd, "hostile_fixture_dir": S.GENERATIONS["v2"]["fixture_dir"],
+            "entry": "S.preflight_generation(repo,'v2',check_live_tool=False)", "pure_seam": False})
+    finally:
+        S.GENERATIONS["v2"]["fixture_dir"] = _svd
+    for item in run_typed_path_grammar_negatives(repo):
+        _record(cases, item["case"], set(item["observed"]), {"pure_seam": True})
+        if not item.get("ok", True):
+            cases[-1]["ok"] = False; cases[-1]["set_equal"] = False
     return cases

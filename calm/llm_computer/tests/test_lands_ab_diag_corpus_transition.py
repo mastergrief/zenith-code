@@ -161,8 +161,15 @@ def build_candidate_workspace(repo: Path, ws: Path, tool_suffix: str,
                # Parent v0 fixtures required by validate_generation_receipt disk pins
                f"{S.GENERATIONS['v0']['fixture_dir']}/ROWS.json",
                f"{S.GENERATIONS['v0']['fixture_dir']}/{S.GENERATIONS['v0']['baseline_name']}",
+               f"{S.GENERATIONS['v2']['fixture_dir']}/ROWS.json",
+               f"{S.GENERATIONS['v2']['fixture_dir']}/GENERATION.json",
+               f"{S.GENERATIONS['v2']['fixture_dir']}/MIGRATION_v1_to_v2.json",
+               f"{S.GENERATIONS['v2']['fixture_dir']}/{S.GENERATIONS['v2']['baseline_name']}",
                "calm/llm_computer/lands_ab_diag_corpus_sources.py",
                "calm/llm_computer/lands_ab_diag_corpus_reducers.py",
+               "calm/llm_computer/lands_ab_diag_exact_set_consumers.py",
+               "calm/llm_computer/lands_ab_diag_corpus_v2_author.py",
+               "calm/llm_computer/lands_ab_generation_authority.py",
                "scripts/lands_ab_dry_exec_diag_corpus.py"]
     # The fixture builder's file closure is IMPLICIT (module-level constants, not
     # manifest entries): it reads the v6 base packet it derives every fixture from,

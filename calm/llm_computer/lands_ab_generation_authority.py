@@ -406,3 +406,17 @@ def classify_corpus_load_error(exc: BaseException) -> dict | None:
         if msg == prefix or msg.startswith(prefix + ":") or msg.startswith(prefix + " "):
             return {"code": code, "error": msg}
     return None
+
+# §7.6a exact-set consumers — thin re-export only (C5; body lives in exact_set_consumers)
+from calm.llm_computer.lands_ab_diag_exact_set_consumers import (  # noqa: E402
+    GENERATION_V2_LITERALS,
+    GENERATION_V2_REQUIRED_FIELD_TYPES,
+    GENERATION_V2_REQUIRED_KEYS,
+    MIGRATION_V1_TO_V2_LITERALS,
+    MIGRATION_V1_TO_V2_REQUIRED_KEYS,
+    PIN_V1_PARENT_BASELINE_SHA256,
+    PIN_V1_PARENT_ROWS_SHA256,
+    run_slice_a_exact_set_and_parent_hash_negatives,
+    validate_generation_exact_set,
+    validate_migration_receipt_shape,
+)

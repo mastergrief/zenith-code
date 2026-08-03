@@ -1,0 +1,17 @@
+{
+  "ast_allowlist_A4_allowed_over_150": [
+    "_validate_i_series_consistency"
+  ],
+  "baseline_head": "bc0d7f56",
+  "baseline_name": "BASELINE_TOOL_bc0d7f56.json",
+  "generation": "v2",
+  "migration_carrier_sha256": "2abf682a1967a73179ec05c7f43ca3e757f7b573d4bc87c96128b28740cd2bb6",
+  "parent_baseline_sha256": "a18a99f98f36051cdd739e7b43091184d8149a0f4ae1ce305583615f1b81460b",
+  "parent_generation": "v1",
+  "parent_rows_sha256": "d61530c0dfeadc67d610ac6cc9b043f3c1d0bb2a490e356594f0047fe1923b89",
+  "prep_package_sha256": "228b8e817379e8286747cea7663012be1b29463b0a867ddc3400373dae9e9c1b",
+  "schema_baseline": "LANDS_AB_dry_exec_diag_corpus_baseline/v2",
+  "schema_rows": "LANDS_AB_dry_exec_diag_corpus_rows/v2",
+  "tool_sha256_at_authoring": "bc0d7f56e67cfbea58d7775f017d04ef01f2253f1c15f1b3867d67128fc52d02",
+  "v2_rows_sha256": "20567920a2d1f216c5be76d882ec2eddc77fba8829ee42e6052849ba4609d0ed"
+}

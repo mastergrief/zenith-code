@@ -1,0 +1,11 @@
+{
+  "child_generation": "v2",
+  "child_rows_sha256": "20567920a2d1f216c5be76d882ec2eddc77fba8829ee42e6052849ba4609d0ed",
+  "migration_kind": "generation_rebind_source_currency",
+  "parent_baseline_sha256": "a18a99f98f36051cdd739e7b43091184d8149a0f4ae1ce305583615f1b81460b",
+  "parent_generation": "v1",
+  "parent_rows_sha256": "d61530c0dfeadc67d610ac6cc9b043f3c1d0bb2a490e356594f0047fe1923b89",
+  "prep_package_sha256": "228b8e817379e8286747cea7663012be1b29463b0a867ddc3400373dae9e9c1b",
+  "producer": "calm.llm_computer.lands_ab_diag_corpus_v2_author",
+  "schema": "LANDS_AB_dry_exec_diag_corpus_migration/v1_to_v2"
+}
