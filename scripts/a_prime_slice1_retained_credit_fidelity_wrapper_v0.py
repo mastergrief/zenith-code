@@ -77,7 +77,24 @@ def run_cmd(
         return 124
 
 
-def probe_argv(steps: int, scratch: Path, nondense: bool) -> list[str]:
+# Probe-side aggregate-only exemption for multi-step bounded_steps wall time.
+# Nested phases + max-silent + total timeout stay fail-closed under this contract.
+BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_CONTRACT = (
+    "b2b_bounded_steps_aggregate_timeout_exemption_v1"
+)
+# Only the N=50 event-coded verdict arm needs the aggregate exemption (0d04f05c:
+# 50 × ~3.6s ≈ 182s > uniform 120s after all steps completed). Screens + dense
+# verdict fit 120s; do not widen every phase via a scalar bump.
+EXEMPTED_PROBE_ARMS = frozenset({"nondense_verdict"})
+
+
+def probe_argv(
+    steps: int,
+    scratch: Path,
+    nondense: bool,
+    *,
+    arm_name: str | None = None,
+) -> list[str]:
     argv = [
         sys.executable,
         "-u",
@@ -115,6 +132,19 @@ def probe_argv(steps: int, scratch: Path, nondense: bool) -> list[str]:
         argv += [
             "--persistent-accumulator-event-coded-live",
             "--event-coded-sparse-vote-authority",
+        ]
+    if arm_name in EXEMPTED_PROBE_ARMS:
+        # Fail-closed geometry bind: name alone is not admission. Exempt only
+        # N=50 event-coded; mismatch raises (never silently omits the flag).
+        if int(steps) != 50 or nondense is not True:
+            raise ValueError(
+                "phase-timeout exemption arm geometry mismatch: "
+                f"arm_name={arm_name!r} steps={steps!r} nondense={nondense!r}; "
+                "require steps==50 and nondense is True"
+            )
+        argv += [
+            "--phase-timeout-exemption-contract",
+            BOUNDED_STEPS_AGGREGATE_TIMEOUT_EXEMPTION_CONTRACT,
         ]
     return argv
 
@@ -297,7 +327,9 @@ def main() -> int:
     ]
     for name, steps, scratch, nd in arms:
         scratch.mkdir(parents=True, exist_ok=True)
-        rc = run_cmd(run_root, name, probe_argv(steps, scratch, nd), env)
+        rc = run_cmd(
+            run_root, name, probe_argv(steps, scratch, nd, arm_name=name), env
+        )
         if rc != 0:
             break
     reduce_rc = run_cmd(
