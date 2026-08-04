@@ -91,3 +91,75 @@ edit enumerated eight content items with no mirror among them. Pattern parity
 supports the recommendation; it does not supply the authority. Reverted
 cleanly: pointer restored, both mirror files removed, `.codex/` returns no
 modified or untracked paths.
+
+## v2 additions — receipts from the 2026-08-03 session (the rule's first full day in force)
+
+Five additions landed in v2, each pinned to a failure that occurred WHILE v1
+was loaded — the honest test of what the rule was missing.
+
+Sources for the numbered claims below. Audit headline posted in room record
+`1785830156565-b7b2d61a` (≥13 retracted gate-1 PASSes, ~87 plan versions =
+29 predecessor + 58 Slice A, ≥52 gate cycles, last GPU artifact Jul 23).
+Day ratio: journal sweep over
+`~/.ai-room/channels/claw-code/messages.jsonl`, window
+2026-08-02T18:00:00Z–2026-08-03T22:14:59Z — window total **800** re-verified
+by replayable count this session; the 778/8 ceremony/science split is the
+audit-session keyword classification (session transcript
+`97ee46eb-3bb4-4d0d-ae4b-5556e3198f55.jsonl`; no standalone room record).
+Version counts replayable (directories only — a bare `v[0-9]*` glob also
+matches two sibling `.json` files and returns 60, the property-vs-spelling
+defect this very rule targets; caught at gate-2):
+`find /home/gabe/plan-dev-scratch/repin -maxdepth 1 -type d -regextype
+posix-extended -regex '.*/fixture_gen_v2_plan_v[0-9]+$' | wc -l` → 29;
+same with `fixture_gen_v2_slice_a_plan_v[0-9]+$` → 58 (both re-run
+2026-08-04).
+
+1. **Denominator source** (Verification discipline). Root cause of the
+   withdrawn-PASS class — ≥13 per audit record `1785830156565-b7b2d61a`,
+   enumerated to 15 in the session-transcript sweep (v19, v26, v32, v34, v36,
+   v38, v42, v44, v47, v48, v50-v53, plus the v58 implementation PASS):
+   obligations enumerated from the dispatch's restatement, the receipt's
+   claims, or the prior round's blocker list — never the frozen spec.
+   Recurred at three successively finer granularities (v51→v52→v53) before
+   being named.
+2. **Executes, not mutates** (Cure the class). The "structurally closed"
+   residual retraction (integration v5 gate-1 `1785794370407`, retracted in
+   remint dispatch `1785794730905`): effect surface enumerated over mutation
+   sections only; §8 validation also ran and wrote (2069 ignored entries
+   invisible to the preserve equation; stale `.pyc` for the exact land
+   modules).
+3. **Proportionality** (new section). fixture-gen-v2 consumed ~87 plan
+   versions (29 predecessor + 58 Slice A — replayable dir counts above) and
+   ≥52 gate cycles (audit record `1785830156565-b7b2d61a`) for a CPU fixture
+   migration; the loop measured its own pathology (Aug 2 on-record, "29
+   versions / 34h / zero implementation") and continued anyway. The
+   3-cure-rounds trigger is workflow.md's plateau rule ported to verification.
+4. **Retraction rate** (Report faithfully). ≥13 individually-correct
+   gate-1 PASS retractions in one day (audit record `1785830156565-b7b2d61a`;
+   enumerated to 15 in the session-transcript sweep), none treated as data
+   about the producing process.
+5. **Symmetric calibration** (Verification discipline; replaces the
+   negative-path-only bullet). During the 2026-08-03 session an 18-case
+   battery (case count per room record `1785439207486-ecfe92a8`, the
+   post-cure 18/18 set-equality PASS in the same lineage) produced false
+   failures on a known-correct artifact across its full case set before
+   recalibration — session-transcript observation; no standalone room record
+   of the inverted run, so the exact-count causal claim is stated softly
+   here. Two integration-battery hostiles likewise nearly blocked correct
+   work in the v5–v7 rounds. These are positive-path failures the v1 text
+   covered only for prohibition matchers.
+
+Paid for by merging the ARRIVED/reviewer bullets, compressing the
+system-self-report bullet, and condensing Notes on use. 149 → 161 lines
+(target 150, hard cap 200; overage disclosed at review).
+
+Queued follow-up, NOT this slice: mechanical enforcement of the two verdict
+fields (gate-1 checklist / PreToolUse hook on room PASS posts) — prose decays,
+hooks don't; same lesson as the staged-digest gate hook.
+
+Related same-day evidence: R2→R3 of the integration plan (an "exhaustive"
+git-metadata allowlist that omitted porcelain-implied writes — cured by
+authorizing effects BY CAUSE, not by list; co_lead `1785831090174`), and 8
+substring over-fires of the staged-digest gate classifier in one day (task
+`1785437094843-e23dd080`), two of them triggered by prose *describing* this
+very work — the prohibition-quotes-what-it-forbids bullet, live.

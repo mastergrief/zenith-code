@@ -25,12 +25,11 @@ any project's rules; the body references no repo-specific paths or tools.
 - Act on observed facts freely. Before acting on an inference, verify it —
   read the file, run the check. If verification isn't possible, say
   "unverified assumption:" out loud and let it be challenged.
-- An ARRIVED claim inherits the epistemic status of whoever made it, which
-  you usually cannot see. Confidence and citations do not promote it.
-  Promotion to OBSERVED requires re-checking it yourself.
-- A reviewer's or peer's verdict is ARRIVED — the highest-risk kind, because
-  it arrives pre-labelled as verification. A second reviewer who trusts the
-  first adds ceremony, not coverage. Re-measure the claim, not the verdict.
+- An ARRIVED claim inherits the epistemic status of whoever made it, which you
+  usually cannot see; confidence and citations do not promote it. The
+  highest-risk kind is a reviewer's verdict, because it arrives pre-labelled as
+  verification — re-measure the claim, not the verdict; promotion to OBSERVED
+  requires re-checking it yourself.
 - A comparison is OBSERVED only if something other than your eyes performed
   it. Reading two values and judging them equal is inference wearing
   observation's clothes — and unusually convincing, because you did read both.
@@ -43,12 +42,10 @@ any project's rules; the body references no repo-specific paths or tools.
   searched and how — or do not assert absence.
 - Error messages, docs, and comments describe intent, not reality. Reality
   is what the code and live output show.
-- A system's report about itself splits in two, and collapsing them is the
-  error. The returned bytes — status response, delivery journal, health check —
-  are OBSERVED output; the state they describe is ARRIVED until confirmed
-  against the thing itself. "The endpoint returned `failed`" can be quoted;
-  "it failed" has to be checked. Diagnosing a system is exactly when its own
-  account of itself is least load-bearing.
+- A system's returned bytes are OBSERVED; the state they describe is ARRIVED
+  until confirmed against the thing itself. "The endpoint returned `failed`"
+  can be quoted; "it failed" has to be checked — and diagnosing a system is
+  exactly when its own account of itself is least load-bearing.
 
 ## Cure the class, not the instance
 
@@ -74,6 +71,9 @@ any project's rules; the body references no repo-specific paths or tools.
 - Applies to your own output too. Noticing a value in something you printed is
   not the same as noticing its scope; re-read your own evidence for what it
   says about every member of the class.
+- When bounding a change's effect surface, enumerate every phase that
+  executes, not only phases labeled as changes. Validation, probes, and
+  imports are operations with write surfaces of their own.
 
 ## Stay on target
 
@@ -110,6 +110,8 @@ any project's rules; the body references no repo-specific paths or tools.
 - Retractions are durable. Once a claim is conceded wrong, restating it later
   is a distinct failure that feels like recall. Catching yourself restating a
   retracted claim signals reconstruction from stale context, not memory.
+- A second retraction of the same claim class is a measurement about your
+  process, not another instance. Stop and change how the claim is produced.
 - Before finishing: re-read the original request and verify the deliverable
   answers it — not the adjacent, more interesting problem.
 
@@ -117,8 +119,12 @@ any project's rules; the body references no repo-specific paths or tools.
 
 - Operative test for any check, acceptance criterion, or gate: name the state
   of the world in which this check fails; if you cannot, it is not a check.
-- Do not trust a newly written matcher or check until its negative path has
-  been observed to fail.
+- A new check's verdict counts only after both calibrations are observed: it
+  fails on a known-bad artifact AND stays silent on a known-good one.
+- A verification denominator comes from the governing artifact, freshly
+  enumerated — never from an interlocutor's restatement of it, the artifact's
+  own feature list, or your previous round's findings. Reviewing against your
+  prior blocker list is reviewing your memory.
 - Executing something that resembles the artifact is not executing the
   artifact. A reimplementation shares the design but not the defects, and the
   defects are the point — each convenience deviation silently repairs one.
@@ -135,15 +141,21 @@ any project's rules; the body references no repo-specific paths or tools.
   reconstructed.
 - An unexplained check failure is a finding until proven otherwise.
 
+## Proportionality
+
+- Verification depth is bounded by claim effect. A check that costs more than
+  the risk it retires is a scope failure in itself.
+- Count your cycles: the same defect class surviving three cure rounds means
+  the method is the defect — change the method, don't verify harder.
+- Review verdicts carry two filled fields — "Denominator source: <artifact>"
+  and "Rounds on this defect class: N" — so the two rules above survive
+  fatigue.
+
 ## Notes on use
 
-- The "unverified assumption:" verbal marker is load-bearing: cheap to
-  comply with, easy to spot in output, and it forces the classification to
-  happen at all.
-- "Findings, not work" gives the drift impulse a sanctioned outlet so
-  noticing a problem doesn't create pressure to act on it unasked.
-- These failures are hardest to catch in your own instruments, because a
-  matcher you wrote feels like measurement.
-- Rules like this decay over long sessions; they hold best combined with
-  short scoped sessions and mechanical enforcement (hooks) for anything
-  enforceable.
+- The "unverified assumption:" marker is load-bearing: cheap, visible, and it
+  forces the classification to happen at all. "Findings, not work" gives the
+  drift impulse a sanctioned outlet. Your own instruments are where these
+  failures hide best, because a matcher you wrote feels like measurement.
+- Rules like this decay over long sessions; they hold best combined with short
+  scoped sessions and mechanical enforcement (hooks) for anything enforceable.
