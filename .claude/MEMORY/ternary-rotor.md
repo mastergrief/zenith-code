@@ -227,10 +227,12 @@ surfaces** that carry FP debt today and block
 | Backward-saved tensors | FP (the big transient debt in training) | rotated 2–4-bit saved activations (GACT-style) | **largest lever by bytes**; highest risk (perturbs gradients) |
 
 **Explicitly out of scope / untouched by this lane:**
-- The **int8 W8 vote accumulator** — the persistent-state dominator. Integer
-  vote tallies are not a correlated geometric vector field; rotation does not
-  apply. Its sub-2 route remains **event-coded/sparse/forgettable** per the
-  lane rule. Nothing here changes the full-sub2-persistent gate.
+- The **dense-LIVE vote accumulator (int16 container under selected/default
+  dense LIVE; W8 = range evidence only)** — the persistent-state dominator
+  (W8 branch-2 `1785833373077-316a0309` / PASS `1785833670092-646c6665`).
+  Integer vote tallies are not a correlated geometric vector field; rotation
+  does not apply. Its sub-2 route remains **event-coded/sparse/forgettable**
+  per the lane rule. Nothing here changes the full-sub2-persistent gate.
 - `lm_head`/`embd`/norms and frozen FP32 scales — standing `explicit_exception`
   class, unchanged.
 - q itself — already 1.6 bpw base-3 saved-byte; done.
@@ -345,5 +347,7 @@ equivalent for branch verdicts; commit every useful null.
 Rotorquant provides a working, in-tree, Pascal-proven mechanism for every
 `full_sub2_runtime` transient surface (KV, forward activations,
 backward-saved), landing at ~2.1 bpw as shipped with a known packing step to
-get under 2.0; it does not touch the int8 vote-acc dominator, which remains
-the single genuine sub-2-persistent blocker on its event-coded route.
+get under 2.0; it does not touch the dense-LIVE int16 vote-acc dominator
+(W8 range-only; `1785833373077-316a0309` / PASS `1785833670092-646c6665`),
+which remains the single genuine sub-2-persistent blocker on its
+event-coded route.

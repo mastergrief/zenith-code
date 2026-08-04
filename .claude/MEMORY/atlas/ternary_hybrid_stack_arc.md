@@ -257,6 +257,15 @@ vote_update ±127 storage clamp confirmed in vivo (conditional on that clamp sta
 LIVE ~24→16 bpw (33% row reduction). q int8 + scale unchanged. Saved-byte q ledger
 (~1.6 bpw) is separate.
 
+> **RETRACTION (2026-08-04) — physical-width INTERPRETATION only.** Historical
+> text above preserved as the then-measured receipt. W8 branch-2 measurement
+> (`1785833373077-316a0309`, gate-2 PASS `1785833670092-646c6665`) reclassifies
+> W8 as **value-range faithfulness** (clip→int8→int16 transient; default-off
+> boundary), **not** a realized live-container reduction. Selected/default dense
+> LIVE carrier remains **int8 q + int16 exact_accumulator_shadow** → dense-LIVE
+> ≈ **24 bpw**. No W8 pack on the checkpoint path. Corrected eager mirrors:
+> `.claude/rules/ternary_hybrid_stack.md` + `.codex/rules/ternary_hybrid_stack.md`.
+
 **Prior never-rm runs (diagnosed + fixed on path to CONFIRM):**
 - `2189e72008` — canonical W7 negative (`W7_BREAKS_LIVE_PARITY` @ ±63)
 - `2189e72009` — `HARNESS_INVALID` (W8 sidecar emit gap; fixed `5c3dc89`)
@@ -268,9 +277,12 @@ LIVE ~24→16 bpw (33% row reduction). q int8 + scale unchanged. Saved-byte q le
 `2189e72010`. B1 (`72d79b1`) added a W8-only O1 witness on the ±127 domain
 (warmup-only skip) → load-bearing O1 → CONFIRM on `2189e72011`.
 
-**Dense-width closure:** W7 negative (`2189e72008`) + W8 positive characterize the
-**dense** vote-acc width floor as **8 bits** (W8 ±127 lossless under the current
-clamp; W7 ±63 breaks) at `canonical_t10_prereg_v24`.
+**Logical/value-range closure (not physical container):** W7 negative
+(`2189e72008`) + W8 positive characterize the dense vote-acc **logical**
+representability floor under the ±127 clamp as **8 bits** (W8 ±127 lossless;
+W7 ±63 breaks) at `canonical_t10_prereg_v24` — **does not** imply physical
+container narrowing; selected/default dense LIVE container remains **int16**
+(`1785833373077-316a0309` / PASS `1785833670092-646c6665`).
 
 **BOUNDED non-claims (verbatim load-bearing):**
 - NOT universal transparency — conditional on production clip staying `[-127,+127]`
@@ -389,9 +401,20 @@ for gate ids; analysis module `phaseb_acc_carrier_analysis.py` 009d45cd…):
 - Reading: ~29× below the 0.4 north-star acc ceiling (~66× below 0.9 working
   bar) — the dense int8 live acc stores ~600× more bits than the state it
   encodes. `design_routing_NOT_science_bank=true`.
+  > **RETRACTION (2026-08-04) — derived ~600× ratio (separate claim).** Historical
+  > sentence preserved. Under int16 dense-LIVE container: `16 / B_acc` with
+  > `B_acc=0.013706695053060783` → **≈1167×** (~1200×-class), not ~600×
+  > (`8/B_acc≈584` was the int8 overclaim). Encoding lower-surface reading
+  > stands; container width was wrong. Cite `1785833373077-316a0309` /
+  > PASS `1785833670092-646c6665`; eager `ternary_hybrid_stack.md` mirrors.
 - co_lead load-bearing correction carried: this measured the ENCODING lower
   surface; the physical LIVE carrier remains dense int8 q + int8 W8 acc
   ≈16 bpw — acc term still the dominator. Encoding ≠ carrier.
+  > **RETRACTION (2026-08-04)** of the physical-width clause only (encoding
+  > reading stands): dense LIVE is int8 q + **int16** exact_accumulator_shadow
+  > ≈ **24 bpw**; W8 is range evidence, not container shrink — see
+  > `1785833373077-316a0309` / PASS `1785833670092-646c6665` and corrected
+  > eager `ternary_hybrid_stack.md` mirrors.
 - Rule delta (both mirrors, 2026-07-26): one bullet — sparse acc route is now
   measurement-backed, not only structural (W-series bounded-ness was the prior
   by-construction argument).
@@ -414,6 +437,10 @@ Terminal dual-accepted science result committed at work-repo
   byte-level live carrier, including TSA B-site integration to the fused
   sparse producer (the receipt's named next slice). No ledger movement (LIVE
   still ~16 bpw).
+  > **RETRACTION (2026-08-04)** of that LIVE ~16 clause: dense-LIVE was never a
+  > realized int8-acc container; correct dense-LIVE ≈ **24 bpw** (int16
+  > shadow) — W8 branch-2 `1785833373077-316a0309` / PASS
+  > `1785833670092-646c6665`; corrected eager mirrors.
 - **What landed**: hardened recarry validators+evidence (00435afa/b82d30ff —
   self-reference gaps F1-F3, mode-aware lifecycle grammar F4, registry
   membership, six-list manifest schema, status-aware surface discovery),

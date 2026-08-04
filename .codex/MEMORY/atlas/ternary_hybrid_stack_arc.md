@@ -326,9 +326,20 @@ for gate ids; analysis module `phaseb_acc_carrier_analysis.py` 009d45cd…):
 - Reading: ~29× below the 0.4 north-star acc ceiling (~66× below 0.9 working
   bar) — the dense int8 live acc stores ~600× more bits than the state it
   encodes. `design_routing_NOT_science_bank=true`.
+  > **RETRACTION (2026-08-04) — derived ~600× ratio (separate claim).** Historical
+  > sentence preserved. Under int16 dense-LIVE container: `16 / B_acc` with
+  > `B_acc=0.013706695053060783` → **≈1167×** (~1200×-class), not ~600×
+  > (`8/B_acc≈584` was the int8 overclaim). Encoding lower-surface reading
+  > stands; container width was wrong. Cite `1785833373077-316a0309` /
+  > PASS `1785833670092-646c6665`; eager `ternary_hybrid_stack.md` mirrors.
 - co_lead load-bearing correction carried: this measured the ENCODING lower
   surface; the physical LIVE carrier remains dense int8 q + int8 W8 acc
   ≈16 bpw — acc term still the dominator. Encoding ≠ carrier.
+  > **RETRACTION (2026-08-04)** of the physical-width clause only (encoding
+  > reading stands): dense LIVE is int8 q + **int16** exact_accumulator_shadow
+  > ≈ **24 bpw**; W8 is range evidence, not container shrink — see
+  > `1785833373077-316a0309` / PASS `1785833670092-646c6665` and corrected
+  > eager `ternary_hybrid_stack.md` mirrors.
 - Rule delta (both mirrors, 2026-07-26): one bullet — sparse acc route is now
   measurement-backed, not only structural (W-series bounded-ness was the prior
   by-construction argument).
@@ -351,6 +362,10 @@ Terminal dual-accepted science result committed at work-repo
   byte-level live carrier, including TSA B-site integration to the fused
   sparse producer (the receipt's named next slice). No ledger movement (LIVE
   still ~16 bpw).
+  > **RETRACTION (2026-08-04)** of that LIVE ~16 clause: dense-LIVE was never a
+  > realized int8-acc container; correct dense-LIVE ≈ **24 bpw** (int16
+  > shadow) — W8 branch-2 `1785833373077-316a0309` / PASS
+  > `1785833670092-646c6665`; corrected eager mirrors.
 - **What landed**: hardened recarry validators+evidence (00435afa/b82d30ff —
   self-reference gaps F1-F3, mode-aware lifecycle grammar F4, registry
   membership, six-list manifest schema, status-aware surface discovery),
