@@ -2305,6 +2305,7 @@ def _apply_bounded_delta_vote_step_event_coded_live(
         EVENT_CODED_PLANNER_TRANSIENT_DENSE_NUMEL_KEY,
         EventCodedVoteUpdateState,
         _shape_stub_int16_votes,
+        apply_event_coded_integer_vote_update_from_plan,
         apply_event_coded_vote_and_cap_from_plan,
         densify_new_acc_i32_at_cap_boundary,
         plan_event_coded_integer_vote_update,

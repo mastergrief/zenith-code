@@ -363,6 +363,37 @@ def test_dense_vote_update_rejects_event_coded_stub_accumulator() -> None:
         )
 
 
+def test_event_coded_live_no_cap_import_binds_vote_update_from_plan() -> None:
+    """AST-only import binding: no-cap branch local import must list vote-only callee.
+
+    In-vivo LIVENESS_FAIL (packet v9 run b8593270): NameError when
+    global_cap_spec is None — local import listed only vote_and_cap.
+    CPU/static proves IMPORT BINDING only. Sole path proof:
+    scripts/smoke_event_coded_no_cap_gpu_onestep_v0.py (GPU loop-entry).
+    """
+    import ast
+    from pathlib import Path
+
+    from calm.hrm_text_158.native_full_stack import bounded_delta_learner as bdl
+
+    tree = ast.parse(Path(bdl.__file__).read_text(encoding="utf-8"))
+    fn = next(
+        n
+        for n in tree.body
+        if isinstance(n, ast.FunctionDef)
+        and n.name == "_apply_bounded_delta_vote_step_event_coded_live"
+    )
+    imported: set[str] = set()
+    for n in ast.walk(fn):
+        if isinstance(n, ast.ImportFrom) and n.module and n.module.endswith(
+            "event_coded_vote_update_adapter"
+        ):
+            for a in n.names:
+                imported.add(a.name)
+    assert "apply_event_coded_integer_vote_update_from_plan" in imported
+    assert "apply_event_coded_vote_and_cap_from_plan" in imported
+
+
 def test_grep_persistent_state_budget_codec_import_free() -> None:
     from pathlib import Path
 
