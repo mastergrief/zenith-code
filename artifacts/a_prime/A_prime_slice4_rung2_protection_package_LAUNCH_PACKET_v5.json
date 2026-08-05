@@ -1,0 +1,677 @@
+{
+  "carry_from_slice3_v6": [
+    "O1",
+    "O2",
+    "O3",
+    "O4",
+    "O5",
+    "B-PREBIND",
+    "G1",
+    "G2"
+  ],
+  "claim_boundary": {
+    "in_scope": [
+      "one-variable GPU PACKAGE_IN arm via EXISTING probe CLI only",
+      "N1 preflight full 8-field package binding on REAL receipt",
+      "3-horizon suite N in {10,20,50} ONLY if N1 clears",
+      "mint composite protection-package sensitivity terminal via production classifier CLI",
+      "compare package retention vs frozen OUT terminal f587cee0\u2026"
+    ],
+    "out_of_scope": [
+      "causal attribution to replay-veto vs PC-veto individually",
+      "carrier / sub-2 / readiness / acquisition / bank claims",
+      "mechanism-of-erosion mint",
+      "plan-dev GPU / dry REAL / suite execution",
+      "probe mutation",
+      "parent-KL of acquisition target",
+      ".pt commits",
+      "suite without N1 clear",
+      "classifier without --out-terminal-receipt"
+    ],
+    "pre_carrier": true,
+    "pre_mechanism_mint": true,
+    "preregistered_outcome": "factorized package_effect_profile x support_response_profile composite terminal ONLY"
+  },
+  "classifier_argv_template": [
+    "env",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "PYTHONPATH=.",
+    "python3",
+    "-u",
+    "-B",
+    "scripts/a_prime_slice4_protection_package_classifier_v0.py",
+    "--run-root",
+    "__RUN_ROOT__/protection_terminal",
+    "--out-terminal-receipt",
+    "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json",
+    "--package-receipt",
+    "10=__RUN_ROOT__/horizon_N10/c2p1_impl_cpu/receipt.json",
+    "--package-receipt",
+    "20=__RUN_ROOT__/horizon_N20/c2p1_impl_cpu/receipt.json",
+    "--package-receipt",
+    "50=__RUN_ROOT__/horizon_N50/c2p1_impl_cpu/receipt.json"
+  ],
+  "classifier_invocation_notes": {
+    "authority_after": [
+      "source_shas package/N{n} vs prebind for n in 10,20,50",
+      "source_shas out/terminal == f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998",
+      "exactly one PACKET_TERMINAL in classifier.stdout matching receipt/manifest branch"
+    ],
+    "forbidden_without_out_terminal_receipt": true,
+    "production_cli_only": true,
+    "stdout": "classifier.stdout (NOT teed to LOG)"
+  },
+  "dispatch_id": "step2_launch_packet_only",
+  "durability": {
+    "command_status_rel": "command_status/",
+    "constraints": [
+      "non-repo",
+      "ext4 /home reboot-surviving (NOT WSL /tmp tmpfs)",
+      "O_EXCL nonce mint under durability root",
+      "NO writes inside training repo for run artifacts",
+      "suite requires N1_PACKAGE_BINDING_OK first"
+    ],
+    "horizon_receipt_rel_template": "horizon_N<N>/c2p1_impl_cpu/receipt.json",
+    "horizon_scratch_template": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_<nonce>/horizon_N<N>/c2p1_impl_cpu/",
+    "log_path_template": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_<nonce>/suite.log",
+    "n1_scratch_template": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_<nonce>/n1_preflight/c2p1_impl_cpu/",
+    "protection_terminal_rel": "protection_terminal/",
+    "run_root_template": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_<nonce>/",
+    "terminal_manifest_rel": "terminal_manifest.json",
+    "terminal_receipt_rel": "terminal_receipt.json"
+  },
+  "executor_boundary": {
+    "formal_run_executor": "claude (test-operator) after dual-accept + conditional +1 launch",
+    "plan_dev": "packet CREATE only; no GPU; no dry REAL; no suite",
+    "receipt_sink": "claude gate-1 ONLY"
+  },
+  "forbidden": [
+    "plan-dev GPU/dry/suite",
+    "probe edit",
+    ".pt commit",
+    "suite without N1 clear",
+    "classifier without --out-terminal-receipt",
+    "GPU/launch before conditional +1 launch",
+    "stage/push from this mint",
+    "morphology/cause/carrier claims in packet",
+    "baked nonce in shell lines",
+    "/tmp as sole durable root",
+    "individual replay-vs-PC causal mint from this screen",
+    "telemetry-mode as package arm",
+    "parent-KL acquisition target"
+  ],
+  "frozen_foreground_inner_shell_line": "# Pure inner suite body (also embedded in frozen_foreground_suite_shell_line).\n# Usage: bash <this> \"$RUN_ROOT\"\n# Suite horizons N in 10 20 50 ONLY after N1 package binding cleared.\nset -euo pipefail\ncd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158\nRUN_ROOT=\"$1\"\nLOG=\"$RUN_ROOT/suite.log\"\ntest -n \"$RUN_ROOT\"\ntest -d \"$RUN_ROOT\"\ntest -f \"$LOG\"\n# Dual-proof suite prerequisite: LOG marker AND report (exact-type binding + receipt sha)\npython3 -u -B - \"$RUN_ROOT\" \"$LOG\" <<'PY'\nimport hashlib, json, pathlib, sys\nfrom scripts.a_prime_slice4_protection_package_schema_v0 import (\n    check_package_binding,\n    is_exact_float,\n)\n\nrun_root = pathlib.Path(sys.argv[1])\nlog = pathlib.Path(sys.argv[2])\nreport_path = run_root / \"n1_preflight\" / \"n1_package_binding_report.json\"\nexpected_receipt = run_root / \"n1_preflight\" / \"c2p1_impl_cpu\" / \"receipt.json\"\n\ndef fail(reason, rc=2):\n    with log.open(\"a\") as f:\n        f.write(f\"INCOMPLETE_FINALIZATION {reason}\\n\")\n        f.write(f\"WRAPPER_RC {rc}\\n\")\n    print(f\"INCOMPLETE_FINALIZATION {reason}\", flush=True)\n    print(f\"WRAPPER_RC {rc}\", flush=True)\n    sys.exit(rc)\n\ntry:\n    log_text = log.read_text(errors=\"replace\")\nexcept Exception as e:\n    fail(f\"suite_without_n1_clear:log_unreadable:{e}\")\nif \"N1_PACKAGE_BINDING_OK\" not in log_text:\n    fail(\"suite_without_n1_clear:marker_missing\")\nif not report_path.is_file():\n    fail(\"suite_without_n1_clear:report_missing\")\ntry:\n    report = json.loads(report_path.read_text())\nexcept Exception as e:\n    fail(f\"suite_without_n1_clear:report_malformed:{e}\")\nif not isinstance(report, dict):\n    fail(\"suite_without_n1_clear:report_not_object\")\nif report.get(\"status\") != \"N1_PACKAGE_BINDING_OK\":\n    fail(f\"suite_without_n1_clear:status={report.get('status')!r}\")\nif report.get(\"receipt_path\") != str(expected_receipt):\n    fail(f\"suite_without_n1_clear:receipt_path_mismatch:{report.get('receipt_path')!r}\")\nif not expected_receipt.is_file():\n    fail(\"suite_without_n1_clear:live_receipt_missing\")\nlive_sha = hashlib.sha256(expected_receipt.read_bytes()).hexdigest()\nif report.get(\"receipt_sha256\") != live_sha:\n    fail(\n        \"suite_without_n1_clear:receipt_sha_mismatch \"\n        f\"report={report.get('receipt_sha256')!r} live={live_sha!r}\"\n    )\nbinding = report.get(\"binding\")\nif not isinstance(binding, dict):\n    fail(\"suite_without_n1_clear:binding_missing\")\nreasons = list(check_package_binding(binding))\nw = binding.get(\"parent_consistency_weight\")\nif not is_exact_float(w) or w != 1.0:\n    reasons.append(f\"parent_consistency_weight_not_exact_float_1.0={w!r}\")\nif reasons:\n    fail(\"suite_without_n1_clear:binding_fail:\" + \";\".join(reasons))\nprint(\"SUITE_N1_DUAL_PROOF_OK\", flush=True)\nsys.exit(0)\nPY\ntest \"$(git rev-parse HEAD)\" = \"08f4344ba104e96f94537ac0ec01641dcefa28e0\"\ntest \"$(sha256sum scripts/hrm_text_158_bounded_delta_acquisition_probe.py | awk '{print $1}')\" = \"43503aae1705915451d1ae2c2393858d1d00afd7483bee58e17279dfac162f93\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_schema_v0.py | awk '{print $1}')\" = \"d858cd7348994b207e52a4762167b77c55e35ef706df635cc3c3c90c82b1a722\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_reducer_v0.py | awk '{print $1}')\" = \"1886ff9fdb75caf997c3b25f2af1328482ee638e4faaba21b073a68b86b54275\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_classifier_v0.py | awk '{print $1}')\" = \"9c334ce407f6c74310e6c2b04dc7e975f81a89b01543f5de69cccd0680f491f4\"\ntest \"$(sha256sum calm/llm_computer/tests/test_a_prime_slice4_protection_package_v0.py | awk '{print $1}')\" = \"4ab74d480395e1229c025697eabaa7bb9d157349abc646755a2e47744f7427d5\"\ntest \"$(sha256sum calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}')\" = \"9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\"\ntest \"$(sha256sum /home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json | awk '{print $1}')\" = \"f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998\"\ntest \"$(sha256sum artifacts/a_prime/A_prime_slice4_rung2_protected_comparison_PLAN_v5.json | awk '{print $1}')\" = \"c3bfa2073c84e6d75833804760b327696102fe521c511855231fd0f6ae29ebd3\"\nexport PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1\nmkdir -p \"$RUN_ROOT/command_status\"\nFAIL=0\nfor N in 10 20 50; do\n  mkdir -p \"$RUN_ROOT/horizon_N${N}/c2p1_impl_cpu\"\n  # G2: build argv once; reuse for execution + status record (no reconstruction)\n  PROBE_ARGV=(\n    env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1\n    python3 -u -B scripts/hrm_text_158_bounded_delta_acquisition_probe.py\n    --enable-bounded-delta-probe --allow-gpu-launch --device cuda:0\n    --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\n    --curriculum-seed 17 --max-steps-hard 50 --steps \"$N\" --global-horizon 50\n    --scratch-root \"$RUN_ROOT/horizon_N${N}/c2p1_impl_cpu\"\n    --prior-audit-supports L0b,math_a0 --eligible-scope first-bitlinear\n    --b2-retained-supports L0b,math_a0 --b2-parent-consistency-weight 1.0 --b2-pc-aux-mode veto\n    --emit-progress --phase-heartbeat-seconds 30\n    --phase-timeout-seconds 450 --total-timeout-seconds 3600 --max-silent-phase-seconds 600\n  )\n  T0=$(date +%s)\n  set +e\n  \"${PROBE_ARGV[@]}\" 2>&1 | tee -a \"$LOG\" | tee \"$RUN_ROOT/horizon_N${N}/probe.stdio\" >/dev/null\n  RC=${PIPESTATUS[0]}\n  set -e\n  T1=$(date +%s)\n  WALL=$((T1 - T0))\n  RECEIPT_PATH=\"$RUN_ROOT/horizon_N${N}/c2p1_impl_cpu/receipt.json\"\n  # G2 four-field status: argv is the same PROBE_ARGV used above (sys.argv[6:])\n  python3 - \"$RUN_ROOT\" \"$N\" \"$RC\" \"$WALL\" \"$RECEIPT_PATH\" \"${PROBE_ARGV[@]}\" <<'PY'\nimport json, pathlib, sys\nrun_root = pathlib.Path(sys.argv[1])\nn = sys.argv[2]\nrc = int(sys.argv[3])\nwall = int(sys.argv[4])\nreceipt = pathlib.Path(sys.argv[5])\nargv = sys.argv[6:]\nstatus = {\n    \"name\": f\"horizon_N{n}\",\n    \"argv\": argv,\n    \"rc\": rc,\n    \"wall_seconds\": wall,\n    \"receipt_path_if_any\": str(receipt) if receipt.is_file() else None,\n}\np = run_root / \"command_status\" / f\"horizon_N{n}.json\"\np.write_text(json.dumps(status, indent=2) + \"\\n\")\nPY\n  if [ \"$RC\" -ne 0 ]; then FAIL=1; fi\ndone\n# G2 schema assertion after loop\nif [ \"$FAIL\" -eq 0 ]; then\n  python3 - \"$RUN_ROOT\" <<'PY'\nimport json, pathlib, sys\nrun_root = pathlib.Path(sys.argv[1])\nrequired = (\"argv\", \"rc\", \"wall_seconds\", \"receipt_path_if_any\")\nfor n in [10, 20, 50]:\n    p = run_root / \"command_status\" / f\"horizon_N{n}.json\"\n    if not p.is_file():\n        raise SystemExit(f\"missing_status {p}\")\n    obj = json.loads(p.read_text())\n    for k in required:\n        if k not in obj:\n            raise SystemExit(f\"status_schema_missing {p} field={k}\")\n    if not isinstance(obj[\"argv\"], list) or not obj[\"argv\"]:\n        raise SystemExit(f\"status_argv_invalid {p}\")\n    if not isinstance(obj[\"rc\"], int):\n        raise SystemExit(f\"status_rc_invalid {p}\")\n    if not isinstance(obj[\"wall_seconds\"], int) or obj[\"wall_seconds\"] < 0:\n        raise SystemExit(f\"status_wall_invalid {p}\")\nprint(\"STATUS_SCHEMA_OK\", flush=True)\nPY\nfi\n# O2: Monitor-recognized failure terminal before bind/classifier\nif [ \"$FAIL\" -ne 0 ]; then\n  echo \"INCOMPLETE_FINALIZATION horizon_rc_nonzero\" | tee -a \"$LOG\"\n  echo \"WRAPPER_RC 1\" | tee -a \"$LOG\"\n  exit 1\nfi\n# B-PREBIND: same-byte hash+parse bind of three package receipts\nset +e\npython3 -u -B - \"$RUN_ROOT\" \"$LOG\" <<'PY'\nimport hashlib, json, pathlib, sys\nrun_root = pathlib.Path(sys.argv[1])\nlog = pathlib.Path(sys.argv[2])\nhorizons = [10, 20, 50]\nsource_shas = {}\n\ndef fail(reason, rc=2):\n    with log.open(\"a\") as f:\n        f.write(f\"INCOMPLETE_FINALIZATION {reason}\\n\")\n        f.write(f\"WRAPPER_RC {rc}\\n\")\n    print(f\"INCOMPLETE_FINALIZATION {reason}\", flush=True)\n    print(f\"WRAPPER_RC {rc}\", flush=True)\n    sys.exit(rc)\n\nfor n in horizons:\n    path = run_root / f\"horizon_N{n}/c2p1_impl_cpu/receipt.json\"\n    if not path.is_file():\n        fail(f\"missing_receipt {path}\")\n    try:\n        raw = path.read_bytes()\n        h = hashlib.sha256(raw).hexdigest()\n        json.loads(raw.decode(\"utf-8\"))\n        if hashlib.sha256(raw).hexdigest() != h:\n            fail(f\"rehash_mismatch {path}\")\n    except Exception as e:\n        fail(f\"prebind_parse_error {path}: {e}\")\n    source_shas[f\"package/N{n}\"] = h\n    print(\n        f\"BIND N={n} sha256={h} path={path} \"\n        f\"cmd=read_bytes+sha256+json.loads_same_buffer\",\n        flush=True,\n    )\n(run_root / \"receipt_sha_binds.json\").write_text(\n    json.dumps(source_shas, indent=2, sort_keys=True) + \"\\n\"\n)\nsys.exit(0)\nPY\nPREBIND_RC=$?\nset -e\nif [ \"$PREBIND_RC\" -ne 0 ]; then\n  if ! grep -q \"INCOMPLETE_FINALIZATION\" \"$LOG\" 2>/dev/null; then\n    echo \"INCOMPLETE_FINALIZATION prebind_failed\" | tee -a \"$LOG\"\n    echo \"WRAPPER_RC $PREBIND_RC\" | tee -a \"$LOG\"\n  fi\n  exit \"$PREBIND_RC\"\nfi\n# O4: production classifier CLI only; stdout to classifier.stdout (NOT teed to LOG)\nset +e\npython3 -u -B scripts/a_prime_slice4_protection_package_classifier_v0.py \\\n  --run-root \"$RUN_ROOT/protection_terminal\" \\\n  --out-terminal-receipt /home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json \\\n  --package-receipt \"10=$RUN_ROOT/horizon_N10/c2p1_impl_cpu/receipt.json\" \\\n  --package-receipt \"20=$RUN_ROOT/horizon_N20/c2p1_impl_cpu/receipt.json\" \\\n  --package-receipt \"50=$RUN_ROOT/horizon_N50/c2p1_impl_cpu/receipt.json\" \\\n  >\"$RUN_ROOT/classifier.stdout\" 2>\"$RUN_ROOT/classifier.stderr\"\nCLF_RC=$?\nset -e\n# Authority check: source_shas package/N{n} vs prebind; out/terminal == frozen; single PACKET_TERMINAL\npython3 -u -B - \"$RUN_ROOT\" \"$CLF_RC\" <<'PY'\nimport json, pathlib, shutil, sys\nrun_root = pathlib.Path(sys.argv[1])\nclf_rc = int(sys.argv[2])\nlog = run_root / \"suite.log\"\nOUT_TERM_SHA = \"f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998\"\n\ndef fail(reason, rc=2):\n    with log.open(\"a\") as f:\n        f.write(f\"INCOMPLETE_FINALIZATION {reason}\\n\")\n        f.write(f\"WRAPPER_RC {rc}\\n\")\n    print(f\"INCOMPLETE_FINALIZATION {reason}\", flush=True)\n    print(f\"WRAPPER_RC {rc}\", flush=True)\n    sys.exit(rc)\n\nprebind = json.loads((run_root / \"receipt_sha_binds.json\").read_text())\n# classifier writes under protection_terminal run-root\nterm_root = run_root / \"protection_terminal\"\nreceipt_path = term_root / \"terminal_receipt.json\"\nmanifest_path = term_root / \"terminal_manifest.json\"\nstdout_path = run_root / \"classifier.stdout\"\nif clf_rc != 0 or not receipt_path.is_file() or not manifest_path.is_file() or not stdout_path.is_file():\n    fail(f\"classifier_rc_or_artifacts clf_rc={clf_rc}\", rc=clf_rc if clf_rc != 0 else 2)\nreceipt = json.loads(receipt_path.read_text())\nmanifest = json.loads(manifest_path.read_text())\nsrc = receipt.get(\"source_shas\") or {}\nfor n in [10, 20, 50]:\n    key = f\"package/N{n}\"\n    got = src.get(key)\n    exp = prebind.get(key)\n    if not exp or got != exp:\n        fail(f\"source_sha_mismatch {key} got={got!r} exp={exp!r}\")\nout_got = src.get(\"out/terminal\")\nif out_got != OUT_TERM_SHA:\n    fail(f\"out_terminal_sha_mismatch got={out_got!r} exp={OUT_TERM_SHA!r}\")\nstdout = stdout_path.read_text(errors=\"replace\")\nmarkers = [ln.strip() for ln in stdout.splitlines() if ln.strip().startswith(\"PACKET_TERMINAL \")]\nif len(markers) != 1:\n    fail(f\"marker_count_{len(markers)}\")\nbranch = markers[0].split(None, 1)[1].strip()\nif branch != receipt.get(\"branch\") or branch != manifest.get(\"branch\"):\n    fail(\n        f\"marker_mismatch branch={branch!r} receipt={receipt.get('branch')!r} manifest={manifest.get('branch')!r}\"\n    )\n# promote dual-key artifacts to RUN_ROOT top for monitor/operator convenience\nshutil.copy2(receipt_path, run_root / \"terminal_receipt.json\")\nshutil.copy2(manifest_path, run_root / \"terminal_manifest.json\")\nwith log.open(\"a\") as f:\n    f.write(f\"PACKET_TERMINAL {branch}\\n\")\n    f.write(\"WRAPPER_RC 0\\n\")\nprint(f\"PACKET_TERMINAL {branch}\", flush=True)\nprint(\"WRAPPER_RC 0\", flush=True)\nsys.exit(0)\nPY\nAUTH_RC=$?\nexit \"$AUTH_RC\"\n",
+  "frozen_foreground_suite_shell_line": "# FOREGROUND suite \u2014 O1: RUN_ROOT via \"$1\"; O5: outer timeout 3600s; O2/O4/G1 failure paths\n# Suite body runs ONLY after N1 package binding cleared (same conditional +1 launch).\nset -euo pipefail\ncd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158\nRUN_ROOT=\"${1:-}\"\nif [ -z \"$RUN_ROOT\" ] || [ ! -d \"$RUN_ROOT\" ] || [ ! -f \"$RUN_ROOT/suite.log\" ]; then\n  echo \"INCOMPLETE_FINALIZATION missing_or_invalid_RUN_ROOT\" >&2\n  echo \"WRAPPER_RC 2\" >&2\n  exit 2\nfi\nLOG=\"$RUN_ROOT/suite.log\"\nINNER=\"$RUN_ROOT/foreground_inner.sh\"\ncat > \"$INNER\" <<'INNER_EOF'\n# Pure inner suite body (also embedded in frozen_foreground_suite_shell_line).\n# Usage: bash <this> \"$RUN_ROOT\"\n# Suite horizons N in 10 20 50 ONLY after N1 package binding cleared.\nset -euo pipefail\ncd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158\nRUN_ROOT=\"$1\"\nLOG=\"$RUN_ROOT/suite.log\"\ntest -n \"$RUN_ROOT\"\ntest -d \"$RUN_ROOT\"\ntest -f \"$LOG\"\n# Dual-proof suite prerequisite: LOG marker AND report (exact-type binding + receipt sha)\npython3 -u -B - \"$RUN_ROOT\" \"$LOG\" <<'PY'\nimport hashlib, json, pathlib, sys\nfrom scripts.a_prime_slice4_protection_package_schema_v0 import (\n    check_package_binding,\n    is_exact_float,\n)\n\nrun_root = pathlib.Path(sys.argv[1])\nlog = pathlib.Path(sys.argv[2])\nreport_path = run_root / \"n1_preflight\" / \"n1_package_binding_report.json\"\nexpected_receipt = run_root / \"n1_preflight\" / \"c2p1_impl_cpu\" / \"receipt.json\"\n\ndef fail(reason, rc=2):\n    with log.open(\"a\") as f:\n        f.write(f\"INCOMPLETE_FINALIZATION {reason}\\n\")\n        f.write(f\"WRAPPER_RC {rc}\\n\")\n    print(f\"INCOMPLETE_FINALIZATION {reason}\", flush=True)\n    print(f\"WRAPPER_RC {rc}\", flush=True)\n    sys.exit(rc)\n\ntry:\n    log_text = log.read_text(errors=\"replace\")\nexcept Exception as e:\n    fail(f\"suite_without_n1_clear:log_unreadable:{e}\")\nif \"N1_PACKAGE_BINDING_OK\" not in log_text:\n    fail(\"suite_without_n1_clear:marker_missing\")\nif not report_path.is_file():\n    fail(\"suite_without_n1_clear:report_missing\")\ntry:\n    report = json.loads(report_path.read_text())\nexcept Exception as e:\n    fail(f\"suite_without_n1_clear:report_malformed:{e}\")\nif not isinstance(report, dict):\n    fail(\"suite_without_n1_clear:report_not_object\")\nif report.get(\"status\") != \"N1_PACKAGE_BINDING_OK\":\n    fail(f\"suite_without_n1_clear:status={report.get('status')!r}\")\nif report.get(\"receipt_path\") != str(expected_receipt):\n    fail(f\"suite_without_n1_clear:receipt_path_mismatch:{report.get('receipt_path')!r}\")\nif not expected_receipt.is_file():\n    fail(\"suite_without_n1_clear:live_receipt_missing\")\nlive_sha = hashlib.sha256(expected_receipt.read_bytes()).hexdigest()\nif report.get(\"receipt_sha256\") != live_sha:\n    fail(\n        \"suite_without_n1_clear:receipt_sha_mismatch \"\n        f\"report={report.get('receipt_sha256')!r} live={live_sha!r}\"\n    )\nbinding = report.get(\"binding\")\nif not isinstance(binding, dict):\n    fail(\"suite_without_n1_clear:binding_missing\")\nreasons = list(check_package_binding(binding))\nw = binding.get(\"parent_consistency_weight\")\nif not is_exact_float(w) or w != 1.0:\n    reasons.append(f\"parent_consistency_weight_not_exact_float_1.0={w!r}\")\nif reasons:\n    fail(\"suite_without_n1_clear:binding_fail:\" + \";\".join(reasons))\nprint(\"SUITE_N1_DUAL_PROOF_OK\", flush=True)\nsys.exit(0)\nPY\ntest \"$(git rev-parse HEAD)\" = \"08f4344ba104e96f94537ac0ec01641dcefa28e0\"\ntest \"$(sha256sum scripts/hrm_text_158_bounded_delta_acquisition_probe.py | awk '{print $1}')\" = \"43503aae1705915451d1ae2c2393858d1d00afd7483bee58e17279dfac162f93\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_schema_v0.py | awk '{print $1}')\" = \"d858cd7348994b207e52a4762167b77c55e35ef706df635cc3c3c90c82b1a722\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_reducer_v0.py | awk '{print $1}')\" = \"1886ff9fdb75caf997c3b25f2af1328482ee638e4faaba21b073a68b86b54275\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_classifier_v0.py | awk '{print $1}')\" = \"9c334ce407f6c74310e6c2b04dc7e975f81a89b01543f5de69cccd0680f491f4\"\ntest \"$(sha256sum calm/llm_computer/tests/test_a_prime_slice4_protection_package_v0.py | awk '{print $1}')\" = \"4ab74d480395e1229c025697eabaa7bb9d157349abc646755a2e47744f7427d5\"\ntest \"$(sha256sum calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}')\" = \"9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\"\ntest \"$(sha256sum /home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json | awk '{print $1}')\" = \"f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998\"\ntest \"$(sha256sum artifacts/a_prime/A_prime_slice4_rung2_protected_comparison_PLAN_v5.json | awk '{print $1}')\" = \"c3bfa2073c84e6d75833804760b327696102fe521c511855231fd0f6ae29ebd3\"\nexport PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1\nmkdir -p \"$RUN_ROOT/command_status\"\nFAIL=0\nfor N in 10 20 50; do\n  mkdir -p \"$RUN_ROOT/horizon_N${N}/c2p1_impl_cpu\"\n  # G2: build argv once; reuse for execution + status record (no reconstruction)\n  PROBE_ARGV=(\n    env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1\n    python3 -u -B scripts/hrm_text_158_bounded_delta_acquisition_probe.py\n    --enable-bounded-delta-probe --allow-gpu-launch --device cuda:0\n    --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\n    --curriculum-seed 17 --max-steps-hard 50 --steps \"$N\" --global-horizon 50\n    --scratch-root \"$RUN_ROOT/horizon_N${N}/c2p1_impl_cpu\"\n    --prior-audit-supports L0b,math_a0 --eligible-scope first-bitlinear\n    --b2-retained-supports L0b,math_a0 --b2-parent-consistency-weight 1.0 --b2-pc-aux-mode veto\n    --emit-progress --phase-heartbeat-seconds 30\n    --phase-timeout-seconds 450 --total-timeout-seconds 3600 --max-silent-phase-seconds 600\n  )\n  T0=$(date +%s)\n  set +e\n  \"${PROBE_ARGV[@]}\" 2>&1 | tee -a \"$LOG\" | tee \"$RUN_ROOT/horizon_N${N}/probe.stdio\" >/dev/null\n  RC=${PIPESTATUS[0]}\n  set -e\n  T1=$(date +%s)\n  WALL=$((T1 - T0))\n  RECEIPT_PATH=\"$RUN_ROOT/horizon_N${N}/c2p1_impl_cpu/receipt.json\"\n  # G2 four-field status: argv is the same PROBE_ARGV used above (sys.argv[6:])\n  python3 - \"$RUN_ROOT\" \"$N\" \"$RC\" \"$WALL\" \"$RECEIPT_PATH\" \"${PROBE_ARGV[@]}\" <<'PY'\nimport json, pathlib, sys\nrun_root = pathlib.Path(sys.argv[1])\nn = sys.argv[2]\nrc = int(sys.argv[3])\nwall = int(sys.argv[4])\nreceipt = pathlib.Path(sys.argv[5])\nargv = sys.argv[6:]\nstatus = {\n    \"name\": f\"horizon_N{n}\",\n    \"argv\": argv,\n    \"rc\": rc,\n    \"wall_seconds\": wall,\n    \"receipt_path_if_any\": str(receipt) if receipt.is_file() else None,\n}\np = run_root / \"command_status\" / f\"horizon_N{n}.json\"\np.write_text(json.dumps(status, indent=2) + \"\\n\")\nPY\n  if [ \"$RC\" -ne 0 ]; then FAIL=1; fi\ndone\n# G2 schema assertion after loop\nif [ \"$FAIL\" -eq 0 ]; then\n  python3 - \"$RUN_ROOT\" <<'PY'\nimport json, pathlib, sys\nrun_root = pathlib.Path(sys.argv[1])\nrequired = (\"argv\", \"rc\", \"wall_seconds\", \"receipt_path_if_any\")\nfor n in [10, 20, 50]:\n    p = run_root / \"command_status\" / f\"horizon_N{n}.json\"\n    if not p.is_file():\n        raise SystemExit(f\"missing_status {p}\")\n    obj = json.loads(p.read_text())\n    for k in required:\n        if k not in obj:\n            raise SystemExit(f\"status_schema_missing {p} field={k}\")\n    if not isinstance(obj[\"argv\"], list) or not obj[\"argv\"]:\n        raise SystemExit(f\"status_argv_invalid {p}\")\n    if not isinstance(obj[\"rc\"], int):\n        raise SystemExit(f\"status_rc_invalid {p}\")\n    if not isinstance(obj[\"wall_seconds\"], int) or obj[\"wall_seconds\"] < 0:\n        raise SystemExit(f\"status_wall_invalid {p}\")\nprint(\"STATUS_SCHEMA_OK\", flush=True)\nPY\nfi\n# O2: Monitor-recognized failure terminal before bind/classifier\nif [ \"$FAIL\" -ne 0 ]; then\n  echo \"INCOMPLETE_FINALIZATION horizon_rc_nonzero\" | tee -a \"$LOG\"\n  echo \"WRAPPER_RC 1\" | tee -a \"$LOG\"\n  exit 1\nfi\n# B-PREBIND: same-byte hash+parse bind of three package receipts\nset +e\npython3 -u -B - \"$RUN_ROOT\" \"$LOG\" <<'PY'\nimport hashlib, json, pathlib, sys\nrun_root = pathlib.Path(sys.argv[1])\nlog = pathlib.Path(sys.argv[2])\nhorizons = [10, 20, 50]\nsource_shas = {}\n\ndef fail(reason, rc=2):\n    with log.open(\"a\") as f:\n        f.write(f\"INCOMPLETE_FINALIZATION {reason}\\n\")\n        f.write(f\"WRAPPER_RC {rc}\\n\")\n    print(f\"INCOMPLETE_FINALIZATION {reason}\", flush=True)\n    print(f\"WRAPPER_RC {rc}\", flush=True)\n    sys.exit(rc)\n\nfor n in horizons:\n    path = run_root / f\"horizon_N{n}/c2p1_impl_cpu/receipt.json\"\n    if not path.is_file():\n        fail(f\"missing_receipt {path}\")\n    try:\n        raw = path.read_bytes()\n        h = hashlib.sha256(raw).hexdigest()\n        json.loads(raw.decode(\"utf-8\"))\n        if hashlib.sha256(raw).hexdigest() != h:\n            fail(f\"rehash_mismatch {path}\")\n    except Exception as e:\n        fail(f\"prebind_parse_error {path}: {e}\")\n    source_shas[f\"package/N{n}\"] = h\n    print(\n        f\"BIND N={n} sha256={h} path={path} \"\n        f\"cmd=read_bytes+sha256+json.loads_same_buffer\",\n        flush=True,\n    )\n(run_root / \"receipt_sha_binds.json\").write_text(\n    json.dumps(source_shas, indent=2, sort_keys=True) + \"\\n\"\n)\nsys.exit(0)\nPY\nPREBIND_RC=$?\nset -e\nif [ \"$PREBIND_RC\" -ne 0 ]; then\n  if ! grep -q \"INCOMPLETE_FINALIZATION\" \"$LOG\" 2>/dev/null; then\n    echo \"INCOMPLETE_FINALIZATION prebind_failed\" | tee -a \"$LOG\"\n    echo \"WRAPPER_RC $PREBIND_RC\" | tee -a \"$LOG\"\n  fi\n  exit \"$PREBIND_RC\"\nfi\n# O4: production classifier CLI only; stdout to classifier.stdout (NOT teed to LOG)\nset +e\npython3 -u -B scripts/a_prime_slice4_protection_package_classifier_v0.py \\\n  --run-root \"$RUN_ROOT/protection_terminal\" \\\n  --out-terminal-receipt /home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json \\\n  --package-receipt \"10=$RUN_ROOT/horizon_N10/c2p1_impl_cpu/receipt.json\" \\\n  --package-receipt \"20=$RUN_ROOT/horizon_N20/c2p1_impl_cpu/receipt.json\" \\\n  --package-receipt \"50=$RUN_ROOT/horizon_N50/c2p1_impl_cpu/receipt.json\" \\\n  >\"$RUN_ROOT/classifier.stdout\" 2>\"$RUN_ROOT/classifier.stderr\"\nCLF_RC=$?\nset -e\n# Authority check: source_shas package/N{n} vs prebind; out/terminal == frozen; single PACKET_TERMINAL\npython3 -u -B - \"$RUN_ROOT\" \"$CLF_RC\" <<'PY'\nimport json, pathlib, shutil, sys\nrun_root = pathlib.Path(sys.argv[1])\nclf_rc = int(sys.argv[2])\nlog = run_root / \"suite.log\"\nOUT_TERM_SHA = \"f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998\"\n\ndef fail(reason, rc=2):\n    with log.open(\"a\") as f:\n        f.write(f\"INCOMPLETE_FINALIZATION {reason}\\n\")\n        f.write(f\"WRAPPER_RC {rc}\\n\")\n    print(f\"INCOMPLETE_FINALIZATION {reason}\", flush=True)\n    print(f\"WRAPPER_RC {rc}\", flush=True)\n    sys.exit(rc)\n\nprebind = json.loads((run_root / \"receipt_sha_binds.json\").read_text())\n# classifier writes under protection_terminal run-root\nterm_root = run_root / \"protection_terminal\"\nreceipt_path = term_root / \"terminal_receipt.json\"\nmanifest_path = term_root / \"terminal_manifest.json\"\nstdout_path = run_root / \"classifier.stdout\"\nif clf_rc != 0 or not receipt_path.is_file() or not manifest_path.is_file() or not stdout_path.is_file():\n    fail(f\"classifier_rc_or_artifacts clf_rc={clf_rc}\", rc=clf_rc if clf_rc != 0 else 2)\nreceipt = json.loads(receipt_path.read_text())\nmanifest = json.loads(manifest_path.read_text())\nsrc = receipt.get(\"source_shas\") or {}\nfor n in [10, 20, 50]:\n    key = f\"package/N{n}\"\n    got = src.get(key)\n    exp = prebind.get(key)\n    if not exp or got != exp:\n        fail(f\"source_sha_mismatch {key} got={got!r} exp={exp!r}\")\nout_got = src.get(\"out/terminal\")\nif out_got != OUT_TERM_SHA:\n    fail(f\"out_terminal_sha_mismatch got={out_got!r} exp={OUT_TERM_SHA!r}\")\nstdout = stdout_path.read_text(errors=\"replace\")\nmarkers = [ln.strip() for ln in stdout.splitlines() if ln.strip().startswith(\"PACKET_TERMINAL \")]\nif len(markers) != 1:\n    fail(f\"marker_count_{len(markers)}\")\nbranch = markers[0].split(None, 1)[1].strip()\nif branch != receipt.get(\"branch\") or branch != manifest.get(\"branch\"):\n    fail(\n        f\"marker_mismatch branch={branch!r} receipt={receipt.get('branch')!r} manifest={manifest.get('branch')!r}\"\n    )\n# promote dual-key artifacts to RUN_ROOT top for monitor/operator convenience\nshutil.copy2(receipt_path, run_root / \"terminal_receipt.json\")\nshutil.copy2(manifest_path, run_root / \"terminal_manifest.json\")\nwith log.open(\"a\") as f:\n    f.write(f\"PACKET_TERMINAL {branch}\\n\")\n    f.write(\"WRAPPER_RC 0\\n\")\nprint(f\"PACKET_TERMINAL {branch}\", flush=True)\nprint(\"WRAPPER_RC 0\", flush=True)\nsys.exit(0)\nPY\nAUTH_RC=$?\nexit \"$AUTH_RC\"\nINNER_EOF\nchmod +x \"$INNER\" || true\nset +e\ntimeout --signal=TERM --kill-after=60 3600 bash \"$INNER\" \"$RUN_ROOT\"\nRC=$?\nset -e\n# G1: generic outer terminal backstop \u2014 ANY nonzero RC without a LOG marker gets one\nif [ \"$RC\" -ne 0 ]; then\n  if [ \"$RC\" -eq 124 ] || [ \"$RC\" -eq 137 ]; then\n    if ! grep -qE 'PACKET_TERMINAL|INCOMPLETE_FINALIZATION' \"$LOG\" 2>/dev/null; then\n      echo \"INCOMPLETE_FINALIZATION suite_timeout\" | tee -a \"$LOG\"\n      echo \"WRAPPER_RC 124\" | tee -a \"$LOG\"\n    fi\n    exit 124\n  fi\n  if ! grep -qE 'PACKET_TERMINAL|INCOMPLETE_FINALIZATION' \"$LOG\" 2>/dev/null; then\n    echo \"INCOMPLETE_FINALIZATION suite_rc_$RC\" | tee -a \"$LOG\"\n    echo \"WRAPPER_RC $RC\" | tee -a \"$LOG\"\n  fi\n  exit \"$RC\"\nfi\nexit 0\n",
+  "frozen_n1_package_binding_preflight_shell_line": "# N1 PACKAGE_IN preflight \u2014 prove full 8-field package binding on REAL receipt\n# Usage: bash <this> \"$RUN_ROOT\"\n# Emits N1_PACKAGE_BINDING_OK only when binding clears; else INCOMPLETE_FINALIZATION\nset -euo pipefail\ncd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158\nRUN_ROOT=\"${1:-}\"\nif [ -z \"$RUN_ROOT\" ] || [ ! -d \"$RUN_ROOT\" ] || [ ! -f \"$RUN_ROOT/suite.log\" ]; then\n  echo \"INCOMPLETE_FINALIZATION missing_or_invalid_RUN_ROOT\" >&2\n  echo \"WRAPPER_RC 2\" >&2\n  exit 2\nfi\nLOG=\"$RUN_ROOT/suite.log\"\ntest \"$(git rev-parse HEAD)\" = \"08f4344ba104e96f94537ac0ec01641dcefa28e0\"\ntest \"$(sha256sum scripts/hrm_text_158_bounded_delta_acquisition_probe.py | awk '{print $1}')\" = \"43503aae1705915451d1ae2c2393858d1d00afd7483bee58e17279dfac162f93\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_schema_v0.py | awk '{print $1}')\" = \"d858cd7348994b207e52a4762167b77c55e35ef706df635cc3c3c90c82b1a722\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_reducer_v0.py | awk '{print $1}')\" = \"1886ff9fdb75caf997c3b25f2af1328482ee638e4faaba21b073a68b86b54275\"\ntest \"$(sha256sum scripts/a_prime_slice4_protection_package_classifier_v0.py | awk '{print $1}')\" = \"9c334ce407f6c74310e6c2b04dc7e975f81a89b01543f5de69cccd0680f491f4\"\ntest \"$(sha256sum calm/llm_computer/tests/test_a_prime_slice4_protection_package_v0.py | awk '{print $1}')\" = \"4ab74d480395e1229c025697eabaa7bb9d157349abc646755a2e47744f7427d5\"\ntest \"$(sha256sum calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt | awk '{print $1}')\" = \"9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\"\ntest \"$(sha256sum /home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json | awk '{print $1}')\" = \"f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998\"\ntest \"$(sha256sum artifacts/a_prime/A_prime_slice4_rung2_protected_comparison_PLAN_v5.json | awk '{print $1}')\" = \"c3bfa2073c84e6d75833804760b327696102fe521c511855231fd0f6ae29ebd3\"\nexport PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1\nmkdir -p \"$RUN_ROOT/n1_preflight/c2p1_impl_cpu\" \"$RUN_ROOT/command_status\"\nPROBE_ARGV=(\n  env PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1 HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1\n  python3 -u -B scripts/hrm_text_158_bounded_delta_acquisition_probe.py\n  --enable-bounded-delta-probe --allow-gpu-launch --device cuda:0\n  --parent calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt --parent-sha256 9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec\n  --curriculum-seed 17 --max-steps-hard 50 --steps 1 --global-horizon 50\n  --scratch-root \"$RUN_ROOT/n1_preflight/c2p1_impl_cpu\"\n  --prior-audit-supports L0b,math_a0 --eligible-scope first-bitlinear\n  --b2-retained-supports L0b,math_a0 --b2-parent-consistency-weight 1.0 --b2-pc-aux-mode veto\n  --emit-progress --phase-heartbeat-seconds 30\n  --phase-timeout-seconds 450 --total-timeout-seconds 3600 --max-silent-phase-seconds 600\n)\nT0=$(date +%s)\nset +e\n\"${PROBE_ARGV[@]}\" 2>&1 | tee -a \"$LOG\" | tee \"$RUN_ROOT/n1_preflight/probe.stdio\" >/dev/null\nRC=${PIPESTATUS[0]}\nset -e\nT1=$(date +%s)\nWALL=$((T1 - T0))\nRECEIPT_PATH=\"$RUN_ROOT/n1_preflight/c2p1_impl_cpu/receipt.json\"\n# G2 four-field status for N1 preflight\npython3 - \"$RUN_ROOT\" \"$RC\" \"$WALL\" \"$RECEIPT_PATH\" \"${PROBE_ARGV[@]}\" <<'PY'\nimport json, pathlib, sys\nrun_root = pathlib.Path(sys.argv[1])\nrc = int(sys.argv[2])\nwall = int(sys.argv[3])\nreceipt = pathlib.Path(sys.argv[4])\nargv = sys.argv[5:]\nstatus = {\n    \"name\": \"n1_package_binding_preflight\",\n    \"argv\": argv,\n    \"rc\": rc,\n    \"wall_seconds\": wall,\n    \"receipt_path_if_any\": str(receipt) if receipt.is_file() else None,\n    \"dry\": False,\n    \"phase\": \"N1_PACKAGE_BINDING_PREFLIGHT\",\n}\np = run_root / \"command_status\" / \"n1_package_binding_preflight.json\"\np.write_text(json.dumps(status, indent=2) + \"\\n\")\nfor k in (\"argv\", \"rc\", \"wall_seconds\", \"receipt_path_if_any\"):\n    assert k in status, k\nPY\nif [ \"$RC\" -ne 0 ]; then\n  echo \"INCOMPLETE_FINALIZATION n1_probe_rc_$RC\" | tee -a \"$LOG\"\n  echo \"WRAPPER_RC $RC\" | tee -a \"$LOG\"\n  exit \"$RC\"\nfi\n# 8-field package binding assert on REAL receipt \u2014 exact-type via frozen schema module\npython3 -u -B - \"$RECEIPT_PATH\" \"$LOG\" <<'PY'\nimport hashlib, json, pathlib, sys\nfrom scripts.a_prime_slice4_protection_package_schema_v0 import (\n    check_package_binding,\n    extract_package_binding,\n    is_exact_float,\n)\n\nreceipt_path = pathlib.Path(sys.argv[1])\nlog = pathlib.Path(sys.argv[2])\n\ndef fail(reason, rc=2):\n    with log.open(\"a\") as f:\n        f.write(f\"INCOMPLETE_FINALIZATION {reason}\\n\")\n        f.write(f\"WRAPPER_RC {rc}\\n\")\n    print(f\"INCOMPLETE_FINALIZATION {reason}\", flush=True)\n    print(f\"WRAPPER_RC {rc}\", flush=True)\n    sys.exit(rc)\n\nif not receipt_path.is_file():\n    fail(f\"missing_n1_receipt {receipt_path}\")\ntry:\n    raw = receipt_path.read_bytes()\n    receipt_sha = hashlib.sha256(raw).hexdigest()\n    obj = json.loads(raw.decode(\"utf-8\"))\nexcept Exception as e:\n    fail(f\"n1_receipt_unreadable:{e}\")\nif not isinstance(obj, dict):\n    fail(\"n1_receipt_not_object\")\nbinding = extract_package_binding(obj)\nreasons = list(check_package_binding(binding))\n# dispatch exact-type: weight must be float 1.0 (schema allows int via is_exact_number; tighten)\nw = binding.get(\"parent_consistency_weight\")\nif not is_exact_float(w) or w != 1.0:\n    reasons.append(f\"parent_consistency_weight_not_exact_float_1.0={w!r}\")\nif reasons:\n    fail(\"n1_package_binding_mismatch:\" + \";\".join(reasons))\nreport_path = pathlib.Path(receipt_path).parents[1] / \"n1_package_binding_report.json\"\nreport = {\n    \"phase\": \"N1_PACKAGE_BINDING_PREFLIGHT\",\n    \"binding\": binding,\n    \"receipt_path\": str(receipt_path),\n    \"receipt_sha256\": receipt_sha,\n    \"status\": \"N1_PACKAGE_BINDING_OK\",\n}\nreport_path.write_text(json.dumps(report, indent=2, sort_keys=True) + \"\\n\")\nwith log.open(\"a\") as f:\n    f.write(\"N1_PACKAGE_BINDING_OK\\n\")\nprint(\"N1_PACKAGE_BINDING_OK\", flush=True)\nprint(\"WRAPPER_RC 0\", flush=True)\nsys.exit(0)\nPY\n\n",
+  "frozen_runroot_mint_shell_line": "# O1: mint exclusive RUN_ROOT under durability root; echo RUN_ROOT=<abs> as sole stdout line\nset -euo pipefail\ncd /mnt/c/Users/gabes/projects/claw-code-hrm-text-158\nNONCE=$(python3 -c 'import secrets; print(secrets.token_hex(4))')\nRUN_ROOT=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_${NONCE}\n# O3: fail closed on collision (exist_ok=False)\npython3 -c \"import os,sys; os.makedirs(sys.argv[1], exist_ok=False)\" \"$RUN_ROOT\"\nmkdir -p \"$RUN_ROOT/command_status\" \"$RUN_ROOT/n1_preflight\"\ntouch \"$RUN_ROOT/suite.log\"\necho \"RUN_ROOT=$RUN_ROOT\"\n",
+  "geometry": {
+    "arm": "PACKAGE_IN_COMPOSITE_PROTECTION",
+    "curriculum_seed": 17,
+    "denominator_total_rows": 1485,
+    "device": "cuda:0",
+    "eligible_scope": "first-bitlinear",
+    "full_package_receipt_binding_required_exact": {
+      "parent_consistency_weight": 1.0,
+      "pc_aux_enabled": true,
+      "pc_aux_mode": "veto",
+      "prior_batches_fed_to_bounded_steps": true,
+      "replay_ce_veto": true,
+      "requested_supports": [
+        "L0b",
+        "math_a0"
+      ],
+      "target_parent_kl": false,
+      "target_rows_excluded_from_pc": true
+    },
+    "global_horizon": 50,
+    "max_silent_phase_seconds": 600,
+    "max_steps_hard": 50,
+    "n1_preflight_horizon": 1,
+    "package_in_flags": {
+      "--b2-parent-consistency-weight": "1.0",
+      "--b2-pc-aux-mode": "veto",
+      "--b2-retained-supports": "L0b,math_a0"
+    },
+    "parent_sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "phase_heartbeat_seconds": 30,
+    "phase_timeout_seconds": 450,
+    "prior_audit_supports": "L0b,math_a0",
+    "suite_horizons": [
+      10,
+      20,
+      50
+    ],
+    "total_timeout_seconds": 3600
+  },
+  "gpu_idle_prearm_v0": {
+    "cmd": "nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader,nounits",
+    "interval_seconds": 12,
+    "mem_median_max_mib": 3072,
+    "on_breach": "WAIT x3 @60s then STOP (no launch, no packet consumption)",
+    "samples": 6,
+    "util_median_max_pct": 50,
+    "window_seconds": 60
+  },
+  "launch_gate_obligations": {
+    "n1_package_binding": {
+      "authority": "scripts.a_prime_slice4_protection_package_schema_v0.check_package_binding + is_exact_float(weight)",
+      "marker": "N1_PACKAGE_BINDING_OK",
+      "on_fail": "INCOMPLETE_FINALIZATION; suite forbidden",
+      "report": "n1_preflight/n1_package_binding_report.json",
+      "rule": "N1 REAL receipt must satisfy full 8-field REQUIRED_PACKAGE_BINDING under exact JSON types before suite; report records receipt_sha256",
+      "suite_dual_proof": "marker AND report content (status, binding exact-type, receipt_path, receipt_sha256 re-hash)"
+    },
+    "out_terminal_authority": {
+      "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json",
+      "required_equal": true,
+      "sha256": "f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998",
+      "source_shas_key": "out/terminal"
+    },
+    "three_receipt_sha_same_byte_bind": {
+      "authority": "B-PREBIND + O4 from slice-3 v6 adapted to package/N keys",
+      "classifier_inputs": "--package-receipt N=<abs-path> for each N; --run-root <exclusive under RUN_ROOT/protection_terminal>; --out-terminal-receipt <frozen OUT path>",
+      "paths": [
+        "horizon_N10/c2p1_impl_cpu/receipt.json",
+        "horizon_N20/c2p1_impl_cpu/receipt.json",
+        "horizon_N50/c2p1_impl_cpu/receipt.json"
+      ],
+      "rule": "before classifier: for each N in suite_horizons, read receipt bytes once; sha256 those bytes; parse THE SAME bytes; record under package/N{n}"
+    },
+    "wrapper_rc_fail_closed": {
+      "authority": "carry G2 from slice-3 v6",
+      "record_per_horizon": [
+        "argv",
+        "rc",
+        "wall_seconds",
+        "receipt_path_if_any"
+      ],
+      "rule": "capture actual process rc unpiped per horizon; any rc!=0 -> suite terminal LIVENESS path; do NOT mint sensitivity class"
+    }
+  },
+  "monitor": {
+    "calibration": {
+      "PHASE_MARKER": 0,
+      "heartbeat": 66,
+      "note": "PHASE_MARKER under-fires (0 hits); cured progress filter uses event start/heartbeat + phase step",
+      "source_log": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/suite.log",
+      "start": 1148
+    },
+    "command_template": "bin/watch-wrap --log <LOG> --heartbeat 180 --error 'Traceback|Error|Killed|OOM|FAILED|assert|CUDA out of memory' --progress '\"event\": \"start\"|\"event\": \"heartbeat\"|\"phase\": \"step\"' --success 'PACKET_TERMINAL' --stop-on 'PACKET_TERMINAL|INCOMPLETE_FINALIZATION' --replay 40",
+    "error": "Traceback|Error|Killed|OOM|FAILED|assert|CUDA out of memory",
+    "heartbeat_seconds": 180,
+    "log_path_note": "LOG path is ${RUN_ROOT}/suite.log from frozen_runroot_mint_shell_line (O1); arm Monitor after mint, before N1 preflight",
+    "progress_filter_authoritative": "\"event\": \"start\"|\"event\": \"heartbeat\"|\"phase\": \"step\"",
+    "replay": 40,
+    "stop_on": [
+      "PACKET_TERMINAL",
+      "INCOMPLETE_FINALIZATION"
+    ],
+    "success": "PACKET_TERMINAL",
+    "two_monitor_pattern": [
+      "observer watch-wrap",
+      "foreground host shell"
+    ]
+  },
+  "orchestration_cures": {
+    "B_PREBIND": "same-byte hash+parse of package receipts before classifier",
+    "G1_outer_terminal_backstop": "any nonzero outer RC without LOG marker gets INCOMPLETE_FINALIZATION",
+    "G2_four_field_status": "argv/rc/wall_seconds/receipt_path_if_any recorded from same PROBE_ARGV used for execution",
+    "O1_prearm_handoff": "frozen_runroot_mint_shell_line + N1/suite take RUN_ROOT as $1",
+    "O2_monitor_failure_terminal": "INCOMPLETE_FINALIZATION + WRAPPER_RC on all failure paths",
+    "O3_nonce_fail_closed": "os.makedirs(..., exist_ok=False) on RUN_ROOT under durability root",
+    "O4_classified_byte_authority": "classifier stdout not teed; source_shas package/N{n} vs prebind; out/terminal == f587cee0\u2026; single PACKET_TERMINAL to LOG only after match",
+    "O5_outer_suite_deadline": "timeout --signal=TERM --kill-after=60 3600 around inner suite",
+    "monitor_progress_cure": "progress filter uses event start|heartbeat + phase step (PHASE_MARKER=0 on calibration log)"
+  },
+  "packet_kind": "LAUNCH_PACKET",
+  "packet_revision": "v5_protection_package_20260805_phase_timeout_450",
+  "phases": {
+    "launch_wording_required": "+1 launch: N1 preflight, then 3-horizon suite ONLY IF N1 full 8-field package binding clears",
+    "n1_never_on_packet_pass_alone": true,
+    "one_conditional_plus1_launch_covers_both": true,
+    "order": [
+      "N1 PACKAGE_IN preflight proving full 8-field package binding on REAL receipt",
+      "3-horizon suite ONLY if N1 clears"
+    ],
+    "suite_never_on_n1_fail": true
+  },
+  "pins": {
+    "classifier_bytes": 15179,
+    "classifier_path": "scripts/a_prime_slice4_protection_package_classifier_v0.py",
+    "classifier_sha256": "9c334ce407f6c74310e6c2b04dc7e975f81a89b01543f5de69cccd0680f491f4",
+    "dirty_n": 1026,
+    "dirty_sha256": "df97a5f68d540bd78a9997a2b15d7248965618603e6a3bd5dc29998a1d632719",
+    "head_sha": "08f4344ba104e96f94537ac0ec01641dcefa28e0",
+    "out_terminal_path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json",
+    "out_terminal_sha256": "f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998",
+    "parent_bytes": 118539114,
+    "parent_path": "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+    "parent_sha256": "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+    "pin_producing_commands": {
+      "classifier_sha256": "sha256sum scripts/a_prime_slice4_protection_package_classifier_v0.py",
+      "dirty": "python3 -c 'from scripts.a_prime_slice1_fidelity_pins import collect_dirty; from pathlib import Path; print(collect_dirty(Path(\".\")))'",
+      "head_sha": "git rev-parse HEAD",
+      "out_terminal_sha256": "sha256sum /home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/terminal_receipt.json",
+      "parent_sha256": "sha256sum calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+      "plan_v5_sha256": "sha256sum artifacts/a_prime/A_prime_slice4_rung2_protected_comparison_PLAN_v5.json",
+      "probe_sha256": "sha256sum scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "reducer_sha256": "sha256sum scripts/a_prime_slice4_protection_package_reducer_v0.py",
+      "rollup": "python3 -c 'from scripts.a_prime_slice1_fidelity_pins import compute_rollup; from pathlib import Path; print(compute_rollup(Path(\".\")))'",
+      "schema_sha256": "sha256sum scripts/a_prime_slice4_protection_package_schema_v0.py",
+      "tests_sha256": "sha256sum calm/llm_computer/tests/test_a_prime_slice4_protection_package_v0.py",
+      "watch_wrap_sha256": "sha256sum bin/watch-wrap",
+      "watch_wrap_stream_sha256": "sha256sum /mnt/c/Users/gabes/projects/claw-code/scripts/watch_wrap_stream.py"
+    },
+    "plan_v5_bytes": 28333,
+    "plan_v5_path": "artifacts/a_prime/A_prime_slice4_rung2_protected_comparison_PLAN_v5.json",
+    "plan_v5_sha256": "c3bfa2073c84e6d75833804760b327696102fe521c511855231fd0f6ae29ebd3",
+    "probe_bytes": 431740,
+    "probe_path": "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+    "probe_sha256": "43503aae1705915451d1ae2c2393858d1d00afd7483bee58e17279dfac162f93",
+    "reducer_bytes": 13248,
+    "reducer_path": "scripts/a_prime_slice4_protection_package_reducer_v0.py",
+    "reducer_sha256": "1886ff9fdb75caf997c3b25f2af1328482ee638e4faaba21b073a68b86b54275",
+    "rollup_n_files": 145,
+    "rollup_sha256": "06cc452c1086c3255150a2536e0c8d614e221ff97d666bce4db4737bd69ae9d8",
+    "schema_bytes": 13113,
+    "schema_path": "scripts/a_prime_slice4_protection_package_schema_v0.py",
+    "schema_sha256": "d858cd7348994b207e52a4762167b77c55e35ef706df635cc3c3c90c82b1a722",
+    "tests_bytes": 17103,
+    "tests_path": "calm/llm_computer/tests/test_a_prime_slice4_protection_package_v0.py",
+    "tests_sha256": "4ab74d480395e1229c025697eabaa7bb9d157349abc646755a2e47744f7427d5",
+    "watch_wrap_bytes": 14332,
+    "watch_wrap_path": "bin/watch-wrap",
+    "watch_wrap_sha256": "a19f1c5fe88fb3dcbf00ab442047576708f75272210e9a0cc94ed9369bf45d4b",
+    "watch_wrap_stream_bytes": 7746,
+    "watch_wrap_stream_path": "/mnt/c/Users/gabes/projects/claw-code/scripts/watch_wrap_stream.py",
+    "watch_wrap_stream_sha256": "1daed2934afde5e19b8ac7f7e840383c3f054f57e0f76ca7e56b0e6f77c6857d"
+  },
+  "plan_v5_path": "artifacts/a_prime/A_prime_slice4_rung2_protected_comparison_PLAN_v5.json",
+  "plan_v5_sha256": "c3bfa2073c84e6d75833804760b327696102fe521c511855231fd0f6ae29ebd3",
+  "pre_launch_gate_steps": [
+    "1. co_lead gate-2 PASS on frozen packet",
+    "2. persisted claude conditional +1 launch (N1 then suite ONLY if N1 binding clears) \u2014 packet dual-accept is NOT launch authority",
+    "3. pre-arm sha256 check watch-wrap + stream (fail-closed vs pins)",
+    "4. dirty/head/instrument re-check (HEAD 08f4344b; dirty 1026/df97a5f6; probe/schema/reducer/classifier/tests/parent/out_terminal/plan_v5 match pins; mismatch -> STOP, mint successor)",
+    "5. GPU-idle pre-arm (gpu_idle_prearm_v0)",
+    "6. O1: run frozen_runroot_mint_shell_line; capture RUN_ROOT from sole stdout line RUN_ROOT=<abs>",
+    "7. arm Monitor (observed armed) on ${RUN_ROOT}/suite.log with cured progress filter --progress '\"event\": \"start\"|\"event\": \"heartbeat\"|\"phase\": \"step\"' stop-on PACKET_TERMINAL|INCOMPLETE_FINALIZATION",
+    "8. run frozen_n1_package_binding_preflight_shell_line with argv \"$RUN_ROOT\"",
+    "9. if N1_PACKAGE_BINDING_OK: run frozen_foreground_suite_shell_line with argv \"$RUN_ROOT\"; else STOP (no suite)"
+  ],
+  "probe_argv_by_horizon": {
+    "1": [
+      "env",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "PYTHONPATH=.",
+      "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1",
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1",
+      "python3",
+      "-u",
+      "-B",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "--enable-bounded-delta-probe",
+      "--allow-gpu-launch",
+      "--device",
+      "cuda:0",
+      "--parent",
+      "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+      "--parent-sha256",
+      "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+      "--curriculum-seed",
+      "17",
+      "--max-steps-hard",
+      "50",
+      "--steps",
+      "1",
+      "--global-horizon",
+      "50",
+      "--scratch-root",
+      "__RUN_ROOT__/n1_preflight/c2p1_impl_cpu",
+      "--prior-audit-supports",
+      "L0b,math_a0",
+      "--eligible-scope",
+      "first-bitlinear",
+      "--b2-retained-supports",
+      "L0b,math_a0",
+      "--b2-parent-consistency-weight",
+      "1.0",
+      "--b2-pc-aux-mode",
+      "veto",
+      "--emit-progress",
+      "--phase-heartbeat-seconds",
+      "30",
+      "--phase-timeout-seconds",
+      "450",
+      "--total-timeout-seconds",
+      "3600",
+      "--max-silent-phase-seconds",
+      "600"
+    ],
+    "10": [
+      "env",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "PYTHONPATH=.",
+      "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1",
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1",
+      "python3",
+      "-u",
+      "-B",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "--enable-bounded-delta-probe",
+      "--allow-gpu-launch",
+      "--device",
+      "cuda:0",
+      "--parent",
+      "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+      "--parent-sha256",
+      "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+      "--curriculum-seed",
+      "17",
+      "--max-steps-hard",
+      "50",
+      "--steps",
+      "10",
+      "--global-horizon",
+      "50",
+      "--scratch-root",
+      "__RUN_ROOT__/horizon_N10/c2p1_impl_cpu",
+      "--prior-audit-supports",
+      "L0b,math_a0",
+      "--eligible-scope",
+      "first-bitlinear",
+      "--b2-retained-supports",
+      "L0b,math_a0",
+      "--b2-parent-consistency-weight",
+      "1.0",
+      "--b2-pc-aux-mode",
+      "veto",
+      "--emit-progress",
+      "--phase-heartbeat-seconds",
+      "30",
+      "--phase-timeout-seconds",
+      "450",
+      "--total-timeout-seconds",
+      "3600",
+      "--max-silent-phase-seconds",
+      "600"
+    ],
+    "20": [
+      "env",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "PYTHONPATH=.",
+      "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1",
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1",
+      "python3",
+      "-u",
+      "-B",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "--enable-bounded-delta-probe",
+      "--allow-gpu-launch",
+      "--device",
+      "cuda:0",
+      "--parent",
+      "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+      "--parent-sha256",
+      "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+      "--curriculum-seed",
+      "17",
+      "--max-steps-hard",
+      "50",
+      "--steps",
+      "20",
+      "--global-horizon",
+      "50",
+      "--scratch-root",
+      "__RUN_ROOT__/horizon_N20/c2p1_impl_cpu",
+      "--prior-audit-supports",
+      "L0b,math_a0",
+      "--eligible-scope",
+      "first-bitlinear",
+      "--b2-retained-supports",
+      "L0b,math_a0",
+      "--b2-parent-consistency-weight",
+      "1.0",
+      "--b2-pc-aux-mode",
+      "veto",
+      "--emit-progress",
+      "--phase-heartbeat-seconds",
+      "30",
+      "--phase-timeout-seconds",
+      "450",
+      "--total-timeout-seconds",
+      "3600",
+      "--max-silent-phase-seconds",
+      "600"
+    ],
+    "50": [
+      "env",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "PYTHONPATH=.",
+      "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE=1",
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH=1",
+      "python3",
+      "-u",
+      "-B",
+      "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+      "--enable-bounded-delta-probe",
+      "--allow-gpu-launch",
+      "--device",
+      "cuda:0",
+      "--parent",
+      "calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt",
+      "--parent-sha256",
+      "9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec",
+      "--curriculum-seed",
+      "17",
+      "--max-steps-hard",
+      "50",
+      "--steps",
+      "50",
+      "--global-horizon",
+      "50",
+      "--scratch-root",
+      "__RUN_ROOT__/horizon_N50/c2p1_impl_cpu",
+      "--prior-audit-supports",
+      "L0b,math_a0",
+      "--eligible-scope",
+      "first-bitlinear",
+      "--b2-retained-supports",
+      "L0b,math_a0",
+      "--b2-parent-consistency-weight",
+      "1.0",
+      "--b2-pc-aux-mode",
+      "veto",
+      "--emit-progress",
+      "--phase-heartbeat-seconds",
+      "30",
+      "--phase-timeout-seconds",
+      "450",
+      "--total-timeout-seconds",
+      "3600",
+      "--max-silent-phase-seconds",
+      "600"
+    ]
+  },
+  "review_tier": "HIGH",
+  "schema": "a_prime_slice4_protection_package_launch_packet/v1",
+  "suite_orchestration": {
+    "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "env_required": {
+      "HRM_TEXT_158_ALLOW_C2_GPU_LAUNCH": "1",
+      "HRM_TEXT_158_RUN_C2_ACQUISITION_PROBE": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONPATH": "."
+    },
+    "order": [
+      "pre-launch pin asserts (head/probe/schema/reducer/classifier/tests/parent/out_terminal/plan_v5)",
+      "O1 mint RUN_ROOT under durability root",
+      "arm Monitor on suite.log with cured progress filter",
+      "run frozen_n1_package_binding_preflight_shell_line \"$RUN_ROOT\" (exact-type schema admission + receipt_sha256 report)",
+      "if dual-proof (marker AND validated report): run frozen_foreground_suite_shell_line \"$RUN_ROOT\"",
+      "else: STOP; no suite",
+      "dual-key terminal via protection_terminal + single PACKET_TERMINAL; WRAPPER_RC corroboration"
+    ]
+  },
+  "supersedes": {
+    "cause": "N50 C2PhaseTimeout bounded_steps 199.62s > 180.0s under PACKAGE_IN (~4.0s/step); phase-timeout 180 under-budgets protected arm",
+    "gate1_dispatch_id": "1785946041097-b5072207",
+    "liveness_terminal_receipt_id": "1785946017919",
+    "packet_v1_path": "artifacts/a_prime/A_prime_slice4_rung2_protection_package_LAUNCH_PACKET_v1.json",
+    "packet_v1_sha256": "080ed11ad3a1ba7fc27714bd1153ade79531c8a3c9dff5517a0c6a127f2f31e2",
+    "packet_v1_status": "DEAD",
+    "packet_v2_path": "artifacts/a_prime/A_prime_slice4_rung2_protection_package_LAUNCH_PACKET_v2.json",
+    "packet_v2_sha256": "6739ee68c7097a5a9345d7f81114273e782109546f2ce59a727633b3d7b7db21",
+    "packet_v2_status": "DEAD",
+    "packet_v3_path": "artifacts/a_prime/A_prime_slice4_rung2_protection_package_LAUNCH_PACKET_v3.json",
+    "packet_v3_sha256": "cbddc361362aa65bf5432b1141ae4f192c577fe1763e608f27cab675d3be1cff",
+    "packet_v3_status": "DEAD",
+    "packet_v4_path": "artifacts/a_prime/A_prime_slice4_rung2_protection_package_LAUNCH_PACKET_v4.json",
+    "packet_v4_sha256": "a01ac2025aff78df1c9f2a1604ca5845ca6e56f9d1887da59d856012c111ed8d",
+    "packet_v4_status": "DEAD"
+  },
+  "task_id": "1785931309579-4f068343",
+  "terminal_authority": {
+    "classes_attribution_form": "{package_effect_profile}__{support_response_profile}",
+    "classes_preempting": [
+      "INSTRUMENT_OR_BIND_FAIL"
+    ],
+    "dual_key": "terminal_manifest + exactly one stdout PACKET_TERMINAL",
+    "out_terminal_sha256_required": "f587cee02fad40cdf5296f37c7625e7fb263cff723ff3798fb09099095153998",
+    "package_effect_profile": [
+      "CLEARS",
+      "PREVENTS",
+      "DELAYS",
+      "NULL",
+      "OTHER"
+    ],
+    "source_shas_out_key": "out/terminal",
+    "source_shas_package_keys": [
+      "package/N10",
+      "package/N20",
+      "package/N50"
+    ],
+    "support_response_profile": [
+      "BOTH_HELD",
+      "L0B_ONLY",
+      "MATH_ONLY",
+      "REDISTRIBUTED",
+      "NO_MIX"
+    ],
+    "wrapper_rc_corroboration": true
+  },
+  "v2_notes": {
+    "cure": "removed $RUN_ROOT/protection_terminal from all mkdir -p sites; classifier exclusive-mints protection_terminal; post-classifier authority check reads it after mint",
+    "deletions": [
+      "frozen_runroot_mint_shell_line: edited mkdir: mkdir -p \"$RUN_ROOT/command_status\" \"$RUN_ROOT/protection_terminal\" \"$RUN_ROOT/n1_preflight\" -> mkdir -p \"$RUN_ROOT/command_status\" \"$RUN_ROOT/n1_preflight\"",
+      "frozen_foreground_inner_shell_line: edited mkdir: mkdir -p \"$RUN_ROOT/command_status\" \"$RUN_ROOT/protection_terminal\" -> mkdir -p \"$RUN_ROOT/command_status\"",
+      "frozen_foreground_inner_shell_line: deleted sole-mkdir line: mkdir -p \"$RUN_ROOT/protection_terminal\"",
+      "frozen_foreground_suite_shell_line: edited mkdir: mkdir -p \"$RUN_ROOT/command_status\" \"$RUN_ROOT/protection_terminal\" -> mkdir -p \"$RUN_ROOT/command_status\"",
+      "frozen_foreground_suite_shell_line: deleted sole-mkdir line: mkdir -p \"$RUN_ROOT/protection_terminal\""
+    ],
+    "n1_float_coerce_disclosure": "N1 shell binding gate coerces parent_consistency_weight via float() \u2014 launch-gate liveness only; probe emits real float; authoritative admission remains exact-type classifier path",
+    "preserved": "PACKAGE_IN argv, O1-O5/B-PREBIND/G1/G2, monitor cure, pins, OUT pin, N1\u2192suite gate, durability protection_terminal_rel as classifier-created"
+  },
+  "v3_notes": {
+    "calibration": "CPU-static fixture commands enumerated and run at mint time",
+    "calibration_commands": [
+      "CPU-static reproduction of packet N1 exact-type gate + suite dual-proof using schema.check_package_binding + is_exact_float; fixtures under tempfile; no GPU/probe",
+      "case1: receipt b2_retention.parent_consistency_weight='1.0' -> n1_package_binding_mismatch",
+      "case2: LOG has marker, report deleted -> suite_without_n1_clear:report_missing",
+      "case3: report present, LOG lacks marker -> suite_without_n1_clear:marker_missing",
+      "case4: report '{invalid' -> suite_without_n1_clear:report_malformed",
+      "case5: float 1.0 + full 8 fields + marker + report with matching receipt_sha256 -> N1_PACKAGE_BINDING_OK + SUITE_N1_DUAL_PROOF_OK"
+    ],
+    "calibration_results": [
+      {
+        "case": "1_string_weight",
+        "expect_fail": true,
+        "ok": false,
+        "pass": true,
+        "reason": "n1_package_binding_mismatch:parent_consistency_weight='1.0';parent_consistency_weight_not_exact_float_1.0='1.0'"
+      },
+      {
+        "case": "5_known_good",
+        "expect_fail": false,
+        "ok": true,
+        "pass": true,
+        "reason": "N1_PACKAGE_BINDING_OK|SUITE_N1_DUAL_PROOF_OK"
+      },
+      {
+        "case": "2_marker_only_report_deleted",
+        "expect_fail": true,
+        "ok": false,
+        "pass": true,
+        "reason": "suite_without_n1_clear:report_missing"
+      },
+      {
+        "case": "3_report_only_marker_absent",
+        "expect_fail": true,
+        "ok": false,
+        "pass": true,
+        "reason": "suite_without_n1_clear:marker_missing"
+      },
+      {
+        "case": "4_malformed_report",
+        "expect_fail": true,
+        "ok": false,
+        "pass": true,
+        "reason": "suite_without_n1_clear:report_malformed:Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+      }
+    ],
+    "cure_1": "N1 binding uses schema check_package_binding + is_exact_float(weight)==1.0; records receipt_sha256; no float()/str() coercion",
+    "cure_2": "suite dual-proof: LOG marker AND report; status/binding exact-type re-check; receipt_path exact; receipt_sha256 re-hash",
+    "preserved": "PACKAGE_IN argv, pins, O1-O5/B-PREBIND/G1/G2, monitor, classifier, mint-cure"
+  },
+  "v4_notes": {
+    "calibration_results": [
+      {
+        "case": "1_invalid_runroot",
+        "cmd": "env -i HOME=$HOME PATH=$PATH bash <suite_field_file> /definitely/not/a/runroot",
+        "pass": true,
+        "rc": 2,
+        "stderr_head": "INCOMPLETE_FINALIZATION missing_or_invalid_RUN_ROOT\nWRAPPER_RC 2\n",
+        "stdout_head": ""
+      },
+      {
+        "case": "2_valid_root_no_n1_proof",
+        "cmd": "env -i HOME=$HOME PATH=$PATH bash <suite_field_file> <synthetic_run_root_with_suite.log>",
+        "log_has_suite_without_n1_clear": true,
+        "pass": true,
+        "rc": 2,
+        "stderr_head": "",
+        "stdout_head": "INCOMPLETE_FINALIZATION suite_without_n1_clear:marker_missing\nWRAPPER_RC 2\n"
+      },
+      {
+        "case": "3_inner_eq_embed",
+        "pass": true,
+        "result": "True"
+      },
+      {
+        "case": "4_bash_n_all_fields",
+        "pass": true,
+        "result": "all rc=0"
+      },
+      {
+        "case": "5_mint_byte_identical_v3",
+        "pass": true,
+        "result": "True"
+      }
+    ],
+    "cure": "restored v2 outer wrapper byte-for-byte around v3 inner heredoc in frozen_foreground_suite_shell_line only",
+    "preserved_from_v3": "N1 field, inner body, mint line, pins, O1-O5/B-PREBIND/G1/G2, monitor, classifier, exact-type N1, dual-proof suite",
+    "v3_accountability": "gate-1 had calibrated extracted heredocs rather than complete frozen suite field"
+  },
+  "v5_notes": {
+    "cure": "--phase-timeout-seconds 180 -> 450 in all argv sites + geometry.phase_timeout_seconds",
+    "measured_bounded_steps_s": {
+      "N1": 5.7,
+      "N10": 40.9,
+      "N20": 79.5,
+      "N50": 199.6
+    },
+    "prior_run_preserved": "run_165e9df5 as evidence",
+    "rationale": "450 = measured N50 200s * 2.25 margin; PACKAGE_IN ~4.0s/step",
+    "unchanged": "--total-timeout-seconds 3600; outer timeout 3600; N1 exact-type; dual-proof; wrapper; mint-cure; classifier; pins; monitor"
+  }
+}
