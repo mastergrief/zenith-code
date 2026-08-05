@@ -8176,6 +8176,7 @@ def run_c2p1_probe(
     eligible_scope: str = "first-bitlinear",
     eligible_module_limit: int | None = None,
     steps: int = 0,
+    global_horizon: int | None = None,
     batch_size: int = 1,
     max_len: int | None = None,
     curriculum_seed: int = 17,
@@ -8245,6 +8246,15 @@ def run_c2p1_probe(
     vote_update_decay_numerator: int | None = None,
     vote_update_decay_denominator: int | None = None,
 ) -> dict[str, Any]:
+    # ENTRY validation: before parent load / model construction / CUDA setup.
+    if global_horizon is not None:
+        _gh = int(global_horizon)
+        _st = int(steps)
+        if _gh <= 0 or _gh < _st:
+            raise ValueError(
+                "global_horizon must be > 0 and >= steps; "
+                f"got global_horizon={_gh} steps={_st}"
+            )
     oracle_screen_budget = int(oracle_screen_max_sampled_candidates)
     if oracle_screen_budget not in ORACLE_SCREEN_ALLOWED_MAX_SAMPLED_CANDIDATES:
         raise ValueError(
@@ -9235,6 +9245,7 @@ def run_c2p1_probe(
                 event_coded_sparse_vote_authority=bool(event_coded_sparse_vote_authority),
                 vote_update_decay_numerator=vote_update_decay_numerator,
                 vote_update_decay_denominator=vote_update_decay_denominator,
+                global_horizon=global_horizon,
             )
         if calibration_warmup_collector is not None:
             with phase_progress.phase("calibration_warmup_observations_write"):
@@ -9668,6 +9679,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument("--steps", type=int, default=0)
+    ap.add_argument(
+        "--global-horizon",
+        type=int,
+        default=None,
+        help=(
+            "Optional global bp total_steps (warmup ramp) passed through to "
+            "run_bounded_delta_steps.global_horizon. Default None preserves "
+            "legacy local-segment end (start_step + steps - 1)."
+        ),
+    )
     ap.add_argument("--require-q-change", action="store_true")
     ap.add_argument("--max-abs-per-tensor", type=int, default=4096)
     ap.add_argument("--init-fidelity-atol", type=float, default=0.0)
@@ -10215,6 +10236,7 @@ def main(argv: list[str] | None = None) -> int:
         eligible_scope=args.eligible_scope,
         eligible_module_limit=args.eligible_module_limit,
         steps=args.steps,
+        global_horizon=args.global_horizon,
         batch_size=args.batch_size,
         max_len=args.max_len,
         curriculum_seed=args.curriculum_seed,
