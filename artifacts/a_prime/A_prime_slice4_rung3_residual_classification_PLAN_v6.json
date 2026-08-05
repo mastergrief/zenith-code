@@ -1,0 +1,835 @@
+{
+  "addenda": {
+    "A1_per_support_denominators": {
+      "dispatch": "1785948538669-e5e1f7c3",
+      "rule": "All Q2 branch rules evaluate per support on that support's own gross set only. Cross-support totals (e.g. 300/117) are reporting-only and must never appear as a branch denominator or be described as per-support. Instrument recomputes all memberships mechanically; no count from the design thread is an input constant."
+    },
+    "A2_q3_coverage_disclosure": {
+      "dispatch": "1785948538669-e5e1f7c3",
+      "rule": "bucket_rows >= min_bucket_denominator eligibility filter MUST disclose coverage per support: eligible_rows/support_rows AND eligible_buckets/all_buckets. Plan freezes minimum coverage; below it residual_bucket_profile for that support is METADATA_INSUFFICIENT (fail-closed), never UNIFORM/STRATIFIED over a silently filtered stratum set."
+    },
+    "A3": "workflow two-step sequence + mechanical file-set equality vs implementation_contract",
+    "A4": "STEP-2 py_compile+import frozen argv for classifier"
+  },
+  "addenda_dispatch_ids": [
+    "1785948538669-e5e1f7c3",
+    "1785949691236-61636f22",
+    "1785949733836-8c76bb9b"
+  ],
+  "b1_b2_reassert": {
+    "B1": "IDENTITY_OK requires bucket_of(row_id) identical across all 6 receipts per support; mismatch IDENTITY_BIND_FAIL",
+    "B2": "survivor_overlap composite = DEGENERATE_EMPTY preempt + exhaustive 9-cell table for STABLE/PARTIAL/CHURNED pairs; CHURNED|PARTIAL\u2192SPLIT; PARTIAL|STABLE\u2192PARTIAL"
+  },
+  "board": {
+    "child_task_id_current": "1785950193161-4f423eb4",
+    "decision_contract_currency": "Full exact authority bindings (complete 64-hex PLAN v6 sha, complete CONTENT_DIGEST, complete freeze-manifest sha) are persisted as a contract-currency addendum task_update on task 1785950193161-4f423eb4's timeline immediately after claude's gate-1 freeze. Board is append-only; decision_contract is create-time-only \u2014 claude posts that record; the addendum msg id is cited in the gate-2 request. Superseded child 1785949293431-20897287 is lineage only (explicitly labelled SUPERSEDED) \u2014 never current/owner/sink.",
+    "no_ownership_transfer": true,
+    "note": "plan-dev does not create/transfer board tasks; claude owns freeze + currency addendum + gate-2 request",
+    "ownership": "claude",
+    "parent_task_id": "1785931309579-4f068343",
+    "receipt_sink": "claude gate-1 only on successor task 1785950193161-4f423eb4"
+  },
+  "claim_boundary": {
+    "in_scope": [
+      "zero-GPU reducer+classifier over six frozen horizon receipts (PACKAGE N10/20/50 + OUT N10/20/50)",
+      "universe identity bind from final_reports batch_reports metadata.row_ids",
+      "Q1 survivor-set Jaccard PACKAGE vs OUT (support-factorized)",
+      "Q2 cross-horizon rescue_persistence on PACKAGE-only N10 survivors per support (endpoint grammar)",
+      "Q3 residual source-bucket enrichment on survivors (support-factorized) with coverage disclosure",
+      "factorized terminal + frozen successor lookup; dual-key exclusive mint"
+    ],
+    "out_of_scope": [
+      "cause attribution",
+      "individual replay-vs-PC attribution",
+      "mechanism-of-erosion mint",
+      "carrier / sub-2 / readiness / acquisition / bank claims",
+      "GPU / training / probe mutation / .pt touch",
+      "within-run temporal fate language over N10 to N20 to N50",
+      "cross-support pooled denominators as branch inputs"
+    ],
+    "pre_carrier": true,
+    "pre_mechanism_mint": true,
+    "receipts_only_descriptive_classification": true,
+    "verbatim_for_plan_and_receipt": "receipts-only descriptive classification; no cause, no individual replay-vs-PC attribution, no mechanism, carrier, readiness, acquisition, or bank claim; pre-carrier"
+  },
+  "claim_effect": "receipts-only descriptive residual classification of PACKAGE vs OUT survivors; no cause; no individual replay-vs-PC; no mechanism/carrier/readiness/acquisition/bank",
+  "cross_thread_required": true,
+  "dispatch_id": "1785950352907-43de225c",
+  "forbidden": [
+    "GPU",
+    "training launch",
+    "probe mutation",
+    ".pt touch/commit",
+    "mechanism mint",
+    "implement before persisted +1 implement",
+    "fast-path skip of plan gate",
+    "float-rounded threshold decisions",
+    "pooled multi-support Jaccard/enrichment/Q2 dens",
+    "silent Q3 stratum filtering without coverage disclosure",
+    "no live mint without persisted +1 execute record citing dual-accepted classifier sha + six receipt shas + exact six_receipt_live_classification argv + fresh exclusive run-root"
+  ],
+  "forbidden_during_implementation_receipts": [
+    "stage",
+    "commit",
+    "push",
+    ".pt",
+    "probe mutation",
+    "ownership transfer",
+    "live terminal execution by plan-dev",
+    "GPU",
+    "no live mint without persisted +1 execute record citing dual-accepted classifier sha + six receipt shas + exact six_receipt_live_classification argv + fresh exclusive run-root",
+    "no live mint without persisted +1 execute live terminal"
+  ],
+  "frozen_inputs": {
+    "field_paths_observed": {
+      "sample_hashes": "prior_audit.final_reports.<support>.batch_reports[*].metadata.sample_hashes",
+      "source_bucket_counts": "prior_audit.final_reports.<support>.batch_reports[*].metadata.source_bucket_counts",
+      "source_buckets": "prior_audit.final_reports.<support>.batch_reports[*].metadata.source_buckets",
+      "strict_failure_row_ids": "prior_audit.final_reports.<support>.strict_failure_row_ids",
+      "support_rows_audited": "prior_audit.final_reports.<support>.support_rows_audited",
+      "support_rows_expected": "prior_audit.final_reports.<support>.support_rows_expected",
+      "universe_row_ids": "prior_audit.final_reports.<support>.batch_reports[*].metadata.row_ids"
+    },
+    "grounding_snapshot_observed": {
+      "all_12_projections_unique_eq_n_eq_audited": true,
+      "cardinalities": {
+        "L0b": 230,
+        "math_a0": 1255
+      },
+      "illustrative_live_q2_reads_reporting_only_not_branch_constants": {
+        "counter_loss_L0b_illustrative": 28,
+        "counter_loss_math_a0_illustrative": 89,
+        "cross_support_totals_reporting_only": {
+          "counter_loss_sum": 117,
+          "gross_sum": 300
+        },
+        "gross_L0b_illustrative": 47,
+        "gross_math_a0_illustrative": 253,
+        "note": "A1: instrument recomputes memberships mechanically; these are NOT frozen inputs"
+      },
+      "metadata_keys_present": [
+        "row_ids",
+        "sample_hashes",
+        "source_buckets",
+        "source_bucket_counts"
+      ],
+      "note": "plan-dev grounded on live bytes at plan draft; freeze re-hashes required; counts below are grounding observations not branch input constants",
+      "pkg_vs_out_L0b_N10_universe_set_equal": true,
+      "row_id_form": "<index>:<sample_hash16>",
+      "row_id_suffix_eq_sample_hash_observed": true
+    },
+    "horizons": [
+      10,
+      20,
+      50
+    ],
+    "out_run_root": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5",
+    "package_prebind_authority": {
+      "expected": {
+        "package/N10": "217cf68650e56578c10c5c5e5a92d91eb81c2e95074d4e5726f76693efadfbe8",
+        "package/N20": "b12700f39e9979661f3f7b38c51a17627ae279f2ce61eadffeea24f1f902326a",
+        "package/N50": "ecffa277c677d509676bce62b93b7fab2225a8c7206d9553c2bbfbb1150de0a8"
+      },
+      "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/receipt_sha_binds.json"
+    },
+    "package_run_root": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b",
+    "receipt_paths_and_sha256": {
+      "out/N10": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "sha256": "9cd5fe63e509d9d81274b01f08bd9bae861012737282ffcebdb078f403432be3"
+      },
+      "out/N20": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "sha256": "51d1b08df4b561343e8aaf396e84fcd776239b0f902fee203e4bd598ed338263"
+      },
+      "out/N50": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "sha256": "c5394cda16a1ec42cb938d39d305e1777e397e5a0b19726206bbb5bf54f9206d"
+      },
+      "package/N10": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "sha256": "217cf68650e56578c10c5c5e5a92d91eb81c2e95074d4e5726f76693efadfbe8"
+      },
+      "package/N20": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "sha256": "b12700f39e9979661f3f7b38c51a17627ae279f2ce61eadffeea24f1f902326a"
+      },
+      "package/N50": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "sha256": "ecffa277c677d509676bce62b93b7fab2225a8c7206d9553c2bbfbb1150de0a8"
+      }
+    },
+    "supports": [
+      "L0b",
+      "math_a0"
+    ]
+  },
+  "implementation_contract": {
+    "DEVELOPER_STEPS": 2,
+    "board_ownership": "claude; no transfer",
+    "plus1_implement_status": "WITHHELD until plan dual-accept; then +1 implement per step",
+    "receipt_sink": "claude gate-1 ONLY",
+    "sizing": "MEDIUM",
+    "step_1": {
+      "files": [
+        "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+        "scripts/a_prime_slice4_residual_classification_reducer_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_residual_classification_reducer_v0.py"
+      ],
+      "label": "schema + pure reducer + characterization/hostile tests (CPU)",
+      "pass_fail_assertions": {
+        "data": "fixture integer counts + optional same-byte frozen receipt extracts for characterization; no live dual-key yet",
+        "runtime": "CPU only; no GPU; py_compile schema+reducer",
+        "tests": "pytest green: B1 identity bucket-map hostiles; B2 9-cell table; Q1 Jaccard raw counts; Q2 ceil (7n+9)//10 boundaries; Q2 counter-loss CL_ table non-branching; Q3 coverage fail-closed; Q3 report-only N20/OUT cannot change branch; DEGENERATE_EMPTY and DEGENERATE_NO_SURVIVORS; SPLIT successor routing from each axis",
+        "types": "schema admits exact types; reducer returns typed factorized profiles + raw counts; no float branch decisions; per-support dens only; Q3 branch input PACKAGE N50 only"
+      }
+    },
+    "step_2": {
+      "depends_on": "step_1 dual-accepted",
+      "files": [
+        "scripts/a_prime_slice4_residual_classification_classifier_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_residual_classification_classifier_v0.py"
+      ],
+      "label": "classifier dual-key finalization + integration tests (CPU)",
+      "pass_fail_assertions": {
+        "data": "same-byte six frozen receipts; exclusive run-root under durability path",
+        "runtime": "CPU only; no GPU",
+        "tests": "pytest green: exclusive mint hostiles; instrument envelope; live six-receipt classification marker; WRAPPER_RC corroboration path",
+        "types": "classifier CLI dual-key exclusive mint; single PACKET_TERMINAL; claim_boundary cross-level; source_shas same-byte bind six receipts"
+      }
+    },
+    "worktree": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158"
+  },
+  "instrument_reuse": {
+    "forbidden_without_seam_map": [
+      "any edit to hrm_text_158_bounded_delta_acquisition_probe.py"
+    ],
+    "lineage": "Rung-0 support-loss + Rung-2 protection-package dual-key patterns",
+    "package_prebind_shas": {
+      "package/N10": "217cf68650e56578c10c5c5e5a92d91eb81c2e95074d4e5726f76693efadfbe8",
+      "package/N20": "b12700f39e9979661f3f7b38c51a17627ae279f2ce61eadffeea24f1f902326a",
+      "package/N50": "ecffa277c677d509676bce62b93b7fab2225a8c7206d9553c2bbfbb1150de0a8"
+    }
+  },
+  "live_terminal_executor": {
+    "plan_dev_forbidden_to_execute_live_terminal": true,
+    "verbatim": "live terminal executor = Claude directly as test-operator (exclusive immutable run-root mint \u2192 receipts \u2192 classifier \u2192 single PACKET_TERMINAL marker \u2192 freeze, foreground shell, minimal polling); plan-dev does NOT execute the live terminal; terminal receipt to claude gate-1 thread only"
+  },
+  "parent_task_id": "1785931309579-4f068343",
+  "plan_kind": "RESIDUAL_CLASSIFICATION_PLAN",
+  "plan_revision": "v6_rung3_20260805",
+  "prereg_branch_classifier": {
+    "arithmetic": {
+      "ceil_0_70_n": {
+        "equivalence": "ceil(0.70 * n) for integer n >= 0",
+        "forbidden": "decimal/float/math.ceil paths for branch decisions",
+        "formula_integer_only": "(7 * n + 9) // 10"
+      },
+      "ceil_semantics": "ceil(p * |S|) for threshold counts; integer comparison only after ceil",
+      "every_ratio_carries_raw_counts": true,
+      "exact_rational_examples": {
+        "J_ge_0_8": "|intersect| * 5 >= |union| * 4",
+        "J_le_0_3": "|intersect| * 10 <= |union| * 3",
+        "enrichment_ge_1_5": "bucket_surv * support_rows * 2 >= bucket_rows * support_surv * 3",
+        "enrichment_le_0_5": "bucket_surv * support_rows * 2 <= bucket_rows * support_surv * 1"
+      },
+      "exact_rational_on_counts": true,
+      "jaccard": "J = |A intersect B| / |A union B| with raw |intersect|,|A|,|B|,|union| always reported; support-factorized never pooled",
+      "no_float_branch_decisions": true,
+      "per_support_denominators_only": true
+    },
+    "composite_terminal": {
+      "attribution_form": "{identity}__{overlap}__{rescue}__{residual}",
+      "examples": [
+        "IDENTITY_OK__STABLE_CORE__TRANSIENT__UNIFORM",
+        "IDENTITY_OK__PARTIAL_CORE__MIXED__STRATIFIED",
+        "IDENTITY_OK__SPLIT_SUPPORTS__NONMONOTONE_RESCUE__SPLIT_SUPPORTS",
+        "IDENTITY_OK__DEGENERATE_EMPTY__MIXED__DEGENERATE_NO_SURVIVORS",
+        "IDENTITY_OK__PARTIAL_CORE__MIXED__METADATA_INSUFFICIENT",
+        "IDENTITY_BIND_FAIL"
+      ],
+      "identity_fail_form": "IDENTITY_BIND_FAIL",
+      "instrument_form": "INSTRUMENT_OR_BIND_FAIL",
+      "note": "METADATA_INSUFFICIENT appears only in residual slot of factorized form"
+    },
+    "identity_profile": {
+      "cross_receipt_bucket_map_invariance": {
+        "definition": "bucket_of(row_id) from metadata.source_buckets aligned to row_ids; must be equal for the same row_id across all 6 receipts per support",
+        "on_mismatch": "IDENTITY_BIND_FAIL",
+        "required": true
+      },
+      "expected_cardinality": {
+        "L0b": 230,
+        "math_a0": 1255
+      },
+      "rules": {
+        "IDENTITY_BIND_FAIL": "any mismatch above including cross-receipt bucket_of(row_id) drift; fail-closed; no set arithmetic; no Q1/Q2/Q3 branch mint",
+        "IDENTITY_OK": "for every support in {L0b,math_a0} and every arm in {package,out} and every horizon in {10,20,50}: universe from concatenated batch_reports metadata.row_ids is duplicate-free; len(universe)==support_rows_audited==expected_cardinality; all six universes equal per support; each row_id suffix after ':' equals corresponding sample_hashes entry; source_buckets length == row_ids length; each row exactly one bucket; AND for every row_id in the common universe, bucket_of(row_id) is IDENTICAL across all 6 receipts (package/out x N10/N20/N50) for that support \u2014 cross-receipt source-map invariance"
+      },
+      "values": [
+        "IDENTITY_OK",
+        "IDENTITY_BIND_FAIL"
+      ]
+    },
+    "metadata_insufficient_authority": {
+      "preempting_only_excludes_MI": true,
+      "statement": "METADATA_INSUFFICIENT is a factorized component of the residual_bucket_profile slot ONLY; it is NOT a top-level preemption. Instrument still fails closed into residual slot label METADATA_INSUFFICIENT without minting STRATIFIED/UNIFORM."
+    },
+    "output_shape": "factorized identity_profile x survivor_overlap_profile x rescue_persistence_profile x residual_bucket_profile -> composite terminal",
+    "preempting_only": [
+      "IDENTITY_BIND_FAIL",
+      "INSTRUMENT_OR_BIND_FAIL"
+    ],
+    "product": "RESIDUAL_CLASSIFICATION_RECEIPTS_ONLY",
+    "rescue_persistence_profile": {
+      "A1_binding": "branch rules evaluate per support on that support's own gross set only; cross-support totals reporting-only never branch denominators",
+      "composite_rules": {
+        "MIXED": "both supports MIXED",
+        "NONMONOTONE_RESCUE": "both supports NONMONOTONE_RESCUE",
+        "PERSISTENT": "both supports PERSISTENT",
+        "SPLIT_SUPPORTS": "supports disagree",
+        "TRANSIENT": "both supports TRANSIENT"
+      },
+      "counter_loss_table_mandatory_non_branching": {
+        "always_report": true,
+        "branch_input": false,
+        "definitions": {
+          "CL_MIXED": "neither",
+          "CL_NONMONOTONE": "both CL_TRANSIENT and CL_PERSISTENT",
+          "CL_PERSISTENT": "|counter_loss intersect survivors_out_N50| >= (7*n+9)//10",
+          "CL_TRANSIENT": "|counter_loss minus survivors_out_N20| >= (7*n+9)//10 where n=|counter_loss|",
+          "counter_loss_set": "OUT-only N10 survivors = survivors_out_N10 - survivors_pkg_N10 (per support)",
+          "empty_counter_loss": "n==0 \u2192 CL_MIXED with empty-set note"
+        },
+        "labels_prefixed": "CL_",
+        "measured_in_arm": "OUT",
+        "note": "symmetric to gross-in-PACKAGE geometry but evaluated in OUT arm; NEVER branch input; net deltas never membership",
+        "per_support": true,
+        "raw_counts_always": true
+      },
+      "definitions": {
+        "absent_from_package_N20": "gross members not in survivors_pkg_N20",
+        "counter_loss_set": "OUT-only N10 survivors = survivors_out_N10 - survivors_pkg_N10 (per support)",
+        "gross_rescued_set": "PACKAGE-only N10 survivors = survivors_pkg_N10 - survivors_out_N10 (per support; recompute mechanically)",
+        "present_at_package_N50": "gross members in survivors_pkg_N50"
+      },
+      "grammar": "N10/N20/N50 are separate endpoint runs \u2014 NOT within-run temporal fate",
+      "per_support_first": true,
+      "proposed_thresholds_refutable_at_plan_gate": {
+        "MIXED": "neither TRANSIENT nor PERSISTENT",
+        "NONMONOTONE_RESCUE": "both TRANSIENT and PERSISTENT predicates true on same support",
+        "PERSISTENT": "|present_at_package_N50| >= (7*|gross_support|+9)//10",
+        "TRANSIENT": "|absent_from_package_N20| >= (7*|gross_support|+9)//10",
+        "empty_gross": "if |gross_support|==0 then MIXED with empty-set note (no vacuous TRANSIENT/PERSISTENT)"
+      },
+      "values": [
+        "TRANSIENT",
+        "PERSISTENT",
+        "NONMONOTONE_RESCUE",
+        "MIXED",
+        "SPLIT_SUPPORTS"
+      ]
+    },
+    "residual_bucket_profile": {
+      "A2_binding": "eligibility filter discloses coverage; below min coverage -> METADATA_INSUFFICIENT fail-closed",
+      "always_report_per_support": [
+        "eligible_rows",
+        "support_rows",
+        "coverage_rows raw fraction counts",
+        "eligible_buckets",
+        "all_nonempty_buckets",
+        "coverage_buckets raw fraction counts",
+        "per-eligible-bucket enrichment raw counts"
+      ],
+      "branch_input_surface": {
+        "arm": "PACKAGE",
+        "exclusive": true,
+        "horizon": 50,
+        "report_only_not_branch": [
+          "PACKAGE N20 enrichment table",
+          "OUT N10/N20/N50 enrichment tables"
+        ],
+        "test_required": "prove report-only values cannot change residual branch"
+      },
+      "composite_rules": {
+        "evaluation_order": [
+          "1. any support METADATA_INSUFFICIENT \u2192 METADATA_INSUFFICIENT",
+          "2. any support DEGENERATE_NO_SURVIVORS \u2192 DEGENERATE_NO_SURVIVORS",
+          "3. both STRATIFIED \u2192 STRATIFIED",
+          "4. both UNIFORM \u2192 UNIFORM",
+          "5. else SPLIT_SUPPORTS"
+        ]
+      },
+      "definitions": {
+        "bucket_of_row": "metadata.source_buckets[i] for row_ids[i]; each row exactly one bucket",
+        "bucket_rows": "count of universe rows with that bucket",
+        "bucket_survivors": "count of survivors with that bucket on the BRANCH-AUTHORITY surface only (PACKAGE N50 exclusive per residual_bucket_profile.branch_input_surface); PACKAGE N20 and OUT enrichment tables are report-only and never supply bucket_survivors for residual_bucket_profile",
+        "coverage_buckets": "count(eligible buckets) / count(all buckets with bucket_rows>0)",
+        "coverage_rows": "sum(bucket_rows over eligible buckets) / support_rows",
+        "eligible_bucket": "bucket_rows >= min_bucket_denominator_rows",
+        "enrichment": "(bucket_survivors / bucket_rows) / (support_survivors / support_rows) with all four raw counts"
+      },
+      "degenerate_no_survivors": {
+        "composite": "any support DEGENERATE_NO_SURVIVORS preempts residual slot like METADATA_INSUFFICIENT",
+        "rule": "if support_survivors==0 on PACKAGE N50 \u2192 per-support DEGENERATE_NO_SURVIVORS (never UNIFORM/STRATIFIED; no division by support_survivors)"
+      },
+      "forbidden_metric": "do NOT use collapsed-row share ratios (saturation compresses toward baseline)",
+      "per_support_first": true,
+      "proposed_thresholds_refutable_at_plan_gate": {
+        "DEGENERATE_NO_SURVIVORS": "support_survivors==0 on PACKAGE N50",
+        "METADATA_INSUFFICIENT": "source_buckets missing/length mismatch/multi-bucket OR coverage_rows < 4/5 OR coverage_buckets < 1/2 OR zero eligible buckets",
+        "STRATIFIED": "coverage OK AND among eligible: max enrichment >= 3/2 OR min <= 1/2 (exact rational integer form)",
+        "UNIFORM": "coverage OK AND all eligible enrichments inside (1/2, 3/2)",
+        "min_bucket_denominator_rows": 20,
+        "min_coverage_buckets": "1/2 of non-empty buckets eligible",
+        "min_coverage_rows": "4/5 of support_rows in eligible buckets"
+      },
+      "values": [
+        "STRATIFIED",
+        "UNIFORM",
+        "SPLIT_SUPPORTS",
+        "METADATA_INSUFFICIENT",
+        "DEGENERATE_NO_SURVIVORS"
+      ]
+    },
+    "successor_mapping_preregistered": {
+      "evaluation": "first-match-wins: evaluate lookup_algorithm steps in order; first matching step wins",
+      "hard_ban": "no successor may mint individual replay-vs-PC causal mechanism or carrier claim",
+      "lookup_algorithm": [
+        "1. INSTRUMENT_OR_BIND_FAIL -> instrument repair only; no science successor",
+        "2. IDENTITY_BIND_FAIL -> receipt/field schema repair; no residual science",
+        "3. any of overlap/rescue/residual profile == SPLIT_SUPPORTS -> successor = support-split residual densify (each support routed separately on its own per-support labels, both reported); no mechanism mint",
+        "4. residual METADATA_INSUFFICIENT -> bucket metadata repair or drop Q3; no mechanism mint",
+        "5. residual DEGENERATE_NO_SURVIVORS OR overlap DEGENERATE_EMPTY -> default classify residual; no mechanism mint",
+        "6. STABLE_CORE + (TRANSIENT or MIXED) -> densify residual OUT-stable core rows (Rung-1-style densify), still no mechanism mint",
+        "7. CHURNED -> arm-specific collapse surfaces dominate; next is support-split residual densify, no mechanism mint",
+        "8. NONMONOTONE_RESCUE -> report nonmonotone rescue geometry; next measurement = multi-horizon rescue map densify, no mechanism mint",
+        "9. STRATIFIED residual -> bucket-targeted densify on enriched residual strata, no mechanism mint",
+        "10. UNIFORM residual + PARTIAL_CORE -> broad residual densify, no mechanism mint",
+        "11. else -> classify residual; no mechanism mint (default Rung-2 successor preserved)"
+      ],
+      "split_tests_required": [
+        "successor from overlap SPLIT_SUPPORTS",
+        "successor from rescue SPLIT_SUPPORTS",
+        "successor from residual SPLIT_SUPPORTS"
+      ]
+    },
+    "survivor_overlap_profile": {
+      "always_report": [
+        "per support x horizon: |survivors_pkg|, |survivors_out|, |intersect|, |union|, J via raw counts",
+        "never pool L0b with math_a0"
+      ],
+      "composite_rules": {
+        "evaluation_order": [
+          "1. if either support label == DEGENERATE_EMPTY \u2192 DEGENERATE_EMPTY",
+          "2. else lookup nine_cell_table[(L0b_label, math_a0_label)] \u2014 cells partition remaining 9 pairs"
+        ],
+        "nine_cell_table": {
+          "CHURNED|CHURNED": "CHURNED",
+          "CHURNED|PARTIAL_CORE": "SPLIT_SUPPORTS",
+          "CHURNED|STABLE_CORE": "SPLIT_SUPPORTS",
+          "PARTIAL_CORE|CHURNED": "SPLIT_SUPPORTS",
+          "PARTIAL_CORE|PARTIAL_CORE": "PARTIAL_CORE",
+          "PARTIAL_CORE|STABLE_CORE": "PARTIAL_CORE",
+          "STABLE_CORE|CHURNED": "SPLIT_SUPPORTS",
+          "STABLE_CORE|PARTIAL_CORE": "PARTIAL_CORE",
+          "STABLE_CORE|STABLE_CORE": "STABLE_CORE"
+        },
+        "notes": [
+          "cells partition STABLE/PARTIAL/CHURNED pairs with no overlap",
+          "DEGENERATE_EMPTY handled before table",
+          "(CHURNED, PARTIAL)->SPLIT; (PARTIAL, STABLE)->PARTIAL"
+        ],
+        "per_support_labels": [
+          "STABLE_CORE",
+          "PARTIAL_CORE",
+          "CHURNED",
+          "DEGENERATE_EMPTY"
+        ]
+      },
+      "definitions": {
+        "jaccard_at_N": "J_N(support) over PACKAGE survivors vs OUT survivors at horizon N",
+        "survivors": "universe - set(strict_failure_row_ids) per support x arm x horizon"
+      },
+      "degenerate_union_empty": {
+        "composite": "any support DEGENERATE_EMPTY \u2192 composite DEGENERATE_EMPTY",
+        "rule": "if |union|==0 at either N20 or N50 for a support \u2192 per-support label DEGENERATE_EMPTY (no J division)",
+        "successor": "falls to default successor step (classify residual; no mechanism mint)"
+      },
+      "per_support_first": true,
+      "proposed_thresholds_refutable_at_plan_gate": {
+        "CHURNED_per_support": "J_20 <= 3/10 AND J_50 <= 3/10; equivalently |intersect|*10 <= |union|*3 at both",
+        "PARTIAL_CORE_per_support": "else",
+        "STABLE_CORE_per_support": "J_20 >= 4/5 AND J_50 >= 4/5; equivalently |intersect|*5 >= |union|*4 at both N20 and N50"
+      },
+      "values": [
+        "STABLE_CORE",
+        "PARTIAL_CORE",
+        "CHURNED",
+        "SPLIT_SUPPORTS",
+        "DEGENERATE_EMPTY"
+      ]
+    }
+  },
+  "prior_gate1_block_id": "1785948838067-1090955d",
+  "prior_gate1_pass_or_freeze_lineage": {
+    "v0_bounce": "1785948838067-1090955d",
+    "v1_gate2_block": "1785949209307-c26fabf6",
+    "v2_consolidated_dispatch": "1785949363984-8d4d218d",
+    "v2_content_digest_withdrawn": "ba0fbb1d",
+    "v2_gate1_freeze_then_withdrawn": "1785949615539",
+    "v3_process_defect_remint": "1785949691236-61636f22",
+    "v3_process_remint_receipt": "1785949781440-11ff7611",
+    "v3_sha": "f756c99e34420b0da664ea8e84c7f56201b12e2775e143be785f5ad6fa3e3aaf",
+    "v4_a3_a4_addendum": "1785949733836-8c76bb9b",
+    "v4_gate2_revise": "1785950063969-5b375c32",
+    "v4_receipt": "1785949900303-65497904",
+    "v4_sha": "78491b2a06bc46d2280243fa720ad9d0ddc02451356b2f2b2aa6d68e388770df",
+    "v5_consolidated_dispatch": "1785950090732-3f517603",
+    "v5_gate2_revise": "1785950314545-7cd3b5fe",
+    "v5_receipt": "1785950146945-eda2e6c2",
+    "v5_sha": "a2875c5ec5d0238dd4fad4258db23531bf64cafb57f08779183f8da2191441f5",
+    "v6_consolidated_dispatch": "1785950352907-43de225c"
+  },
+  "prior_gate2_block_id": "1785949209307-c26fabf6",
+  "prior_gate2_revise_id": "1785950314545-7cd3b5fe",
+  "prior_process_defect": {
+    "cause": "freeze-discipline breach; scrub must fold into NEXT version under fresh filename",
+    "correction_receipt": "1785949663624-e646bbb8",
+    "defect": "post-receipt in-place edit of PLAN_v2.json after gate-1 FREEZE 1785949615539",
+    "post_mutation_v2_sha_left_on_disk": "acefa25e309753c2535a1e35232b214410ba7dd791e000a60200ec7c11728049",
+    "post_mutation_v2_size": 35578,
+    "receipted_v2_sha_before_mutation": "4e9231f6bb147d0001a97864c4b0396ab4d23bf94c00291720379b486a7283a0",
+    "receipted_v2_size": 35407,
+    "remint_dispatch": "1785949691236-61636f22"
+  },
+  "product_name": "RESIDUAL_CLASSIFICATION_RECEIPTS_ONLY",
+  "provenance": {
+    "chosen_option": "Rung-3 residual classification per Rung-2 successor 'classify residual; no mechanism mint'",
+    "converged_design_threads": [
+      "1785948121902",
+      "1785948256969",
+      "1785948298117",
+      "1785948381518"
+    ],
+    "gabe_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science - you \"claude\" will take on the role of test-operator using a shell/monitor with minimal polling until completion or error for maximum context efficiency - plan-dev is addressed with ai-room handle \"codex\" - if you are waiting on receipt from worker (codex or codex_co_lead) follow up or diagnose if wedged",
+    "rejected_alternatives": [
+      "mechanism mint from Rung-2 OTHER__NO_MIX",
+      "LEAN tier (co_lead concur HIGH: branch selects next science investigation)"
+    ],
+    "rung2_gate2_pass_id": "1785947869081-bff5e6a6",
+    "rung2_terminal_branch": "OTHER__NO_MIX",
+    "rung2_terminal_receipt_sha256": "c66237e791bd2d573d9c36f2207311a34e15b700896b96bc5025b88e3c47437b"
+  },
+  "question": "Given dual-accepted Rung-2 OTHER__NO_MIX, what residual structure do the frozen PACKAGE vs OUT horizon receipts show across survivor-set overlap, cross-horizon rescue persistence, and source-bucket enrichment \u2014 without minting a mechanism?",
+  "redispatch_triggers": {
+    "fresh_worker": "subsystem boundary, major defect (\u22653 files new), context pressure, or explicit recycle",
+    "re_scope": "new axes/files beyond last dual-accepted step contract",
+    "same_worker_correction": "defect \u2286 files just edited, same lane, no new external evidence"
+  },
+  "report_to": [
+    "claude"
+  ],
+  "review_tier": "HIGH",
+  "schema": "a_prime_slice4_rung3_residual_classification_plan/v0",
+  "stop_conditions": [
+    "any named receipt field absent/shaped differently at implement grounding -> post finding, do not improvise",
+    "need to touch probe/training code -> STOP",
+    "underspecified -> ask claude (never @gabe)"
+  ],
+  "supersedes": {
+    "cause": "v5 DEAD for task-id rebind to successor 1785950193161-4f423eb4; science content byte-invariant vs v5",
+    "current_child_task_id": "1785950193161-4f423eb4",
+    "plan_v0_path": "artifacts/a_prime/A_prime_slice4_rung3_residual_classification_PLAN_v0.json",
+    "plan_v0_sha256": "e3bbcf24ef156c0c030d84b57e00a3dcbae23e08bb22f3b612392ee977339c3f",
+    "plan_v0_status": "DEAD",
+    "plan_v1_path": "artifacts/a_prime/A_prime_slice4_rung3_residual_classification_PLAN_v1.json",
+    "plan_v1_sha256": "07c1c62cfb8c2160067858702ec537e04ec75fe0f2039b3b80aac72c8264308a",
+    "plan_v1_status": "DEAD",
+    "plan_v2_cause": "post-receipt in-place edit; freeze-discipline breach; scrub folded into v3",
+    "plan_v2_path": "artifacts/a_prime/A_prime_slice4_rung3_residual_classification_PLAN_v2.json",
+    "plan_v2_post_receipt_mutation_sha256": "acefa25e309753c2535a1e35232b214410ba7dd791e000a60200ec7c11728049",
+    "plan_v2_post_receipt_mutation_size": 35578,
+    "plan_v2_receipted_sha256": "4e9231f6bb147d0001a97864c4b0396ab4d23bf94c00291720379b486a7283a0",
+    "plan_v2_receipted_size": 35407,
+    "plan_v2_status": "DEAD",
+    "plan_v3_cause": "pre-freeze addendum A3+A4 (1785949733836); reminted as v4 under fresh filename \u2014 v3 left untouched",
+    "plan_v3_path": "artifacts/a_prime/A_prime_slice4_rung3_residual_classification_PLAN_v3.json",
+    "plan_v3_sha256": "f756c99e34420b0da664ea8e84c7f56201b12e2775e143be785f5ad6fa3e3aaf",
+    "plan_v3_size": 37255,
+    "plan_v3_status": "DEAD",
+    "plan_v4_cause": "gate-2 REVISE: live-terminal activation gate + board contract currency",
+    "plan_v4_md_sha256": "6c1f0a11b8959d43726d1603e98140817c3c3feb4cdf00107efb087a5bf9ed19",
+    "plan_v4_path": "artifacts/a_prime/A_prime_slice4_rung3_residual_classification_PLAN_v4.json",
+    "plan_v4_sha256": "78491b2a06bc46d2280243fa720ad9d0ddc02451356b2f2b2aa6d68e388770df",
+    "plan_v4_size": 42042,
+    "plan_v4_status": "DEAD",
+    "plan_v5_cause": "gate-2 REVISE: plan still bound to cancelled task id",
+    "plan_v5_md_sha256": "54d6e5ac65c135bb64ba39016a548f8f37980ac2f17d7fdf0442f28c3ef7a3a5",
+    "plan_v5_path": "artifacts/a_prime/A_prime_slice4_rung3_residual_classification_PLAN_v5.json",
+    "plan_v5_sha256": "a2875c5ec5d0238dd4fad4258db23531bf64cafb57f08779183f8da2191441f5",
+    "plan_v5_size": 46025,
+    "plan_v5_status": "DEAD",
+    "superseded_child_task_id": "1785949293431-20897287",
+    "superseded_child_task_label": "SUPERSEDED / CANCELLED lineage only \u2014 not current owner/sink"
+  },
+  "task_id": "1785950193161-4f423eb4",
+  "test_battery_named": [
+    "identity: duplicate row_id -> IDENTITY_BIND_FAIL",
+    "identity: cardinality mismatch vs support_rows_audited -> IDENTITY_BIND_FAIL",
+    "identity: universe PKG!=OUT for a support -> IDENTITY_BIND_FAIL",
+    "identity: row_id suffix != sample_hash -> IDENTITY_BIND_FAIL",
+    "Q1: fixture STABLE_CORE both supports",
+    "Q1: fixture CHURNED",
+    "Q1: fixture SPLIT_SUPPORTS",
+    "Q1: raw |intersect|/|A|/|B|/|union| always present",
+    "Q2: ceil(0.70*|gross_support|) TRANSIENT boundary per support",
+    "Q2: PERSISTENT boundary per support",
+    "Q2: NONMONOTONE_RESCUE when both on same support",
+    "Q2: empty gross -> MIXED not vacuous TRANSIENT",
+    "Q2: counter_loss table present and non-branching",
+    "Q2: cross-support total never used as branch denominator",
+    "Q3: enrichment >=3/2 -> STRATIFIED when coverage OK",
+    "Q3: bucket_rows <20 excluded from eligibility",
+    "Q3: coverage_rows below min -> METADATA_INSUFFICIENT not UNIFORM",
+    "Q3: coverage_buckets below min -> METADATA_INSUFFICIENT",
+    "Q3: source_buckets length mismatch -> METADATA_INSUFFICIENT",
+    "dual-key exclusive mint + single PACKET_TERMINAL",
+    "claim_boundary cross-level required constants",
+    "identity: cross-receipt bucket_of(row_id) drift PKG vs OUT -> IDENTITY_BIND_FAIL",
+    "identity: cross-horizon bucket_of(row_id) drift N20 vs N50 same arm -> IDENTITY_BIND_FAIL",
+    "Q1 composite: (CHURNED, PARTIAL_CORE) ordered pair -> SPLIT_SUPPORTS not PARTIAL_CORE",
+    "Q1 composite: (PARTIAL_CORE, STABLE_CORE) ordered pair -> PARTIAL_CORE not SPLIT_SUPPORTS",
+    "Q1 composite: 9-cell table exhaustiveness (all 9 pairs named)",
+    "successor: first-match-wins when STABLE_CORE+TRANSIENT+STRATIFIED would co-fire steps 4 and 7",
+    "Q1: |union|==0 \u2192 DEGENERATE_EMPTY no division",
+    "Q3: support_survivors==0 on PACKAGE N50 \u2192 DEGENERATE_NO_SURVIVORS",
+    "Q3: PACKAGE N20 / OUT enrichment report-only cannot change residual branch",
+    "Q2: ceil via (7*n+9)//10 only; boundary fixtures",
+    "Q2: counter-loss CL_TRANSIENT/CL_PERSISTENT in OUT arm; never branch input",
+    "successor: SPLIT_SUPPORTS from overlap routes support-split densify (before STABLE_CORE rules)",
+    "successor: SPLIT_SUPPORTS from rescue axis",
+    "successor: SPLIT_SUPPORTS from residual axis",
+    "METADATA_INSUFFICIENT appears only in residual factor slot not preempting_only",
+    "B1 reassert: cross-receipt bucket map drift \u2192 IDENTITY_BIND_FAIL",
+    "B2 reassert: CHURNED|PARTIAL_CORE \u2192 SPLIT_SUPPORTS",
+    "A3: workflow step_1/step_2 file sets equal implementation_contract.step_1/step_2.files exactly",
+    "A4: py_compile_import_step2 covers classifier_v0 only with IMPORT_OK_CLASSIFIER",
+    "workflow forbids collapsed STEP-1\u2192live without separate STEP-2 +1 implement",
+    "workflow sequence_frozen contains separate +1 execute live terminal after STEP-2 dual accept and before exclusive run-root mint",
+    "live-terminal activation gate binds classifier sha + six receipt shas + exact argv + fresh run-root",
+    "no live mint without persisted +1 execute record (consistency/forbidden check)"
+  ],
+  "v1_cures": {
+    "B1": "IDENTITY_OK requires bucket_of(row_id) identical across all 6 receipts per support; mismatch IDENTITY_BIND_FAIL; named hostiles added",
+    "B2": "survivor_overlap composite is exhaustive 9-cell ordered-pair table (L0b x math_a0); (CHURNED, PARTIAL)->SPLIT; (PARTIAL, STABLE)->PARTIAL; no overlapping prose rules",
+    "minors": "successor evaluation first-match-wins explicit; both new hostiles in test_battery_named"
+  },
+  "v2_cures": {
+    "10_forbidden_impl": "no stage/commit/push/.pt/probe; redispatch triggers",
+    "11_board": "child task 1785949293431-20897287 [SUPERSEDED lineage only; current=1785950193161-4f423eb4] contract lint ok",
+    "1_split_successor": "explicit first-match rule before densify steps; tests from each split source",
+    "2_q3_branch_input": "PACKAGE N50 exclusive; N20/OUT report-only",
+    "3_degenerate": "DEGENERATE_EMPTY (|union|==0); DEGENERATE_NO_SURVIVORS (support_surv==0)",
+    "4_ceil": "(7*n+9)//10 integer only",
+    "5_counter_loss": "OUT-arm CL_* table frozen; never branch",
+    "6_MI_slot": "MI residual slot only; removed from preempting_only",
+    "7_two_steps": "STEP-1 schema+reducer+tests; STEP-2 classifier+integration",
+    "8_argv": "validation_argv_frozen with fail states",
+    "9_executor": "claude test-operator live terminal verbatim",
+    "B1_B2_reassert": true
+  },
+  "v3_cures": {
+    "content_change_vs_receipted_v2": "residual_bucket_profile.definitions.bucket_survivors aligned to PACKAGE N50 exclusive (no 'default' language)",
+    "no_other_semantic_change": true,
+    "process": "fresh filename remint; content = scrubbed acefa25e bytes + lineage only",
+    "v2_left_on_disk_as_lineage_evidence": true
+  },
+  "v4_cures": {
+    "A3_workflow": "workflow_after_dual_accept frozen to two gated steps with separate +1 implement each; file-set equality to implementation_contract",
+    "A4_py_compile_step2": "validation_argv_frozen.py_compile_import_step2 for classifier_v0",
+    "inherits": "all 11 cures + residual definition scrub + v3 process lineage",
+    "v3_left_untouched": true
+  },
+  "v5_cures": {
+    "board_currency": "decision contract remint by claude after v5 freeze; no DEAD v2 authority references",
+    "inherits": "all 11 gate-2 cures + residual scrub + A3/A4",
+    "live_terminal_activation_gate": "sequence step 7: persisted Claude +1 execute live terminal bound to classifier sha + six receipt shas + exact argv + fresh exclusive run-root; Gabe standing selects executor only",
+    "science_content_byte_invariant_vs_v4": true,
+    "v4_left_untouched": true
+  },
+  "v6_cures": {
+    "board_currency_addendum_protocol": "claude posts full 64-hex sha + CONTENT_DIGEST + freeze-manifest sha as task_update on 1785950193161-4f423eb4 after gate-1 freeze",
+    "inherits": "all prior cures incl. live-terminal activation gate",
+    "science_content_byte_invariant_vs_v5": true,
+    "science_keys_frozen": [
+      "prereg_branch_classifier",
+      "frozen_inputs",
+      "claim_boundary",
+      "claim_effect",
+      "product_name",
+      "validation_argv_frozen",
+      "implementation_contract",
+      "workflow_after_dual_accept.sequence_frozen",
+      "workflow_after_dual_accept.live_terminal_activation_gate"
+    ],
+    "task_id_rebind": "current task_id/board/receipt_sink/ownership \u2192 1785950193161-4f423eb4; cancelled 1785949293431-20897287 only in supersedes/lineage labelled SUPERSEDED",
+    "v5_left_untouched": true
+  },
+  "validation_argv_frozen": {
+    "focused_pytest_step1": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-m",
+        "pytest",
+        "calm/llm_computer/tests/test_a_prime_slice4_residual_classification_reducer_v0.py",
+        "-q",
+        "--tb=line"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "fails_when": "any characterization/hostile assertion fails or import error"
+    },
+    "focused_pytest_step2": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-m",
+        "pytest",
+        "calm/llm_computer/tests/test_a_prime_slice4_residual_classification_classifier_v0.py",
+        "-q",
+        "--tb=line"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "fails_when": "dual-key/exclusive-mint/integration assertion fails"
+    },
+    "py_compile_import": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_residual_classification_schema_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_residual_classification_reducer_v0.py', doraise=True); import scripts.a_prime_slice4_residual_classification_schema_v0 as s; import scripts.a_prime_slice4_residual_classification_reducer_v0 as r; print('IMPORT_OK')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK",
+      "fails_when": "SyntaxError/ImportError/nonzero rc",
+      "note": "STEP-1 only (schema+reducer); use py_compile_import_step2 for classifier"
+    },
+    "py_compile_import_step1": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_residual_classification_schema_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_residual_classification_reducer_v0.py', doraise=True); import scripts.a_prime_slice4_residual_classification_schema_v0 as s; import scripts.a_prime_slice4_residual_classification_reducer_v0 as r; print('IMPORT_OK')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK",
+      "fails_when": "SyntaxError/ImportError/nonzero rc"
+    },
+    "py_compile_import_step2": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_residual_classification_classifier_v0.py', doraise=True); import scripts.a_prime_slice4_residual_classification_classifier_v0 as c; print('IMPORT_OK_CLASSIFIER')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK_CLASSIFIER",
+      "fails_when": "SyntaxError/ImportError/nonzero rc on classifier module",
+      "scope": "STEP-2 classifier only"
+    },
+    "six_receipt_live_classification": {
+      "argv_template": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-u",
+        "-B",
+        "scripts/a_prime_slice4_residual_classification_classifier_v0.py",
+        "--run-root",
+        "__EXCLUSIVE_RUN_ROOT__",
+        "--package-receipt",
+        "10=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "--package-receipt",
+        "20=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "--package-receipt",
+        "50=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "10=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "20=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "50=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N50/c2p1_impl_cpu/receipt.json"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "executor": "claude_test_operator_only",
+      "expected_artifacts": [
+        "terminal_receipt.json",
+        "terminal_manifest.json"
+      ],
+      "expected_markers": [
+        "exactly one PACKET_TERMINAL <branch>",
+        "WRAPPER_RC 0"
+      ],
+      "expected_rc": 0,
+      "fails_when": "IDENTITY_BIND_FAIL/INSTRUMENT_OR_BIND_FAIL, multiple markers, missing artifacts, source_sha mismatch, nonzero rc"
+    }
+  },
+  "workflow_after_dual_accept": {
+    "forbidden_collapsed_workflow": "do NOT collapse classifier into STEP-1; do NOT gate once then live; do NOT treat dual-accept of STEP-1 as +1 implement STEP-2; do NOT treat STEP-2 dual-accept or Gabe standing directive as +1 execute live terminal",
+    "live_terminal_activation_gate": {
+      "binds_required": [
+        "dual_accepted_classifier_file_sha256",
+        "six_frozen_receipt_shas",
+        "exact_six_receipt_live_classification_argv_template_sole_placeholder___EXCLUSIVE_RUN_ROOT__",
+        "fresh_exclusive_run_root"
+      ],
+      "fails_closed_without": "no exclusive run-root mint, no classifier live invoke, no PACKET_TERMINAL science route",
+      "gabe_standing_directive": "selects executor only; does NOT erase peer-gated runtime activation",
+      "kind": "persisted Claude-authored non-ack +1 execute live terminal",
+      "position": "after STEP-2 dual accept; before exclusive run-root mint",
+      "required": true
+    },
+    "mechanical_consistency_requirement": {
+      "fails_when": "any path mismatch / missing / extra between workflow authorities and implementation_contract step file lists; OR sequence_frozen lacks separate +1 execute live terminal before exclusive run-root mint",
+      "named_test": "workflow file-set equality vs implementation_contract (both steps) AND activation-gate presence before live mint",
+      "rule": "workflow_after_dual_accept.step_1_files_authority MUST equal implementation_contract.step_1.files exactly; step_2_files_authority MUST equal implementation_contract.step_2.files exactly; sequence_frozen MUST contain the live-terminal activation step (step 7) before live execution"
+    },
+    "sequence_frozen": [
+      "1. persisted +1 implement STEP-1 only",
+      "2. plan-dev CREATE exactly implementation_contract.step_1.files (schema+reducer+reducer-tests); CPU validation per validation_argv_frozen.focused_pytest_step1 + py_compile_import_step1",
+      "3. claude gate-1 freeze \u2192 co_lead gate-2 dual accept of STEP-1 surface",
+      "4. separate persisted +1 implement STEP-2 (not implied by STEP-1 accept)",
+      "5. plan-dev CREATE exactly implementation_contract.step_2.files (classifier+classifier-tests); CPU validation per validation_argv_frozen.focused_pytest_step2 + py_compile_import_step2",
+      "6. claude gate-1 freeze \u2192 co_lead gate-2 dual accept of STEP-2 surface",
+      "7. separate persisted Claude-authored +1 execute live terminal gate REQUIRED before any exclusive run-root mint; BOUND to (a) dual-accepted classifier file sha256, (b) six frozen receipt shas from frozen_inputs, (c) exact validation_argv_frozen.six_receipt_live_classification.argv_template with sole placeholder __EXCLUSIVE_RUN_ROOT__, (d) a fresh exclusive run-root path never pre-created. Standing Gabe directive selects the executor (Claude as test-operator); it does NOT erase this peer-gated runtime activation step.",
+      "8. Claude live terminal executor only after the +1 execute record exists and cites those binds (exclusive run-root \u2192 six receipts \u2192 classifier \u2192 single PACKET_TERMINAL \u2192 freeze); plan-dev does NOT execute live terminal",
+      "9. terminal receipt to claude gate-1 only; no mechanism mint"
+    ],
+    "step_1_files_authority": [
+      "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+      "scripts/a_prime_slice4_residual_classification_reducer_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_residual_classification_reducer_v0.py"
+    ],
+    "step_2_files_authority": [
+      "scripts/a_prime_slice4_residual_classification_classifier_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_residual_classification_classifier_v0.py"
+    ]
+  }
+}
