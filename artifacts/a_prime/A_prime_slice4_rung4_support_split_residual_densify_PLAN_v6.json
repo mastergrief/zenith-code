@@ -1,0 +1,1587 @@
+{
+  "schema": "a_prime_slice4_rung4_support_split_residual_densify_plan/v0",
+  "plan_kind": "SUPPORT_SPLIT_RESIDUAL_DENSIFY_PLAN",
+  "plan_revision": "v6_rung4_20260805",
+  "product_name": "SUPPORT_SPLIT_RESIDUAL_DENSIFY_RECEIPTS_ONLY",
+  "task_id": "1785954214314-1d129d5d",
+  "parent_task_id": "1785931309579-4f068343",
+  "dispatch_id": "1785956626271-caa718ca",
+  "report_to": [
+    "claude"
+  ],
+  "cross_thread_required": true,
+  "review_tier": "HIGH",
+  "claim_effect": "receipts-only descriptive densification of the dual-accepted STRATIFIED PACKAGE-N50 residual, factorized per support; no cause; no mechanism/carrier/readiness/acquisition/bank",
+  "provenance": {
+    "gabe_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science - you \"claude\" will take on the role of test-operator using a shell/monitor with minimal polling until completion or error for maximum context efficiency - plan-dev is addressed with ai-room handle \"codex\" - if you are waiting on receipt from worker (codex or codex_co_lead) follow up or diagnose if wedged",
+    "chosen_option": "Rung-4 = operationalize frozen successor 'support-split residual densify; no mechanism mint' as zero-GPU denser residual measurement per support over existing receipts + Rung-3 terminal authority",
+    "rejected_alternatives": [
+      "training densify / GPU residual-targeted retrain (mechanism work; hard ban)",
+      "pooled cross-support residual densify (violates per-support denominators)",
+      "reopen Rung-2 protection package knobs (closed OTHER__NO_MIX; out of successor string)",
+      "mechanism mint from CHURNED/TRANSIENT/STRATIFIED (explicit hard ban)"
+    ],
+    "rung3_terminal_branch": "IDENTITY_OK__CHURNED__TRANSIENT__STRATIFIED",
+    "rung3_terminal_receipt_sha256": "1a8e0fbcd682ad9c3e7c7e9b9dd52a4890b4529d6ac87439887a2ff8b66ab0a3",
+    "rung3_gate2_pass_id": "1785953903906-e1a7c4ef",
+    "rung3_commit": "89bc145452ce06e9d4cd51b2c9ccc572b7c42567",
+    "rung3_successor_frozen": "support-split residual densify; no mechanism mint",
+    "synthesis_correction_id": "1785954192683-328a2246",
+    "authority_ruling_structural_mismatch": "1785951473739-585c44ec",
+    "plan_v6_rung3_sha256": "bddf41c768b48efc4346618c3c9f9f8f5285eacfcf1159de728c5b4743fb96ca"
+  },
+  "question": "Given dual-accepted Rung-3 IDENTITY_OK__CHURNED__TRANSIENT__STRATIFIED, what denser residual structure do PACKAGE-N50 survivors show when densified per support across (D1) eligible-bucket residual head mass, (D2) enriched-stratum cross-horizon row-id membership on PACKAGE endpoint receipts, and (D3) residual co-survival vs OUT-N50 \u2014 without minting a mechanism?",
+  "operationalization_of_successor_string": {
+    "support_split": "L0b and math_a0 are classified independently on every densify axis; denominators never pooled; composite is same-label or SPLIT_SUPPORTS",
+    "residual": "the residual set R_s is PACKAGE-N50 survivors on support s (branch-authority surface exclusive; same as Rung-3 residual branch_input_surface)",
+    "densify": "deeper measurement of R_s (bucket head, enriched-stratum cross-horizon row-id membership, cross-arm co-survival) \u2014 NOT training densification, NOT new horizons, NOT mechanism work, NOT within-run process claims beyond named endpoint set ops",
+    "no_mechanism_mint": "hard ban carries; plan/receipts emit only named descriptive densify branches + frozen successor lookup"
+  },
+  "cost_class": {
+    "preferred": "zero-GPU receipts-only over existing six horizon receipts + pinned Rung-3 terminal",
+    "new_measurement_run_required": false,
+    "why_existing_bytes_suffice": [
+      "PACKAGE/OUT N10/N20/N50 receipts already carry universe row_ids, source_buckets, and survivor sets used by the dual-accepted residual classifier",
+      "Rung-3 terminal already freezes residual STRATIFIED labels, per-bucket raw counts, enriched/depleted flags, and source_shas",
+      "D1/D2/D3 are pure set/count operations on those bytes; no new training signal is required"
+    ],
+    "what_existing_receipts_cannot_answer": [
+      "cause of stratification",
+      "individual replay-vs-PC contribution",
+      "whether a different protection package would change residual heads",
+      "any readiness/carrier/sub-2 claim"
+    ]
+  },
+  "claim_boundary": {
+    "receipts_only_descriptive_densify": true,
+    "pre_carrier": true,
+    "pre_mechanism_mint": true,
+    "in_scope": [
+      "zero-GPU densify reducer+classifier over six frozen horizon receipts + Rung-3 terminal authority pin",
+      "identity + residual-authority bind (structural mismatch \u2192 IDENTITY_BIND_FAIL per 1785951473739)",
+      "D1 eligible-bucket residual head mass (per support)",
+      "D2 enriched-stratum cross-horizon membership on PACKAGE (per support)",
+      "D3 PACKAGE residual \u2229 OUT-N50 co-survival (per support)",
+      "factorized densify terminal + frozen successor lookup; dual-key exclusive mint"
+    ],
+    "out_of_scope": [
+      "cause attribution",
+      "individual replay-vs-PC attribution",
+      "mechanism-of-erosion mint",
+      "carrier / sub-2 / readiness / acquisition / bank claims",
+      "GPU / training / probe mutation / .pt touch",
+      "cross-support pooled denominators as branch inputs",
+      "reopening Rung-2 package design or DELAYS criterion",
+      "within-run causal fate language beyond named set-membership counts"
+    ],
+    "verbatim_for_plan_and_receipt": "receipts-only descriptive residual densify; no cause, no individual replay-vs-PC attribution, no mechanism, carrier, readiness, acquisition, or bank claim; pre-carrier"
+  },
+  "board": {
+    "ownership": "claude",
+    "no_ownership_transfer": true,
+    "parent_task_id": "1785931309579-4f068343",
+    "child_task_id_current": "1785954214314-1d129d5d",
+    "receipt_sink": "claude gate-1 ONLY",
+    "note": "plan-dev implements after +1; Claude executes live terminal after separate +1 execute; co_lead reviews frozen handoffs only"
+  },
+  "frozen_inputs": {
+    "supports": [
+      "L0b",
+      "math_a0"
+    ],
+    "horizons": [
+      10,
+      20,
+      50
+    ],
+    "arms": [
+      "package",
+      "out"
+    ],
+    "rung3_starting_stratification_evidence_observed": {
+      "L0b": {
+        "support_rows": 230,
+        "support_survivors_package_N50": 20,
+        "eligible_buckets": 10,
+        "all_nonempty_buckets": 13,
+        "enriched_buckets": [
+          "R0",
+          "R1b4v2"
+        ],
+        "depleted_buckets": [
+          "R1b2",
+          "R1b6",
+          "R1b8"
+        ],
+        "per_bucket_survivors_eligible": {
+          "R0": 5,
+          "R1b1": 2,
+          "R1b2": 0,
+          "R1b3": 2,
+          "R1b4v2": 3,
+          "R1b5": 1,
+          "R1b6": 0,
+          "R1b7": 2,
+          "R1b8": 0,
+          "R1b9": 1
+        }
+      },
+      "math_a0": {
+        "support_rows": 1255,
+        "support_survivors_package_N50": 76,
+        "eligible_buckets": 11,
+        "all_nonempty_buckets": 11,
+        "enriched_buckets": [
+          "R0",
+          "R1b4v2"
+        ],
+        "depleted_buckets": [
+          "R1b2",
+          "R1b6"
+        ],
+        "per_bucket_survivors_eligible": {
+          "R0": 14,
+          "R1": 19,
+          "R1b1": 5,
+          "R1b2": 0,
+          "R1b3": 8,
+          "R1b4v2": 9,
+          "R1b5": 5,
+          "R1b6": 2,
+          "R1b7": 4,
+          "R1b8": 5,
+          "R1b9": 5
+        }
+      },
+      "authority": "observed from dual-accepted Rung-3 terminal residual_bucket_profile.raw; plan densify must recompute from horizon receipts under identical residual rules and bind equality"
+    },
+    "receipt_paths_and_sha256": {
+      "package/N10": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "sha256": "217cf68650e56578c10c5c5e5a92d91eb81c2e95074d4e5726f76693efadfbe8"
+      },
+      "package/N20": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "sha256": "b12700f39e9979661f3f7b38c51a17627ae279f2ce61eadffeea24f1f902326a"
+      },
+      "package/N50": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "sha256": "ecffa277c677d509676bce62b93b7fab2225a8c7206d9553c2bbfbb1150de0a8"
+      },
+      "out/N10": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "sha256": "9cd5fe63e509d9d81274b01f08bd9bae861012737282ffcebdb078f403432be3"
+      },
+      "out/N20": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "sha256": "51d1b08df4b561343e8aaf396e84fcd776239b0f902fee203e4bd598ed338263"
+      },
+      "out/N50": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "sha256": "c5394cda16a1ec42cb938d39d305e1777e397e5a0b19726206bbb5bf54f9206d"
+      }
+    },
+    "rung3_terminal_authority": {
+      "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_rung3/run_residual_v3/terminal_receipt.json",
+      "sha256": "1a8e0fbcd682ad9c3e7c7e9b9dd52a4890b4529d6ac87439887a2ff8b66ab0a3",
+      "required_bindings": [
+        "composite_terminal == IDENTITY_OK__CHURNED__TRANSIENT__STRATIFIED",
+        "successor == 'support-split residual densify; no mechanism mint'",
+        "residual_bucket_profile.composite == STRATIFIED",
+        "residual_bucket_profile.per_support.L0b == STRATIFIED",
+        "residual_bucket_profile.per_support.math_a0 == STRATIFIED",
+        "source_shas exact-equal the six frozen pins above"
+      ],
+      "mismatch_class": "AUTHORITY_BIND_FAIL (instrument form; no densify science)"
+    },
+    "denominators_never_pooled": true,
+    "per_support_first": true
+  },
+  "arithmetic": {
+    "integer_only_branch_decisions": true,
+    "ceil_0_70": "(7*n + 9)//10",
+    "no_float_branch": true,
+    "enrichment_exact_rational": "compare bucket_survivors * support_rows  vs  thresholds on bucket_rows * support_survivors",
+    "enrichment_ge_3_2": "bucket_survivors * support_rows * 2 >= bucket_rows * support_survivors * 3",
+    "enrichment_le_1_2": "bucket_survivors * support_rows * 2 <= bucket_rows * support_survivors * 1",
+    "min_bucket_denominator_rows": 20,
+    "min_coverage_rows": "eligible_rows * 5 >= support_rows * 4",
+    "min_coverage_buckets": "eligible_buckets * 2 >= all_nonempty_buckets"
+  },
+  "prereg_branch_classifier": {
+    "product": "SUPPORT_SPLIT_RESIDUAL_DENSIFY_RECEIPTS_ONLY",
+    "identity_and_authority": {
+      "preempting_only": [
+        "INSTRUMENT_OR_BIND_FAIL",
+        "IDENTITY_BIND_FAIL",
+        "AUTHORITY_BIND_FAIL"
+      ],
+      "identity_rules": {
+        "structural_row_alignment_or_missing_metadata": "IDENTITY_BIND_FAIL (authority ruling 1785951473739; never MI)",
+        "MI_not_used_for_structural_mismatch": true,
+        "same_byte_load": "load horizon receipts by path; record actual sha256; require exact pin match else INSTRUMENT_OR_BIND_FAIL"
+      },
+      "authority_rules": {
+        "rung3_terminal_pin": "required; composite/successor/residual labels/source_shas must match frozen_inputs.rung3_terminal_authority.required_bindings",
+        "recomputed_residual_must_equal_terminal": "recompute residual STRATIFIED/enriched/depleted from PACKAGE-N50 under dual-accepted residual integer rules; require per_support labels and enriched/depleted membership equal terminal raw flags; else AUTHORITY_BIND_FAIL"
+      }
+    },
+    "D1_residual_bucket_head": {
+      "surface": "PACKAGE N50 residual survivors per support; S_s = TOTAL |R50_s|; rank ELIGIBLE buckets only (bucket_rows >= 20) by bucket_survivors desc, then bucket name asc for ties; head thresholds compare top1/top2 eligible sums against TOTAL S_s",
+      "raw_always": [
+        "S_s_total_support_survivors",
+        "S_eligible_sum_report_only",
+        "top1_bucket",
+        "top1_survivors",
+        "top2_bucket",
+        "top2_survivors",
+        "top2_sum",
+        "enriched_survivors_eligible_scope",
+        "depleted_survivors_eligible_scope",
+        "ineligible_bucket_survivors_sum_report_only",
+        "enriched_is_top1",
+        "enriched_in_top2"
+      ],
+      "per_support_labels_first_match": [
+        "DEGENERATE_NO_SURVIVORS if S_s == 0 (S_s = TOTAL PACKAGE-N50 support survivors)",
+        "HEAD1_MAJORITY if top1_survivors * 2 >= S_s",
+        "HEAD2_MAJORITY if top2_sum * 2 >= S_s",
+        "HEAD2_THIRD if top2_sum * 3 >= S_s",
+        "HEAD_DIFFUSE else"
+      ],
+      "report_only_not_branch": [
+        "S_eligible_sum_report_only (sum of survivors in eligible buckets) \u2014 NEVER a branch denominator",
+        "ineligible_bucket_survivors_sum_report_only",
+        "enriched_is_top1 / enriched_in_top2 booleans",
+        "full eligible ranking table"
+      ],
+      "composite_rules": {
+        "evaluation_order": [
+          "1. any support DEGENERATE_NO_SURVIVORS \u2192 DEGENERATE_NO_SURVIVORS",
+          "2. both equal label \u2192 that label",
+          "3. else SPLIT_SUPPORTS"
+        ]
+      },
+      "values": [
+        "HEAD1_MAJORITY",
+        "HEAD2_MAJORITY",
+        "HEAD2_THIRD",
+        "HEAD_DIFFUSE",
+        "DEGENERATE_NO_SURVIVORS",
+        "SPLIT_SUPPORTS"
+      ],
+      "denominator_pin": {
+        "branch_denominator": "TOTAL_PACKAGE_N50_SUPPORT_SURVIVORS",
+        "symbol": "S_s = |R50_s| = count of PACKAGE-N50 survivors on support s (all buckets, eligible and ineligible)",
+        "rule": "every D1 head comparison uses S_s exclusively: top1_survivors*2 >= S_s, top2_sum*2 >= S_s, top2_sum*3 >= S_s",
+        "ranking_universe": "ELIGIBLE buckets only (bucket_rows >= min_bucket_denominator_rows=20) ranked by bucket_survivors desc, bucket name asc on ties",
+        "head_sums": "top1_survivors and top2_sum are sums over the ranked ELIGIBLE buckets only; they are NEVER renormalized by eligible-only survivor totals",
+        "ineligible_bucket_survivors": "report-only; do NOT subtract from S_s; do NOT add to top1/top2; do NOT redefine the branch denominator",
+        "forbidden_denominator": "eligible-bucket survivors only (sum of survivors in eligible buckets) is FORBIDDEN as a D1 branch denominator \u2014 at frozen L0b values it flips HEAD2_THIRD\u2192HEAD2_MAJORITY",
+        "frozen_L0b_calibration": {
+          "S_total": 20,
+          "S_eligible_sum": 16,
+          "top2_sum": 8,
+          "must_label": "HEAD2_THIRD",
+          "forbidden_label_under_eligible_only_denom": "HEAD2_MAJORITY",
+          "proof": "8*2=16 < 20 and 8*3=24 >= 20 under TOTAL; 8*2=16 >= 16 under eligible-only (FORBIDDEN)"
+        }
+      },
+      "enriched_depleted_raw_scope": {
+        "enriched_survivors_eligible_scope": "count of residual rows in R50_s whose source_bucket is ELIGIBLE and flagged enrichment_ge_1_5 under residual recompute; eligible-only by construction (enriched/depleted flags exist only for eligible buckets); raw table may also report enriched_survivors / S_s (TOTAL denominator) as a non-branch fraction of counts",
+        "depleted_survivors_eligible_scope": "count of residual rows in R50_s whose source_bucket is ELIGIBLE and flagged enrichment_le_0_5 under residual recompute; eligible-only by construction; reported against TOTAL S_s in raw table",
+        "not_branch_input": true
+      }
+    },
+    "D2_enriched_stratum_cross_horizon": {
+      "surface": "E50_s = { row_id in R50_s | source_bucket(row_id) in enriched_buckets_s } where R50_s is the set of PACKAGE-N50 survivor row_ids on support s; present_at_package_N20 = |E50_s \u2229 survivors_package_N20_s| with both sets as row_id strings; absent_from_package_N20 = |E50_s \\ survivors_package_N20_s|; present_at_package_N10 analogous. All membership = exact row_id string equality within the per-support universe.",
+      "raw_always": [
+        "|E50|_row_ids",
+        "present_at_package_N20_row_id_intersection",
+        "absent_from_package_N20_row_id_difference",
+        "present_at_package_N10_row_id_intersection",
+        "ceil_0_70_|E50|"
+      ],
+      "per_support_labels_first_match": [
+        "E_EMPTY if |E50_s| == 0",
+        "E_PERSISTENT if present_at_package_N20_row_id_intersection >= (7*|E50_s|+9)//10",
+        "E_TRANSIENT if absent_from_package_N20_row_id_difference >= (7*|E50_s|+9)//10",
+        "E_MIXED else"
+      ],
+      "report_only_not_branch": [
+        "depleted-stratum same membership table",
+        "present_at_package_N10 counts",
+        "OUT-arm enriched-stratum table"
+      ],
+      "composite_rules": {
+        "evaluation_order": [
+          "1. any support E_EMPTY \u2192 if both E_EMPTY then E_EMPTY else SPLIT_SUPPORTS",
+          "2. both equal label \u2192 that label",
+          "3. else SPLIT_SUPPORTS"
+        ]
+      },
+      "values": [
+        "E_PERSISTENT",
+        "E_TRANSIENT",
+        "E_MIXED",
+        "E_EMPTY",
+        "SPLIT_SUPPORTS"
+      ],
+      "note": "D2 densifies residual enriched strata via cross-horizon row-id membership on PACKAGE endpoint receipts; it does NOT re-open Rung-3 Q2 (gross PACKAGE-only N10 rescues). Distinct question, distinct set. Labels are endpoint set shorthand only \u2014 never within-run process claims beyond named set ops.",
+      "membership_carrier": "row_id exact string (see prereg_branch_classifier.set_membership_carrier)"
+    },
+    "D3_residual_vs_out_co_survival": {
+      "surface": "R50_s = set of PACKAGE-N50 survivor row_ids on support s; O50_s = set of OUT-N50 survivor row_ids on support s; inter = |R50_s \u2229 O50_s| by exact row_id string membership; only_package = |R50_s \\ O50_s|; only_out = |O50_s \\ R50_s|. S_s for D1 equals |R50_s| (TOTAL).",
+      "raw_always": [
+        "|R50|_row_ids",
+        "|O50|_row_ids",
+        "inter_row_id_intersection",
+        "only_package_row_id_difference",
+        "only_out_row_id_difference"
+      ],
+      "per_support_labels_first_match": [
+        "DEGENERATE_NO_SURVIVORS if |R50_s| == 0",
+        "CO_MAJORITY if inter_row_id_intersection * 2 >= |R50_s|",
+        "CO_PARTIAL if inter_row_id_intersection > 0",
+        "CO_DISJOINT if inter_row_id_intersection == 0"
+      ],
+      "report_only_not_branch": [
+        "co-survival restricted to enriched buckets",
+        "co-survival restricted to depleted buckets",
+        "N20 co-survival table"
+      ],
+      "composite_rules": {
+        "evaluation_order": [
+          "1. any DEGENERATE_NO_SURVIVORS \u2192 DEGENERATE_NO_SURVIVORS",
+          "2. both equal \u2192 that label",
+          "3. else SPLIT_SUPPORTS"
+        ]
+      },
+      "values": [
+        "CO_MAJORITY",
+        "CO_PARTIAL",
+        "CO_DISJOINT",
+        "DEGENERATE_NO_SURVIVORS",
+        "SPLIT_SUPPORTS"
+      ],
+      "membership_carrier": "row_id exact string (see prereg_branch_classifier.set_membership_carrier)"
+    },
+    "composite_terminal": {
+      "attribution_form": "{identity_or_authority}__{D1}__{D2}__{D3}",
+      "identity_fail_form": "IDENTITY_BIND_FAIL",
+      "instrument_form": "INSTRUMENT_OR_BIND_FAIL",
+      "authority_fail_form": "AUTHORITY_BIND_FAIL",
+      "examples": [
+        "IDENTITY_OK__HEAD2_THIRD__E_TRANSIENT__CO_DISJOINT",
+        "IDENTITY_OK__HEAD2_MAJORITY__E_MIXED__CO_PARTIAL",
+        "IDENTITY_OK__SPLIT_SUPPORTS__E_TRANSIENT__CO_DISJOINT",
+        "IDENTITY_OK__HEAD2_THIRD__SPLIT_SUPPORTS__CO_PARTIAL",
+        "AUTHORITY_BIND_FAIL",
+        "IDENTITY_BIND_FAIL",
+        "INSTRUMENT_OR_BIND_FAIL"
+      ]
+    },
+    "successor_mapping_preregistered": {
+      "evaluation": "first-match-wins",
+      "hard_ban": "no successor may mint mechanism/carrier/readiness/acquisition/bank or individual replay-vs-PC cause",
+      "lookup_algorithm": [
+        "1. INSTRUMENT_OR_BIND_FAIL \u2192 instrument repair only; no science successor",
+        "2. IDENTITY_BIND_FAIL \u2192 receipt/field schema repair; no densify science",
+        "3. AUTHORITY_BIND_FAIL \u2192 Rung-3 terminal/recompute bind repair; no densify science",
+        "4. any densify axis SPLIT_SUPPORTS \u2192 successor = per-support densify report already emitted; next = design review of support-asymmetric residual densify (still no mechanism mint)",
+        "5. D1 HEAD1_MAJORITY or HEAD2_MAJORITY AND D3 CO_DISJOINT \u2192 D1 head-majority and R50\u2229O50 empty at N50; hold for design review; no mechanism mint",
+        "6. D2 E_TRANSIENT AND D3 CO_DISJOINT \u2192 E50 rows are mostly absent from PACKAGE N20 (row_id difference) and R50 is disjoint from OUT N50; hold for design review; no mechanism mint",
+        "7. D2 E_PERSISTENT AND D3 CO_MAJORITY \u2192 E50 rows meet the PACKAGE-N20 membership threshold and R50 meets the OUT-N50 co-membership threshold; next = shared-row residual audit; no mechanism mint",
+        "8. else \u2192 densify terminal is the measurement; successor = classify residual densify complete; no mechanism mint (default)"
+      ],
+      "endpoint_grammar_bind": "all successor prose obeys endpoint_claim_grammar.rule",
+      "frozen_neutral_successor_texts": {
+        "step_5": "D1 head-majority and R50\u2229O50 empty at N50; hold for design review; no mechanism mint",
+        "step_6": "E50 rows are mostly absent from PACKAGE N20 (row_id difference) and R50 is disjoint from OUT N50; hold for design review; no mechanism mint",
+        "step_7": "E50 rows meet the PACKAGE-N20 membership threshold and R50 meets the OUT-N50 co-membership threshold; next = shared-row residual audit; no mechanism mint"
+      }
+    },
+    "claim_boundary_constants_required_true": [
+      "receipts_only_descriptive_densify",
+      "no_cause",
+      "no_individual_replay_vs_pc_attribution",
+      "no_mechanism_mint",
+      "no_carrier_claim",
+      "no_readiness_acquisition_bank",
+      "pre_carrier"
+    ],
+    "set_membership_carrier": {
+      "carrier": "row_id",
+      "type": "exact string equality",
+      "universe": "per-support universe of row_id strings proven identical across the six frozen horizon receipts under the inherited identity precondition (same support partition, same row_id set per support); identity failure \u2192 IDENTITY_BIND_FAIL before any densify axis",
+      "forbidden_substitutes": [
+        "sample_hash",
+        "list index / positional index",
+        "question text",
+        "any non-row_id identifier"
+      ],
+      "set_ops": "intersection/difference/membership all evaluate as Python/set semantics over row_id strings"
+    }
+  },
+  "implementation_contract": {
+    "DEVELOPER_STEPS": 2,
+    "sizing": "MEDIUM",
+    "worktree": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "board_ownership": "claude; no transfer",
+    "plus1_implement_status": "WITHHELD until plan dual-accept; then +1 implement per step",
+    "receipt_sink": "claude gate-1 ONLY",
+    "instrument_reuse": {
+      "strategy": "IMPORT_ONLY",
+      "rung3_files_read_only_imported": [
+        "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+        "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+      ],
+      "rung3_files_read_only_not_imported": [
+        "scripts/a_prime_slice4_residual_classification_classifier_v0.py"
+      ],
+      "rule": "IMPORT-ONLY of named Rung-3 pure helpers from residual schema+reducer; no reimplement residual arithmetic; no edit Rung-3 files; runtime-source validation lives in pure contract module; classifier is thin orchestrator only",
+      "runtime_source_set": {
+        "strategy": "IMPORT_ONLY",
+        "forbidden_discretion": "import OR reimplement is FORBIDDEN for residual arithmetic; densify MUST import named Rung-3 pure helpers; runtime-source validation MUST live in the pure contract module (not reimplemented inside classifier); MUST NOT edit Rung-3 files",
+        "new_files_create": [
+          "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+          "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+          "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+          "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py"
+        ],
+        "imported_rung3_modules_complete": [
+          "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+          "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+        ],
+        "imported_rung3_modules_detail": {
+          "scripts/a_prime_slice4_residual_classification_schema_v0.py": {
+            "sha256_at_plan_mint_observed": "16a5c813d61399443941fd154a98ffbeb1c54169ca64b3b55e160903cd4e99a9",
+            "bytes_at_plan_mint_observed": 9484,
+            "importable_helpers_required": [
+              "ceil_0_70",
+              "enrichment_ge_1_5",
+              "enrichment_le_0_5",
+              "coverage_rows_ok",
+              "coverage_buckets_ok",
+              "admit_horizon_view",
+              "extract_universe",
+              "extract_bucket_map",
+              "extract_survivors",
+              "MIN_BUCKET_DENOMINATOR_ROWS",
+              "is_exact_int",
+              "is_exact_str",
+              "is_exact_dict",
+              "is_exact_list",
+              "is_exact_set",
+              "is_exact_bool"
+            ],
+            "role": "pure residual schema arithmetic + horizon view admission + survivor/bucket extractors"
+          },
+          "scripts/a_prime_slice4_residual_classification_reducer_v0.py": {
+            "sha256_at_plan_mint_observed": "483ea9a3bdf000372a9bcc345be91087de1c02a9a7e03f36cb244c28525849e7",
+            "bytes_at_plan_mint_observed": 18031,
+            "importable_helpers_required": [
+              "residual_per_support_label",
+              "residual_composite",
+              "jaccard_raw"
+            ],
+            "role": "pure residual recompute for AUTHORITY_BIND equality against Rung-3 terminal (no edit)"
+          }
+        },
+        "not_imported": {
+          "scripts/a_prime_slice4_residual_classification_classifier_v0.py": "Rung-3 dual-key CLI is NOT a densify runtime dependency (read-only reference only); densify has its own classifier"
+        },
+        "complete_runtime_source_set_at_live_execute": [
+          "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+          "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+          "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+          "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+          "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+          "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+        ],
+        "digest_rules": {
+          "per_file_sha256": "sha256 of each file in complete_runtime_source_set_at_live_execute (SIX files)",
+          "ordered_concat_algorithm": "runtime_source_digest = sha256( b\"\".join(bytes.fromhex(sha256(path_i)) for path_i in complete_runtime_source_set_at_live_execute) ).hexdigest()",
+          "algorithm_name": "ORDERED_CONCAT_V0",
+          "STEP2_freeze_binds": [
+            "complete per-file sha map for all six runtime sources",
+            "runtime_source_digest"
+          ],
+          "plus1_execute_binds": [
+            "same complete per-file sha map (six)",
+            "runtime_source_digest",
+            "classifier sha",
+            "six receipt shas",
+            "rung3 terminal sha",
+            "exact argv",
+            "fresh run-root",
+            "manifest path+sha"
+          ],
+          "pre_run_rehash": "before exclusive mint / classify, re-hash all six runtime sources via contract module; any mismatch vs freeze/+1 execute pin \u2192 INSTRUMENT_OR_BIND_FAIL / activation preflight fail closed; no PACKET_TERMINAL science route",
+          "terminal_embed": "terminal_receipt.source_shas.runtime_source = {per_file map of six + runtime_source_digest + algorithm: ORDERED_CONCAT_V0}; plus expected/observed/equality for manifest sha",
+          "ordered_path_count": 6
+        },
+        "negative_preflight_test_required": "mutate one transitive dependency byte (e.g. residual schema or contract module) while densify classifier file sha is unchanged; activation preflight / live validate MUST fail closed (INSTRUMENT_OR_BIND_FAIL or named preflight fail) and MUST NOT emit science PACKET_TERMINAL",
+        "manifest_contract": {
+          "schema": {
+            "schema_id": "a_prime_slice4_rung4_runtime_source_manifest/v0",
+            "fields_exact": {
+              "schema_id": "exact string a_prime_slice4_rung4_runtime_source_manifest/v0",
+              "ordered_runtime_paths": "exact list of six relative paths in FIXED order (see complete_runtime_source_set_at_live_execute)",
+              "per_file_sha256": "exact dict path->sha256 hex for all six paths; keys exact-equal ordered set",
+              "runtime_source_digest": "ORDERED_CONCAT_V0 over ordered_runtime_paths using per_file_sha256 values",
+              "algorithm": "exact string 'ORDERED_CONCAT_V0'",
+              "implementation_content_digest": "dual-accepted densify implementation CONTENT_DIGEST from STEP-2 freeze (sha of ordered implementation surface digests as freeze defines)",
+              "minted_by": "exact string 'claude_gate1_step2_freeze'",
+              "task_id": "1785954214314-1d129d5d",
+              "plan_revision_binding": "plan revision string of the dual-accepted plan governing the freeze (v3+)"
+            },
+            "ordered_runtime_paths_frozen": [
+              "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+              "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+              "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+              "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+              "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+              "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+            ],
+            "mint_rule": "SINGLE FROZEN ORDERING: (1) claude gate-1 freezes STEP-2 implementation bytes; (2) from THOSE FROZEN BYTES, claude O_EXCL-mints the runtime-source manifest at a freeze-local NON-REPO path under the claude scratchpad, convention: <claude_scratchpad>/rung4_runtime_source_manifest_v0.json (absolute path recorded in the freeze handoff; NOT a path inside the repo worktree; NOT a staged file); (3) manifest path+sha256 included in the gate-2 handoff; (4) manifest is OPERATIVE ONLY IF gate-2 PASSes on that freeze. Any STEP-2 byte change invalidates and remints BOTH the STEP-2 surface freeze and the runtime-source manifest. Never plan-dev-minted. Never committed to the repo as part of this slice.",
+            "not_minted_by_plan_dev": true,
+            "not_minted_at_plan_time": true,
+            "mint_location": {
+              "class": "freeze_local_non_repo",
+              "convention_path_template": "<claude_scratchpad>/rung4_runtime_source_manifest_v0.json",
+              "forbidden_locations": [
+                "any path under the training or main repo worktree intended for stage/commit",
+                "artifacts tree inside the repo",
+                "plan-dev-created paths"
+              ],
+              "operative_only_if_gate2_pass": true
+            },
+            "not_repo_file": true,
+            "mint_order": [
+              "STEP-2 surface frozen by claude gate-1 (bytes fixed)",
+              "O_EXCL mint runtime-source manifest FROM those frozen bytes at freeze-local non-repo path",
+              "include manifest path+sha in gate-2 handoff",
+              "operative only if gate-2 PASSes; else remint surface+manifest on cure"
+            ]
+          },
+          "live_argv_flag": "--runtime-source-manifest <abs_path>",
+          "plus1_execute_binds_manifest_sha256": true,
+          "classifier_pre_mint_protocol": [
+            "0. classifier requires both --runtime-source-manifest <abs> and --runtime-source-manifest-sha256 <64-hex>; missing/malformed \u2192 markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2; no run-root; no artifacts",
+            "1. classifier reads manifest file bytes; computes sha256(bytes); calls contract.compare_expected_observed_sha(CLI_expected, observed); mismatch \u2192 markerless INCOMPLETE_FINALIZATION runtime_source_manifest_sha_mismatch + WRAPPER_RC 2; exit 2; NO run-root; NO artifacts; NO PACKET_TERMINAL",
+            "2. only after sha match: classifier json-loads manifest; calls contract.admit_runtime_source_manifest + digest/path-set validation (pure); any fail \u2192 markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2",
+            "3. contract.rehash_runtime_files over ordered SIX paths (classifier supplies Path.read_bytes / own __file__ bytes for classifier path); compare to manifest per_file map",
+            "4. any schema/path-set/sha-map/digest/observed-file mismatch \u2192 MARKERLESS fail closed via classifier printing INCOMPLETE_FINALIZATION + WRAPPER_RC 2 (printing is classifier-only, not contract)",
+            "5. only on full match: classifier proceeds to exclusive run-root mint and classification assembly"
+          ],
+          "terminal_embed": {
+            "source_shas.runtime_source_manifest_sha256_expected": "the 64-hex value from CLI / +1 execute bind (NEVER recomputed from loaded bytes for this field)",
+            "source_shas.runtime_source_manifest_sha256_observed": "sha256 of the file bytes actually loaded from --runtime-source-manifest",
+            "source_shas.runtime_source_manifest_sha256_equal": "exact bool true only if expected == observed (must be true on science terminal)",
+            "source_shas.runtime_source": {
+              "per_file": "observed map from worktree rehash",
+              "runtime_source_digest": "observed ORDERED_CONCAT_V0",
+              "algorithm": "ORDERED_CONCAT_V0",
+              "manifest_schema_id": "a_prime_slice4_rung4_runtime_source_manifest/v0"
+            },
+            "envelope_validation": "validate_candidate_receipt binds expected sha (from activation), observed sha (from loaded bytes), their equality==true, and observed runtime_source map/digest equality to manifest pins; fails closed if expected was not independently supplied"
+          },
+          "negative_battery_required": [
+            "CLI expected sha mismatch vs loaded file bytes (path points at different file) \u2192 markerless rc2, no run-root/artifacts",
+            "valid-SHAPED substituted manifest (internally consistent schema/map/digest with drifted source bytes) whose file sha differs from activation --runtime-source-manifest-sha256 \u2192 markerless rc2, no run-root/artifacts (catches observed-expected conflation if implementer derives expected from loaded bytes)",
+            "missing path in ordered_runtime_paths / per_file map \u2192 markerless fail (after sha match on the activation-pinned manifest bytes)",
+            "extra path in per_file map \u2192 markerless fail",
+            "digest mismatch vs recomputed ORDERED_CONCAT_V0 \u2192 markerless fail",
+            "one transitive dependency byte-flip (residual schema) with densify classifier file bytes unchanged and manifest still listing old sha \u2192 observed rehash mismatch \u2192 markerless fail; no PACKET_TERMINAL",
+            "missing --runtime-source-manifest-sha256 flag \u2192 markerless fail",
+            "malformed non-64-hex --runtime-source-manifest-sha256 \u2192 markerless fail"
+          ],
+          "live_argv_expected_sha_flag": "--runtime-source-manifest-sha256 <64_hex>",
+          "plus1_execute_binds_manifest_path": true,
+          "expected_sha_never_derived_from_loaded_bytes": true,
+          "expected_vs_observed_rule": "expected = the 64-hex value supplied on CLI / bound by +1 execute; observed = sha256 of the file bytes actually loaded from --runtime-source-manifest; equality is an enforced check. NEVER set expected := sha256(loaded_bytes) \u2014 that conflates observed with expected and voids the activation pin.",
+          "contract_module_owns_pure_validation": true,
+          "classifier_owns_io_and_markers_only": true
+        },
+        "file_count": 6,
+        "roles": {
+          "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py": "densify schema types/constants",
+          "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py": "pure densify D1/D2/D3 reducer (or facade if axis-split)",
+          "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py": "thin dual-key CLI orchestrator only",
+          "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py": "pure runtime-source contract (manifest/sha/digest/rehash); no CLI/IO",
+          "scripts/a_prime_slice4_residual_classification_schema_v0.py": "imported residual schema helpers",
+          "scripts/a_prime_slice4_residual_classification_reducer_v0.py": "imported residual recompute helpers"
+        },
+        "contract_module": {
+          "path": "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+          "purity": "NO CLI, NO run-root, NO printing, NO terminal IO, NO filesystem writes; read_bytes of named paths only when called with paths for rehash",
+          "required_api_surface": [
+            "admit_runtime_source_manifest(obj) -> (ok: bool, reason: str)",
+            "compare_expected_observed_sha(expected_hex: str, observed_hex: str) -> (ok: bool, reason: str)",
+            "ordered_concat_v0(ordered_paths: list[str], per_file_sha256: dict[str,str]) -> str",
+            "rehash_runtime_files(ordered_paths: list[str], *, read_bytes) -> dict[str,str]",
+            "validate_runtime_source(*, manifest_obj, expected_manifest_sha256, observed_manifest_sha256, worktree_root_or_readers) -> (ok: bool, reason: str, observed_map: dict|None, digest: str|None)"
+          ],
+          "returns": "pure (ok, reason[, ...]) tuples only; never raises for validation failures"
+        },
+        "six_path_set_exact_and_frozen_for_this_plan_revision": true,
+        "no_in_flight_growth": true
+      },
+      "manifest_contract": {
+        "schema": {
+          "schema_id": "a_prime_slice4_rung4_runtime_source_manifest/v0",
+          "fields_exact": {
+            "schema_id": "exact string a_prime_slice4_rung4_runtime_source_manifest/v0",
+            "ordered_runtime_paths": "exact list of six relative paths in FIXED order (see complete_runtime_source_set_at_live_execute)",
+            "per_file_sha256": "exact dict path->sha256 hex for all six paths; keys exact-equal ordered set",
+            "runtime_source_digest": "ORDERED_CONCAT_V0 over ordered_runtime_paths using per_file_sha256 values",
+            "algorithm": "exact string 'ORDERED_CONCAT_V0'",
+            "implementation_content_digest": "dual-accepted densify implementation CONTENT_DIGEST from STEP-2 freeze (sha of ordered implementation surface digests as freeze defines)",
+            "minted_by": "exact string 'claude_gate1_step2_freeze'",
+            "task_id": "1785954214314-1d129d5d",
+            "plan_revision_binding": "plan revision string of the dual-accepted plan governing the freeze (v3+)"
+          },
+          "ordered_runtime_paths_frozen": [
+            "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+            "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+            "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+            "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+            "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+            "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+          ],
+          "mint_rule": "SINGLE FROZEN ORDERING: (1) claude gate-1 freezes STEP-2 implementation bytes; (2) from THOSE FROZEN BYTES, claude O_EXCL-mints the runtime-source manifest at a freeze-local NON-REPO path under the claude scratchpad, convention: <claude_scratchpad>/rung4_runtime_source_manifest_v0.json (absolute path recorded in the freeze handoff; NOT a path inside the repo worktree; NOT a staged file); (3) manifest path+sha256 included in the gate-2 handoff; (4) manifest is OPERATIVE ONLY IF gate-2 PASSes on that freeze. Any STEP-2 byte change invalidates and remints BOTH the STEP-2 surface freeze and the runtime-source manifest. Never plan-dev-minted. Never committed to the repo as part of this slice.",
+          "not_minted_by_plan_dev": true,
+          "not_minted_at_plan_time": true,
+          "mint_location": {
+            "class": "freeze_local_non_repo",
+            "convention_path_template": "<claude_scratchpad>/rung4_runtime_source_manifest_v0.json",
+            "forbidden_locations": [
+              "any path under the training or main repo worktree intended for stage/commit",
+              "artifacts tree inside the repo",
+              "plan-dev-created paths"
+            ],
+            "operative_only_if_gate2_pass": true
+          },
+          "not_repo_file": true,
+          "mint_order": [
+            "STEP-2 surface frozen by claude gate-1 (bytes fixed)",
+            "O_EXCL mint runtime-source manifest FROM those frozen bytes at freeze-local non-repo path",
+            "include manifest path+sha in gate-2 handoff",
+            "operative only if gate-2 PASSes; else remint surface+manifest on cure"
+          ]
+        },
+        "live_argv_flag": "--runtime-source-manifest <abs_path>",
+        "plus1_execute_binds_manifest_sha256": true,
+        "classifier_pre_mint_protocol": [
+          "0. classifier requires both --runtime-source-manifest <abs> and --runtime-source-manifest-sha256 <64-hex>; missing/malformed \u2192 markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2; no run-root; no artifacts",
+          "1. classifier reads manifest file bytes; computes sha256(bytes); calls contract.compare_expected_observed_sha(CLI_expected, observed); mismatch \u2192 markerless INCOMPLETE_FINALIZATION runtime_source_manifest_sha_mismatch + WRAPPER_RC 2; exit 2; NO run-root; NO artifacts; NO PACKET_TERMINAL",
+          "2. only after sha match: classifier json-loads manifest; calls contract.admit_runtime_source_manifest + digest/path-set validation (pure); any fail \u2192 markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2",
+          "3. contract.rehash_runtime_files over ordered SIX paths (classifier supplies Path.read_bytes / own __file__ bytes for classifier path); compare to manifest per_file map",
+          "4. any schema/path-set/sha-map/digest/observed-file mismatch \u2192 MARKERLESS fail closed via classifier printing INCOMPLETE_FINALIZATION + WRAPPER_RC 2 (printing is classifier-only, not contract)",
+          "5. only on full match: classifier proceeds to exclusive run-root mint and classification assembly"
+        ],
+        "terminal_embed": {
+          "source_shas.runtime_source_manifest_sha256_expected": "the 64-hex value from CLI / +1 execute bind (NEVER recomputed from loaded bytes for this field)",
+          "source_shas.runtime_source_manifest_sha256_observed": "sha256 of the file bytes actually loaded from --runtime-source-manifest",
+          "source_shas.runtime_source_manifest_sha256_equal": "exact bool true only if expected == observed (must be true on science terminal)",
+          "source_shas.runtime_source": {
+            "per_file": "observed map from worktree rehash",
+            "runtime_source_digest": "observed ORDERED_CONCAT_V0",
+            "algorithm": "ORDERED_CONCAT_V0",
+            "manifest_schema_id": "a_prime_slice4_rung4_runtime_source_manifest/v0"
+          },
+          "envelope_validation": "validate_candidate_receipt binds expected sha (from activation), observed sha (from loaded bytes), their equality==true, and observed runtime_source map/digest equality to manifest pins; fails closed if expected was not independently supplied"
+        },
+        "negative_battery_required": [
+          "CLI expected sha mismatch vs loaded file bytes (path points at different file) \u2192 markerless rc2, no run-root/artifacts",
+          "valid-SHAPED substituted manifest (internally consistent schema/map/digest with drifted source bytes) whose file sha differs from activation --runtime-source-manifest-sha256 \u2192 markerless rc2, no run-root/artifacts (catches observed-expected conflation if implementer derives expected from loaded bytes)",
+          "missing path in ordered_runtime_paths / per_file map \u2192 markerless fail (after sha match on the activation-pinned manifest bytes)",
+          "extra path in per_file map \u2192 markerless fail",
+          "digest mismatch vs recomputed ORDERED_CONCAT_V0 \u2192 markerless fail",
+          "one transitive dependency byte-flip (residual schema) with densify classifier file bytes unchanged and manifest still listing old sha \u2192 observed rehash mismatch \u2192 markerless fail; no PACKET_TERMINAL",
+          "missing --runtime-source-manifest-sha256 flag \u2192 markerless fail",
+          "malformed non-64-hex --runtime-source-manifest-sha256 \u2192 markerless fail"
+        ],
+        "live_argv_expected_sha_flag": "--runtime-source-manifest-sha256 <64_hex>",
+        "plus1_execute_binds_manifest_path": true,
+        "expected_sha_never_derived_from_loaded_bytes": true,
+        "expected_vs_observed_rule": "expected = the 64-hex value supplied on CLI / bound by +1 execute; observed = sha256 of the file bytes actually loaded from --runtime-source-manifest; equality is an enforced check. NEVER set expected := sha256(loaded_bytes) \u2014 that conflates observed with expected and voids the activation pin.",
+        "contract_module_owns_pure_validation": true,
+        "classifier_owns_io_and_markers_only": true
+      },
+      "new_files_create_step1": [
+        "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+        "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py"
+      ],
+      "new_files_create_step2": [
+        "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+        "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py"
+      ]
+    },
+    "step_1": {
+      "label": "schema + pure densify reducer + characterization/hostile tests (CPU)",
+      "files": [
+        "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+        "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_support_split_residual_densify_reducer_v0.py"
+      ],
+      "pass_fail_assertions": {
+        "types": "schema admits exact types; single reducer returns factorized D1/D2/D3 + raw counts; no float branch decisions; per-support dens only; residual recompute via IMPORT of residual_per_support_label / schema extractors (no reimplement); each file <500L; if reducer projected >450L STOP and remint plan (no in-flight split)",
+        "tests": "pytest green: identity hostiles; authority bind hostiles; D1 TOTAL S_s thresholds + S_total vs S_eligible disagreement hostile; D2/D3 row_id membership; residual recompute equality via IMPORTED residual helpers; report-only non-branching; line-cap assertion",
+        "runtime": "CPU only; no GPU; py_compile schema+reducer",
+        "data": "fixture integer counts + optional same-byte frozen receipt extracts; no live dual-key yet",
+        "line_cap": "every created STEP-1 .py/.py test file <500 lines; reducer projected >450L \u2192 STOP + plan remint (fail-closed split rule)"
+      }
+    },
+    "step_2": {
+      "depends_on": "step_1 dual-accepted",
+      "label": "thin classifier orchestrator + pure runtime-source contract module + classifier integration tests + contract unit tests (CPU)",
+      "files": [
+        "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+        "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_support_split_runtime_source_contract_v0.py"
+      ],
+      "pass_fail_assertions": {
+        "types": "contract module: pure importable \u2014 manifest schema admission, expected-vs-observed sha compare, ORDERED_CONCAT_V0 recompute, six-file rehash, pure (ok, reason) returns; NO CLI, NO run-root, NO printing, NO terminal IO. classifier: thin orchestrator only \u2014 argv/path wiring \u2192 contract facade calls \u2192 classification assembly \u2192 receipt/envelope finalization; horizon-keyed N= argv; --runtime-source-manifest + --runtime-source-manifest-sha256 required; expected-sha check via contract before parse; single PACKET_TERMINAL only after runtime_source OK; each file <500L",
+        "tests": "contract unit battery (CPU-static): known-good + ALL manifest/sha/path-set/digest/byte-flip/expected-sha negatives at module level; classifier integration: routing + markerless fail-closed only (does not re-implement contract arithmetic); line-cap",
+        "runtime": "CPU only; no GPU",
+        "data": "same-byte six frozen receipts + Rung-3 terminal; exclusive run-root under durability path; freeze-local non-repo runtime-source manifest from claude gate-1",
+        "line_cap": "every created STEP-2 .py/.py test file <500 lines"
+      }
+    }
+  },
+  "workflow_after_dual_accept": {
+    "sequence_frozen": [
+      "1. persisted +1 implement STEP-1 only",
+      "2. plan-dev CREATE exactly implementation_contract.step_1.files (schema+reducer+reducer-tests ONLY; no in-flight axis-split modules); CPU validation per validation_argv_frozen.focused_pytest_step1 + py_compile_import_step1; each file <500L; if reducer projected >450L STOP and remint plan rather than grow runtime set",
+      "3. claude gate-1 freeze \u2192 co_lead gate-2 dual accept of STEP-1 surface",
+      "4. separate persisted +1 implement STEP-2",
+      "5. plan-dev CREATE exactly implementation_contract.step_2.files (scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py thin orchestrator + scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py pure contract + classifier tests + contract unit tests); CPU validation per validation_argv_frozen.focused_pytest_step2 + py_compile_import_step2; each file <500L",
+      "6. claude gate-1 freezes STEP-2 implementation bytes (classifier+contract+tests) \u2192 O_EXCL-mints runtime-source manifest FROM THOSE FROZEN BYTES at freeze-local NON-REPO path <claude_scratchpad>/rung4_runtime_source_manifest_v0.json (schema a_prime_slice4_rung4_runtime_source_manifest/v0; ordered SIX paths; per-file sha256; ORDERED_CONCAT_V0 digest; implementation CONTENT_DIGEST) \u2192 freeze handoff records manifest abs path + sha256 \u2192 co_lead gate-2 dual accept; manifest OPERATIVE ONLY IF gate-2 PASSes; any STEP-2 byte change remints BOTH surface and manifest; never repo/staged; never plan-dev-minted",
+      "7. separate persisted Claude-authored +1 execute live terminal gate REQUIRED before exclusive run-root mint; BOUND to identical set as live_terminal_activation_gate.binds_required: (a) dual_accepted_classifier_file_sha256, (b) six_frozen_receipt_shas, (c) rung3_terminal_sha256, (d) complete_runtime_source_per_file_sha_map_six_files, (e) runtime_source_digest_ORDERED_CONCAT_V0, (f) runtime_source_manifest_sha256 (exact 64-hex of freeze-local manifest file), (g) runtime_source_manifest_abs_path (freeze-local non-repo), (h) exact_live_argv_template with sole placeholders __EXCLUSIVE_RUN_ROOT__, __RUNTIME_SOURCE_MANIFEST__, __RUNTIME_SOURCE_MANIFEST_SHA256__, (i) fresh_exclusive_run_root never pre-created. Standing Gabe directive selects the executor (Claude as test-operator); it does NOT erase this peer-gated runtime activation step. BINDSET_PARITY_RULE: this step 7 enumeration MUST equal live_terminal_activation_gate.binds_required exactly (same members).",
+      "8. Claude live terminal executor only after the +1 execute record exists and cites those binds (CLI expected-manifest-sha check on loaded bytes via contract \u2192 parse/validate manifest via contract \u2192 re-hash six files via contract \u2192 exclusive run-root \u2192 six receipts + terminal \u2192 densify classifier assembly \u2192 single PACKET_TERMINAL \u2192 freeze); plan-dev does NOT execute live terminal; any runtime_source / expected-sha mismatch is markerless fail before mint",
+      "9. terminal receipt to claude gate-1 only; no mechanism mint"
+    ],
+    "step_1_files_authority": [
+      "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+      "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_support_split_residual_densify_reducer_v0.py"
+    ],
+    "step_2_files_authority": [
+      "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+      "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_support_split_runtime_source_contract_v0.py"
+    ],
+    "live_terminal_activation_gate": {
+      "required": true,
+      "kind": "persisted Claude-authored non-ack +1 execute live terminal",
+      "position": "after STEP-2 dual accept; before exclusive run-root mint",
+      "binds_required": [
+        "dual_accepted_classifier_file_sha256",
+        "six_frozen_receipt_shas",
+        "rung3_terminal_sha256",
+        "complete_runtime_source_per_file_sha_map_six_files",
+        "runtime_source_digest_ORDERED_CONCAT_V0",
+        "runtime_source_manifest_sha256",
+        "runtime_source_manifest_abs_path",
+        "exact_live_argv_template_placeholders___EXCLUSIVE_RUN_ROOT_____RUNTIME_SOURCE_MANIFEST_____RUNTIME_SOURCE_MANIFEST_SHA256__",
+        "fresh_exclusive_run_root"
+      ]
+    },
+    "forbidden_collapsed_workflow": "do NOT collapse classifier into STEP-1; do NOT treat STEP dual-accept as +1 execute; do NOT treat Gabe standing directive as live activation",
+    "bindset_parity_rule": {
+      "rule": "workflow_after_dual_accept.sequence_frozen step 7 bind members MUST equal live_terminal_activation_gate.binds_required as a set",
+      "fails_when": "any bind present on one surface and absent on the other",
+      "named_test": "mechanical equality of bind member sets between step 7 and live_terminal_activation_gate.binds_required"
+    }
+  },
+  "live_terminal_executor": {
+    "verbatim": "Claude directly as test-operator (exclusive immutable run-root mint \u2192 receipts+terminal \u2192 densify classifier \u2192 single PACKET_TERMINAL marker \u2192 freeze); plan-dev does NOT execute the live terminal",
+    "plan_dev_forbidden_to_execute_live_terminal": true
+  },
+  "validation_argv_frozen": {
+    "focused_pytest_step1": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-m",
+        "pytest",
+        "calm/llm_computer/tests/test_a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+        "-q",
+        "--tb=line"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "fails_when": "any characterization/hostile assertion fails or import error"
+    },
+    "focused_pytest_step2": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-m",
+        "pytest",
+        "calm/llm_computer/tests/test_a_prime_slice4_support_split_runtime_source_contract_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+        "-q",
+        "--tb=line"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "fails_when": "contract unit battery or classifier integration assertion fails"
+    },
+    "py_compile_import_step1": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py', doraise=True); import scripts.a_prime_slice4_support_split_residual_densify_schema_v0 as s; import scripts.a_prime_slice4_support_split_residual_densify_reducer_v0 as r; print('IMPORT_OK_DENSIFY')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK_DENSIFY",
+      "fails_when": "SyntaxError/ImportError/nonzero rc"
+    },
+    "py_compile_import_step2": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py', doraise=True); import scripts.a_prime_slice4_support_split_runtime_source_contract_v0 as contract; import scripts.a_prime_slice4_support_split_residual_densify_classifier_v0 as c; print('IMPORT_OK_DENSIFY_CLASSIFIER')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK_DENSIFY_CLASSIFIER",
+      "fails_when": "SyntaxError/ImportError/nonzero rc"
+    },
+    "six_receipt_live_densify": {
+      "argv_template": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-u",
+        "-B",
+        "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+        "--run-root",
+        "__EXCLUSIVE_RUN_ROOT__",
+        "--package-receipt",
+        "10=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "--package-receipt",
+        "20=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "--package-receipt",
+        "50=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "10=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "20=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "50=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "--rung3-terminal-receipt",
+        "/home/gabe/claw-code-creditdir/a_prime_slice4_rung3/run_residual_v3/terminal_receipt.json",
+        "--runtime-source-manifest",
+        "__RUNTIME_SOURCE_MANIFEST__",
+        "--runtime-source-manifest-sha256",
+        "__RUNTIME_SOURCE_MANIFEST_SHA256__"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_markers": [
+        "exactly one PACKET_TERMINAL <branch>",
+        "WRAPPER_RC 0"
+      ],
+      "expected_artifacts": [
+        "terminal_receipt.json",
+        "terminal_manifest.json"
+      ],
+      "fails_when": [
+        "IDENTITY_BIND_FAIL",
+        "AUTHORITY_BIND_FAIL",
+        "INSTRUMENT_OR_BIND_FAIL",
+        "rc != 0",
+        "marker cardinality != 1",
+        "missing artifacts",
+        "runtime_source_mismatch / INCOMPLETE_FINALIZATION before mint",
+        "WRAPPER_RC 2 markerless runtime-source fail",
+        "manifest sha mismatch vs +1 execute pin",
+        "runtime_source_manifest_sha_mismatch (CLI expected != sha256(loaded bytes))",
+        "missing/malformed --runtime-source-manifest-sha256",
+        "valid-shaped substituted manifest with drifted content vs activation sha"
+      ],
+      "horizon_keyed_receipt_flags": {
+        "form": "--package-receipt N=<abs_path> and --out-receipt N=<abs_path> with N in {10,20,50}",
+        "no_positional_paths": true,
+        "exact_horizon_set": [
+          10,
+          20,
+          50
+        ],
+        "both_arms_required": [
+          "package",
+          "out"
+        ],
+        "admission_rules": [
+          "parse N as exact int token before =; reject malformed (no =, non-int N, empty path)",
+          "require exact set {10,20,50} for package AND for out (no missing, no extra)",
+          "reject duplicate N within an arm",
+          "pin equality by arm+horizon against frozen_inputs.receipt_paths_and_sha256",
+          "same-byte load + sha256 match required"
+        ],
+        "hostiles_required_in_battery": [
+          "swapped horizons (N20 path under N10 key)",
+          "duplicate N within package arm",
+          "missing N50 on out arm",
+          "malformed flag without N=",
+          "positional bare path (no N=) rejected"
+        ]
+      },
+      "executor": "claude_test_operator_only",
+      "expected_markers": [
+        "exactly one PACKET_TERMINAL <branch>",
+        "WRAPPER_RC 0"
+      ],
+      "placeholders": {
+        "__EXCLUSIVE_RUN_ROOT__": "fresh exclusive run root (classifier mints; never pre-created)",
+        "__RUNTIME_SOURCE_MANIFEST__": "abs path to freeze-local NON-REPO O_EXCL runtime-source manifest from STEP-2 gate-1 freeze handoff",
+        "__RUNTIME_SOURCE_MANIFEST_SHA256__": "64-hex sha256 of that exact manifest file bytes; bound by +1 execute; enforced before parse"
+      },
+      "sole_run_root_placeholder_note": "Three placeholders at activation: __EXCLUSIVE_RUN_ROOT__, __RUNTIME_SOURCE_MANIFEST__, __RUNTIME_SOURCE_MANIFEST_SHA256__; no other substitutions. Horizon paths remain fully concrete N= pins. Expected manifest sha is an independent activation input \u2014 never derived from loaded bytes."
+    }
+  },
+  "test_battery_named": [
+    "identity length mismatch short sample_hashes \u2192 IDENTITY_BIND_FAIL",
+    "identity length mismatch long source_buckets \u2192 IDENTITY_BIND_FAIL",
+    "horizon receipt sha mismatch \u2192 INSTRUMENT_OR_BIND_FAIL",
+    "rung3 terminal sha mismatch \u2192 AUTHORITY_BIND_FAIL",
+    "rung3 composite_terminal wrong \u2192 AUTHORITY_BIND_FAIL",
+    "recomputed residual label != terminal \u2192 AUTHORITY_BIND_FAIL",
+    "D1 HEAD1_MAJORITY boundary top1*2 == S",
+    "D1 HEAD2_MAJORITY boundary top2*2 == S",
+    "D1 HEAD2_THIRD boundary top2*3 == S",
+    "D1 HEAD_DIFFUSE when top2*3 < S",
+    "D1 DEGENERATE_NO_SURVIVORS",
+    "D1 SPLIT_SUPPORTS composite",
+    "D2 E_EMPTY",
+    "D2 E_PERSISTENT boundary present == ceil0.70",
+    "D2 E_TRANSIENT boundary absent == ceil0.70",
+    "D2 E_MIXED interior",
+    "D2 report-only depleted table cannot change branch",
+    "D3 CO_MAJORITY boundary inter*2 == |R|",
+    "D3 CO_PARTIAL inter==1",
+    "D3 CO_DISJOINT inter==0",
+    "D3 DEGENERATE_NO_SURVIVORS",
+    "successor instrument/identity/authority routes",
+    "successor SPLIT route",
+    "successor E_TRANSIENT+CO_DISJOINT route",
+    "successor default densify-complete route",
+    "classification_core emits all keys (mechanical coverage)",
+    "exclusive mint pre-existing root fails closed",
+    "manifest outputs exact-set authority",
+    "DECLARED_TOP_EMBEDDED_FIELDS bind",
+    "claim_boundary seven constants true on science terminal",
+    "D1 S_total vs S_eligible disagreement boundary hostile (L0b-shaped: S_total=20, S_eligible_sum=16, top2_sum=8 \u2192 HEAD2_THIRD; eligible-only denom must NOT yield HEAD2_MAJORITY)",
+    "D1 head thresholds use TOTAL S_s even when ineligible survivors > 0",
+    "set membership carrier = row_id string; sample_hash substitution fails closed / is not used",
+    "D2 present_at_package_N20 is row_id intersection not index alignment",
+    "D3 inter is row_id intersection within per-support universe",
+    "D1 enriched_survivors_eligible_scope counts only eligible enriched buckets; reported vs TOTAL S_s in raw",
+    "runtime_source_set IMPORT_ONLY: densify imports residual schema+reducer helpers; no reimplement residual arithmetic",
+    "runtime_source_digest ORDERED_CONCAT over SIX files; STEP-2 freeze binds map+digest",
+    "negative preflight: residual schema byte flip, densify classifier sha unchanged \u2192 activation fails closed",
+    "horizon-keyed argv: --package-receipt 10=... form; positional bare path rejected",
+    "horizon-keyed: swapped N20 path under N10 key fails pin equality",
+    "horizon-keyed: duplicate N within package arm rejected",
+    "horizon-keyed: missing out N50 rejected",
+    "horizon-keyed: malformed flag without N= rejected",
+    "endpoint grammar: receipt claim fields use only approved endpoint set phrasing",
+    "successor step 6 uses neutral endpoint set wording only",
+    "runtime-source manifest schema_id exact; ordered SIX paths exact",
+    "runtime-source manifest ORDERED_CONCAT_V0 digest recompute",
+    "live argv requires --runtime-source-manifest; +1 execute binds manifest sha256",
+    "classifier re-hashes SIX files before run-root mint; mismatch \u2192 INCOMPLETE_FINALIZATION + WRAPPER_RC 2; no artifacts",
+    "negative: manifest substitution markerless fail",
+    "negative: missing/extra path in manifest markerless fail",
+    "negative: digest mismatch markerless fail",
+    "negative: transitive residual-schema byte-flip, classifier bytes unchanged \u2192 markerless fail",
+    "terminal embeds expected manifest sha + observed runtime_source map/digest; envelope binds both",
+    "bindset parity: sequence_frozen step 7 members == live_terminal_activation_gate.binds_required",
+    "successor step 5 exact frozen_neutral_successor_texts.step_5",
+    "successor step 6 exact frozen_neutral_successor_texts.step_6",
+    "successor step 7 exact frozen_neutral_successor_texts.step_7",
+    "endpoint grammar forbidden list is non-exhaustive seed; principle governs",
+    "CLI --runtime-source-manifest-sha256 required 64-hex; missing/malformed markerless fail",
+    "pre-parse: sha256(loaded manifest bytes) must equal CLI expected sha; mismatch markerless rc2 no run-root",
+    "expected manifest sha NEVER derived from loaded bytes (activation pin is independent)",
+    "terminal embeds expected (CLI) + observed (loaded bytes) + equality==true",
+    "hostile: valid-shaped substituted manifest with drifted content vs activation sha \u2192 markerless fail",
+    "manifest mint location freeze-local non-repo under claude scratchpad; never repo worktree; never plan-dev; never staged",
+    "manifest mint order: freeze STEP-2 bytes \u2192 O_EXCL mint from those bytes \u2192 gate-2 handoff \u2192 operative only on PASS",
+    "STEP-2 byte change invalidates and remints BOTH surface and manifest",
+    "bindset parity includes runtime_source_manifest_sha256 as independent bind",
+    "NEW pure contract module scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py \u2014 no CLI/IO/run-root/print",
+    "classifier is thin orchestrator only; all runtime-source validation via contract facade",
+    "runtime source set SIX files ordered: densify schema, reducer, classifier, contract, residual schema, residual reducer",
+    "ORDERED_CONCAT_V0 over six files; STEP-2 freeze binds six-file map+digest",
+    "line-cap: every new densify Python source/test file <500 lines",
+    "contract unit battery covers known-good + all negative classes at module level",
+    "classifier tests prove routing/markerless only; do not re-test pure contract arithmetic",
+    "negative: contract module byte-flip, classifier sha unchanged \u2192 activation fails closed",
+    "classifier (via contract module) re-hashes SIX files before run-root mint; mismatch \u2192 INCOMPLETE_FINALIZATION + WRAPPER_RC 2; no artifacts",
+    "STEP-1 reducer projected >450L \u2192 STOP + PLAN remint with expanded ordered set; NO in-flight module CREATE or runtime-set growth under this plan"
+  ],
+  "forbidden": [
+    "GPU / training / probe mutation / .pt touch",
+    "edit dual-accepted Rung-3 residual classification files",
+    "mechanism / carrier / readiness / acquisition / bank claim",
+    "pooled cross-support denominators as branch inputs",
+    "stage/commit/push without separate gates",
+    "plan-dev live terminal execution",
+    "live mint before +1 execute",
+    "float branch decisions",
+    "in-place edit of receipted plan filenames",
+    "fast-path skip of full plan gate"
+  ],
+  "forbidden_during_implementation_receipts": [
+    "stage",
+    "commit",
+    "push",
+    ".pt",
+    "probe mutation",
+    "GPU",
+    "training launch",
+    "live exclusive run-root mint",
+    "edit Rung-3 instrument files",
+    "ownership transfer"
+  ],
+  "stop_conditions": [
+    "design requires training/GPU/probe mutation/.pt \u2192 STOP and surface",
+    "semantics conflict with committed Rung-3 residual instrument \u2192 STOP and surface",
+    "cannot operationalize densify without mechanism mint \u2192 STOP and surface"
+  ],
+  "redispatch_triggers": {
+    "same_worker_correction": "gate-2 blockers confined to densify plan/impl files; same lane; no new external evidence",
+    "re_scope": "question or claim boundary changes; or densify requires new GPU measurement",
+    "fresh_worker": "context pressure / child-task boundary without RETAIN OVERRIDE"
+  },
+  "supersedes": {
+    "plan_v0_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v0.json",
+    "plan_v0_sha256": "b1cd1ff4a0970069ecc884c7989ab656f59662849f9b9f588f5f1dea0a65a9ac",
+    "plan_v0_size": 31650,
+    "plan_v0_md_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v0.md",
+    "plan_v0_md_sha256": "ad9a8c3e5564e4f48380a08adefdf90b0316adcac93dc0d063d0e8b191083d83",
+    "plan_v0_md_size": 1750,
+    "plan_v0_status": "DEAD immutable lineage",
+    "plan_v1_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v1.json",
+    "plan_v1_sha256": "35192b9e751f4e99b168610322af521cf9a70674ea4009d0923c6d80ccb0a8e6",
+    "plan_v1_size": 38503,
+    "plan_v1_md_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v1.md",
+    "plan_v1_md_sha256": "08f71b0e2e2e53d0788bf9cb358cfdc406cc26edeb3c5d9cf511ef9ae122242f",
+    "plan_v1_md_size": 1541,
+    "plan_v1_status": "DEAD immutable lineage (gate-2 BLOCK 1785954989419; 4 classes: source-set, horizon-argv, endpoint grammar, validation_proof)",
+    "inherits_closed_lineage_read_only": {
+      "rung3_plan_v6": "bddf41c768b48efc4346618c3c9f9f8f5285eacfcf1159de728c5b4743fb96ca",
+      "rung3_terminal": "1a8e0fbcd682ad9c3e7c7e9b9dd52a4890b4529d6ac87439887a2ff8b66ab0a3",
+      "rung3_commit": "89bc145452ce06e9d4cd51b2c9ccc572b7c42567"
+    },
+    "plan_v2_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v2.json",
+    "plan_v2_sha256": "98bb81f36228603bf9e1593558da83c9334c3e7566113a7bee0b0db8053abf58",
+    "plan_v2_size": 57521,
+    "plan_v2_md_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v2.md",
+    "plan_v2_md_sha256": "4e1ac2c81b45427eb70d51bd4ffef6860f3af30ce5063aa31815bd37d37b397b",
+    "plan_v2_md_size": 1589,
+    "plan_v2_status": "DEAD immutable lineage (gate-2 BLOCK r2 1785955424384; runtime-source manifest contract + successor endpoint grammar steps 5/7)",
+    "plan_v3_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v3.json",
+    "plan_v3_sha256": "5e8bb767da89faf4a2c22e20e89db8a05ccebbd8e73b29349f19f531958198b2",
+    "plan_v3_size": 78231,
+    "plan_v3_md_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v3.md",
+    "plan_v3_md_sha256": "ce0011b715ac84107adf7074d992f6075c9ab16bab9c20747f419dd3d4c7e5e7",
+    "plan_v3_md_size": 1589,
+    "plan_v3_status": "DEAD immutable lineage (gate-2 BLOCK r3 1785955807135; expected-manifest-sha enforced CLI input + freeze-local non-repo mint order)",
+    "plan_v4_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v4.json",
+    "plan_v4_sha256": "0fb7a30b50b4f83054502f7cd2774e4e8385193106172d1b94a8bc536eb9bc1c",
+    "plan_v4_size": 93586,
+    "plan_v4_md_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v4.md",
+    "plan_v4_md_sha256": "7ba86ea9c83bb6691b30734119851cc3d6e8e06b07d5970703663fb825551b9c",
+    "plan_v4_md_size": 1667,
+    "plan_v4_status": "DEAD immutable lineage (gate-2 BLOCK r4 1785956173300; architecture stop \u2014 pure runtime-source contract module + six-file runtime set + line-cap)",
+    "plan_v5_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v5.json",
+    "plan_v5_sha256": "fe4e321a18a51c4c38cdb1d790be0fa44ee223f9dff5d9de0d98efebcec54482",
+    "plan_v5_size": 104012,
+    "plan_v5_md_path": "artifacts/a_prime/A_prime_slice4_rung4_support_split_residual_densify_PLAN_v5.md",
+    "plan_v5_md_sha256": "dd6aef14d0742c1c0b5999800a8f45eed1af616a5422c8a09a531d986a682684",
+    "plan_v5_md_size": 1717,
+    "plan_v5_status": "DEAD immutable lineage (gate-2 BLOCK r5 1785956606923; battery five\u2192six consistency + split-rule fail-closed no in-flight growth)"
+  },
+  "expected_live_direction_non_authoritative_diagnostic_only": {
+    "note": "NOT a minted prediction; integer pre-reads from frozen terminal raw for fixture design only; live terminal may differ if residual recompute path diverges (that would be AUTHORITY_BIND_FAIL)",
+    "D1_from_terminal_raw_eligible_ranks": {
+      "L0b": {
+        "top1": [
+          "R0",
+          5
+        ],
+        "top2_sum": 8,
+        "label": "HEAD2_THIRD",
+        "S_total": 20,
+        "S_eligible_sum_report_only": 16
+      },
+      "math_a0": {
+        "top1": [
+          "R1",
+          19
+        ],
+        "top2_sum": 33,
+        "label": "HEAD2_THIRD",
+        "S_total": 76
+      },
+      "composite_if_both": "HEAD2_THIRD"
+    },
+    "D2_D3": "require survivor set extraction at live reduce; not pre-minted here",
+    "D1_denominator": "TOTAL S_s (pinned v1)"
+  },
+  "prior_gate1_block_id": "1785954681879-c3d0ff5e",
+  "v1_cures": {
+    "source": "gate-1 bounce 1785954681879-c3d0ff5e (consolidated; design intent accepted)",
+    "B1_D1_denominator": {
+      "fix": "D1 ranking over ELIGIBLE buckets never pinned support_survivors as TOTAL vs eligible-only; L0b total S=20\u2192HEAD2_THIRD vs eligible-only S=16\u2192HEAD2_MAJORITY label flip",
+      "cure": "D1 branch comparisons use TOTAL PACKAGE-N50 support survivors |R50_s| exclusively; ineligible-bucket survivors are report-only and NEVER enter D1 denominators or head sums"
+    },
+    "C2_row_id_membership": {
+      "fix": "D2/D3 set membership carrier unspecified (sample_hash/index substitution risk)",
+      "cure": "all set membership is exact row_id string membership within the per-support universe proven identical across the six receipts under the inherited identity precondition"
+    },
+    "C3_enriched_depleted_raw_scope": {
+      "fix": "D1 raw_always enriched_survivors/depleted_survivors scope/denominator ambiguous",
+      "cure": "enriched_survivors/depleted_survivors count residual rows whose source_bucket is eligible AND flagged enriched/depleted; scope is eligible-only by construction; reported against TOTAL |R50_s| denominator in raw table"
+    },
+    "battery_adds": [
+      "D1 S_total vs S_eligible disagreement boundary hostile (L0b-shaped: total 20, eligible-sum 16, top2=8 \u2192 must label HEAD2_THIRD not HEAD2_MAJORITY)"
+    ]
+  },
+  "prior_gate2_block_id": "1785956606923",
+  "v2_cures": {
+    "source": "gate-2 plan BLOCK 1785954989419 consolidated via dispatch 1785955010037 (4 classes); v1 design carries",
+    "B1_executable_source_set_authority": {
+      "fix": "import OR reimplement discretion left runtime source set unbound",
+      "cure": "IMPORT-ONLY of named Rung-3 pure helpers; complete runtime source set frozen; STEP-2 freeze + +1 execute bind complete runtime-source digest + per-file shas; pre-run re-hash; terminal embeds runtime_source section; negative preflight: transitive dep byte differs while classifier sha unchanged \u2192 fail closed"
+    },
+    "B2_horizon_keyed_argv": {
+      "fix": "positional --package-receipt paths without N= horizon keys",
+      "cure": "Rung-3 style --package-receipt N=<path> / --out-receipt N=<path> for 10/20/50 both arms; exact set completeness, duplicate rejection, pin equality by arm+horizon; swapped/duplicate/missing/malformed hostiles"
+    },
+    "B3_endpoint_claim_grammar": {
+      "fix": "wording that reads as within-run trajectory over endpoint receipts",
+      "cure": "D2 = cross-horizon row-id membership; successor step 6 neutral endpoint-set wording; explicit endpoint-grammar rule; banned trajectory vocabulary confined to endpoint_claim_grammar.forbidden_words list"
+    },
+    "B4_validation_proof_section": {
+      "fix": "no complete validation_proof enumeration for board contract-currency addendum",
+      "cure": "validation_proof section covering STEP-1/2 pytest+import, transitive source-set preflight, live terminal argv+markers"
+    }
+  },
+  "runtime_source_set_authority": {
+    "strategy": "IMPORT_ONLY",
+    "forbidden_discretion": "import OR reimplement is FORBIDDEN for residual arithmetic; densify MUST import named Rung-3 pure helpers; runtime-source validation MUST live in the pure contract module (not reimplemented inside classifier); MUST NOT edit Rung-3 files",
+    "new_files_create": [
+      "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+      "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+      "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+      "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py"
+    ],
+    "imported_rung3_modules_complete": [
+      "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+      "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+    ],
+    "imported_rung3_modules_detail": {
+      "scripts/a_prime_slice4_residual_classification_schema_v0.py": {
+        "sha256_at_plan_mint_observed": "16a5c813d61399443941fd154a98ffbeb1c54169ca64b3b55e160903cd4e99a9",
+        "bytes_at_plan_mint_observed": 9484,
+        "importable_helpers_required": [
+          "ceil_0_70",
+          "enrichment_ge_1_5",
+          "enrichment_le_0_5",
+          "coverage_rows_ok",
+          "coverage_buckets_ok",
+          "admit_horizon_view",
+          "extract_universe",
+          "extract_bucket_map",
+          "extract_survivors",
+          "MIN_BUCKET_DENOMINATOR_ROWS",
+          "is_exact_int",
+          "is_exact_str",
+          "is_exact_dict",
+          "is_exact_list",
+          "is_exact_set",
+          "is_exact_bool"
+        ],
+        "role": "pure residual schema arithmetic + horizon view admission + survivor/bucket extractors"
+      },
+      "scripts/a_prime_slice4_residual_classification_reducer_v0.py": {
+        "sha256_at_plan_mint_observed": "483ea9a3bdf000372a9bcc345be91087de1c02a9a7e03f36cb244c28525849e7",
+        "bytes_at_plan_mint_observed": 18031,
+        "importable_helpers_required": [
+          "residual_per_support_label",
+          "residual_composite",
+          "jaccard_raw"
+        ],
+        "role": "pure residual recompute for AUTHORITY_BIND equality against Rung-3 terminal (no edit)"
+      }
+    },
+    "not_imported": {
+      "scripts/a_prime_slice4_residual_classification_classifier_v0.py": "Rung-3 dual-key CLI is NOT a densify runtime dependency (read-only reference only); densify has its own classifier"
+    },
+    "complete_runtime_source_set_at_live_execute": [
+      "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+      "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+      "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+      "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+      "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+      "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+    ],
+    "digest_rules": {
+      "per_file_sha256": "sha256 of each file in complete_runtime_source_set_at_live_execute (SIX files)",
+      "ordered_concat_algorithm": "runtime_source_digest = sha256( b\"\".join(bytes.fromhex(sha256(path_i)) for path_i in complete_runtime_source_set_at_live_execute) ).hexdigest()",
+      "algorithm_name": "ORDERED_CONCAT_V0",
+      "STEP2_freeze_binds": [
+        "complete per-file sha map for all six runtime sources",
+        "runtime_source_digest"
+      ],
+      "plus1_execute_binds": [
+        "same complete per-file sha map (six)",
+        "runtime_source_digest",
+        "classifier sha",
+        "six receipt shas",
+        "rung3 terminal sha",
+        "exact argv",
+        "fresh run-root",
+        "manifest path+sha"
+      ],
+      "pre_run_rehash": "before exclusive mint / classify, re-hash all six runtime sources via contract module; any mismatch vs freeze/+1 execute pin \u2192 INSTRUMENT_OR_BIND_FAIL / activation preflight fail closed; no PACKET_TERMINAL science route",
+      "terminal_embed": "terminal_receipt.source_shas.runtime_source = {per_file map of six + runtime_source_digest + algorithm: ORDERED_CONCAT_V0}; plus expected/observed/equality for manifest sha",
+      "ordered_path_count": 6
+    },
+    "negative_preflight_test_required": "mutate one transitive dependency byte (e.g. residual schema or contract module) while densify classifier file sha is unchanged; activation preflight / live validate MUST fail closed (INSTRUMENT_OR_BIND_FAIL or named preflight fail) and MUST NOT emit science PACKET_TERMINAL",
+    "manifest_contract": {
+      "schema": {
+        "schema_id": "a_prime_slice4_rung4_runtime_source_manifest/v0",
+        "fields_exact": {
+          "schema_id": "exact string a_prime_slice4_rung4_runtime_source_manifest/v0",
+          "ordered_runtime_paths": "exact list of six relative paths in FIXED order (see complete_runtime_source_set_at_live_execute)",
+          "per_file_sha256": "exact dict path->sha256 hex for all six paths; keys exact-equal ordered set",
+          "runtime_source_digest": "ORDERED_CONCAT_V0 over ordered_runtime_paths using per_file_sha256 values",
+          "algorithm": "exact string 'ORDERED_CONCAT_V0'",
+          "implementation_content_digest": "dual-accepted densify implementation CONTENT_DIGEST from STEP-2 freeze (sha of ordered implementation surface digests as freeze defines)",
+          "minted_by": "exact string 'claude_gate1_step2_freeze'",
+          "task_id": "1785954214314-1d129d5d",
+          "plan_revision_binding": "plan revision string of the dual-accepted plan governing the freeze (v3+)"
+        },
+        "ordered_runtime_paths_frozen": [
+          "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+          "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+          "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+          "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+          "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+          "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+        ],
+        "mint_rule": "SINGLE FROZEN ORDERING: (1) claude gate-1 freezes STEP-2 implementation bytes; (2) from THOSE FROZEN BYTES, claude O_EXCL-mints the runtime-source manifest at a freeze-local NON-REPO path under the claude scratchpad, convention: <claude_scratchpad>/rung4_runtime_source_manifest_v0.json (absolute path recorded in the freeze handoff; NOT a path inside the repo worktree; NOT a staged file); (3) manifest path+sha256 included in the gate-2 handoff; (4) manifest is OPERATIVE ONLY IF gate-2 PASSes on that freeze. Any STEP-2 byte change invalidates and remints BOTH the STEP-2 surface freeze and the runtime-source manifest. Never plan-dev-minted. Never committed to the repo as part of this slice.",
+        "not_minted_by_plan_dev": true,
+        "not_minted_at_plan_time": true,
+        "mint_location": {
+          "class": "freeze_local_non_repo",
+          "convention_path_template": "<claude_scratchpad>/rung4_runtime_source_manifest_v0.json",
+          "forbidden_locations": [
+            "any path under the training or main repo worktree intended for stage/commit",
+            "artifacts tree inside the repo",
+            "plan-dev-created paths"
+          ],
+          "operative_only_if_gate2_pass": true
+        },
+        "not_repo_file": true,
+        "mint_order": [
+          "STEP-2 surface frozen by claude gate-1 (bytes fixed)",
+          "O_EXCL mint runtime-source manifest FROM those frozen bytes at freeze-local non-repo path",
+          "include manifest path+sha in gate-2 handoff",
+          "operative only if gate-2 PASSes; else remint surface+manifest on cure"
+        ]
+      },
+      "live_argv_flag": "--runtime-source-manifest <abs_path>",
+      "plus1_execute_binds_manifest_sha256": true,
+      "classifier_pre_mint_protocol": [
+        "0. classifier requires both --runtime-source-manifest <abs> and --runtime-source-manifest-sha256 <64-hex>; missing/malformed \u2192 markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2; no run-root; no artifacts",
+        "1. classifier reads manifest file bytes; computes sha256(bytes); calls contract.compare_expected_observed_sha(CLI_expected, observed); mismatch \u2192 markerless INCOMPLETE_FINALIZATION runtime_source_manifest_sha_mismatch + WRAPPER_RC 2; exit 2; NO run-root; NO artifacts; NO PACKET_TERMINAL",
+        "2. only after sha match: classifier json-loads manifest; calls contract.admit_runtime_source_manifest + digest/path-set validation (pure); any fail \u2192 markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2",
+        "3. contract.rehash_runtime_files over ordered SIX paths (classifier supplies Path.read_bytes / own __file__ bytes for classifier path); compare to manifest per_file map",
+        "4. any schema/path-set/sha-map/digest/observed-file mismatch \u2192 MARKERLESS fail closed via classifier printing INCOMPLETE_FINALIZATION + WRAPPER_RC 2 (printing is classifier-only, not contract)",
+        "5. only on full match: classifier proceeds to exclusive run-root mint and classification assembly"
+      ],
+      "terminal_embed": {
+        "source_shas.runtime_source_manifest_sha256_expected": "the 64-hex value from CLI / +1 execute bind (NEVER recomputed from loaded bytes for this field)",
+        "source_shas.runtime_source_manifest_sha256_observed": "sha256 of the file bytes actually loaded from --runtime-source-manifest",
+        "source_shas.runtime_source_manifest_sha256_equal": "exact bool true only if expected == observed (must be true on science terminal)",
+        "source_shas.runtime_source": {
+          "per_file": "observed map from worktree rehash",
+          "runtime_source_digest": "observed ORDERED_CONCAT_V0",
+          "algorithm": "ORDERED_CONCAT_V0",
+          "manifest_schema_id": "a_prime_slice4_rung4_runtime_source_manifest/v0"
+        },
+        "envelope_validation": "validate_candidate_receipt binds expected sha (from activation), observed sha (from loaded bytes), their equality==true, and observed runtime_source map/digest equality to manifest pins; fails closed if expected was not independently supplied"
+      },
+      "negative_battery_required": [
+        "CLI expected sha mismatch vs loaded file bytes (path points at different file) \u2192 markerless rc2, no run-root/artifacts",
+        "valid-SHAPED substituted manifest (internally consistent schema/map/digest with drifted source bytes) whose file sha differs from activation --runtime-source-manifest-sha256 \u2192 markerless rc2, no run-root/artifacts (catches observed-expected conflation if implementer derives expected from loaded bytes)",
+        "missing path in ordered_runtime_paths / per_file map \u2192 markerless fail (after sha match on the activation-pinned manifest bytes)",
+        "extra path in per_file map \u2192 markerless fail",
+        "digest mismatch vs recomputed ORDERED_CONCAT_V0 \u2192 markerless fail",
+        "one transitive dependency byte-flip (residual schema) with densify classifier file bytes unchanged and manifest still listing old sha \u2192 observed rehash mismatch \u2192 markerless fail; no PACKET_TERMINAL",
+        "missing --runtime-source-manifest-sha256 flag \u2192 markerless fail",
+        "malformed non-64-hex --runtime-source-manifest-sha256 \u2192 markerless fail"
+      ],
+      "live_argv_expected_sha_flag": "--runtime-source-manifest-sha256 <64_hex>",
+      "plus1_execute_binds_manifest_path": true,
+      "expected_sha_never_derived_from_loaded_bytes": true,
+      "expected_vs_observed_rule": "expected = the 64-hex value supplied on CLI / bound by +1 execute; observed = sha256 of the file bytes actually loaded from --runtime-source-manifest; equality is an enforced check. NEVER set expected := sha256(loaded_bytes) \u2014 that conflates observed with expected and voids the activation pin.",
+      "contract_module_owns_pure_validation": true,
+      "classifier_owns_io_and_markers_only": true
+    },
+    "file_count": 6,
+    "roles": {
+      "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py": "densify schema types/constants",
+      "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py": "pure densify D1/D2/D3 reducer (or facade if axis-split)",
+      "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py": "thin dual-key CLI orchestrator only",
+      "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py": "pure runtime-source contract (manifest/sha/digest/rehash); no CLI/IO",
+      "scripts/a_prime_slice4_residual_classification_schema_v0.py": "imported residual schema helpers",
+      "scripts/a_prime_slice4_residual_classification_reducer_v0.py": "imported residual recompute helpers"
+    },
+    "contract_module": {
+      "path": "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py",
+      "purity": "NO CLI, NO run-root, NO printing, NO terminal IO, NO filesystem writes; read_bytes of named paths only when called with paths for rehash",
+      "required_api_surface": [
+        "admit_runtime_source_manifest(obj) -> (ok: bool, reason: str)",
+        "compare_expected_observed_sha(expected_hex: str, observed_hex: str) -> (ok: bool, reason: str)",
+        "ordered_concat_v0(ordered_paths: list[str], per_file_sha256: dict[str,str]) -> str",
+        "rehash_runtime_files(ordered_paths: list[str], *, read_bytes) -> dict[str,str]",
+        "validate_runtime_source(*, manifest_obj, expected_manifest_sha256, observed_manifest_sha256, worktree_root_or_readers) -> (ok: bool, reason: str, observed_map: dict|None, digest: str|None)"
+      ],
+      "returns": "pure (ok, reason[, ...]) tuples only; never raises for validation failures"
+    },
+    "six_path_set_exact_and_frozen_for_this_plan_revision": true,
+    "no_in_flight_growth": true
+  },
+  "endpoint_claim_grammar": {
+    "rule": "D1/D2/D3 labels are shorthand ONLY for named set intersections/differences computed across separate endpoint receipts (PACKAGE/OUT \u00d7 N10/N20/N50). They are NEVER claims of within-run trajectory or of cross-horizon process beyond the named endpoint set operations.",
+    "forbidden_words_in_plan_and_receipts": [
+      "ancestry",
+      "late-emerging",
+      "early-emerging",
+      "persists through the run",
+      "fate",
+      "within-run temporal",
+      "delays",
+      "package-private",
+      "early and shared",
+      "private residual head"
+    ],
+    "approved_phrasing_examples": [
+      "cross-horizon row-id membership",
+      "E50 rows absent from PACKAGE-N20 survivor set (row_id difference)",
+      "R50 \u2229 O50 empty (CO_DISJOINT)",
+      "endpoint-receipt set equality / inclusion counts"
+    ],
+    "forbidden_list_is_non_exhaustive": true,
+    "principle_governs": "The principle (labels = named endpoint set ops only; never within-run trajectory/process beyond those ops) governs. The forbidden_words list is a mechanical-check SEED, not an exhaustive boundary \u2014 any phrasing that asserts within-run process beyond named endpoint set ops is still forbidden even if absent from the list.",
+    "successor_string_exactness": "battery MUST assert lookup_successor outputs for the step-5/6/7 trigger profiles equal the frozen_neutral_successor_texts exactly"
+  },
+  "validation_proof": {
+    "purpose": "complete enumeration for board contract-currency addendum citation; not a second semantics body",
+    "STEP_1": {
+      "pytest": {
+        "argv": [
+          "env",
+          "PYTHONDONTWRITEBYTECODE=1",
+          "PYTHONPATH=.",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+          "-q",
+          "--tb=line"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "expected_rc": 0,
+        "fails_when": "any characterization/hostile assertion fails or import error"
+      },
+      "import_compile": {
+        "argv": [
+          "env",
+          "PYTHONDONTWRITEBYTECODE=1",
+          "PYTHONPATH=.",
+          "python3",
+          "-c",
+          "import py_compile; py_compile.compile('scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py', doraise=True); import scripts.a_prime_slice4_support_split_residual_densify_schema_v0 as s; import scripts.a_prime_slice4_support_split_residual_densify_reducer_v0 as r; print('IMPORT_OK_DENSIFY')"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "expected_rc": 0,
+        "expected_stdout_contains": "IMPORT_OK_DENSIFY",
+        "fails_when": "SyntaxError/ImportError/nonzero rc"
+      },
+      "covers": [
+        "identity hostiles",
+        "authority bind hostiles",
+        "D1 TOTAL S_s thresholds + S_total vs S_eligible disagreement hostile",
+        "D2/D3 row_id membership",
+        "residual recompute equality via IMPORTED residual helpers",
+        "report-only non-branching"
+      ],
+      "line_cap": "<500L per created STEP-1 source/test file"
+    },
+    "STEP_2": {
+      "pytest": {
+        "argv": [
+          "env",
+          "PYTHONDONTWRITEBYTECODE=1",
+          "PYTHONPATH=.",
+          "python3",
+          "-m",
+          "pytest",
+          "calm/llm_computer/tests/test_a_prime_slice4_support_split_runtime_source_contract_v0.py",
+          "calm/llm_computer/tests/test_a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+          "-q",
+          "--tb=line"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "expected_rc": 0,
+        "fails_when": "contract unit battery or classifier integration assertion fails"
+      },
+      "import_compile": {
+        "argv": [
+          "env",
+          "PYTHONDONTWRITEBYTECODE=1",
+          "PYTHONPATH=.",
+          "python3",
+          "-c",
+          "import py_compile; py_compile.compile('scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py', doraise=True); import scripts.a_prime_slice4_support_split_runtime_source_contract_v0 as contract; import scripts.a_prime_slice4_support_split_residual_densify_classifier_v0 as c; print('IMPORT_OK_DENSIFY_CLASSIFIER')"
+        ],
+        "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+        "expected_rc": 0,
+        "expected_stdout_contains": "IMPORT_OK_DENSIFY_CLASSIFIER",
+        "fails_when": "SyntaxError/ImportError/nonzero rc"
+      },
+      "covers": [
+        "contract module pure unit battery: known-good + ALL manifest/sha/path-set/digest/expected-sha/byte-flip negatives at module level",
+        "classifier integration: argv routing + markerless fail-closed only (no reimplemented contract arithmetic)",
+        "horizon-keyed argv admission hostiles",
+        "exclusive mint hostiles",
+        "envelope expected/observed/equality",
+        "runtime_source six-file digest bind in freeze surface",
+        "line-cap <500L"
+      ],
+      "line_cap": "<500L per created STEP-2 source/test file"
+    },
+    "transitive_source_set_preflight": {
+      "algorithm": "ORDERED_CONCAT_V0 over complete_runtime_source_set_at_live_execute (SIX files)",
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected": "per-file shas + runtime_source_digest match STEP-2 freeze / +1 execute pins",
+      "fails_when": "any file missing, unreadable, or sha mismatch vs freeze pin",
+      "negative_case": "mutate one transitive dependency byte (e.g. residual schema) while densify classifier file sha is unchanged; activation preflight / live validate MUST fail closed (INSTRUMENT_OR_BIND_FAIL or named preflight fail) and MUST NOT emit science PACKET_TERMINAL",
+      "manifest": "after STEP-2 freeze: verify O_EXCL freeze-local non-repo manifest exists, schema_id exact, ordered paths exact, per-file shas match frozen worktree rehash, digest ORDERED_CONCAT_V0 matches; record path+sha for +1 execute",
+      "file_count": 6
+    },
+    "live_terminal": {
+      "argv": "validation_argv_frozen.six_receipt_live_densify.argv_template with substitutions __EXCLUSIVE_RUN_ROOT__, __RUNTIME_SOURCE_MANIFEST__, __RUNTIME_SOURCE_MANIFEST_SHA256__ only",
+      "expected_rc": 0,
+      "expected_markers": [
+        "exactly one PACKET_TERMINAL <branch>",
+        "WRAPPER_RC 0"
+      ],
+      "expected_artifacts": [
+        "terminal_receipt.json",
+        "terminal_manifest.json"
+      ],
+      "fails_when": [
+        "IDENTITY_BIND_FAIL",
+        "AUTHORITY_BIND_FAIL",
+        "INSTRUMENT_OR_BIND_FAIL",
+        "rc != 0",
+        "marker cardinality != 1",
+        "missing artifacts"
+      ],
+      "executor": "claude_test_operator_only after persisted +1 execute binds (classifier sha, six receipt shas, rung3 terminal sha, complete runtime_source map+digest, exact argv, fresh run-root)",
+      "runtime_source_protocol": [
+        "0. classifier requires both --runtime-source-manifest <abs> and --runtime-source-manifest-sha256 <64-hex>; missing/malformed \u2192 markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2; no run-root; no artifacts",
+        "1. classifier reads manifest file bytes; computes sha256(bytes); calls contract.compare_expected_observed_sha(CLI_expected, observed); mismatch \u2192 markerless INCOMPLETE_FINALIZATION runtime_source_manifest_sha_mismatch + WRAPPER_RC 2; exit 2; NO run-root; NO artifacts; NO PACKET_TERMINAL",
+        "2. only after sha match: classifier json-loads manifest; calls contract.admit_runtime_source_manifest + digest/path-set validation (pure); any fail \u2192 markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2",
+        "3. contract.rehash_runtime_files over ordered SIX paths (classifier supplies Path.read_bytes / own __file__ bytes for classifier path); compare to manifest per_file map",
+        "4. any schema/path-set/sha-map/digest/observed-file mismatch \u2192 MARKERLESS fail closed via classifier printing INCOMPLETE_FINALIZATION + WRAPPER_RC 2 (printing is classifier-only, not contract)",
+        "5. only on full match: classifier proceeds to exclusive run-root mint and classification assembly"
+      ],
+      "expected_manifest_sha_rule": "expected = the 64-hex value supplied on CLI / bound by +1 execute; observed = sha256 of the file bytes actually loaded from --runtime-source-manifest; equality is an enforced check. NEVER set expected := sha256(loaded_bytes) \u2014 that conflates observed with expected and voids the activation pin."
+    }
+  },
+  "prior_gate2_block_round": 5,
+  "v3_cures": {
+    "source": "gate-2 BLOCK round 2 1785955424384 consolidated via dispatch 1785955446489; all four v2 classes cured; two remaining classes",
+    "B1_executable_runtime_source_contract": {
+      "fix": "runtime source authority unbound at live execute (no O_EXCL manifest, no argv pin, no pre-mint rehash contract, workflow bind parity incomplete)",
+      "cure": "STEP-2 gate-1 O_EXCL-mints runtime-source manifest (schema frozen here); live argv --runtime-source-manifest; classifier same-byte loads+validates+rehashes five files BEFORE run-root mint; terminal embeds expected manifest sha + observed map/digest; envelope binds both; negative battery; sequence_frozen step 7 bind set == live_terminal_activation_gate.binds_required"
+    },
+    "B2_successor_endpoint_grammar": {
+      "fix": "successor steps 5/7 used non-endpoint phrasing (trajectory synonyms)",
+      "cure": "step 5/7 rewritten to pure endpoint set thresholds; forbidden list marked NON-EXHAUSTIVE principle-governed seed; battery exact-string hostiles for frozen neutral successor texts"
+    }
+  },
+  "v4_cures": {
+    "source": "gate-2 BLOCK r3 1785955807135 consolidated via dispatch 1785955833527; two remaining classes; v3 design carries",
+    "B1_expected_manifest_sha_enforced_input": {
+      "fix": "expected manifest sha not an independent activation input; risk of observed-expected conflation if derived from loaded bytes",
+      "cure": "required --runtime-source-manifest-sha256 __RUNTIME_SOURCE_MANIFEST_SHA256__ (64-hex); classifier pre-mint step 1 hashes loaded file bytes and exact-compares to CLI value BEFORE parse; mismatch markerless; +1 execute binds both path and sha; terminal embeds expected(from CLI)/observed(from bytes)/equality; NEVER derive expected from loaded bytes; hostile valid-SHAPED substituted manifest differing from activation sha"
+    },
+    "B2_manifest_mint_order_and_location": {
+      "fix": "mint order and location ambiguous (repo path OR freeze-local; after dual-accept vs at freeze)",
+      "cure": "single ordering: gate-1 freezes STEP-2 bytes \u2192 O_EXCL-mints manifest FROM THOSE FROZEN BYTES at freeze-local NON-REPO path under claude scratchpad \u2192 included in gate-2 handoff \u2192 OPERATIVE ONLY IF gate-2 passes; never repo/staged; never plan-dev-minted; STEP-2 byte change invalidates surface+manifest both"
+    }
+  },
+  "v5_cures": {
+    "source": "gate-2 BLOCK r4 1785956173300 consolidated via dispatch 1785956195185; single class architecture stop / file-set feasibility; v4 design carries",
+    "B1_runtime_source_contract_module_and_six_file_set": {
+      "fix": "runtime-source validation logic risked living inside classifier (architecture stop / line-cap / unbounded file-set feasibility)",
+      "cure": "NEW pure module scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py (no CLI/IO/run-root); classifier thin orchestrator; STEP-2 = classifier + contract + classifier tests; runtime source set SIX files (3 densify + contract + 2 Rung-3 imports); ORDERED_CONCAT over six; line-cap <500L frozen with STEP-1 axis-split rule if reducer approaches cap; contract module direct CPU-static unit battery + classifier integration routing only"
+    }
+  },
+  "line_cap_assertions": {
+    "hard_cap_lines_per_python_source_or_test_file": 500,
+    "applies_to": "every new densify Python source and test file created under this plan",
+    "fails_when": "any new file >= 500 lines at STEP dual-accept",
+    "step1_reducer_split_rule": {
+      "trigger": "if scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py is projected to exceed 450L with full D1/D2/D3 + authority recompute under the current design",
+      "action": "STOP implementation of STEP-1 under this plan revision. Do NOT create axis-split modules in-flight. Do NOT grow the runtime source set under this plan. Remint a successor PLAN with the exact expanded ordered runtime path set and updated STEP-1 file authority, then re-gate. The six-path runtime set in this plan revision is EXACT and FROZEN.",
+      "forbidden_under_this_plan_revision": [
+        "in-flight CREATE of D1/D2/D3 axis modules",
+        "in-flight growth of complete_runtime_source_set_at_live_execute",
+        "ORDERED_CONCAT over any count other than six",
+        "contingency-joins-runtime-set under v6"
+      ],
+      "six_path_set_exact_and_frozen": true,
+      "default_surface": "SINGLE reducer module must fit <500L (target <<450L projected); if it cannot, remint plan \u2014 do not stretch or split under v6"
+    }
+  },
+  "v6_cures": {
+    "source": "gate-2 BLOCK r5 1785956606923 consolidated via dispatch 1785956626271; two mechanical contradictions; v5 design carries",
+    "B1_battery_consistency_six_file_forms": {
+      "fix": "test_battery_named retained five-file wording (items 38/47/50 and possibly others) after runtime set became SIX",
+      "cure": "REPLACE five-file runtime-source battery items with six-file forms; property-scoped sweep of whole plan for five file/5-file/five paths runtime-source refs; only historical supersedes/vN_cures narrative may retain five-file mentions"
+    },
+    "B2_split_rule_fail_closed": {
+      "fix": "step1_reducer_split_rule allowed in-flight runtime-set growth under current plan",
+      "cure": "trigger projected >450L = STOP + PLAN remint with exact expanded ordered set; NO in-flight module creation or runtime-set growth; six-path set exact and frozen for this plan revision"
+    }
+  }
+}
