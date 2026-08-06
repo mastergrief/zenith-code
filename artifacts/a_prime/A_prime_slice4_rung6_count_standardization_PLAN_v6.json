@@ -1,0 +1,1113 @@
+{
+  "schema": "a_prime_slice4_rung6_count_standardization_plan/v0",
+  "plan_kind": "COUNT_STANDARDIZATION_DECOMPOSITION_PLAN",
+  "plan_revision": "v6_rung6_20260806",
+  "product_name": "COUNT_STANDARDIZATION_DECOMPOSITION_RECEIPTS_ONLY",
+  "task_id": "1786004998450-f6569bd2",
+  "parent_task_id": "1785931309579-4f068343",
+  "dispatch_id": "1786003307749-62f59ff6",
+  "lock_ids": {
+    "co_lead_design": "1786003217487",
+    "co_lead_route_correction": "1786003342901-383b556c",
+    "co_lead_foldin_precision": "1786003377914-0f3bb769",
+    "claude_consolidation": "1786003350407-90920647",
+    "claude_lock_release": "1786003409178-b8d0ff9b",
+    "plan_dev_thinking_reply": "1786003304595-0a0a0a19",
+    "rung5_terminal_commit": "c2ab781e9b15bc0c7ca6a7b0414a8c3f8aaaed75",
+    "rung5_terminal_receipt_sha256": "9b9939b52c6fa984582c93604d8033385bb6ecd154399d782da49ba013096a6c"
+  },
+  "report_to": [
+    "claude"
+  ],
+  "cross_thread_required": true,
+  "review_tier": "HIGH",
+  "claim_effect": "receipts-only descriptive count-standardization: which frozen profile axis (rate vs weight) selects the standardized D2 categorical endpoint under the existing 3/10–7/10 boundary; no mechanism/cause/carrier/readiness/acquisition/bank claim",
+  "provenance": {
+    "gabe_verbatim_standing": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science",
+    "chosen_option": "B count-standardization / rate-profile vs weight-profile label selection (exact rationals)",
+    "rejected_alternatives": [
+      "A threshold-sensitivity rung first (fallback only on STANDARDIZATION_BIND_FAIL/BOUNDARY_TIE)",
+      "C-first close slice-4 before resolving the UNRESOLVED attribution clause",
+      "τ-thresholded RATE_DOMINATED/MIXTURE_DOMINATED primary branches (invents free knobs)",
+      "integer-ceil CF semantics mixed with proportion-space (rejected; use rate-form boundary only)",
+      "second independent ΔR Kitagawa implementation (use derived sign-negation only)",
+      "DEGENERATE_SMALL_N / confidence branches (exhaustive finite counts, not samples)"
+    ],
+    "design_seed_id": "1786003136298-a11c387a",
+    "consolidated_decision_owner": "claude",
+    "governing_design_owner": "codex_co_lead",
+    "rung5_terminal_branch": "IDENTITY_OK__ALIGNED_COMPONENT_LABELS__AGGREGATE_SPLIT",
+    "rung5_terminal_receipt_sha256": "9b9939b52c6fa984582c93604d8033385bb6ecd154399d782da49ba013096a6c",
+    "rung5_commit": "c2ab781e9b15bc0c7ca6a7b0414a8c3f8aaaed75"
+  },
+  "question": "Under the existing D2 threshold, does swapping the named component rate profile versus weight profile change or preserve the standardized categorical endpoint over the Rung-5 C1_profile.raw counts (exact rationals, receipts-only)?",
+  "operationalization_of_successor_string": {
+    "shared_enriched_component_labels_align_across_supports": "Rung-5 closed fact (C1 aligned)",
+    "aggregate_endpoint_labels_differ_under_exact": "Rung-5 closed fact (C2 split)",
+    "unresolved_attribution": "mixture proportions vs within-component rate geometry — resolved descriptively by this rung's primary 2x2 label-selection branch",
+    "no_mechanism_mint": true
+  },
+  "cost_class": {
+    "preferred": "CPU-only pure Fraction arithmetic",
+    "new_measurement_run_required": false,
+    "why_existing_bytes_suffice": "all eight integers (N50, present_N20 per component x support) live in Rung-5 terminal C1_profile.raw; published D2 labels live in C2_profile.aggregate_d2_labels",
+    "what_existing_receipts_cannot_answer": "mechanism/cause of rate-profile difference; transfer; individual row fate"
+  },
+  "claim_boundary": {
+    "receipts_only_descriptive_count_standardization": true,
+    "pre_carrier": true,
+    "pre_mechanism_mint": true,
+    "in_scope": [
+      "zero-GPU pure-arithmetic standardization over one frozen Rung-5 terminal receipt",
+      "exact-rational 2x2 q[w,r] grid and existing 3/10-7/10 D2 rate-form labels",
+      "six preregistered branches (BIND_FAIL / BOUNDARY_TIE / RATE_SELECTS / WEIGHT_SELECTS / BOTH_AXES_OR_INTERACTION / NEITHER)",
+      "report-only Kitagawa tables in q-space (three bases) with mechanical share+rate==Δq identity",
+      "ΔR as derived sign-negation only; integer margins report-only",
+      "raw denominator + lattice-step diagnostics (no confidence language)",
+      "dual-key exclusive mint + single PACKET_TERMINAL"
+    ],
+    "out_of_scope": [
+      "cause / mechanism / carrier / readiness / acquisition / bank claims",
+      "labeler-cause claim",
+      "individual fate or transfer claim",
+      "GPU / training / probe mutation / .pt touch",
+      "row-id or cross-support identity operations",
+      "new D2 thresholds / τ / ε / n_min branch knobs",
+      "N10 as D2 branch input",
+      "second independent ΔR decomposition implementation",
+      "threshold-sensitivity rung A (except as fallback after BIND_FAIL/TIE)",
+      "reimplementation of Rung-5 residual/densify/component projection arithmetic"
+    ],
+    "verbatim_for_plan_and_receipt_sentence_a": "under the existing D2 threshold, swapping the named component rate profile versus weight profile changes/preserves the standardized categorical endpoint as preregistered.",
+    "verbatim_for_plan_and_receipt_sentence_b": "the decomposition attributes the standardized rate gap arithmetically; each standardized categorical endpoint is the existing 3/10–7/10 boundary classification of its level, and their observed difference is reported separately — no claim about labeler cause, individual fate, transfer, or mechanism.",
+    "verbatim_for_plan_and_receipt": "under the existing D2 threshold, swapping the named component rate profile versus weight profile changes/preserves the standardized categorical endpoint as preregistered. the decomposition attributes the standardized rate gap arithmetically; each standardized categorical endpoint is the existing 3/10–7/10 boundary classification of its level, and their observed difference is reported separately — no claim about labeler cause, individual fate, transfer, or mechanism.",
+    "receipt_claim_boundary_key_set_exact": {
+      "receipts_only_descriptive_count_standardization": true,
+      "pre_carrier": true,
+      "pre_mechanism_mint": true,
+      "no_cause_claim": true,
+      "no_mechanism_claim": true,
+      "no_labeler_cause_claim": true,
+      "no_individual_fate_or_transfer_claim": true,
+      "no_carrier_readiness_acquisition_bank_claim": true
+    },
+    "receipt_claim_boundary_key_count": 8,
+    "denominator_rule": "schema, fixtures, reducer output, and tests MUST all use EXACTLY these eight keys with required boolean True; delete any three-constants-only variant; claim_boundary_constants_required_true is an alias of this same set"
+  },
+  "board": {
+    "ownership": "claude",
+    "no_ownership_transfer": true,
+    "parent_task_id": "1785931309579-4f068343",
+    "child_task_id_current": "1786004998450-f6569bd2",
+    "receipt_sink": "claude gate-1 ONLY",
+    "note": "plan-dev implements after +1; Claude executes live terminal after separate +1 execute; co_lead reviews frozen handoffs only",
+    "task_id_migration": {
+      "lineage": [
+        "1786003278386-1b34e0c4",
+        "1786004282846-d6ca6dd7",
+        "1786004998450-f6569bd2"
+      ],
+      "from": "1786004282846-d6ca6dd7",
+      "to": "1786004998450-f6569bd2",
+      "oldest_cancelled": "1786003278386-1b34e0c4",
+      "reason": "revision-neutral-contract successor task; old 1786004282846-d6ca6dd7 cancelled-superseded at 1786005018572; prior migration 1786003278386-1b34e0c4 → 1786004282846-d6ca6dd7 (cancellation 1786004303391 + concession 1786004312630); board contract claude-side — plan-dev does not touch board metadata",
+      "claude_records": [
+        "1786005018572",
+        "1786005036692-aed5161f",
+        "1786004321828-b74ee51f"
+      ]
+    }
+  },
+  "frozen_inputs": {
+    "supports": [
+      "L0b",
+      "math_a0"
+    ],
+    "components_exact": [
+      "R0",
+      "R1b4v2"
+    ],
+    "count_fields_used_for_D2": [
+      "N50",
+      "present_N20"
+    ],
+    "count_fields_used_for_recomposition_bind": [
+      "N50",
+      "present_N20",
+      "absent_N20"
+    ],
+    "count_fields_forbidden_in_D2_branch": [
+      "present_N10",
+      "N10"
+    ],
+    "rung5_terminal_receipt": {
+      "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_rung5/run_component_v1/terminal_receipt.json",
+      "sha256": "9b9939b52c6fa984582c93604d8033385bb6ecd154399d782da49ba013096a6c",
+      "bytes": 35775,
+      "extraction_path": "C1_profile.raw[support][component]",
+      "published_d2_path": "C2_profile.aggregate_d2_labels[support]",
+      "published_d2_labels_observed": {
+        "L0b": "E_MIXED",
+        "math_a0": "E_TRANSIENT"
+      },
+      "published_counts_observed": {
+        "L0b": {
+          "R0": {
+            "N50": 5,
+            "present_N20": 1,
+            "absent_N20": 4
+          },
+          "R1b4v2": {
+            "N50": 3,
+            "present_N20": 2,
+            "absent_N20": 1
+          },
+          "aggregate": {
+            "N50": 8,
+            "present_N20": 3,
+            "absent_N20": 5,
+            "ceil_0_70": 6,
+            "margin": -1
+          }
+        },
+        "math_a0": {
+          "R0": {
+            "N50": 14,
+            "present_N20": 1,
+            "absent_N20": 13
+          },
+          "R1b4v2": {
+            "N50": 9,
+            "present_N20": 5,
+            "absent_N20": 4
+          },
+          "aggregate": {
+            "N50": 23,
+            "present_N20": 6,
+            "absent_N20": 17,
+            "ceil_0_70": 17,
+            "margin": 0
+          }
+        }
+      }
+    },
+    "no_other_receipt_reads": true,
+    "cross_support_row_id_intersection_forbidden": true,
+    "row_id_operations_forbidden": true,
+    "count_arithmetic_only": true
+  },
+  "arithmetic": {
+    "exact_rationals_mandatory": true,
+    "library": "fractions.Fraction",
+    "no_float_in_decision_path": true,
+    "definitions": {
+      "w[s,c]": "Fraction(N50[s,c], sum_c N50[s,c])",
+      "p[s,c]": "Fraction(present_N20[s,c], N50[s,c])",
+      "q[w_profile, r_profile]": "sum_c w[w_profile,c] * p[r_profile,c]",
+      "label(q)": "PERSISTENT iff q >= Fraction(7,10); TRANSIENT iff q <= Fraction(3,10); else MIXED",
+      "published_label_normalize": "strip leading 'E_' from Rung-5 aggregate_d2_labels so E_MIXED->MIXED, E_TRANSIENT->TRANSIENT, E_PERSISTENT->PERSISTENT; diagonal reproduction compares normalized published label to standardized label(q[s,s])"
+    },
+    "equivalence_note": "rate-form boundary is exactly equivalent to a>=ceil(0.7*n) on every integer observed cell, then explicitly extended to exact-rational standardized cells with no rounding",
+    "kitagawa_q_space": {
+      "primary_space": "q (present-rate)",
+      "delta_q": "q[w=math_a0,r=math_a0] - q[w=L0b,r=L0b] = -21/184",
+      "delta_q_exact": "-21/184",
+      "cell_aliases": {
+        "qLL": "q[w=L0b,r=L0b] = 3/8",
+        "qLM": "q[w=L0b,r=math_a0] = 85/336",
+        "qML": "q[w=math_a0,r=L0b] = 44/115",
+        "qMM": "q[w=math_a0,r=math_a0] = 6/23"
+      },
+      "bases": {
+        "L0b": {
+          "share_term_formula": "qML - qLL",
+          "rate_term_formula": "qMM - qML",
+          "share_term_exact": "7/920",
+          "rate_term_exact": "-14/115",
+          "identity": "share_term + rate_term == delta_q == -21/184"
+        },
+        "math_a0": {
+          "share_term_formula": "qMM - qLM",
+          "rate_term_formula": "qLM - qLL",
+          "share_term_exact": "61/7728",
+          "rate_term_exact": "-41/336",
+          "identity": "share_term + rate_term == delta_q == -21/184"
+        },
+        "symmetric_average": {
+          "share_term_formula": "((qML - qLL) + (qMM - qLM)) / 2",
+          "rate_term_formula": "((qMM - qML) + (qLM - qLL)) / 2",
+          "share_term_exact": "599/77280",
+          "rate_term_exact": "-9419/77280",
+          "identity": "share_term + rate_term == delta_q == -21/184",
+          "headline": true
+        }
+      },
+      "delta_R_policy": "derived exact negation of delta_q and of each term (sign flip only); NEVER a second independently implemented decomposition",
+      "delta_R_exact": "21/184",
+      "branch_authority": "NONE",
+      "battery_requires_exact_values_per_base": true
+    },
+    "integer_margins_report_only": {
+      "L0b": -1,
+      "math_a0": 0,
+      "definition": "absent_N20_aggregate - ceil(0.7 * N50_aggregate)",
+      "branch_authority": "NONE"
+    }
+  },
+  "endpoint_claim_grammar": {
+    "rule": "descriptive profile-axis selection under existing boundary only",
+    "prohibition_style": "scoped AFFIRMATIVE-attribution property checks — NOT raw banned-word substring scans",
+    "property_under_test": "a receipt/plan prose string AFFIRMATIVELY attributes cause/mechanism/labeler/fate/transfer to the rate or weight profile (e.g. 'rates cause the label split') → FAIL; a string that names those concepts only inside an explicit prohibition/claim-ceiling sentence → PASS",
+    "calibration": {
+      "known_good_must_stay_silent": {
+        "text": "the decomposition attributes the standardized rate gap arithmetically; each standardized categorical endpoint is the existing 3/10–7/10 boundary classification of its level, and their observed difference is reported separately — no claim about labeler cause, individual fate, transfer, or mechanism.",
+        "why": "sentence b legitimately contains cause/fate/mechanism/transfer/labeler words inside a prohibition"
+      },
+      "known_bad_must_fire": {
+        "text": "rates cause the label split",
+        "why": "affirmative attribution of cause to rates"
+      }
+    },
+    "approved_phrasing_examples": [
+      "rate profile selects the standardized D2 label under both weight profiles",
+      "share_term and rate_term partition delta_q exactly",
+      "diagonal standardized labels reproduce published D2 labels"
+    ],
+    "principle_governs": "claim_boundary.verbatim sentences a+b",
+    "raw_word_blacklist_forbidden_as_matcher": true
+  },
+  "prereg_branch_classifier": {
+    "product": "COUNT_STANDARDIZATION_DECOMPOSITION",
+    "first_match_order": [
+      "STANDARDIZATION_BIND_FAIL",
+      "BOUNDARY_TIE",
+      "RATE_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_WEIGHT_PROFILES",
+      "WEIGHT_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_RATE_PROFILES",
+      "BOTH_AXES_OR_INTERACTION",
+      "NEITHER_AXIS_SELECTS_LABEL"
+    ],
+    "STANDARDIZATION_BIND_FAIL": {
+      "preempting": true,
+      "iff_any": [
+        "components observed in C1_profile.raw != exactly frozenset({R0, R1b4v2}) per support",
+        "component N50/present_N20/absent_N20 sums fail exact equality to Rung-5 aggregate C2_profile.raw[support].aggregate fields for present_N20, absent_N20, |E50|",
+        "any zero denominator (N50[s,c]==0 or support total N50==0)",
+        "either diagonal standardized label(q[s,s]) fails to equal normalized published D2 label for support s",
+        "non-exact arithmetic used in decision path (float compare without Fraction)",
+        "any row-id or cross-support identity operation invoked"
+      ]
+    },
+    "BOUNDARY_TIE": {
+      "preempting": true,
+      "iff": "any of the four standardized cells q[w,r] is exactly equal to Fraction(3,10) or Fraction(7,10)",
+      "note": "live expected cells avoid the boundary; synthetic fixture required for calibration"
+    },
+    "rate_selects_predicate": "(label(q[w=L0b,r=L0b]) == label(q[w=math_a0,r=L0b])) AND (label(q[w=L0b,r=math_a0]) == label(q[w=math_a0,r=math_a0]))",
+    "weight_selects_predicate": "(label(q[w=L0b,r=L0b]) == label(q[w=L0b,r=math_a0])) AND (label(q[w=math_a0,r=L0b]) == label(q[w=math_a0,r=math_a0]))",
+    "RATE_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_WEIGHT_PROFILES": {
+      "iff": "rate_selects AND NOT weight_selects"
+    },
+    "WEIGHT_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_RATE_PROFILES": {
+      "iff": "weight_selects AND NOT rate_selects"
+    },
+    "BOTH_AXES_OR_INTERACTION": {
+      "iff": "NOT rate_selects AND NOT weight_selects",
+      "note": "each axis flips on at least one background ⇒ background-dependent / interaction (co_lead locked #3)"
+    },
+    "NEITHER_AXIS_SELECTS_LABEL": {
+      "iff": "rate_selects AND weight_selects",
+      "note": "label invariant under BOTH axes ⇒ all four cells equal ⇒ no axis changes the label (co_lead locked #4)"
+    },
+    "secondary_kitagawa": {
+      "branch_authority": "NONE",
+      "required_fields": [
+        "tables_by_base.L0b.share_term",
+        "tables_by_base.L0b.rate_term",
+        "tables_by_base.L0b.delta_q",
+        "tables_by_base.math_a0.share_term",
+        "tables_by_base.math_a0.rate_term",
+        "tables_by_base.math_a0.delta_q",
+        "tables_by_base.symmetric_average.share_term",
+        "tables_by_base.symmetric_average.rate_term",
+        "tables_by_base.symmetric_average.delta_q",
+        "delta_R_derived",
+        "integer_margins"
+      ],
+      "mechanical_assert_each_base": "share_term + rate_term == delta_q == -21/184",
+      "exact_value_asserts_live_shaped": {
+        "L0b": {
+          "share_term": "7/920",
+          "rate_term": "-14/115"
+        },
+        "math_a0": {
+          "share_term": "61/7728",
+          "rate_term": "-41/336"
+        },
+        "symmetric_average": {
+          "share_term": "599/77280",
+          "rate_term": "-9419/77280"
+        }
+      }
+    },
+    "diagnostics_report_only": {
+      "branch_authority": "NONE",
+      "raw_denominators": "N50 per component and support",
+      "lattice_steps": "Fraction(1, N50[s,c]) per cell",
+      "near_equal_weights_exact": "|w[L0b,R0] - w[math_a0,R0]| = |5/8 - 14/23| = 3/184 (complementary component same magnitude)",
+      "forbidden": [
+        "DEGENERATE_SMALL_N branch",
+        "confidence language",
+        "epsilon threshold"
+      ]
+    },
+    "composite_terminal": "IDENTITY_OK__<primary_branch> when binds pass; else the preempting failure token alone",
+    "successor_mapping_preregistered": {
+      "RATE_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_WEIGHT_PROFILES": "rate profile selects standardized D2 label under both weight profiles; next design boundary is whether to close slice-4 (C) or open threshold-sensitivity (A) only if residual design asks it — still no mechanism mint",
+      "WEIGHT_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_RATE_PROFILES": "weight profile selects standardized D2 label under both rate profiles; next design boundary is C or mixture-focused follow-up — still no mechanism mint",
+      "BOTH_AXES_OR_INTERACTION": "interaction/unresolved under this instrument (background-dependent flips) — C with unresolved result or A if design reopens threshold; still no mechanism mint",
+      "NEITHER_AXIS_SELECTS_LABEL": "neither axis selects (all four labels equal); residual asymmetry not categorical under this boundary — C with that characterization; still no mechanism mint",
+      "STANDARDIZATION_BIND_FAIL": "instrument/bind failure — cure instrument; do not mint science",
+      "BOUNDARY_TIE": "exact boundary cell — fallback A (threshold-sensitivity) candidacy; no mechanism mint"
+    },
+    "claim_boundary_constants_required_true": [
+      "no_carrier_readiness_acquisition_bank_claim",
+      "no_cause_claim",
+      "no_individual_fate_or_transfer_claim",
+      "no_labeler_cause_claim",
+      "no_mechanism_claim",
+      "pre_carrier",
+      "pre_mechanism_mint",
+      "receipts_only_descriptive_count_standardization"
+    ]
+  },
+  "runtime_source_set_authority": {
+    "strategy": "SELF_CONTAINED_FOUR_PATH",
+    "decision": "counts are re-declared as frozen pins extracted from the single Rung-5 terminal receipt; Rung-6 MUST NOT import Rung-5/densify/residual modules for projection or arithmetic",
+    "justification": [
+      "Rung-5/densify/residual modules operate on row_id membership and multi-receipt projection — re-entering them would re-open the forbidden row-id surface",
+      "all decision inputs are eight integers + two published labels already pinned; no residual arithmetic reuse is required",
+      "smaller ordered set reduces bind surface and keeps import-closure trivial"
+    ],
+    "forbidden_discretion": "MUST NOT import scripts.a_prime_slice4_shared_component_* or densify/residual modules into the live decision path; MUST NOT reimplement row-id projection",
+    "new_files_create": [
+      "scripts/a_prime_slice4_count_standardization_schema_v0.py",
+      "scripts/a_prime_slice4_count_standardization_reducer_v0.py",
+      "scripts/a_prime_slice4_count_standardization_classifier_v0.py",
+      "scripts/a_prime_slice4_count_standardization_runtime_source_contract_v0.py"
+    ],
+    "test_files_create": [
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_reducer_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_classifier_v0.py"
+    ],
+    "imported_prior_modules_complete_read_only": [],
+    "complete_runtime_source_set_at_live_execute_ordered": [
+      "scripts/a_prime_slice4_count_standardization_schema_v0.py",
+      "scripts/a_prime_slice4_count_standardization_reducer_v0.py",
+      "scripts/a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+      "scripts/a_prime_slice4_count_standardization_classifier_v0.py"
+    ],
+    "ordered_file_count": 4,
+    "algorithm": "ORDERED_CONCAT_V0: for ordered_paths in complete_runtime_source_set_at_live_execute_ordered, parts = [bytes.fromhex(per_file_sha256[p]) for p in ordered_paths]; digest = sha256(b''.join(parts)).hexdigest() — RAW 32-byte digests concatenated, NOT hex-ASCII strings. Identical semantics to Rung-5 scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py ordered_concat_v0. Do NOT mint a new algorithm name.",
+    "manifest_schema_id": "a_prime_slice4_rung6_runtime_source_manifest/v0",
+    "expected_manifest_sha_cli_input": true,
+    "expected_manifest_sha_never_derived_from_loaded_bytes": true,
+    "manifest_mint": "claude gate-1 only after STEP-2 freeze; O_EXCL 0444 scratch; never repo-staged; never plan-dev-minted",
+    "import_reimplementation_rule": "stdlib + fractions only for decision arithmetic; JSON load of the single pinned receipt is allowed in the classifier orchestrator only",
+    "algorithm_name": "ORDERED_CONCAT_V0",
+    "algorithm_parity_reference": "scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py:ordered_concat_v0 (bytes.fromhex join, not hex-ASCII concat)"
+  },
+  "implementation_contract": {
+    "DEVELOPER_STEPS": 2,
+    "sizing": "MEDIUM",
+    "worktree": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "board_ownership": "claude",
+    "plus1_implement_status": "NOT YET — plan gate only",
+    "receipt_sink": "claude gate-1 ONLY",
+    "line_cap_hard": 500,
+    "step_1": {
+      "files": [
+        "scripts/a_prime_slice4_count_standardization_schema_v0.py",
+        "scripts/a_prime_slice4_count_standardization_reducer_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_reducer_v0.py"
+      ],
+      "role": "pure schema constants + pure reducer (no CLI/IO/print/run-root); tests pin Fraction cells, branch predicates, BIND_FAIL families, BOUNDARY_TIE synthetic, Kitagawa identities"
+    },
+    "step_2": {
+      "files": [
+        "scripts/a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+        "scripts/a_prime_slice4_count_standardization_classifier_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_classifier_v0.py"
+      ],
+      "role": "pure runtime-source contract + thin classifier orchestrator (load receipt, pin check, call reducer, dual-key mint); tests pin 4-file ORDERED_CONCAT, dual-key, argv hostiles, marker cardinality"
+    },
+    "dual_key_pattern_reused": true
+  },
+  "SIZING": "MEDIUM",
+  "DEVELOPER_STEPS": 2,
+  "STEP_1_ASSERTIONS": {
+    "types": [
+      "PASS iff schema+reducer py_compile clean and import as IMPORT_OK_STANDARDIZATION",
+      "PASS iff reducer pure (no CLI/IO/print/run-root) and uses fractions.Fraction only in decision path",
+      "PASS iff each STEP-1 Python file line count < 500"
+    ],
+    "tests": [
+      "PASS iff validation_argv_frozen.focused_pytest_step1 exits 0",
+      "PASS iff live-shaped counts yield four cells exactly 3/8, 85/336, 44/115, 6/23",
+      "PASS iff live-shaped primary branch RATE_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_WEIGHT_PROFILES",
+      "PASS iff diagonal labels MIXED/TRANSIENT reproduce normalized published D2",
+      "PASS iff component-set mismatch / zero denominator / recomposition mismatch / diagonal mismatch each fire STANDARDIZATION_BIND_FAIL with named reason",
+      "PASS iff synthetic q exactly 3/10 or 7/10 fires BOUNDARY_TIE",
+      "PASS iff Kitagawa L0b base exact share=7/920 rate=-14/115 and share+rate==delta_q==-21/184",
+      "PASS iff Kitagawa math_a0 base exact share=61/7728 rate=-41/336 and share+rate==delta_q==-21/184",
+      "PASS iff Kitagawa symmetric_average exact share=599/77280 rate=-9419/77280 and share+rate==delta_q==-21/184",
+      "PASS iff delta_R derived equals -delta_q with sign-negated terms (no second implementation path required beyond negation helper)",
+      "PASS iff integer margins report L0b=-1 math_a0=0",
+      "PASS iff N10 fields if present in fixture do not alter D2 branch",
+      "PASS iff no float decision compare remains in reducer source (grep/AST or explicit Fraction-only helpers)",
+      "PASS iff claim_boundary receipt key set is exactly the eight named keys all True",
+      "PASS iff affirmative-attribution checker stays silent on claim-ceiling sentence b and fires on 'rates cause the label split'"
+    ],
+    "runtime": [
+      "PASS iff no import of shared_component/densify/residual modules",
+      "PASS iff no GPU/training/.pt/probe mutation in STEP-1",
+      "PASS iff py_compile_import_step1/2 use concrete outside-repo PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache; pytest uses PYTHONDONTWRITEBYTECODE=1 only (no PYTHONPYCACHEPREFIX); live uses PYTHONDONTWRITEBYTECODE=1 + python -B (no PYTHONPYCACHEPREFIX); neither leaves new repo __pycache__ for these modules"
+    ],
+    "data": [
+      "PASS iff frozen count pins match frozen_inputs.rung5_terminal_receipt.published_counts_observed",
+      "PASS iff published D2 label normalization map is exact"
+    ],
+    "commands_authority": {
+      "pytest": "validation_argv_frozen.focused_pytest_step1",
+      "import_compile": "validation_argv_frozen.py_compile_import_step1",
+      "line_cap": 500,
+      "files_authority": [
+        "scripts/a_prime_slice4_count_standardization_schema_v0.py",
+        "scripts/a_prime_slice4_count_standardization_reducer_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_reducer_v0.py"
+      ]
+    }
+  },
+  "STEP_2_ASSERTIONS": {
+    "types": [
+      "PASS iff contract+classifier py_compile clean and import as IMPORT_OK_STANDARDIZATION_CLASSIFIER",
+      "PASS iff contract pure and classifier thin orchestrator only",
+      "PASS iff each STEP-2 Python file line count < 500"
+    ],
+    "tests": [
+      "PASS iff validation_argv_frozen.focused_pytest_step2 exits 0",
+      "PASS iff 4-file ORDERED_CONCAT_V0 digest recomputes via RAW bytes.fromhex join (Rung-5 parity); expected-manifest-sha mismatch markerless fail before mint",
+      "PASS iff frozen rung5 receipt path+sha pin enforced",
+      "PASS iff dual-key exclusive mint pre-existing root fails closed",
+      "PASS iff missing/malformed --rung5-terminal-receipt / pin mismatch fails closed",
+      "PASS iff DECLARED top<->embedded binds and core snapshot equality hold",
+      "PASS iff byte-flip hostile on any of the four runtime paths yields runtime_source_file_sha_mismatch / markerless fail",
+      "PASS iff import-closure: every repo-local scripts.* import edge from ordered set resolves INSIDE the four-path set",
+      "PASS iff known-good fixtures + explicit equality assertions bind plan_revision_binding to the FULL 64-hex sha of the dual-accepted operative plan JSON revision (v6 once accepted; never DEAD, never abbreviated)",
+      "PASS iff claim_boundary key set on happy-path receipt equals the eight named keys all True",
+      "PASS iff success-path receipt rejects missing top-level primary (no fabrication; both top+embedded presence required)",
+      "PASS iff success-path receipt rejects missing embedded classification.primary (one-sided deletion fail-closed)",
+      "PASS iff missing classification.claim_boundary raises/markerless (NO fabricate CLAIM_BOUNDARY_REQUIRED default)",
+      "PASS iff missing composite_terminal raises/markerless (NO bare-primary fallback)",
+      "PASS iff embedded plan_revision_binding mismatch vs top/frozen constant fails closed",
+      "PASS iff top/embedded source_shas mismatch fails closed (equality required on success terminals)",
+      "PASS iff missing/unreadable --runtime-source-manifest path yields markerless INCOMPLETE_FINALIZATION + WRAPPER_RC 2 and creates no run-root/artifacts"
+    ],
+    "runtime": [
+      "PASS iff complete_runtime_source_set ordered FOUR paths exact and frozen",
+      "PASS iff classifier does not reimplement standardization arithmetic (calls reducer)",
+      "PASS iff plan-dev does NOT execute live terminal",
+      "PASS iff N10 absent from live argv and from D2 inputs"
+    ],
+    "data": [
+      "PASS iff live argv_template has EXACTLY three placeholders",
+      "PASS iff live_terminal_activation_gate.binds_required has EIGHT members and bindset parity with workflow step 7",
+      "PASS iff expected live markers are exactly one PACKET_TERMINAL + WRAPPER_RC 0 and artifacts terminal_receipt.json + terminal_manifest.json"
+    ],
+    "commands_authority": {
+      "pytest": "validation_argv_frozen.focused_pytest_step2",
+      "import_compile": "validation_argv_frozen.py_compile_import_step2",
+      "live_terminal": "validation_argv_frozen.standardization_live_terminal",
+      "line_cap": 500,
+      "files_authority": [
+        "scripts/a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+        "scripts/a_prime_slice4_count_standardization_classifier_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_classifier_v0.py"
+      ],
+      "activation_binds_count": 8
+    }
+  },
+  "workflow_after_dual_accept": {
+    "sequence_frozen": [
+      "1. persisted +1 implement STEP-1 only",
+      "2. plan-dev CREATE exactly implementation_contract.step_1.files; CPU validation per validation_argv_frozen.focused_pytest_step1 + py_compile_import_step1; each file <500L",
+      "3. claude gate-1 freeze → co_lead gate-2 dual accept of STEP-1 surface",
+      "4. separate persisted +1 implement STEP-2",
+      "5. plan-dev CREATE exactly implementation_contract.step_2.files; CPU validation per validation_argv_frozen.focused_pytest_step2 + py_compile_import_step2; each file <500L",
+      "6. claude gate-1 freezes STEP-2 implementation bytes → O_EXCL-mints 4-file runtime-source manifest freeze-local NON-REPO (schema a_prime_slice4_rung6_runtime_source_manifest/v0; ordered FOUR paths; per-file sha256; ORDERED_CONCAT_V0 digest) → freeze handoff records manifest abs path + sha256 → co_lead gate-2 dual accept; manifest OPERATIVE ONLY IF gate-2 PASSes; any STEP-2 byte change remints BOTH surface and manifest; never repo/staged; never plan-dev-minted",
+      "7. separate persisted Claude-authored +1 execute live terminal gate REQUIRED before exclusive run-root mint; BOUND to identical set as live_terminal_activation_gate.binds_required EIGHT members: (a) dual_accepted_classifier_file_sha256, (b) rung5_terminal_receipt_sha256_9b9939b5, (c) complete_runtime_source_per_file_sha_map_four_files, (d) runtime_source_digest_ORDERED_CONCAT_V0, (e) runtime_source_manifest_sha256, (f) runtime_source_manifest_abs_path, (g) exact_live_argv_template with sole placeholders __EXCLUSIVE_RUN_ROOT__, __RUNTIME_SOURCE_MANIFEST__, __RUNTIME_SOURCE_MANIFEST_SHA256__, (h) fresh_exclusive_run_root never pre-created. BINDSET_PARITY_RULE: step 7 enumeration MUST equal live_terminal_activation_gate.binds_required exactly.",
+      "8. Claude live terminal executor only after the +1 execute record exists and cites those binds (CLI expected-manifest-sha check → parse/validate manifest via contract → re-hash four files via contract → frozen rung5 pin check → exclusive run-root → classifier → single PACKET_TERMINAL → freeze); plan-dev does NOT execute live terminal; any runtime_source / expected-sha mismatch is markerless fail before mint",
+      "9. terminal receipt to claude gate-1 only; no mechanism mint"
+    ],
+    "step_1_files_authority": [
+      "scripts/a_prime_slice4_count_standardization_schema_v0.py",
+      "scripts/a_prime_slice4_count_standardization_reducer_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_reducer_v0.py"
+    ],
+    "step_2_files_authority": [
+      "scripts/a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+      "scripts/a_prime_slice4_count_standardization_classifier_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_classifier_v0.py"
+    ],
+    "live_terminal_activation_gate": {
+      "required": true,
+      "kind": "persisted Claude-authored non-ack +1 execute live terminal",
+      "position": "after STEP-2 dual accept; before exclusive run-root mint",
+      "binds_required": [
+        "dual_accepted_classifier_file_sha256",
+        "rung5_terminal_receipt_sha256_9b9939b5",
+        "complete_runtime_source_per_file_sha_map_four_files",
+        "runtime_source_digest_ORDERED_CONCAT_V0",
+        "runtime_source_manifest_sha256",
+        "runtime_source_manifest_abs_path",
+        "exact_live_argv_template_placeholders___EXCLUSIVE_RUN_ROOT_____RUNTIME_SOURCE_MANIFEST_____RUNTIME_SOURCE_MANIFEST_SHA256__",
+        "fresh_exclusive_run_root"
+      ],
+      "binds_count": 8,
+      "note": "EIGHT binds (simpler than Rung-5 TEN): single receipt pin replaces six horizons + two prior terminals"
+    },
+    "bindset_parity_rule": {
+      "rule": "workflow_after_dual_accept.sequence_frozen step 7 member set MUST equal live_terminal_activation_gate.binds_required exactly",
+      "fails_when": "any bind present in one enumeration and absent from the other"
+    },
+    "forbidden_collapsed_workflow": [
+      "collapse +1 implement into live execute",
+      "plan-dev executes live terminal",
+      "activate or use runtime-source manifest for live execute before STEP-2 dual accept + gate-2 PASS (non-operative O_EXCL mint after STEP-2 code freeze for gate-2 handoff is REQUIRED per sequence_frozen step 6; operative only on PASS)",
+      "stage runtime manifest into repo"
+    ],
+    "runtime_manifest_timing": {
+      "governs": "sequence_frozen step 6",
+      "mint_when": "after STEP-2 code freeze (gate-1), before co_lead gate-2 handoff",
+      "mint_by": "claude_gate1 only; O_EXCL 0444 scratch; non-repo",
+      "mint_status": "non-operative until gate-2 PASS",
+      "operative_when": "gate-2 PASS on STEP-2 surface + manifest",
+      "live_execute_when": "after dual accept + separate persisted EIGHT-bind +1 execute",
+      "forbidden": [
+        "plan-dev mint of runtime manifest",
+        "live execute using manifest before dual accept",
+        "treating not-yet-minted manifest as cleared at gate-2"
+      ],
+      "resolves_contradiction": "PLAN v4:542 (step 6 mint-before-gate-2) vs former forbidden_collapsed 'mint before dual accept' — latter restated as activation ban"
+    }
+  },
+  "live_terminal_executor": {
+    "verbatim": "Claude directly as test-operator (exclusive immutable run-root mint → load pinned Rung-5 receipt → standardization classifier → single PACKET_TERMINAL marker → freeze); plan-dev does NOT execute the live terminal",
+    "plan_dev_forbidden_to_execute_live_terminal": true
+  },
+  "validation_argv_frozen": {
+    "focused_pytest_step1": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-m",
+        "pytest",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_reducer_v0.py",
+        "-q",
+        "--tb=line"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "bytecode_write_prevention": "PYTHONDONTWRITEBYTECODE=1 (no PYTHONPYCACHEPREFIX needed on pytest)"
+    },
+    "focused_pytest_step2": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-m",
+        "pytest",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_classifier_v0.py",
+        "-q",
+        "--tb=line"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "bytecode_write_prevention": "PYTHONDONTWRITEBYTECODE=1 (no PYTHONPYCACHEPREFIX needed on pytest)"
+    },
+    "py_compile_import_step1": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_count_standardization_schema_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_count_standardization_reducer_v0.py', doraise=True); import scripts.a_prime_slice4_count_standardization_schema_v0 as s; import scripts.a_prime_slice4_count_standardization_reducer_v0 as r; print('IMPORT_OK_STANDARDIZATION')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK_STANDARDIZATION",
+      "scratch_pycache_rule": "PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache is a concrete outside-repo path (NOT a __placeholder__); py_compile.compile(..., doraise=True) may write bytecode only under that prefix; MUST NOT create repo-tree __pycache__. Alternative allowed: in-memory exec via compile(source, filename, 'exec') without writing .pyc (builtin compile has no doraise parameter).",
+      "repo_pycache_excluded": true
+    },
+    "py_compile_import_step2": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_count_standardization_runtime_source_contract_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_count_standardization_classifier_v0.py', doraise=True); import scripts.a_prime_slice4_count_standardization_runtime_source_contract_v0 as contract; import scripts.a_prime_slice4_count_standardization_classifier_v0 as c; print('IMPORT_OK_STANDARDIZATION_CLASSIFIER')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK_STANDARDIZATION_CLASSIFIER",
+      "scratch_pycache_rule": "PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache is a concrete outside-repo path (NOT a __placeholder__); py_compile.compile(..., doraise=True) may write bytecode only under that prefix; MUST NOT create repo-tree __pycache__. Alternative allowed: in-memory exec via compile(source, filename, 'exec') without writing .pyc (builtin compile has no doraise parameter).",
+      "repo_pycache_excluded": true
+    },
+    "standardization_live_terminal": {
+      "argv_template": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-u",
+        "-B",
+        "scripts/a_prime_slice4_count_standardization_classifier_v0.py",
+        "--run-root",
+        "__EXCLUSIVE_RUN_ROOT__",
+        "--rung5-terminal-receipt",
+        "/home/gabe/claw-code-creditdir/a_prime_slice4_rung5/run_component_v1/terminal_receipt.json",
+        "--runtime-source-manifest",
+        "__RUNTIME_SOURCE_MANIFEST__",
+        "--runtime-source-manifest-sha256",
+        "__RUNTIME_SOURCE_MANIFEST_SHA256__"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_markers": [
+        "exactly one PACKET_TERMINAL <branch>",
+        "WRAPPER_RC 0"
+      ],
+      "expected_artifacts": [
+        "terminal_receipt.json",
+        "terminal_manifest.json"
+      ],
+      "placeholders_exact": [
+        "__EXCLUSIVE_RUN_ROOT__",
+        "__RUNTIME_SOURCE_MANIFEST__",
+        "__RUNTIME_SOURCE_MANIFEST_SHA256__"
+      ],
+      "placeholders_exact_count": 3,
+      "proposed_run_root": "/home/gabe/claw-code-creditdir/a_prime_slice4_rung6/run_standardization_v1",
+      "fails_when": [
+        "STANDARDIZATION_BIND_FAIL",
+        "rc != 0",
+        "marker cardinality != 1",
+        "missing artifacts",
+        "runtime_source_mismatch / INCOMPLETE_FINALIZATION before mint",
+        "WRAPPER_RC 2 markerless runtime-source fail",
+        "manifest sha mismatch vs +1 execute pin",
+        "rung5 terminal pin path/sha mismatch"
+      ],
+      "bytecode_write_prevention": "python -B plus PYTHONDONTWRITEBYTECODE=1; no PYTHONPYCACHEPREFIX on live argv"
+    },
+    "pycache_exclusion": {
+      "rule": "pytest and live terminal rely on PYTHONDONTWRITEBYTECODE=1 and python -B (live) — no PYTHONPYCACHEPREFIX. py_compile_import_step1/2 ONLY set PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache (concrete path, not a bind placeholder). In-memory alternative: compile(source, filename, 'exec') then exec — builtin compile() has no doraise. Repo __pycache__ is never a validation artifact and is excluded from commit denominator.",
+      "py_compile_prefix_concrete": "/tmp/claude-1000/rung6_pycache",
+      "live_and_pytest_prefix": null,
+      "placeholders_exact_unchanged": 3,
+      "activation_binds_unchanged": 8
+    }
+  },
+  "validation_proof": {
+    "purpose": "complete enumeration for board contract-currency citation; not a second semantics body",
+    "STEP_1": {
+      "pytest": "validation_argv_frozen.focused_pytest_step1",
+      "import_compile": "validation_argv_frozen.py_compile_import_step1",
+      "covers": [
+        "exact four-cell Fraction grid",
+        "six-branch first-match predicates",
+        "STANDARDIZATION_BIND_FAIL family hostiles (observed-firing)",
+        "BOUNDARY_TIE synthetic fixture",
+        "Kitagawa three-base identities + derived ΔR",
+        "integer margins",
+        "N10 non-entry into D2",
+        "no prior-module import"
+      ],
+      "line_cap": "<500L per created STEP-1 source/test file"
+    },
+    "STEP_2": {
+      "pytest": "validation_argv_frozen.focused_pytest_step2",
+      "import_compile": "validation_argv_frozen.py_compile_import_step2",
+      "covers": [
+        "4-file runtime-source contract + ORDERED_CONCAT_V0",
+        "expected-manifest-sha CLI",
+        "frozen rung5 pin enforcement",
+        "dual-key exclusive mint",
+        "thin classifier orchestrator only",
+        "import-closure inside four-path set",
+        "success-path top↔embedded both-sides presence + equality for DECLARED/core fields (no one-sided admission)",
+        "no claim_boundary fabrication; no composite_terminal→primary fallback",
+        "embedded plan_revision_binding + source_shas equality hostiles",
+        "missing/unreadable runtime-manifest path → markerless RC2 + no run-root"
+      ],
+      "line_cap": "<500L per created STEP-2 source/test file"
+    },
+    "live_terminal": {
+      "argv": "validation_argv_frozen.standardization_live_terminal.argv_template with substitutions __EXCLUSIVE_RUN_ROOT__, __RUNTIME_SOURCE_MANIFEST__, __RUNTIME_SOURCE_MANIFEST_SHA256__ only",
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "executor": "claude_test_operator_only",
+      "placeholders_exact_count": 3
+    }
+  },
+  "test_battery_named": [
+    "live-shaped four cells exact 3/8, 85/336, 44/115, 6/23",
+    "live-shaped rate_selects true weight_selects false → RATE_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_WEIGHT_PROFILES",
+    "diagonal labels reproduce normalized published D2 (MIXED, TRANSIENT)",
+    "component set != {R0,R1b4v2} → STANDARDIZATION_BIND_FAIL",
+    "zero N50 denominator → STANDARDIZATION_BIND_FAIL",
+    "recomposition present_N20 sum mismatch → STANDARDIZATION_BIND_FAIL",
+    "recomposition absent_N20 sum mismatch → STANDARDIZATION_BIND_FAIL",
+    "recomposition |E50| sum mismatch → STANDARDIZATION_BIND_FAIL",
+    "diagonal label mismatch vs published → STANDARDIZATION_BIND_FAIL",
+    "synthetic q==3/10 → BOUNDARY_TIE",
+    "synthetic q==7/10 → BOUNDARY_TIE",
+    "fixture weight_selects only → WEIGHT_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_RATE_PROFILES",
+    "fixture all four labels equal → NEITHER_AXIS_SELECTS_LABEL",
+    "fixture checkerboard/interaction (NOT rate_selects AND NOT weight_selects) → BOTH_AXES_OR_INTERACTION",
+    "Kitagawa L0b base exact share=7/920 rate=-14/115 and identity sum -21/184",
+    "Kitagawa math_a0 base exact share=61/7728 rate=-41/336 and identity sum -21/184",
+    "Kitagawa symmetric_average exact share=599/77280 rate=-9419/77280 and identity sum -21/184",
+    "delta_R derived == -delta_q (sign negation only)",
+    "integer margins L0b=-1 math_a0=0",
+    "N10 present in raw fixture does not change primary branch",
+    "near-equal weight report exact 3/184",
+    "lattice steps report 1/N50 per component",
+    "reducer has no scripts.a_prime_slice4_shared_component_/densify/residual import",
+    "schema exports branch name constants and Fraction thresholds 3/10 7/10",
+    "schema claim_boundary key set exact eight keys",
+    "line caps STEP-1 files <500L",
+    "affirmative-attribution checker silent on sentence b",
+    "affirmative-attribution checker fires on 'rates cause the label split'",
+    "runtime contract known-good four-path admit",
+    "runtime contract expected-sha mismatch reject before parse",
+    "runtime contract per-file sha mismatch reject",
+    "runtime contract ORDERED_CONCAT_V0 recompute via RAW digest bytes (not hex-ASCII)",
+    "import-closure zero edges outside four-path set",
+    "classifier pin path missing → fail closed",
+    "classifier pin sha mismatch → fail closed",
+    "classifier dual-key pre-existing run-root → fail closed",
+    "classifier happy path dual-key artifacts + single PACKET_TERMINAL marker contract (fixture mode)",
+    "marker cardinality == 1 on happy fixture",
+    "claim_boundary eight named keys all true on happy path",
+    "successor text exact frozen mapping for RATE branch",
+    "bindset parity: sequence step7 members == binds_required (EIGHT)",
+    "argv template placeholder count == 3 (live activation)",
+    "plan_revision_binding full 64-hex of dual-accepted operative plan JSON revision (v6 once accepted); equality asserted; never DEAD/abbreviated",
+    "no float compare in decision helpers (Fraction only)",
+    "validation py_compile_import_step1/2 use concrete PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache; pytest/live have no pycache prefix; no repo __pycache__ residue for these modules",
+    "commit denominator exactly nine paths (PLAN v6 JSON+MD + seven code/tests); DEAD/manifest/run-root/__pycache__/.pt/drift excluded",
+    "hostile: success terminal missing top-level primary → reject (not admit)",
+    "hostile: success terminal missing embedded classification.primary → reject",
+    "hostile: missing classification.claim_boundary → no fabricate; reject/markerless",
+    "hostile: missing composite_terminal → no primary fallback; reject/markerless",
+    "hostile: embedded plan_revision_binding wrong vs top/frozen → reject",
+    "hostile: top/embedded source_shas mismatch → reject",
+    "hostile: missing/unreadable runtime-source-manifest path → INCOMPLETE_FINALIZATION + WRAPPER_RC 2 + no run-root/artifacts"
+  ],
+  "test_battery_count_exact": 53,
+  "line_cap_assertions": {
+    "hard_cap_lines_per_python_source_or_test_file": 500,
+    "applies_to": "all seven created Python files",
+    "fails_when": "any created file >= 500 lines",
+    "if_reducer_projected_over_450L": "STOP and split pure helpers before growing scope; do not import prior rungs to save lines if that re-enters row-id surface",
+    "four_path_set_exact_and_frozen": true
+  },
+  "forbidden": [
+    "GPU / training / probe mutation / .pt touch",
+    "import or edit Rung-5 shared_component / densify / residual modules for this rung's decision path",
+    "mechanism / carrier / readiness / acquisition / bank / labeler-cause / fate / transfer claim (affirmative attribution)",
+    "row-id or cross-support identity operations",
+    "float branch decisions",
+    "new D2 thresholds / τ / ε / n_min as branch knobs",
+    "N10 as D2 branch input",
+    "second independent ΔR Kitagawa implementation",
+    "ORDERED_CONCAT hex-ASCII algorithm drift (must stay RAW digest-byte join)",
+    "fixture binding to DEAD or abbreviated plan sha",
+    "raw banned-word substring matcher as the claim-grammar check",
+    "repo __pycache__ as validation artifact / commit path",
+    "stage/commit/push without separate gates",
+    "plan-dev live terminal execution",
+    "live mint before +1 execute",
+    "in-place edit of receipted plan filenames",
+    "fast-path skip of full plan gate",
+    "stage DEAD plans, runtime manifest, run-root artifacts, or unrelated drift"
+  ],
+  "forbidden_during_implementation_receipts": [
+    "claim science branch before live dual-accept",
+    "treat expected-direction as gate",
+    "mint runtime manifest as plan-dev"
+  ],
+  "stop_conditions": [
+    "design requires training/GPU/probe mutation/.pt → STOP and surface",
+    "cannot operationalize without row-id/cross-support identity → STOP and surface",
+    "cannot operationalize without new threshold knobs → STOP and surface",
+    "semantics conflict with locked co_lead design ids → STOP and surface"
+  ],
+  "redispatch_triggers": [
+    "plan dual-accept bounce requiring semantic remint",
+    "BIND_FAIL/TIE fallback design reopening A"
+  ],
+  "expected_live_direction_non_authoritative_diagnostic_only": {
+    "primary": "RATE_PROFILE_SELECTS_D2_LABEL_UNDER_BOTH_WEIGHT_PROFILES",
+    "cells": {
+      "q_wL_rL": "3/8",
+      "q_wL_rM": "85/336",
+      "q_wM_rL": "44/115",
+      "q_wM_rM": "6/23",
+      "labels": {
+        "wL_rL": "MIXED",
+        "wL_rM": "TRANSIENT",
+        "wM_rL": "MIXED",
+        "wM_rM": "TRANSIENT"
+      }
+    },
+    "kitagawa_symmetric_headline": {
+      "delta_q": "-21/184",
+      "rate_term": "-9419/77280",
+      "share_term": "599/77280"
+    },
+    "integer_margins": {
+      "L0b": -1,
+      "math_a0": 0
+    },
+    "non_authoritative": true,
+    "grounding": "claude exact Fraction verification cited in dispatch 1786003307749; plan-dev independent replay matched",
+    "kitagawa_exact_bases": {
+      "L0b": {
+        "share": "7/920",
+        "rate": "-14/115"
+      },
+      "math_a0": {
+        "share": "61/7728",
+        "rate": "-41/336"
+      },
+      "symmetric_average": {
+        "share": "599/77280",
+        "rate": "-9419/77280"
+      },
+      "delta_q": "-21/184"
+    }
+  },
+  "supersedes": {
+    "plan_revision": "v5_rung6_20260806",
+    "json_path": "artifacts/a_prime/A_prime_slice4_rung6_count_standardization_PLAN_v5.json",
+    "json_sha256": "61038dc338c761be1a171148e10b7f153a511da579b7d5f071cc36e62977dd9f",
+    "json_bytes": 61598,
+    "md_path": "artifacts/a_prime/A_prime_slice4_rung6_count_standardization_PLAN_v5.md",
+    "md_sha256": "df15de9b4b23e5219bccc4038a86f3a33918bd7968d42101db7be877da486273",
+    "md_bytes": 1294,
+    "status": "DEAD immutable lineage — gate-2 BLOCK 1786010183162 (stale v4 acceptance strings + missing STEP-2 cure hostiles + MD dual-accept false claim); runtime_manifest_timing + FCW activate-ban carried forward",
+    "untouched_relative_to_v5": "primary six-branch grid, Kitagawa, claim ceiling, SELF_CONTAINED_FOUR_PATH, ORDERED_CONCAT raw bytes, EIGHT binds, STEP-1/2 file lists, claim allowlist contract, frozen input pins, runtime_manifest_timing matrix, FCW activate-ban"
+  },
+  "prior_gate_blocks": [
+    {
+      "id": "1786003768621-5c767048",
+      "gate": "claude_gate1_plan",
+      "defect_class": "BOTH_NEITHER_token_semantics_swapped_vs_locked_design_1786003217487",
+      "status": "cured_in_v1"
+    },
+    {
+      "id": "1786004168674-2e80d4a3",
+      "gate": "codex_co_lead_gate2_plan",
+      "defect_class": "seven_plan_side_blockers_kitagawa_ordered_concat_fixture_binding_claim_boundary_forbidden_word_pycache_commit_denominator",
+      "status": "cured_in_v2"
+    },
+    {
+      "id": "1786004622996-e21e15af",
+      "gate": "codex_co_lead_gate2_plan_round2",
+      "defect_class": "retracted_authority_task_update_item4_regression + fourth_unbound_SCRATCH_PYCACHE_placeholder",
+      "status": "cured_in_v3"
+    },
+    {
+      "id": "1786004976604-782ce6a3",
+      "gate": "codex_co_lead_gate2_plan_round3",
+      "defect_class": "task_id_stale_after_board_recreate + STEP_1_runtime_pycache_assertion_policy_split_contradiction",
+      "status": "cured_in_v4"
+    },
+    {
+      "id": "1786009786244-4a6d2833",
+      "gate": "codex_co_lead_gate2_step2",
+      "defect_class": "manifest_timing_contradiction_step6_vs_forbidden_collapsed + receipt_snapshot_fail_open + missing_manifest_path_uncaught",
+      "status": "timing_cured_in_plan_v5; code_cures_follow_after_plan_dual_accept"
+    },
+    {
+      "id": "1786010183162-0f30c537",
+      "gate": "codex_co_lead_gate2_plan_v5",
+      "defect_class": "stale_v4_acceptance_strings + STEP2_cure_hostiles_absent_from_exact_battery + MD_false_STEP2_dual_accepted",
+      "status": "cured_in_v6"
+    }
+  ],
+  "note_plan_only": "PLAN v6 remint (plan-gate only). Carries v5 timing matrix + FCW activate-ban. Cures: stale DEAD-v4 acceptance strings → operative v6; seven STEP-2 snapshot/manifest hostiles folded into exact battery (46→53); MD STEP-2 status corrected. After dual accept: RT2 rolls plan_revision_binding constants to v6 sha + code cures for receipt snapshot fail-open + FileNotFoundError markerless; then STEP-2 re-freeze. No manifest mint / no live execute / no RT2 code in this plan-gate step.",
+  "v1_cures": [
+    "BOTH_AXES_OR_INTERACTION iff NOT rate_selects AND NOT weight_selects (interaction)",
+    "NEITHER_AXIS_SELECTS_LABEL iff rate_selects AND weight_selects (all-equal / no flip)",
+    "successor_mapping narratives moved with the corrected conditions",
+    "battery fixture labels updated for the two tokens",
+    "md swept for same class"
+  ],
+  "prior_gate2_block_id": "1786004168674-2e80d4a3",
+  "v2_dispatch_id": "1786004226232-db665494",
+  "v2_cures": [
+    "Kitagawa freeze exact per-base formulas AND values (L0b/math/symmetric) + battery exact-value asserts",
+    "ORDERED_CONCAT_V0 algorithm text fixed to RAW digest-byte concat (Rung-5 parity); no new algorithm name",
+    "fixture plan_revision_binding = full 64-hex of dual-accepted operative plan revision (concretized at impl time; never DEAD, never abbreviated)",
+    "ONE exact claim_boundary key set (named keys + required booleans) shared by schema/fixtures/tests",
+    "forbidden-word rule replaced by scoped AFFIRMATIVE-attribution property checks with known-good sentence b silent + known-bad 'rates cause the label split' fires",
+    "py_compile uses concrete PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache; pytest/live use no prefix (PYTHONDONTWRITEBYTECODE=1 / -B); repo __pycache__ excluded",
+    "commit denominator frozen NOW: operative PLAN JSON+MD + seven code/test files (nine paths); DEAD/manifest/run-root/__pycache__/.pt/drift excluded",
+    "task_id migrated to 1786004282846-d6ca6dd7 (addendum 1786004321828); old 1786003278386 cancelled-superseded"
+  ],
+  "fixture_plan_binding": {
+    "rule": "known-good fixtures and their explicit equality assertions bind plan_revision_binding to the FULL 64-hex sha256 of the OPERATIVE dual-accepted plan JSON revision",
+    "form": "PLAN_v6 <full_64_hex_json_sha> once v6 is dual-accepted; concretized at implementation time from the dual-accepted revision bytes",
+    "forbidden": [
+      "binding to any DEAD revision (incl. v4 dcd51995… / v5 61038dc3…)",
+      "abbreviated hex",
+      "binding before dual-accept without freeze update on remint"
+    ],
+    "on_remint": "any plan remint that changes the operative JSON sha requires fixture rebinding to the new full sha before STEP-2 freeze"
+  },
+  "commit_denominator_frozen": {
+    "path_count": 9,
+    "paths_exact": [
+      "artifacts/a_prime/A_prime_slice4_rung6_count_standardization_PLAN_v6.json",
+      "artifacts/a_prime/A_prime_slice4_rung6_count_standardization_PLAN_v6.md",
+      "scripts/a_prime_slice4_count_standardization_schema_v0.py",
+      "scripts/a_prime_slice4_count_standardization_reducer_v0.py",
+      "scripts/a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+      "scripts/a_prime_slice4_count_standardization_classifier_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_reducer_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_runtime_source_contract_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_count_standardization_classifier_v0.py"
+    ],
+    "excluded": [
+      "DEAD PLAN v0-v5 JSON+MD and any later DEAD lineage",
+      "runtime-source manifest (scratch, non-repo)",
+      "terminal/run-root artifacts under claw-code-creditdir",
+      "repo __pycache__ / *.pyc",
+      ".pt files",
+      "unrelated worktree drift"
+    ],
+    "precedent": "Rung-5 nine-file commit (PLAN JSON+MD + seven code/tests); orphaned-plan lesson from gate-2 BLOCK 1786002632746"
+  },
+  "prior_gate2_round2_block_id": "1786004622996-e21e15af",
+  "v3_dispatch_id": "1786004645448-69ba0cf3",
+  "v3_cures": [
+    "remove every promotion of retracted task_update as item-4 board cure; canonical cure chain = recreated task 1786004282846-d6ca6dd7 (contract lint ok:true) + old-task cancellation 1786004303391-6bfacb62 + claude correction/concession 1786004312630-c6214cdb",
+    "PYTHONPYCACHEPREFIX removed from pytest argvs and live argv_template (PYTHONDONTWRITEBYTECODE=1 / -B suffice); retained only on py_compile_import_step1/2 as concrete path /tmp/claude-1000/rung6_pycache (no __placeholder__); delete invalid compile(doraise=True) in-memory wording — use compile(source, filename, 'exec') if in-memory"
+  ],
+  "prior_gate2_round3_block_id": "1786004976604-782ce6a3",
+  "v4_dispatch_id": "1786005036692-aed5161f",
+  "v4_cures": [
+    "task_id/board bind 1786004998450-f6569bd2; lineage 1786003278386-1b34e0c4 → 1786004282846-d6ca6dd7 → 1786004998450-f6569bd2 (old cancelled-superseded 1786005018572; board cure claude-side)",
+    "STEP_1_ASSERTIONS.runtime pycache + class sweep: py_compile uses concrete /tmp/claude-1000/rung6_pycache; pytest uses PYTHONDONTWRITEBYTECODE=1 only (no prefix); neither leaves repo __pycache__; description/assertion/validation-proof sweep reported with denominator"
+  ],
+  "v4_pycache_policy_sweep": {
+    "policy": "py_compile_import_step1/2 use concrete outside-repo PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache; pytest uses PYTHONDONTWRITEBYTECODE=1 only (no PYTHONPYCACHEPREFIX); live uses PYTHONDONTWRITEBYTECODE=1 + python -B (no PYTHONPYCACHEPREFIX); neither leaves new repo __pycache__ for these modules",
+    "scopes_searched": [
+      "STEP_1_ASSERTIONS",
+      "STEP_2_ASSERTIONS",
+      "validation_proof",
+      "validation_argv_frozen (incl pycache_exclusion and per-command rules)",
+      "test_battery_named",
+      "forbidden",
+      "v2_cures",
+      "v3_cures",
+      "note_plan_only"
+    ],
+    "denominator_candidate_strings": 29,
+    "denominator_paths": [
+      "STEP_1_ASSERTIONS.types[0]",
+      "STEP_1_ASSERTIONS.runtime[2]",
+      "STEP_1_ASSERTIONS.commands_authority.import_compile",
+      "STEP_2_ASSERTIONS.types[0]",
+      "STEP_2_ASSERTIONS.commands_authority.import_compile",
+      "validation_proof.STEP_1.import_compile",
+      "validation_proof.STEP_2.import_compile",
+      "validation_argv_frozen.pycache_exclusion.rule",
+      "validation_argv_frozen.pycache_exclusion.py_compile_prefix_concrete",
+      "test_battery_named[44]",
+      "test_battery_named[45]",
+      "forbidden[11]",
+      "v3_cures[1]",
+      "v2_cures[5]",
+      "v2_cures[6]",
+      "validation_argv_frozen.focused_pytest_step1.argv[1]",
+      "validation_argv_frozen.focused_pytest_step1.bytecode_write_prevention",
+      "validation_argv_frozen.focused_pytest_step2.argv[1]",
+      "validation_argv_frozen.focused_pytest_step2.bytecode_write_prevention",
+      "validation_argv_frozen.py_compile_import_step1.argv[1]",
+      "validation_argv_frozen.py_compile_import_step1.argv[2]",
+      "validation_argv_frozen.py_compile_import_step1.argv[6]",
+      "validation_argv_frozen.py_compile_import_step1.scratch_pycache_rule",
+      "validation_argv_frozen.py_compile_import_step2.argv[1]",
+      "validation_argv_frozen.py_compile_import_step2.argv[2]",
+      "validation_argv_frozen.py_compile_import_step2.argv[6]",
+      "validation_argv_frozen.py_compile_import_step2.scratch_pycache_rule",
+      "validation_argv_frozen.standardization_live_terminal.argv_template[1]",
+      "validation_argv_frozen.standardization_live_terminal.bytecode_write_prevention"
+    ],
+    "edits_applied_count": 2,
+    "edits_applied": [
+      {
+        "path": "$.STEP_1_ASSERTIONS.runtime[2]",
+        "action": "rewrite_to_policy_split",
+        "before_sha256_16": "a8bfd0d270daf9b7",
+        "after_sha256_16": "20a287fdab181924",
+        "after_prefix": "PASS iff py_compile_import_step1/2 use concrete outside-repo PYTHONPYCACHEPREFIX=/tmp/claude-1000/ru"
+      },
+      {
+        "path": "$.v2_cures[5]",
+        "action": "rewrite_v2_cure_historical_to_policy_split",
+        "before_sha256_16": "dce88487c99c40bf",
+        "after_sha256_16": "9e3a0e092f589c44",
+        "after_prefix": "py_compile uses concrete PYTHONPYCACHEPREFIX=/tmp/claude-1000/rung6_pycache; pytest/live use no pref"
+      }
+    ],
+    "argv_verified": {
+      "pytest_has_PYTHONPYCACHEPREFIX": false,
+      "live_has_PYTHONPYCACHEPREFIX": false,
+      "py_compile_prefix": "/tmp/claude-1000/rung6_pycache",
+      "placeholders_exact_count": 3,
+      "binds_count": 8
+    }
+  },
+  "prior_gate2_step2_block_id": "1786009786244-4a6d2833",
+  "v5_dispatch_note": "1786009857329-9eaad4c3",
+  "v5_cures": [
+    "resolve PLAN manifest-timing contradiction: step-6 semantics govern — Claude O_EXCL-mints non-operative 4-file runtime-source manifest after STEP-2 code freeze / before co_lead gate-2; path+sha+map+digest in handoff; operative only on gate-2 PASS",
+    "forbidden_collapsed_workflow: replace 'mint runtime manifest before STEP-2 dual accept' with 'activate/use runtime-source manifest for live execute before STEP-2 dual accept + gate-2 PASS' (mint-for-review allowed post code freeze)"
+  ],
+  "v5_timing_policy_sweep": {
+    "denominator_candidate_strings": 87,
+    "edits_applied_count": 0,
+    "edits": [],
+    "governing_policy_path": "workflow_after_dual_accept.runtime_manifest_timing"
+  },
+  "v6_cures": [
+    "operative-currency: rewrite non-historical acceptance strings that still demanded DEAD plan revision v4 (once-accepted form + PLAN v4 nine-path commit line) to operative PLAN_v6 / revision-neutral form; full-doc sweep residual non-historical acceptance refs",
+    "fold seven mandatory STEP-2 cure hostiles into STEP_2_ASSERTIONS + validation_proof.STEP_2.covers + test_battery_named; test_battery_count_exact 46→53",
+    "MD correction: STEP-1 dual-accepted; STEP-2 BLOCKED at 1786009786244 pending RT2 cures — not dual-accepted; MD not citable as activation authority"
+  ]
+}
