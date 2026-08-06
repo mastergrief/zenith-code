@@ -1,0 +1,1100 @@
+{
+  "schema": "a_prime_slice4_rung5_shared_component_decomposition_plan/v0",
+  "plan_kind": "SHARED_ENRICHED_COMPONENT_DECOMPOSITION_PLAN",
+  "plan_revision": "v4_rung5_20260805",
+  "product_name": "SHARED_ENRICHED_COMPONENT_DECOMPOSITION_RECEIPTS_ONLY",
+  "task_id": "1785961037183-68ac27ec",
+  "parent_task_id": "1785931309579-4f068343",
+  "dispatch_id": "1785961065256-71635516",
+  "report_to": [
+    "claude"
+  ],
+  "cross_thread_required": true,
+  "review_tier": "HIGH",
+  "claim_effect": "receipts-only descriptive shared-enriched-component decomposition of the dual-accepted Rung-4 D2 SPLIT_SUPPORTS residual densify; no cause; no mechanism/carrier/readiness/acquisition/bank",
+  "provenance": {
+    "gabe_verbatim": "auto-research directive - full provenance to you and co_lead - no need to wait on me at any gates including pushes and gpu runs - keep going with whatever the recommended path based on the science - you \"claude\" will take on the role of test-operator using a shell/monitor with minimal polling until completion or error for maximum context efficiency - plan-dev is addressed with ai-room handle \"codex\" - if you are waiting on receipt from worker (codex or codex_co_lead) follow up or diagnose if wedged",
+    "chosen_option": "Rung-5 = shared-enriched-component decomposition (C1+C2 primary, A1 secondary, B report-only) over six frozen horizon receipts + Rung-3 + Rung-4 terminals; operationalize design-review successor of Rung-4",
+    "rejected_alternatives": [
+      "B\u2192A ordering as primary branch (superseded by co_lead recomposition arithmetic; B demoted to report-only L0b ledger)",
+      "new thresholds / within-run fate language / depleted-tail comparison for R1",
+      "cross-support row_id intersection (distinct universes)",
+      "mechanism mint / cause of support-asymmetric split",
+      "GPU / training / probe mutation / .pt touch"
+    ],
+    "design_seed_id": "1785960911549",
+    "plan_dev_design_id": "1785960974332",
+    "co_lead_design_id": "1785961007298",
+    "consolidated_decision_owner": "claude",
+    "consolidated_axes": "C1+C2 primary; A1 secondary; B report-only",
+    "rung4_terminal_branch": "IDENTITY_OK__HEAD2_THIRD__SPLIT_SUPPORTS__CO_PARTIAL",
+    "rung4_terminal_receipt_sha256": "1aa7116fd59c591ea5845521e9f76907a4b717bab1a78555e6a82143226351eb",
+    "rung4_commit": "ae0d34fb8876ce60ccb0973cf8ae080bbc160237",
+    "rung4_plan_v6_sha256": "feea775c3b3bb1bee6f0d5775d4da783b09560b72b4a1b6cd8500af5f56329a9",
+    "rung3_terminal_receipt_sha256": "1a8e0fbcd682ad9c3e7c7e9b9dd52a4890b4529d6ac87439887a2ff8b66ab0a3",
+    "authority_ruling_structural_mismatch": "1785951473739-585c44ec"
+  },
+  "question": "Given dual-accepted Rung-4 IDENTITY_OK__HEAD2_THIRD__SPLIT_SUPPORTS__CO_PARTIAL, do the shared enriched components {R0, R1b4v2} carry aligned per-support endpoint labels whose exact counts recompose the aggregate D2 split \u2014 with math_a0 R1 as secondary mass-head label comparator \u2014 without minting a mechanism?",
+  "operationalization_of_successor_string": {
+    "shared_enriched_component": "R0 and R1b4v2 are the dual-accepted Rung-3/Rung-4 enriched_buckets on both supports; C1 labels each component per support with EXISTING D2 endpoint rules",
+    "decomposition": "split aggregate E50 into per-bucket B50 sets by source_bucket==component; compute N50/present-N20/absent-N20/present-N10 counts; recompose sums must exact-equal Rung-4 D2 raw",
+    "no_mechanism_mint": "hard ban carries; terminal is descriptive endpoint-set closure of the design review, not a cause claim"
+  },
+  "cost_class": {
+    "preferred": "zero-GPU receipts-only over existing six horizon receipts + pinned Rung-3 + Rung-4 terminals",
+    "new_measurement_run_required": false,
+    "why_existing_bytes_suffice": [
+      "six frozen horizon receipts carry universe/bucket_map/survivors used by densify",
+      "Rung-4 terminal freezes D2 aggregate raw per support for recomposition bind",
+      "Rung-3 terminal freezes residual STRATIFIED authority used by densify recompute",
+      "C1/C2/A1/B are pure set/count operations; no new training signal"
+    ],
+    "what_existing_receipts_cannot_answer": [
+      "cause of support-asymmetric aggregate labels",
+      "mechanism of residual head composition",
+      "any readiness/carrier/sub-2 claim"
+    ]
+  },
+  "claim_boundary": {
+    "receipts_only_descriptive_component_decomposition": true,
+    "pre_carrier": true,
+    "pre_mechanism_mint": true,
+    "in_scope": [
+      "zero-GPU shared-component reducer+classifier over six frozen horizon receipts + Rung-3 + Rung-4 terminal authority pins",
+      "identity + residual-authority + Rung-4 D2 aggregate/raw recomposition bind",
+      "C1 shared-component endpoint labels (R0, R1b4v2 per support) under EXISTING D2 rules",
+      "C2 exact aggregate recomposition bind",
+      "A1 math_a0 R1 secondary label-equality comparator (no depleted-tail)",
+      "B L0b per-row_id membership audit table report-only",
+      "factorized terminal + frozen successor lookup; dual-key exclusive mint"
+    ],
+    "out_of_scope": [
+      "cause attribution",
+      "individual replay-vs-PC attribution",
+      "mechanism-of-erosion mint",
+      "carrier / sub-2 / readiness / acquisition / bank claims",
+      "GPU / training / probe mutation / .pt touch",
+      "cross-support row_id intersections",
+      "new D2 thresholds",
+      "depleted-tail comparison for R1",
+      "within-run causal fate language beyond named set-membership counts",
+      "B as branch surface"
+    ],
+    "verbatim_for_plan_and_receipt": "receipts-only descriptive shared-enriched-component decomposition; no cause, no individual replay-vs-PC attribution, no mechanism, carrier, readiness, acquisition, or bank claim; pre-carrier; aggregate label difference is exactly reproduced by aligned per-bucket endpoint labels and their support-specific counts (descriptive only)"
+  },
+  "board": {
+    "ownership": "claude",
+    "no_ownership_transfer": true,
+    "parent_task_id": "1785931309579-4f068343",
+    "child_task_id_current": "1785961037183-68ac27ec",
+    "receipt_sink": "claude gate-1 ONLY",
+    "note": "plan-dev implements after +1; Claude executes live terminal after separate +1 execute; co_lead reviews frozen handoffs only"
+  },
+  "frozen_inputs": {
+    "supports": [
+      "L0b",
+      "math_a0"
+    ],
+    "horizons": [
+      10,
+      20,
+      50
+    ],
+    "arms": [
+      "package",
+      "out"
+    ],
+    "shared_enriched_components": [
+      "R0",
+      "R1b4v2"
+    ],
+    "mass_head_comparator_bucket": "R1",
+    "mass_head_comparator_support": "math_a0",
+    "receipt_paths_and_sha256": {
+      "package/N10": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "sha256": "217cf68650e56578c10c5c5e5a92d91eb81c2e95074d4e5726f76693efadfbe8"
+      },
+      "package/N20": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "sha256": "b12700f39e9979661f3f7b38c51a17627ae279f2ce61eadffeea24f1f902326a"
+      },
+      "package/N50": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "sha256": "ecffa277c677d509676bce62b93b7fab2225a8c7206d9553c2bbfbb1150de0a8"
+      },
+      "out/N10": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "sha256": "9cd5fe63e509d9d81274b01f08bd9bae861012737282ffcebdb078f403432be3"
+      },
+      "out/N20": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "sha256": "51d1b08df4b561343e8aaf396e84fcd776239b0f902fee203e4bd598ed338263"
+      },
+      "out/N50": {
+        "path": "/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "sha256": "c5394cda16a1ec42cb938d39d305e1777e397e5a0b19726206bbb5bf54f9206d"
+      }
+    },
+    "rung3_terminal_authority": {
+      "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_rung3/run_residual_v3/terminal_receipt.json",
+      "sha256": "1a8e0fbcd682ad9c3e7c7e9b9dd52a4890b4529d6ac87439887a2ff8b66ab0a3",
+      "required_bindings": [
+        "composite_terminal == IDENTITY_OK__CHURNED__TRANSIENT__STRATIFIED",
+        "residual_bucket_profile.composite == STRATIFIED",
+        "residual_bucket_profile.per_support.L0b == STRATIFIED",
+        "residual_bucket_profile.per_support.math_a0 == STRATIFIED"
+      ],
+      "mismatch_class": "AUTHORITY_BIND_FAIL"
+    },
+    "rung4_terminal_authority": {
+      "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_rung4/run_densify_v1/terminal_receipt.json",
+      "sha256": "1aa7116fd59c591ea5845521e9f76907a4b717bab1a78555e6a82143226351eb",
+      "required_bindings": [
+        "composite_terminal == IDENTITY_OK__HEAD2_THIRD__SPLIT_SUPPORTS__CO_PARTIAL",
+        "D2_profile.composite == SPLIT_SUPPORTS",
+        "D2_profile.per_support.L0b == E_MIXED",
+        "D2_profile.per_support.math_a0 == E_TRANSIENT",
+        "D2_profile.raw.L0b.|E50|_row_ids == 8",
+        "D2_profile.raw.L0b.present_at_package_N20_row_id_intersection == 3",
+        "D2_profile.raw.L0b.absent_from_package_N20_row_id_difference == 5",
+        "D2_profile.raw.math_a0.|E50|_row_ids == 23",
+        "D2_profile.raw.math_a0.present_at_package_N20_row_id_intersection == 6",
+        "D2_profile.raw.math_a0.absent_from_package_N20_row_id_difference == 17",
+        "D2_profile.raw.*.enriched_buckets == [R0, R1b4v2] both supports"
+      ],
+      "mismatch_class": "AUTHORITY_BIND_FAIL",
+      "recompute_bind": "recompute densify D2 aggregate raw per support via IMPORT_ONLY densify helpers from six horizon receipts + Rung-3 residual authority; require exact equality to rung4 terminal D2_profile.raw counts/labels; else AUTHORITY_BIND_FAIL"
+    },
+    "denominators_never_pooled": true,
+    "per_support_first": true,
+    "cross_support_row_id_intersection_forbidden": true,
+    "co_lead_grounded_component_endpoint_counts_diagnostic_only": {
+      "note": "observed from frozen pins via densify extract helpers at plan mint; NON-AUTHORITATIVE diagnostic for expected_live_direction only; live terminal recomputes",
+      "L0b": {
+        "R0": {
+          "|B50|": 5,
+          "present_N20": 1,
+          "absent_N20": 4,
+          "present_N10": 2,
+          "ceil_0_70": 4,
+          "label": "E_TRANSIENT"
+        },
+        "R1b4v2": {
+          "|B50|": 3,
+          "present_N20": 2,
+          "absent_N20": 1,
+          "present_N10": 1,
+          "ceil_0_70": 3,
+          "label": "E_MIXED"
+        },
+        "aggregate_recomposition": {
+          "|E50|": 8,
+          "present_N20": 3,
+          "absent_N20": 5,
+          "aggregate_label": "E_MIXED"
+        }
+      },
+      "math_a0": {
+        "R0": {
+          "|B50|": 14,
+          "present_N20": 1,
+          "absent_N20": 13,
+          "present_N10": 9,
+          "ceil_0_70": 10,
+          "label": "E_TRANSIENT"
+        },
+        "R1b4v2": {
+          "|B50|": 9,
+          "present_N20": 5,
+          "absent_N20": 4,
+          "present_N10": 7,
+          "ceil_0_70": 7,
+          "label": "E_MIXED"
+        },
+        "R1_mass_head": {
+          "|B50|": 19,
+          "present_N20": 5,
+          "absent_N20": 14,
+          "ceil_0_70": 14,
+          "label": "E_TRANSIENT"
+        },
+        "aggregate_recomposition": {
+          "|E50|": 23,
+          "present_N20": 6,
+          "absent_N20": 17,
+          "aggregate_label": "E_TRANSIENT"
+        }
+      }
+    }
+  },
+  "arithmetic": {
+    "integer_only_branch_decisions": true,
+    "ceil_0_70": "(7*n + 9)//10",
+    "no_float_branch": true,
+    "no_new_thresholds": true,
+    "d2_label_rules_reused_verbatim": [
+      "E_EMPTY if |B50| == 0",
+      "E_PERSISTENT if present_at_package_N20_row_id_intersection >= (7*|B50|+9)//10",
+      "E_TRANSIENT if absent_from_package_N20_row_id_difference >= (7*|B50|+9)//10",
+      "E_MIXED else"
+    ],
+    "membership_carrier": "row_id exact string within per-support universe"
+  },
+  "endpoint_claim_grammar": {
+    "rule": "C1/C2/A1 labels are shorthand ONLY for named set intersections/differences computed across separate endpoint receipts (PACKAGE \u00d7 N10/N20/N50 per support). They are NEVER claims of within-run trajectory or of cross-horizon process beyond the named endpoint set operations.",
+    "forbidden_words_in_plan_and_receipts": [
+      "ancestry",
+      "late-emerging",
+      "early-emerging",
+      "persists through the run",
+      "fate",
+      "within-run temporal",
+      "delays",
+      "package-private",
+      "persisted",
+      "lost",
+      "rescued through N",
+      "patterns with",
+      "transient axis",
+      "caused by mixture",
+      "caused by composition"
+    ],
+    "approved_phrasing_examples": [
+      "present in the named endpoint receipt set",
+      "absent from the named endpoint receipt set",
+      "cross-horizon row-id membership",
+      "component N50/present/absent sums exact-equal aggregate E50 raw",
+      "aligned per-bucket endpoint labels with support-specific counts that recompose the aggregate label difference (descriptive)"
+    ],
+    "forbidden_list_is_non_exhaustive": true,
+    "principle_governs": "The principle (labels = named endpoint set ops only) governs. The forbidden_words list is a mechanical-check SEED, not an exhaustive boundary.",
+    "safe_split_wording": "the aggregate label difference is exactly reproduced by aligned per-bucket endpoint labels and their support-specific counts \u2014 NEVER 'the split is caused by mixture/composition'"
+  },
+  "prereg_branch_classifier": {
+    "product": "SHARED_ENRICHED_COMPONENT_DECOMPOSITION_RECEIPTS_ONLY",
+    "preempting_failure_classes_first_match": [
+      "INSTRUMENT_OR_BIND_FAIL",
+      "IDENTITY_BIND_FAIL",
+      "AUTHORITY_BIND_FAIL",
+      "RECOMPOSITION_BIND_FAIL",
+      "DEGENERATE_EMPTY_COMPONENT"
+    ],
+    "identity_and_authority": {
+      "identity_rules": {
+        "structural_row_alignment_or_missing_metadata": "IDENTITY_BIND_FAIL (authority ruling 1785951473739; never MI)",
+        "MI_not_used_for_structural_mismatch": true,
+        "same_byte_load": "load horizon receipts by path; record actual sha256; require exact pin match else INSTRUMENT_OR_BIND_FAIL",
+        "bucket_map_equality_all_six_views": "exact bucket_map equality across all 6 horizon views per support (densify class cure retained)"
+      },
+      "authority_rules": {
+        "rung3_terminal_pin": "required; composite/residual labels must match frozen_inputs.rung3_terminal_authority.required_bindings",
+        "rung4_terminal_pin": "required; composite/D2 labels/raw counts must match frozen_inputs.rung4_terminal_authority.required_bindings",
+        "recomputed_rung4_d2_must_equal_terminal": "IMPORT_ONLY densify path recomputes D2 aggregate raw+labels per support; equality to Rung-4 terminal D2_profile else AUTHORITY_BIND_FAIL",
+        "enriched_buckets_pin": "both supports enriched_buckets must equal [R0, R1b4v2] under recompute; else AUTHORITY_BIND_FAIL"
+      }
+    },
+    "C1_shared_component_endpoint_labels": {
+      "surface": "for each support s in {L0b, math_a0} and each component c in {R0, R1b4v2}: B50_s_c = {row_id in R50_s | source_bucket(row_id)==c}; present20=|B50\u2229survivors_package_N20_s|; absent20=|B50\\survivors_package_N20_s|; present10 analogous. Apply EXISTING D2 first-match labels. Per-support only; cross-support row_id intersection FORBIDDEN.",
+      "raw_always_per_support_per_component": [
+        "|B50|_row_ids",
+        "present_at_package_N20_row_id_intersection",
+        "absent_from_package_N20_row_id_difference",
+        "present_at_package_N10_row_id_intersection",
+        "ceil_0_70_|B50|",
+        "component_label",
+        "membership_carrier"
+      ],
+      "per_component_labels_first_match": [
+        "E_EMPTY if |B50| == 0",
+        "E_PERSISTENT if present20 >= ceil_0_70(|B50|)",
+        "E_TRANSIENT if absent20 >= ceil_0_70(|B50|)",
+        "E_MIXED else"
+      ],
+      "cross_support_component_alignment": {
+        "R0_aligned": "C1 label(R0,L0b) == label(R0,math_a0) and neither is E_EMPTY",
+        "R1b4v2_aligned": "C1 label(R1b4v2,L0b) == label(R1b4v2,math_a0) and neither is E_EMPTY",
+        "both_components_aligned": "R0_aligned AND R1b4v2_aligned"
+      },
+      "no_new_thresholds": true
+    },
+    "C2_exact_aggregate_recomposition": {
+      "surface": "for each support s: sum_c |B50_s_c| == Rung-4 D2 raw |E50|_row_ids; sum present20 == present_at_package_N20; sum absent20 == absent_from_package_N20; sum present10 == present_at_package_N10 (report-only bind). Components exactly the enriched pair {R0,R1b4v2}.",
+      "on_mismatch": "RECOMPOSITION_BIND_FAIL",
+      "aggregate_labels_differ": "Rung-4 D2 per_support.L0b != per_support.math_a0 (under recompute/terminal bind)",
+      "primary_science_branches_first_match_after_preempts": [
+        "ALIGNED_COMPONENT_LABELS__AGGREGATE_SPLIT if both_components_aligned AND aggregate_labels_differ AND recomposition OK AND no empty component",
+        "COMPONENT_LABEL_SPLIT if NOT both_components_aligned AND recomposition OK AND no empty component",
+        "else hold: no additional science branch under this plan (instrument/degenerate already preempted)"
+      ],
+      "values_primary": [
+        "ALIGNED_COMPONENT_LABELS__AGGREGATE_SPLIT",
+        "COMPONENT_LABEL_SPLIT"
+      ]
+    },
+    "A1_math_a0_R1_mass_head_comparator_secondary": {
+      "surface": "math_a0 only; B50_R1 = {row_id in R50_math_a0 | source_bucket==R1}; endpoint counts + EXISTING D2 label. Classify exact label equality vs C1 math_a0 labels of R0 and R1b4v2.",
+      "raw_always": [
+        "|B50_R1|",
+        "present_at_package_N20",
+        "absent_from_package_N20",
+        "present_at_package_N10",
+        "ceil_0_70",
+        "R1_label"
+      ],
+      "secondary_labels_first_match": [
+        "R1_LABEL_EQ_R0_AND_R1b4v2 if R1_label == label(R0,math_a0) == label(R1b4v2,math_a0)",
+        "R1_LABEL_EQ_R0 if R1_label == label(R0,math_a0) and R1_label != label(R1b4v2,math_a0)",
+        "R1_LABEL_EQ_R1b4v2 if R1_label == label(R1b4v2,math_a0) and R1_label != label(R0,math_a0)",
+        "R1_LABEL_EQ_NEITHER else"
+      ],
+      "branch_authority": "SECONDARY ONLY \u2014 emitted as secondary_profile; MUST NOT alter primary C1/C2 terminal branch selection",
+      "forbidden": [
+        "depleted-tail comparison",
+        "patterns with",
+        "transient axis",
+        "trajectory semantics beyond |B50\u2229P20| / |B50\\P20| / label equality"
+      ]
+    },
+    "B_L0b_per_row_membership_report_only": {
+      "surface": "for each L0b residual R50 row_id: membership flags present_in package/out \u00d7 N10/N20/N50 (boolean), source_bucket. Full table report-only.",
+      "branch_authority": "NONE \u2014 cannot change any branch",
+      "purpose": "audit evidence / fixture material only"
+    },
+    "composite_terminal": {
+      "form": "IDENTITY_OK__<PRIMARY_C1C2> when science path; else the preempting failure class name alone",
+      "science_examples": [
+        "IDENTITY_OK__ALIGNED_COMPONENT_LABELS__AGGREGATE_SPLIT",
+        "IDENTITY_OK__COMPONENT_LABEL_SPLIT"
+      ],
+      "secondary_profile_always_present_on_science": "A1 secondary label + raw; B L0b table",
+      "evaluation_order": [
+        "1. INSTRUMENT_OR_BIND_FAIL",
+        "2. IDENTITY_BIND_FAIL",
+        "3. AUTHORITY_BIND_FAIL (Rung-3 pin / Rung-4 pin / recomputed D2 aggregate-raw mismatch / enriched_buckets pin)",
+        "4. RECOMPOSITION_BIND_FAIL",
+        "5. DEGENERATE_EMPTY_COMPONENT (any named component |B50|==0 on any support)",
+        "6. primary C1/C2 science branch",
+        "7. emit A1 secondary + B report-only (never branch)"
+      ]
+    },
+    "set_membership_carrier": {
+      "carrier": "row_id",
+      "rule": "exact string equality within per-support universe; sample_hash is NEVER the membership carrier; cross-support row_id intersection FORBIDDEN"
+    },
+    "successor_mapping_preregistered": {
+      "evaluation": "first-match-wins",
+      "hard_ban": "no successor may mint mechanism/carrier/readiness/acquisition/bank or individual replay-vs-PC cause",
+      "lookup_algorithm": [
+        "1. INSTRUMENT_OR_BIND_FAIL \u2192 instrument repair only; no science successor",
+        "2. IDENTITY_BIND_FAIL \u2192 receipt/field schema repair; no component science",
+        "3. AUTHORITY_BIND_FAIL \u2192 Rung-3/Rung-4 terminal or D2 recompute bind repair; no component science",
+        "4. RECOMPOSITION_BIND_FAIL \u2192 recomposition arithmetic/instrument repair; no component science",
+        "5. DEGENERATE_EMPTY_COMPONENT \u2192 empty named component; hold for design review; no mechanism mint",
+        "6. ALIGNED_COMPONENT_LABELS__AGGREGATE_SPLIT \u2192 shared enriched component labels align across supports; aggregate endpoint labels differ under exact per-support count recomposition; design review complete; no mechanism mint",
+        "7. COMPONENT_LABEL_SPLIT \u2192 shared enriched component labels differ across supports; hold for design review of component-label split; no mechanism mint",
+        "8. else \u2192 component-decomposition terminal is the measurement; no mechanism mint (default)"
+      ],
+      "frozen_neutral_successor_texts": {
+        "step_5": "empty named component; hold for design review; no mechanism mint",
+        "step_6": "shared enriched component labels align across supports; aggregate endpoint labels differ under exact per-support count recomposition; design review complete; no mechanism mint",
+        "step_7": "shared enriched component labels differ across supports; hold for design review of component-label split; no mechanism mint",
+        "step_8": "component-decomposition terminal is the measurement; no mechanism mint"
+      },
+      "endpoint_grammar_bind": "all successor prose obeys endpoint_claim_grammar.rule"
+    },
+    "claim_boundary_constants_required_true": [
+      "receipts_only_descriptive_component_decomposition",
+      "pre_carrier",
+      "pre_mechanism_mint"
+    ]
+  },
+  "runtime_source_set_authority": {
+    "strategy": "IMPORT_ONLY",
+    "forbidden_discretion": "REIMPLEMENTATION of residual arithmetic and densify D2 aggregate recompute is FORBIDDEN; Rung-5 MUST import the four named frozen helpers (densify schema+reducer, residual schema+reducer); runtime-source validation MUST live in the pure contract module; MUST NOT edit densify or residual files.",
+    "new_files_create": [
+      "scripts/a_prime_slice4_shared_component_decomposition_schema_v0.py",
+      "scripts/a_prime_slice4_shared_component_decomposition_reducer_v0.py",
+      "scripts/a_prime_slice4_shared_component_decomposition_classifier_v0.py",
+      "scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py"
+    ],
+    "imported_prior_modules_complete_read_only": [
+      "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+      "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+      "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+      "scripts/a_prime_slice4_residual_classification_reducer_v0.py",
+      "scripts/a_prime_slice4_residual_classification_classifier_v0.py"
+    ],
+    "imported_prior_modules_sha256_at_plan_mint_observed": {
+      "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py": {
+        "sha256": "a08fd9afe113796dca833777b8413b25d1a525759c06a23966d3cfd64e97d4c5",
+        "bytes": 3546
+      },
+      "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py": {
+        "sha256": "599a31afd25fb885fffcd10f8354849249965e0dd82d938ecd7fe6f7068b6e02",
+        "bytes": 16808
+      },
+      "scripts/a_prime_slice4_residual_classification_schema_v0.py": {
+        "sha256": "16a5c813d61399443941fd154a98ffbeb1c54169ca64b3b55e160903cd4e99a9",
+        "bytes": 9484
+      },
+      "scripts/a_prime_slice4_residual_classification_reducer_v0.py": {
+        "sha256": "483ea9a3bdf000372a9bcc345be91087de1c02a9a7e03f36cb244c28525849e7",
+        "bytes": 18031
+      },
+      "scripts/a_prime_slice4_residual_classification_classifier_v0.py": {
+        "sha256": "fc24601816bfa4a169f2c7fd9eb6c4bdf36e021093e5bab296ff1d27ddd21e18",
+        "bytes": 17543,
+        "lines_at_plan_mint_observed": 468
+      }
+    },
+    "complete_runtime_source_set_at_live_execute_ordered": [
+      "scripts/a_prime_slice4_shared_component_decomposition_schema_v0.py",
+      "scripts/a_prime_slice4_shared_component_decomposition_reducer_v0.py",
+      "scripts/a_prime_slice4_shared_component_decomposition_classifier_v0.py",
+      "scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+      "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+      "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+      "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+      "scripts/a_prime_slice4_residual_classification_reducer_v0.py",
+      "scripts/a_prime_slice4_residual_classification_classifier_v0.py"
+    ],
+    "ordered_file_count": 9,
+    "algorithm": "ORDERED_CONCAT_V0",
+    "manifest_schema_id": "a_prime_slice4_rung5_runtime_source_manifest/v0",
+    "expected_manifest_sha_cli_input": true,
+    "expected_manifest_sha_never_derived_from_loaded_bytes": true,
+    "manifest_mint": {
+      "who": "claude gate-1 ONLY after STEP-2 freeze",
+      "where": "freeze-local NON-REPO path under claude scratchpad",
+      "order": "freeze STEP-2 bytes \u2192 O_EXCL mint from those bytes \u2192 gate-2 handoff \u2192 operative only on PASS",
+      "never": [
+        "repo worktree",
+        "plan-dev mint",
+        "staged"
+      ]
+    },
+    "not_imported_reference_only": [
+      "scripts/a_prime_slice4_support_split_residual_densify_classifier_v0.py",
+      "scripts/a_prime_slice4_support_split_runtime_source_contract_v0.py"
+    ],
+    "import_reimplementation_rule": {
+      "form": "REIMPLEMENTATION_FORBIDDEN_IMPORT_REQUIRED",
+      "verbatim": "REIMPLEMENTATION of residual arithmetic and densify D2 aggregate recompute is FORBIDDEN; Rung-5 MUST import the four named frozen helpers (densify schema+reducer, residual schema+reducer); runtime-source validation MUST live in the pure contract module; MUST NOT edit densify or residual files.",
+      "named_helpers_must_import": [
+        "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+        "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+        "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+        "scripts/a_prime_slice4_residual_classification_reducer_v0.py"
+      ],
+      "forbidden": [
+        "reimplementation of residual arithmetic",
+        "reimplementation of densify D2 aggregate recompute",
+        "edit densify files",
+        "edit residual files"
+      ],
+      "required": [
+        "import densify schema+reducer pure helpers",
+        "import residual schema+reducer pure helpers",
+        "runtime-source validation lives in pure contract module"
+      ],
+      "runtime_source_must_include": [
+        "scripts/a_prime_slice4_shared_component_decomposition_schema_v0.py",
+        "scripts/a_prime_slice4_shared_component_decomposition_reducer_v0.py",
+        "scripts/a_prime_slice4_shared_component_decomposition_classifier_v0.py",
+        "scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+        "scripts/a_prime_slice4_support_split_residual_densify_schema_v0.py",
+        "scripts/a_prime_slice4_support_split_residual_densify_reducer_v0.py",
+        "scripts/a_prime_slice4_residual_classification_schema_v0.py",
+        "scripts/a_prime_slice4_residual_classification_reducer_v0.py",
+        "scripts/a_prime_slice4_residual_classification_classifier_v0.py"
+      ],
+      "ninth_path_reason": "extract_horizon_view lives in residual_classification_classifier_v0; live import edge from shared-component classifier must be pin-covered"
+    },
+    "nine_path_set_exact_and_frozen": true
+  },
+  "implementation_contract": {
+    "DEVELOPER_STEPS": 2,
+    "sizing": "MEDIUM",
+    "worktree": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+    "board_ownership": "claude; no transfer",
+    "plus1_implement_status": "WITHHELD until plan dual-accept; then +1 implement per step",
+    "receipt_sink": "claude gate-1 ONLY",
+    "line_cap_hard": 500,
+    "step_1": {
+      "files": [
+        "scripts/a_prime_slice4_shared_component_decomposition_schema_v0.py",
+        "scripts/a_prime_slice4_shared_component_decomposition_reducer_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_decomposition_reducer_v0.py"
+      ],
+      "scope": "pure schema constants + pure reducer: identity, authority (Rung-3+Rung-4+D2 recompute via IMPORTED densify/residual helpers), C1 component labels, C2 recomposition, A1 secondary, B report-only table, successor lookup, component_core snapshot; REIMPLEMENTATION of residual arithmetic and densify D2 aggregate recompute is FORBIDDEN; MUST import the four named frozen helpers; no CLI/IO",
+      "forbidden_in_step_1": [
+        "classifier CLI",
+        "runtime-source contract module",
+        "REIMPLEMENTATION of residual arithmetic or densify D2 aggregate recompute",
+        "edit densify/residual files",
+        "GPU"
+      ]
+    },
+    "step_2": {
+      "files": [
+        "scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+        "scripts/a_prime_slice4_shared_component_decomposition_classifier_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_decomposition_classifier_v0.py"
+      ],
+      "scope": "pure runtime-source contract (9-file ORDERED_CONCAT_V0 + frozen pins incl. Rung-3+Rung-4) + thin dual-key classifier CLI (preflight -> same-byte load -> pins -> REQUIRED terminals -> component decompose via IMPORTED reducer -> finalize_dual_key); expected-manifest-sha CLI input; REIMPLEMENTATION of residual arithmetic and densify D2 aggregate recompute is FORBIDDEN; MUST import the four named frozen helpers (transitively via reducer) and pure contract for runtime-source validation",
+      "forbidden_in_step_2": [
+        "REIMPLEMENTATION of residual arithmetic or densify D2 aggregate recompute",
+        "edit densify/residual files",
+        "GPU",
+        "plan-dev live terminal"
+      ]
+    },
+    "dual_key_pattern_reused": {
+      "exclusive_run_root_mint": true,
+      "same_byte_load": true,
+      "terminal_receipt_json": true,
+      "terminal_manifest_json": true,
+      "PACKET_TERMINAL_marker": true,
+      "WRAPPER_RC": true,
+      "DECLARED_TOP_EMBEDDED_FIELDS": true,
+      "component_core_snapshot_equality": true,
+      "exact_dict_manifest_outputs_set": true
+    }
+  },
+  "workflow_after_dual_accept": {
+    "sequence_frozen": [
+      "1. persisted +1 implement STEP-1 only",
+      "2. plan-dev CREATE exactly implementation_contract.step_1.files; CPU validation per validation_argv_frozen.focused_pytest_step1 + py_compile_import_step1; each file <500L; if reducer projected >450L STOP and remint plan rather than grow runtime set",
+      "3. claude gate-1 freeze \u2192 co_lead gate-2 dual accept of STEP-1 surface",
+      "4. separate persisted +1 implement STEP-2",
+      "5. plan-dev CREATE exactly implementation_contract.step_2.files; CPU validation per validation_argv_frozen.focused_pytest_step2 + py_compile_import_step2; each file <500L",
+      "6. claude gate-1 freezes STEP-2 implementation bytes \u2192 O_EXCL-mints 9-file runtime-source manifest freeze-local NON-REPO (schema a_prime_slice4_rung5_runtime_source_manifest/v0; ordered NINE paths; per-file sha256; ORDERED_CONCAT_V0 digest) \u2192 freeze handoff records manifest abs path + sha256 \u2192 co_lead gate-2 dual accept; manifest OPERATIVE ONLY IF gate-2 PASSes; any STEP-2 byte change remints BOTH surface and manifest; never repo/staged; never plan-dev-minted",
+      "7. separate persisted Claude-authored +1 execute live terminal gate REQUIRED before exclusive run-root mint; BOUND to identical set as live_terminal_activation_gate.binds_required TEN members: (a) dual_accepted_classifier_file_sha256, (b) six_frozen_receipt_shas, (c) rung3_terminal_sha256_1a8e0fbc, (d) rung4_terminal_sha256_1aa7116f, (e) complete_runtime_source_per_file_sha_map_nine_files, (f) runtime_source_digest_ORDERED_CONCAT_V0, (g) runtime_source_manifest_sha256, (h) runtime_source_manifest_abs_path, (i) exact_live_argv_template with sole placeholders __EXCLUSIVE_RUN_ROOT__, __RUNTIME_SOURCE_MANIFEST__, __RUNTIME_SOURCE_MANIFEST_SHA256__, (j) fresh_exclusive_run_root never pre-created. BINDSET_PARITY_RULE: step 7 enumeration MUST equal live_terminal_activation_gate.binds_required exactly (same members).",
+      "8. Claude live terminal executor only after the +1 execute record exists and cites those binds (CLI expected-manifest-sha check \u2192 parse/validate manifest via contract \u2192 re-hash nine files via contract \u2192 frozen pin checks incl rung3+rung4 \u2192 exclusive run-root \u2192 component classifier \u2192 single PACKET_TERMINAL \u2192 freeze); plan-dev does NOT execute live terminal; any runtime_source / expected-sha mismatch is markerless fail before mint",
+      "9. terminal receipt to claude gate-1 only; no mechanism mint"
+    ],
+    "step_1_files_authority": [
+      "scripts/a_prime_slice4_shared_component_decomposition_schema_v0.py",
+      "scripts/a_prime_slice4_shared_component_decomposition_reducer_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_shared_component_decomposition_reducer_v0.py"
+    ],
+    "step_2_files_authority": [
+      "scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+      "scripts/a_prime_slice4_shared_component_decomposition_classifier_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+      "calm/llm_computer/tests/test_a_prime_slice4_shared_component_decomposition_classifier_v0.py"
+    ],
+    "live_terminal_activation_gate": {
+      "required": true,
+      "kind": "persisted Claude-authored non-ack +1 execute live terminal",
+      "position": "after STEP-2 dual accept; before exclusive run-root mint",
+      "binds_required": [
+        "dual_accepted_classifier_file_sha256",
+        "six_frozen_receipt_shas",
+        "rung3_terminal_sha256_1a8e0fbc",
+        "rung4_terminal_sha256_1aa7116f",
+        "complete_runtime_source_per_file_sha_map_nine_files",
+        "runtime_source_digest_ORDERED_CONCAT_V0",
+        "runtime_source_manifest_sha256",
+        "runtime_source_manifest_abs_path",
+        "exact_live_argv_template_placeholders___EXCLUSIVE_RUN_ROOT_____RUNTIME_SOURCE_MANIFEST_____RUNTIME_SOURCE_MANIFEST_SHA256__",
+        "fresh_exclusive_run_root"
+      ],
+      "binds_count": 10,
+      "note": "TEN binds this rung (Rung-4 had nine; +rung4_terminal_sha256 is the tenth)"
+    },
+    "bindset_parity_rule": {
+      "rule": "workflow_after_dual_accept.sequence_frozen step 7 member set MUST equal live_terminal_activation_gate.binds_required exactly",
+      "fails_when": "any bind present in one enumeration and absent from the other",
+      "battery_item": "bindset parity: sequence_frozen step 7 members == live_terminal_activation_gate.binds_required (TEN)"
+    },
+    "forbidden_collapsed_workflow": [
+      "collapse +1 implement into live execute",
+      "plan-dev execute live terminal",
+      "mint run-root before +1 execute citing TEN binds"
+    ]
+  },
+  "live_terminal_executor": {
+    "verbatim": "Claude directly as test-operator (exclusive immutable run-root mint \u2192 receipts+terminal \u2192 component classifier \u2192 single PACKET_TERMINAL marker \u2192 freeze); plan-dev does NOT execute the live terminal",
+    "plan_dev_forbidden_to_execute_live_terminal": true
+  },
+  "validation_argv_frozen": {
+    "focused_pytest_step1": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-m",
+        "pytest",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_decomposition_reducer_v0.py",
+        "-q",
+        "--tb=line"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0
+    },
+    "focused_pytest_step2": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-m",
+        "pytest",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_decomposition_classifier_v0.py",
+        "-q",
+        "--tb=line"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0
+    },
+    "py_compile_import_step1": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_shared_component_decomposition_schema_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_shared_component_decomposition_reducer_v0.py', doraise=True); import scripts.a_prime_slice4_shared_component_decomposition_schema_v0 as s; import scripts.a_prime_slice4_shared_component_decomposition_reducer_v0 as r; print('IMPORT_OK_COMPONENT')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK_COMPONENT"
+    },
+    "py_compile_import_step2": {
+      "argv": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-c",
+        "import py_compile; py_compile.compile('scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py', doraise=True); py_compile.compile('scripts/a_prime_slice4_shared_component_decomposition_classifier_v0.py', doraise=True); import scripts.a_prime_slice4_shared_component_runtime_source_contract_v0 as contract; import scripts.a_prime_slice4_shared_component_decomposition_classifier_v0 as c; print('IMPORT_OK_COMPONENT_CLASSIFIER')"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_contains": "IMPORT_OK_COMPONENT_CLASSIFIER"
+    },
+    "component_live_terminal": {
+      "argv_template": [
+        "env",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PYTHONPATH=.",
+        "python3",
+        "-u",
+        "-B",
+        "scripts/a_prime_slice4_shared_component_decomposition_classifier_v0.py",
+        "--run-root",
+        "__EXCLUSIVE_RUN_ROOT__",
+        "--package-receipt",
+        "10=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "--package-receipt",
+        "20=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "--package-receipt",
+        "50=/home/gabe/claw-code-creditdir/a_prime_slice4_protect/run_702cc34b/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "10=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N10/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "20=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N20/c2p1_impl_cpu/receipt.json",
+        "--out-receipt",
+        "50=/home/gabe/claw-code-creditdir/a_prime_slice3_onset/run_fb2fcec5/horizon_N50/c2p1_impl_cpu/receipt.json",
+        "--rung3-terminal-receipt",
+        "/home/gabe/claw-code-creditdir/a_prime_slice4_rung3/run_residual_v3/terminal_receipt.json",
+        "--rung4-terminal-receipt",
+        "/home/gabe/claw-code-creditdir/a_prime_slice4_rung4/run_densify_v1/terminal_receipt.json",
+        "--runtime-source-manifest",
+        "__RUNTIME_SOURCE_MANIFEST__",
+        "--runtime-source-manifest-sha256",
+        "__RUNTIME_SOURCE_MANIFEST_SHA256__"
+      ],
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_markers": [
+        "exactly one PACKET_TERMINAL <branch>",
+        "WRAPPER_RC 0"
+      ],
+      "expected_artifacts": [
+        "terminal_receipt.json",
+        "terminal_manifest.json"
+      ],
+      "fails_when": [
+        "IDENTITY_BIND_FAIL",
+        "AUTHORITY_BIND_FAIL",
+        "INSTRUMENT_OR_BIND_FAIL",
+        "RECOMPOSITION_BIND_FAIL",
+        "DEGENERATE_EMPTY_COMPONENT",
+        "rc != 0",
+        "marker cardinality != 1",
+        "missing artifacts",
+        "runtime_source_mismatch / INCOMPLETE_FINALIZATION before mint",
+        "WRAPPER_RC 2 markerless runtime-source fail",
+        "manifest sha mismatch vs +1 execute pin",
+        "runtime_source_manifest_sha_mismatch (CLI expected != sha256(loaded bytes))",
+        "missing/malformed --runtime-source-manifest-sha256",
+        "valid-shaped substituted manifest with drifted content vs activation sha",
+        "rung4 terminal pin path/sha mismatch",
+        "rung3 terminal pin path/sha mismatch"
+      ],
+      "horizon_keyed_receipt_flags": {
+        "form": "--package-receipt N=<abs_path> and --out-receipt N=<abs_path> with N in {10,20,50}",
+        "no_positional_paths": true,
+        "exact_horizon_set": [
+          10,
+          20,
+          50
+        ],
+        "both_arms_required": [
+          "package",
+          "out"
+        ],
+        "terminal_flags": {
+          "--rung3-terminal-receipt": {
+            "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_rung3/run_residual_v3/terminal_receipt.json",
+            "sha256": "1a8e0fbcd682ad9c3e7c7e9b9dd52a4890b4529d6ac87439887a2ff8b66ab0a3",
+            "required": true
+          },
+          "--rung4-terminal-receipt": {
+            "path": "/home/gabe/claw-code-creditdir/a_prime_slice4_rung4/run_densify_v1/terminal_receipt.json",
+            "sha256": "1aa7116fd59c591ea5845521e9f76907a4b717bab1a78555e6a82143226351eb",
+            "required": true
+          }
+        },
+        "admission_rules": [
+          "parse N as exact int token before =; reject malformed (no =, non-int N, empty path)",
+          "require exact set {10,20,50} for package AND for out (no missing, no extra)",
+          "reject duplicate N within an arm",
+          "pin equality by arm+horizon against frozen_inputs.receipt_paths_and_sha256",
+          "same-byte load + sha256 match required",
+          "--rung3-terminal-receipt required; path+sha pin against frozen_inputs.rung3_terminal_authority",
+          "--rung4-terminal-receipt required; path+sha pin against frozen_inputs.rung4_terminal_authority"
+        ],
+        "hostiles_required_in_battery": [
+          "swapped horizons (N20 path under N10 key)",
+          "duplicate N within package arm",
+          "missing N50 on out arm",
+          "malformed flag without N=",
+          "positional bare path (no N=) rejected",
+          "missing --rung4-terminal-receipt rejected",
+          "rung4 path/sha mismatch \u2192 AUTHORITY_BIND_FAIL / INSTRUMENT_OR_BIND_FAIL"
+        ]
+      },
+      "executor": "claude_test_operator_only",
+      "expected_markers": [
+        "exactly one PACKET_TERMINAL <branch>",
+        "WRAPPER_RC 0"
+      ],
+      "placeholders": {
+        "__EXCLUSIVE_RUN_ROOT__": "fresh exclusive run root (classifier mints; never pre-created)",
+        "__RUNTIME_SOURCE_MANIFEST__": "abs path to freeze-local NON-REPO O_EXCL runtime-source manifest from STEP-2 gate-1 freeze handoff",
+        "__RUNTIME_SOURCE_MANIFEST_SHA256__": "64-hex sha256 of that exact manifest file bytes; bound by +1 execute; enforced before parse"
+      },
+      "sole_placeholders_note": "EXACTLY three placeholders at activation: __EXCLUSIVE_RUN_ROOT__, __RUNTIME_SOURCE_MANIFEST__, __RUNTIME_SOURCE_MANIFEST_SHA256__; no other substitutions. Horizon paths and both terminal receipt paths remain fully concrete pins. Expected manifest sha is an independent activation input \u2014 never derived from loaded bytes."
+    }
+  },
+  "validation_proof": {
+    "purpose": "complete enumeration for board contract-currency citation; not a second semantics body",
+    "STEP_1": {
+      "pytest": "validation_argv_frozen.focused_pytest_step1",
+      "import_compile": "validation_argv_frozen.py_compile_import_step1",
+      "covers": [
+        "identity hostiles",
+        "authority bind hostiles (Rung-3, Rung-4, D2 recompute)",
+        "C1 component labels + alignment",
+        "C2 recomposition bind + RECOMPOSITION_BIND_FAIL flip",
+        "DEGENERATE_EMPTY_COMPONENT",
+        "A1 secondary non-branching",
+        "B report-only non-branching",
+        "successor exact frozen texts",
+        "no cross-support row_id intersection"
+      ],
+      "line_cap": "<500L per created STEP-1 source/test file"
+    },
+    "STEP_2": {
+      "pytest": "validation_argv_frozen.focused_pytest_step2",
+      "import_compile": "validation_argv_frozen.py_compile_import_step2",
+      "covers": [
+        "9-file runtime-source contract + ORDERED_CONCAT_V0",
+        "expected-manifest-sha CLI",
+        "frozen pin path+sha enforcement incl Rung-4",
+        "dual-key exclusive mint",
+        "thin classifier orchestrator only"
+      ],
+      "line_cap": "<500L per created STEP-2 source/test file"
+    },
+    "live_terminal": {
+      "argv": "validation_argv_frozen.component_live_terminal.argv_template with substitutions __EXCLUSIVE_RUN_ROOT__, __RUNTIME_SOURCE_MANIFEST__, __RUNTIME_SOURCE_MANIFEST_SHA256__ only",
+      "cwd": "/mnt/c/Users/gabes/projects/claw-code-hrm-text-158",
+      "expected_rc": 0,
+      "expected_stdout_markers": [
+        "exactly one PACKET_TERMINAL <branch>",
+        "WRAPPER_RC 0"
+      ],
+      "expected_artifacts": [
+        "terminal_receipt.json",
+        "terminal_manifest.json"
+      ],
+      "fails_when": [
+        "IDENTITY_BIND_FAIL",
+        "AUTHORITY_BIND_FAIL",
+        "INSTRUMENT_OR_BIND_FAIL",
+        "RECOMPOSITION_BIND_FAIL",
+        "DEGENERATE_EMPTY_COMPONENT",
+        "rc != 0",
+        "marker cardinality != 1",
+        "missing artifacts",
+        "runtime_source_mismatch / INCOMPLETE_FINALIZATION before mint",
+        "WRAPPER_RC 2 markerless runtime-source fail",
+        "manifest sha mismatch vs +1 execute pin",
+        "runtime_source_manifest_sha_mismatch (CLI expected != sha256(loaded bytes))",
+        "missing/malformed --runtime-source-manifest-sha256",
+        "valid-shaped substituted manifest with drifted content vs activation sha",
+        "rung4 terminal pin path/sha mismatch",
+        "rung3 terminal pin path/sha mismatch"
+      ],
+      "executor": "claude_test_operator_only",
+      "placeholders_exact_count": 3
+    }
+  },
+  "test_battery_named": [
+    "identity length mismatch \u2192 IDENTITY_BIND_FAIL",
+    "bucket_map drift across horizon views \u2192 IDENTITY_BIND_FAIL",
+    "horizon receipt sha mismatch \u2192 INSTRUMENT_OR_BIND_FAIL",
+    "rung3 terminal sha/content mismatch \u2192 AUTHORITY_BIND_FAIL",
+    "rung4 terminal sha/content mismatch \u2192 AUTHORITY_BIND_FAIL",
+    "recomputed D2 aggregate raw != rung4 terminal \u2192 AUTHORITY_BIND_FAIL",
+    "enriched_buckets != [R0,R1b4v2] \u2192 AUTHORITY_BIND_FAIL",
+    "C1 R0 E_TRANSIENT boundary absent == ceil0.70",
+    "C1 R1b4v2 E_MIXED interior",
+    "C1 E_PERSISTENT boundary present == ceil0.70",
+    "C1 E_EMPTY \u2192 DEGENERATE_EMPTY_COMPONENT preempt",
+    "C2 recomposition exact sums OK",
+    "C2 recomposition flip one count \u2192 RECOMPOSITION_BIND_FAIL",
+    "C2 ALIGNED_COMPONENT_LABELS__AGGREGATE_SPLIT (R0 aligned TRANSIENT, R1b4v2 aligned MIXED, aggregates differ)",
+    "C2 COMPONENT_LABEL_SPLIT when R0 labels differ across supports",
+    "A1 R1_LABEL_EQ_R0 when R1==R0!=R1b4v2",
+    "A1 R1_LABEL_EQ_R1b4v2",
+    "A1 R1_LABEL_EQ_R0_AND_R1b4v2",
+    "A1 R1_LABEL_EQ_NEITHER",
+    "A1 secondary cannot change primary branch",
+    "B L0b row table report-only cannot change branch",
+    "no depleted-tail comparison API/field",
+    "cross-support row_id intersection never computed as branch input",
+    "successor step_5/6/7/8 exact frozen texts",
+    "claim_boundary constants true on science terminal",
+    "REIMPLEMENTATION of residual arithmetic and densify D2 aggregate recompute is FORBIDDEN; MUST import four named frozen helpers (densify schema+reducer, residual schema+reducer)",
+    "runtime_source_digest ORDERED_CONCAT over NINE files",
+    "CLI --runtime-source-manifest-sha256 required 64-hex",
+    "expected manifest sha NEVER derived from loaded bytes",
+    "negative: manifest substitution markerless fail",
+    "negative: residual/densify transitive byte-flip \u2192 markerless fail",
+    "exclusive mint pre-existing root fails closed",
+    "horizon-keyed argv; swapped horizon path_ne_pin",
+    "endpoint grammar forbidden seed non-exhaustive; principle governs",
+    "manifest mint freeze-local non-repo; never plan-dev",
+    "classification_core/component_core emits all keys",
+    "DECLARED_TOP_EMBEDDED_FIELDS bind",
+    "set membership carrier = row_id string only",
+    "live argv frozen: component_live_terminal.argv_template has EXACTLY three placeholders __EXCLUSIVE_RUN_ROOT__ __RUNTIME_SOURCE_MANIFEST__ __RUNTIME_SOURCE_MANIFEST_SHA256__",
+    "live argv: --rung3-terminal-receipt and --rung4-terminal-receipt required concrete pins",
+    "live argv: horizon-keyed N= form; positional bare path rejected",
+    "live argv: swapped horizons path_ne_pin markerless",
+    "live argv: missing --rung4-terminal-receipt rejected",
+    "activation bindset TEN members exact; bindset parity step7 == binds_required",
+    "marker cardinality != 1 fails closed",
+    "INCOMPLETE_FINALIZATION markerless classes on runtime-source / expected-sha mismatch before mint",
+    "top-level SIZING MEDIUM and DEVELOPER_STEPS 2 present",
+    "STEP_1_ASSERTIONS groups [types]/[tests]/[runtime]/[data] present and map frozen commands",
+    "STEP_2_ASSERTIONS groups [types]/[tests]/[runtime]/[data] present and map frozen live argv + TEN binds",
+    "ninth runtime path residual_classification_classifier_v0 byte-flip \u2192 runtime_source_file_sha_mismatch / markerless fail",
+    "import-closure: every repo-local scripts.* import edge reachable from ordered NINE-path runtime set resolves INSIDE the frozen set"
+  ],
+  "line_cap_assertions": {
+    "hard_cap_lines_per_python_source_or_test_file": 500,
+    "applies_to": "every new Rung-5 Python source and test file",
+    "fails_when": "any new file >= 500 lines at STEP dual-accept",
+    "if_reducer_projected_over_450L": "STOP and remint plan with expanded split \u2014 do NOT grow runtime set in-flight under v0",
+    "nine_path_set_exact_and_frozen": true
+  },
+  "forbidden": [
+    "GPU / training / probe mutation / .pt touch",
+    "edit dual-accepted densify or residual files",
+    "mechanism / carrier / readiness / acquisition / bank claim",
+    "pooled cross-support denominators or row_id intersections as branch inputs",
+    "stage/commit/push without separate gates",
+    "plan-dev live terminal execution",
+    "live mint before +1 execute",
+    "float branch decisions",
+    "new D2 thresholds",
+    "depleted-tail comparison for R1",
+    "B as branch surface",
+    "in-place edit of receipted plan filenames",
+    "fast-path skip of full plan gate"
+  ],
+  "forbidden_during_implementation_receipts": [
+    "claim science branch before live dual-accept",
+    "present remembered gate ids as authority",
+    "route material receipts to co_lead in parallel with claude"
+  ],
+  "stop_conditions": [
+    "design requires training/GPU/probe mutation/.pt \u2192 STOP and surface",
+    "semantics conflict with committed densify D2 rules \u2192 STOP and surface",
+    "cannot operationalize without mechanism mint \u2192 STOP and surface",
+    "cross-support row_id intersection required for a branch \u2192 STOP and surface"
+  ],
+  "redispatch_triggers": [
+    "plan dual-accept bounce requiring semantic remint",
+    "STEP line-cap force remint with expanded file set"
+  ],
+  "expected_live_direction_non_authoritative_diagnostic_only": {
+    "primary": "IDENTITY_OK__ALIGNED_COMPONENT_LABELS__AGGREGATE_SPLIT",
+    "A1_secondary": "R1_LABEL_EQ_R0",
+    "successor_expected": "shared enriched component labels align across supports; aggregate endpoint labels differ under exact per-support count recomposition; design review complete; no mechanism mint",
+    "grounding": "co_lead 1785961007298 + plan-mint recompute RECOMPOSITION_OK on frozen pins",
+    "non_authoritative": true
+  },
+  "supersedes": {
+    "plan_revision": "v3_rung5_20260805",
+    "json_path": "artifacts/a_prime/A_prime_slice4_rung5_shared_component_decomposition_PLAN_v3.json",
+    "json_sha256": "2cba03ea58f8ecfb5a5ad52cd53fa3dc2f6ee1bdad921b3133537fdc14c5f27e",
+    "json_bytes": 60918,
+    "md_path": "artifacts/a_prime/A_prime_slice4_rung5_shared_component_decomposition_PLAN_v3.md",
+    "md_sha256": "80c5cb490cb10f8790c507008833b9bd4c09157e5fcd485ed8fb92e7f906391b",
+    "md_bytes": 2615,
+    "status": "DEAD",
+    "untouched": true
+  },
+  "prior_gate_blocks": [],
+  "prior_gate1_block_id": "1785962727051-31100399",
+  "v1_cures": {
+    "gate1_block_id": "1785962727051-31100399",
+    "blocker": "NO FROZEN LIVE-TERMINAL ARGV CONTRACT \u2014 validation_argv_frozen lacked component_live_terminal argv_template / placeholders / activation binds",
+    "cures": [
+      "Add validation_argv_frozen.component_live_terminal with full argv_template, EXACTLY three placeholders, horizon-keyed N= pins, --rung3-terminal-receipt + --rung4-terminal-receipt, admission_rules, fails_when, expected markers/artifacts",
+      "Add workflow_after_dual_accept.live_terminal_activation_gate.binds_required TEN binds (classifier, six receipts, rung3, rung4, 8-file map, ORDERED_CONCAT digest, manifest sha, manifest path, 3-placeholder argv, fresh run-root) + bindset_parity_rule",
+      "RECORD CORRECTION: v0 receipt claimed test_battery_named 40 items; frozen v0 JSON carries 38. v1 battery count stated exactly after cure additions"
+    ],
+    "untouched_semantics": "C1/C2/A1/B, preempts, successor texts, grounding, runtime-source 8-file set, authority pins"
+  },
+  "test_battery_count_exact": 51,
+  "record_correction_v0_battery_count": {
+    "v0_receipt_claimed": 40,
+    "v0_frozen_json_actual": 38,
+    "v1_battery_count_exact": 46,
+    "correction": "v0 receipt overstated test_battery_named as 40; frozen v0 JSON carried 38. v1 states exact count after cure additions.",
+    "v2_battery_count_exact": 49,
+    "v3_battery_count_exact": 51
+  },
+  "prior_gate2_block_id": "1785966806456",
+  "v2_cures": {
+    "gate2_revise_id": "1785963141542",
+    "dispatch_id": "1785963172700-3c6febdc",
+    "cures": [
+      "Replace ambiguous forbidden_discretion with REIMPLEMENTATION-FORBIDDEN + MUST-import form; class-sweep step scopes + battery",
+      "Add top-level SIZING MEDIUM / DEVELOPER_STEPS 2 and STEP 1/2 ASSERTIONS [types]/[tests]/[runtime]/[data]"
+    ],
+    "untouched_semantics": "C1/C2/A1/B, preempts, successors, grounding, 8-file runtime, authority pins, claim boundary, live argv, TEN binds"
+  },
+  "SIZING": "MEDIUM",
+  "DEVELOPER_STEPS": 2,
+  "STEP_1_ASSERTIONS": {
+    "types": [
+      "PASS iff schema+reducer py_compile clean and import as IMPORT_OK_COMPONENT",
+      "PASS iff reducer pure (no CLI/IO/print/run-root) and schema exports required constants",
+      "PASS iff each STEP-1 Python file line count < 500"
+    ],
+    "tests": [
+      "PASS iff validation_argv_frozen.focused_pytest_step1 exits 0",
+      "PASS iff identity hostiles yield IDENTITY_BIND_FAIL",
+      "PASS iff authority hostiles yield AUTHORITY_BIND_FAIL",
+      "PASS iff C2 recomposition mismatch yields RECOMPOSITION_BIND_FAIL",
+      "PASS iff empty named component yields DEGENERATE_EMPTY_COMPONENT",
+      "PASS iff C1/C2 science labels and A1/B non-branching hold",
+      "PASS iff successor lookup emits exact frozen_neutral_successor_texts steps 5/6/7/8"
+    ],
+    "runtime": [
+      "PASS iff residual arithmetic and densify D2 aggregate recompute are IMPORTED from four named frozen helpers (not reimplemented)",
+      "PASS iff densify/residual source files not modified",
+      "PASS iff no GPU/training/.pt/probe mutation in STEP-1"
+    ],
+    "data": [
+      "PASS iff six horizon path+sha pins match frozen_inputs.receipt_paths_and_sha256",
+      "PASS iff Rung-3 1a8e0fbc\u2026 and Rung-4 1aa7116f\u2026 are authority surfaces",
+      "PASS iff recomposition expects component sums exact-equal Rung-4 D2 raw per support"
+    ],
+    "commands_authority": {
+      "pytest": "validation_argv_frozen.focused_pytest_step1",
+      "import_compile": "validation_argv_frozen.py_compile_import_step1",
+      "line_cap": 500,
+      "files_authority": [
+        "scripts/a_prime_slice4_shared_component_decomposition_schema_v0.py",
+        "scripts/a_prime_slice4_shared_component_decomposition_reducer_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_decomposition_reducer_v0.py"
+      ]
+    }
+  },
+  "STEP_2_ASSERTIONS": {
+    "types": [
+      "PASS iff contract+classifier py_compile clean and import as IMPORT_OK_COMPONENT_CLASSIFIER",
+      "PASS iff contract pure and classifier thin orchestrator only",
+      "PASS iff each STEP-2 Python file line count < 500"
+    ],
+    "tests": [
+      "PASS iff validation_argv_frozen.focused_pytest_step2 exits 0",
+      "PASS iff 9-file ORDERED_CONCAT_V0 digest recomputes; expected-manifest-sha mismatch markerless fail before mint",
+      "PASS iff frozen pin path+sha covers six horizons + Rung-3 + Rung-4",
+      "PASS iff dual-key exclusive mint pre-existing root fails closed",
+      "PASS iff horizon-keyed argv hostiles fail closed",
+      "PASS iff missing --rung4-terminal-receipt / pin mismatch fails closed",
+      "PASS iff DECLARED_TOP_EMBEDDED_FIELDS and component_core snapshot equality hold",
+      "PASS iff byte-flip hostile on the ninth runtime path (residual_classification_classifier_v0) yields runtime_source_file_sha_mismatch / markerless fail"
+    ],
+    "runtime": [
+      "PASS iff complete_runtime_source_set ordered NINE paths exact and frozen",
+      "PASS iff residual/D2 arithmetic is not reimplemented; classifier uses the component reducer for decomposition, the pure contract for runtime-source validation, and the pinned residual classifier for extract_horizon_view projection",
+      "PASS iff densify/residual files remain unedited",
+      "PASS iff plan-dev does NOT execute live terminal; live path uses component_live_terminal after +1 execute",
+      "PASS iff import-closure: every repo-local scripts.* import edge reachable from the ordered runtime set resolves INSIDE the frozen NINE-path set"
+    ],
+    "data": [
+      "PASS iff live argv_template has EXACTLY three placeholders and concrete six N= pins + both terminal pins",
+      "PASS iff live_terminal_activation_gate.binds_required has TEN members and bindset parity with workflow step 7",
+      "PASS iff expected live markers are exactly one PACKET_TERMINAL + WRAPPER_RC 0 and artifacts terminal_receipt.json + terminal_manifest.json"
+    ],
+    "commands_authority": {
+      "pytest": "validation_argv_frozen.focused_pytest_step2",
+      "import_compile": "validation_argv_frozen.py_compile_import_step2",
+      "live_terminal": "validation_argv_frozen.component_live_terminal",
+      "line_cap": 500,
+      "files_authority": [
+        "scripts/a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+        "scripts/a_prime_slice4_shared_component_decomposition_classifier_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_runtime_source_contract_v0.py",
+        "calm/llm_computer/tests/test_a_prime_slice4_shared_component_decomposition_classifier_v0.py"
+      ],
+      "activation_binds_count": 10
+    }
+  },
+  "v3_dispatch_id": "1785966560347-ff53426d",
+  "v3_cures": {
+    "gate2_block_id": "1785966513510",
+    "dispatch_id": "1785966560347-ff53426d",
+    "adjudication": "D6 disposition (b) nine-path remint; residual_classification_classifier_v0 was not_imported_reference_only but is a live import edge",
+    "cures": [
+      "Expand runtime_source_set to NINE paths: append residual_classification_classifier_v0.py; move out of not_imported_reference_only into imported read-only set; update all eight\u2192nine count surfaces",
+      "Add two battery hooks: ninth-file byte-flip hostile; import-closure assertion over ordered runtime set"
+    ],
+    "untouched_semantics": "C1/C2/A1/B, preempts, successors, frozen_inputs pins, claim boundary, live argv, TEN binds + parity, STEP-1 surface"
+  },
+  "v4_dispatch_id": "1785966822466-b2ea608a",
+  "v4_cures": {
+    "gate2_revise_id": "1785966806456",
+    "dispatch_id": "1785966822466-b2ea608a",
+    "cures": [
+      "Replace STEP_2_ASSERTIONS \"classifier uses the component reducer for decomposition, the pure contract for runtime-source validation, and the pinned residual classifier for extract_horizon_view projection\" with responsibility form naming reducer/contract/residual-classifier extract_horizon_view; class-sweep other overall-import only wording"
+    ],
+    "untouched_semantics": "nine-path set + ninth pin, closure/ninth-flip battery, C1/C2/A1/B, preempts, successors, frozen_inputs, claim boundary, live argv, TEN binds, STEP-1"
+  }
+}
