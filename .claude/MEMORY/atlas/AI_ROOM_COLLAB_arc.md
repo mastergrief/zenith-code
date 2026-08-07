@@ -261,3 +261,89 @@ Not standing roles in this repo: `training-dev`, `trainer-implement`,
 Two things are frequently mistaken for a fourth room role and are not:
 `.codex/agents/developer.toml` is plan-dev's bounded executor template, and
 Claude-side `Explore`-agent fan-out is orchestration.
+
+## Advisor hardening — instrument pre-check + defect-class audit (2026-08-07)
+
+Gabe, verbatim: "how could we harden you effectively using advisor?" then
+"ok implement all direct with co_lead review". Claude-direct under that named
+exception; co_lead review. Relay `1786112157860-e10e70e2`, task
+`1786112135681-ee33b0ef`.
+
+**What the measurement showed.** Claude's defect ledger for the session was
+entirely **apparatus**, not design: a member loop that iterated a dict as a
+list and reported green over zero members; `RUNNER_PASS` counted 2 where both
+hits were the substring inside `S5_NO_RUNNER_PASS_YET`; an absence asserted
+against the watch-wrap monitor stream instead of the attested
+`external_runner_log_path`; a packet gate that bound member bytes but never
+enumerated the claims the run would emit; an unsorted `rg` hash frozen as
+replay authority; then a hash frozen with no producing argv. Advisor's charter
+barred it from every one of those — pre-artifact only, never fed plans, diffs,
+or receipts. More design consultation would have caught none of them.
+
+**Routing measurement.** 14 frozen records minted in the session: 4 carried
+`ADVISOR_WAIVER`, **10 carried no advisor field at all**, against a charter
+requiring every consultation *or* waiver be recorded. Claude-initiated
+solicitations: zero; the single contact was advisor-initiated, relaying Gabe.
+So the dominant failure was unrecorded disposition, not bad advice — and the
+`ADVISOR_WAIVER: artifact review (plan gate)` label was correct by the letter
+while routing around trigger 4 on rounds whose defect was an unnamed
+measurement.
+
+**Three cures.** (1) Trigger 4 keys on the instrument, not the artifact stage.
+(2) Instrument pre-check — a check may be shown before it runs, for two answers
+only, false-fire state and false-silence state. (3) Defect-class audit —
+advisor reads the room journal and reports the recurring class, its trend, and
+whether the last cure held; the self-measurement Claude cannot make, since a
+class is visible only across occurrences and the agent producing them
+reconstructs its own history and experiences that as memory. Plus: a frozen
+record with no advisor field is a gate defect.
+
+**Mode router — added at gate-2 round 3.** The first two frozen versions kept
+describing advisor as pre-artifact and consulted before the decision contract,
+then added two modes that are neither. co_lead blocked twice on the resulting
+collision. The third pass swept the whole surface instead of the cited lines
+and found **six** occurrences of the same universal stage claim — the rule
+bullet, the agent body, the H1, and the frontmatter description — each earlier
+round having cured a subset, which is the instance fix the occurrence-class
+rule names. Cure: mode is selected by **what the solicitation carries** (a
+check shown pre-run → pre-check; a journal request → audit; neither → design),
+and only design triggers 1-3 are stage-bounded. Trigger 4 and both non-design
+modes are stage-independent — the fact the collision had been hiding.
+
+**Round 4 — the class stopped being cured in prose.** The round-3 router was
+still an instance fix: it defined precedence for `check + design` and left the
+other mixed payloads unrouted, and it protected pre-check and audit from the
+category waiver while leaving stage-independent trigger 4 exposed to it. Seven
+occurrences of one class over four rounds is a measurement about the method, so
+the cure became enumeration: a **7-row truth table** over every non-empty
+subset of `{check, journal request, design question}` under total precedence
+`check > journal > design`, answer-the-highest / return-the-rest / never blend;
+plus a **waiver matrix** naming the three things no stage or category waiver
+reaches. The table is machine-checked by
+`scratchpad/verify_mode_truth_table.py`, which parses it out of the live agent
+file and asserts totality, precedence consistency, and exact return sets —
+calibrated on one positive and three negative arms. Its first run failed on the
+live file, and the defect was in the checker: `set('') <= {':','-'}` is True, so
+a separator guard testing only the first cell silently dropped every row whose
+check column was blank. The same matcher-form-over-property class, now inside
+the instrument built to close it. A committed test was out of scope this slice;
+the verifier stays a scratchpad artifact and the truth table is the normative
+surface.
+
+**Rejected:** advisor as reviewer, gate, or approver. Three-way review dilutes
+responsibility, and advisor output is ARRIVED — Claude re-derives it anyway, so
+a gate role buys a round and no evidence.
+
+**Line-cap note.** `rules/AI_ROOM_COLLAB.md` sat at 199/200 hard cap. Substance
+went to `.claude/agents/fable-advisor.md` (unbounded); the rule kept invariant
+pointers and landed at exactly 200. No new tool grant was needed — advisor
+already held `ai_room_read` / `_tail` / `_search`.
+
+**Deferred, not implemented:** advisor's own relayed proposals — a commit gate
+refusing staged `.claude/hooks/*` without a both-arm calibration receipt, and a
+dead-letter journal so a fail-closed guard's silence is observable rather than
+inferred. Disposition `1786110087799-d92d0a65`; Claude reversed the proposed
+ranking (dead-letter first) and amended the calibration predicate, since a
+paired `test_<hook>.py` measures filename adjacency, not calibration. Measured
+then: 14 non-test hooks, 8 paired, 6 unpaired including the control-plane
+`task_dispatch_child_boundary_gate.py`.

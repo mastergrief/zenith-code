@@ -46,28 +46,29 @@ need a persisted named exception or break-glass reason.
 fourth role, are enumerated in `MEMORY/atlas/AI_ROOM_COLLAB_arc.md`
 §"Retired spawnable codex role names".
 
-**`advisor`** (Claude-side, not a codex role): standing pre-artifact advisory
-peer; design critique is the point. **Never a formal reviewer, gate, or
-approver** — ARRIVED hypothesis Claude re-derives, never durable authority.
+**`advisor`** (Claude-side, not a codex role): standing advisory peer, three
+modes. **Never a formal reviewer, gate, or approver** — ARRIVED hypothesis
+Claude re-derives, never durable authority. Modes, triggers, solicitation
+shape: `.claude/agents/fable-advisor.md`.
 
-- **Consult before the decision contract** when any holds: novel mechanism or
-  measurement minting new science semantics; two bounces on apparatus/framing
-  rather than science; materially different architectures still plausible with
-  no discriminating evidence; either the probable failure mode or its detecting
-  measurement is unnamed. **Waive** for mechanical cycles, converged contracts,
-  remints, artifact review — consulting there is noise.
-- **Placement**: `intent → advisor (when triggered) → Claude re-derivation →
-  decision contract → route → normal gates`. Never between gate-1 and gate-2;
-  never fed plans, packets, diffs, or validation receipts.
-- **Solicit** the artifact and the open question — goal, observed evidence,
-  constraints, your framing explicitly marked HYPOTHESIS. Ask for a simpler
-  decomposition, a materially different alternative, the predicted failure
-  mode, and the cheapest discriminating observation.
-- **Disposition**: EVERY triggered consultation or waiver is recorded on the
-  decision contract — or another durable room record when no contract follows —
-  as `ADVISOR: consulted <msg-id>` + `CLAUDE_REDERIVATION:` adopted / rejected /
-  independently verified, or `ADVISOR_WAIVER: <reason>`; a later dispatch cites
-  it. Proof Claude made the routing call, never that advisor approved.
+- **Mode is set by what the solicitation carries**, never by stage label, under
+  total precedence **check > journal request > design question**: answer the
+  highest-priority component present, return every other for its own
+  solicitation, never blend two. Both non-design modes and design trigger 4 are
+  stage-independent; only design triggers 1-3 need the pre-contract window.
+- **Design triggers**: novel mechanism/measurement minting new science
+  semantics; two bounces on apparatus/framing rather than science; materially
+  different architectures plausible with no discriminating evidence; the
+  failure mode or its detecting measurement unnamed — that one keys on the
+  **instrument**, so no stage label waives it.
+- **Waive design triggers 1-3** for mechanical cycles, converged contracts, and
+  remints, plus review of the artifact itself. The waiver NEVER reaches trigger
+  4, instrument pre-check, or defect-class audit. **Placement**: `intent →
+  advisor → re-derivation → contract → route → gates`; never between gate-1 and
+  gate-2; never fed plans, packets, diffs, or receipts.
+- **Disposition on EVERY frozen record**, consulted or waived: `ADVISOR:
+  consulted <id>` + `CLAUDE_REDERIVATION:` adopted / rejected / independently
+  verified, or `ADVISOR_WAIVER: <reason>`. Absent advisor field = gate defect.
 
 ## Cross-thread at thinking boundaries
 
