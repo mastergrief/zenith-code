@@ -42,7 +42,12 @@ def build_run_phase_bash_c(
     budgets: Mapping[str, int],
     phases: Sequence[str],
 ) -> str:
-    """Absolute-path run_phase chain body (no bare relative operands)."""
+    """Absolute-path run_phase chain body (no bare relative operands).
+
+    Status capture must not rely on ``cmd; ec=$?`` under ``set -e``: a nonzero
+    timeout exits the shell before ``ec=$?``, so named markers never emit while
+    the outer rc still looks correct. Capture via ``if …; then …; else ec=$?; fi``.
+    """
     for ph in phases:
         path = phase_paths[ph]
         if not path.startswith("/"):
@@ -53,9 +58,10 @@ def build_run_phase_bash_c(
         "trap 'echo CHILD_WRAPPER_SIGNAL status=$? >&2; "
         "pkill -TERM -P $$ 2>/dev/null || true; wait || true; exit 143' TERM INT",
         "set -euo pipefail",
-        'run_phase(){ local script="$1"; local budget="$2"; local name="$3"; '
-        'timeout --signal=TERM --kill-after=5 "$budget" bash "$script"; ec=$?; '
-        'if [ "$ec" -eq 0 ]; then return 0; fi; '
+        # if/else captures status without set -e aborting before ec is assigned
+        'run_phase(){ local script="$1"; local budget="$2"; local name="$3"; local ec=0; '
+        'if timeout --signal=TERM --kill-after=5 "$budget" bash "$script"; then return 0; '
+        'else ec=$?; fi; '
         'if [ "$ec" -eq 124 ] || [ "$ec" -eq 137 ]; then '
         "echo PHASE_BUDGET_BREACH phase=$name budget=$budget rc=$ec >&2; exit $ec; fi; "
         "echo FIRST_PHASE_FAIL phase=$name rc=$ec >&2; exit $ec; }",

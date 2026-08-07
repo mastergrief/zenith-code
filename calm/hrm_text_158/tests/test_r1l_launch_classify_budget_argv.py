@@ -210,6 +210,70 @@ def test_argv_rejects_relative_phase_path():
         build_run_phase_bash_c({"S0": "S0.sh"}, {"S0": 1}, ["S0"])
 
 
+def test_run_phase_wrapper_emits_first_phase_fail_marker_on_ordinary_failure():
+    """Facade-emitted run_phase must emit FIRST_PHASE_FAIL on stream (not mere rc).
+
+    Broken shape ``timeout; ec=$?`` under set -e yields the same rc without the
+    marker — rc-only checks are green over nothing for this defect class.
+    """
+    import os
+    import subprocess
+
+    with tempfile.TemporaryDirectory() as td:
+        stub = Path(td) / "fail.sh"
+        stub.write_text("#!/usr/bin/env bash\nexit 3\n")
+        os.chmod(stub, 0o755)
+        body = build_run_phase_bash_c({ "X": str(stub) }, { "X": 30 }, ["X"])
+        # cure shape present; broken sequential capture absent
+        assert "else ec=$?; fi" in body
+        assert 'bash "$script"; ec=$?' not in body
+        wrapper = f"set -euo pipefail; {body}; echo REACHED"
+        r = subprocess.run(["bash", "-c", wrapper], capture_output=True, text=True)
+        stream = r.stderr + r.stdout
+        assert r.returncode == 3
+        assert "FIRST_PHASE_FAIL" in stream, stream
+        assert "phase=X" in stream
+        assert "REACHED" not in r.stdout
+
+
+def test_run_phase_wrapper_emits_phase_budget_breach_marker_on_timeout():
+    """Facade-emitted run_phase must emit PHASE_BUDGET_BREACH on stream under timeout."""
+    import os
+    import subprocess
+
+    with tempfile.TemporaryDirectory() as td:
+        stub = Path(td) / "slow.sh"
+        stub.write_text("#!/usr/bin/env bash\nsleep 30\n")
+        os.chmod(stub, 0o755)
+        body = build_run_phase_bash_c({ "SLOW": str(stub) }, { "SLOW": 2 }, ["SLOW"])
+        assert "else ec=$?; fi" in body
+        wrapper = f"set -euo pipefail; {body}; echo REACHED"
+        r = subprocess.run(["bash", "-c", wrapper], capture_output=True, text=True)
+        stream = r.stderr + r.stdout
+        assert r.returncode in (124, 137)
+        assert "PHASE_BUDGET_BREACH" in stream, stream
+        assert "phase=SLOW" in stream
+        assert "REACHED" not in r.stdout
+
+
+def test_run_phase_wrapper_success_reaches_after_run_phase():
+    """Success arm: zero rc and control continues past run_phase."""
+    import os
+    import subprocess
+
+    with tempfile.TemporaryDirectory() as td:
+        stub = Path(td) / "ok.sh"
+        stub.write_text("#!/usr/bin/env bash\nexit 0\n")
+        os.chmod(stub, 0o755)
+        body = build_run_phase_bash_c({ "OK": str(stub) }, { "OK": 30 }, ["OK"])
+        wrapper = f"set -euo pipefail; {body}; echo REACHED_AFTER_RUNPHASE"
+        r = subprocess.run(["bash", "-c", wrapper], capture_output=True, text=True)
+        assert r.returncode == 0
+        assert "REACHED_AFTER_RUNPHASE" in r.stdout
+        assert "FIRST_PHASE_FAIL" not in (r.stderr + r.stdout)
+        assert "PHASE_BUDGET_BREACH" not in (r.stderr + r.stdout)
+
+
 def test_mint_content_digest_uses_basenames_matches_frozen_fixture_identity():
     """Known-good: mint of DEAD v13 fixture shells yields FROZEN_FIXTURE_CONTENT_DIGEST."""
     fix = Path("/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/tests/fixtures/r1l_launch")
