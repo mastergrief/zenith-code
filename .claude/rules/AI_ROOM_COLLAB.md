@@ -47,28 +47,37 @@ fourth role, are enumerated in `MEMORY/atlas/AI_ROOM_COLLAB_arc.md`
 §"Retired spawnable codex role names".
 
 **`advisor`** (Claude-side, not a codex role): standing advisory peer, three
-modes. **Never a formal reviewer, gate, or approver** — ARRIVED hypothesis
-Claude re-derives, never durable authority. Modes, triggers, solicitation
-shape: `.claude/agents/fable-advisor.md`.
+modes; **never reviewer, gate, or approver** — ARRIVED hypothesis Claude
+re-derives. Modes, triggers, solicitation shape: `.claude/agents/fable-advisor.md`.
 
 - **Mode is set by what the solicitation carries**, never by stage label, under
   total precedence **check > journal request > design question**: answer the
-  highest-priority component present, return every other for its own
-  solicitation, never blend two. Both non-design modes and design trigger 4 are
-  stage-independent; only design triggers 1-3 need the pre-contract window.
-- **Design triggers**: novel mechanism/measurement minting new science
-  semantics; two bounces on apparatus/framing rather than science; materially
-  different architectures plausible with no discriminating evidence; the
-  failure mode or its detecting measurement unnamed — that one keys on the
-  **instrument**, so no stage label waives it.
+  highest-priority present, return the rest, never blend two. Non-design modes
+  and trigger 4 are stage-independent; only triggers 1-3 need pre-contract.
+- **Design triggers** (consultation): (1) novel mechanism/measurement minting
+  science semantics, no converged contract; (2) two bounces on apparatus rather
+  than science; (3) materially different architectures plausible with no
+  discriminating evidence; (4) failure mode or its detecting measurement
+  unnamed — keys on the **instrument**, so no stage label waives it.
+- **MANDATORY defect-class audit, `ADVISOR_WAIVER` unavailable, blocking the
+  next remint/freeze**: a second substantiated bounce in one normalized class —
+  normalize on **observed** variance, so an uncalibrated-but-possibly-correct
+  check is in class — counted across artifact VERSIONS, never from this
+  version's trigger-4 answer; or a frozen requirement found infeasible, raised
+  before the action alongside reopening the gate that froze it, never as
+  `+1`/receipt disclosure. **Solicitation AND successor must make the trigger
+  identity locatable**: normalized class plus the two substantiated bounce ids,
+  or the infeasible requirement plus the id of the freeze that froze it.
+  `ADVISOR: consulted <id>` proves consultation, never why it was mandatory.
 - **Waive design triggers 1-3** for mechanical cycles, converged contracts, and
-  remints, plus review of the artifact itself. The waiver NEVER reaches trigger
-  4, instrument pre-check, or defect-class audit. **Placement**: `intent →
+  remints, plus artifact review. NEVER reaches trigger 4, instrument pre-check,
+  defect-class audit, or the mandatory triggers. **Placement**: `intent →
   advisor → re-derivation → contract → route → gates`; never between gate-1 and
-  gate-2; never fed plans, packets, diffs, or receipts.
-- **Disposition on EVERY frozen record**, consulted or waived: `ADVISOR:
-  consulted <id>` + `CLAUDE_REDERIVATION:` adopted / rejected / independently
-  verified, or `ADVISOR_WAIVER: <reason>`. Absent advisor field = gate defect.
+  gate-2; never fed plans, packets, diffs, receipts.
+- **Disposition on EVERY frozen record**: `ADVISOR: consulted <id>` +
+  `CLAUDE_REDERIVATION:` adopted / rejected / independently verified, or
+  `ADVISOR_WAIVER: <reason>`; mandatory-trigger successors require the consulted
+  form, again if the class survives another bounce. Absent field = gate defect.
 
 ## Cross-thread at thinking boundaries
 
@@ -116,16 +125,10 @@ gates; codex recommends routes/contracts through claude.
 Proceed without per-step check-in once directed. Pause on destructive action,
 unresolved disagreement, scope/cost change. Use `ai_room_task_*` for work
 >1 exchange or >1 file. Create + start before code. Keep ONE task `in_progress`
-across gated sub-steps — don't `complete` between gates.
-
-### Cascade boundary
-
-Before fan-out (>2 tasks, multi-commit, ambiguous split): state split + owners,
-one risk, wait for concur.
-
-## Before idle — `resume_check`
-
-Call before "standing by". Board is canonical; memory is not.
+across gated sub-steps — don't `complete` between gates. **Cascade boundary**:
+before fan-out (>2 tasks, multi-commit, ambiguous split) state split + owners,
+one risk, wait for concur. **Before idle** call `ai_room_resume_check` — board
+is canonical, memory is not.
 
 ## Disagreement
 
@@ -189,12 +192,9 @@ committed. Sibling for measurement-only CPU slices whose claim effect is a
 feasibility/plumbing/parity/null read: **LEAN-MEASUREMENT** tier
 (`CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier").
 
-## Commit hygiene
+## Commit hygiene + scope boundaries
 
 Bundle coherent session-work; body names sub-features. Never hide unrelated
-drift in subject. User-scope tooling (`~/.ai-room/*`) not in repo commit.
-
-## Scope boundaries
-
-This charter = ai-room/MCP/wake-stack collab. Normal repo conventions apply
-elsewhere. User-scope tooling under `~/.ai-room/` needs board coordination.
+drift in subject. This charter = ai-room/MCP/wake-stack collab; normal repo
+conventions apply elsewhere. User-scope tooling (`~/.ai-room/*`) stays out of
+repo commits and needs board coordination.

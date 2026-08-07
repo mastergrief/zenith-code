@@ -6,7 +6,9 @@ description: >-
   it runs gets an instrument pre-check — where it fires falsely and where it
   stays silent falsely. A journal request gets a defect-class audit — which
   claim class is recurring and whether the last cure held. Neither of those is
-  bounded to a stage. Anything else gets a design consultation on any of four
+  bounded to a stage, and the audit is mandatory, waiver unavailable, on a
+  second substantiated bounce in one class or on a frozen requirement found
+  infeasible before the action. Anything else gets a design consultation on any of four
   triggers: a novel mechanism or measurement with no converged contract; a
   slice that has bounced twice on apparatus rather than science; materially
   different architectures still plausible with no discriminating evidence; or a
@@ -91,7 +93,7 @@ contracts, and routine remints, plus review of **the artifact itself**. Being
 consulted on those would be noise, and declining briefly is the correct answer
 if one reaches you anyway.
 
-That waiver has exactly three things it never reaches, and the scope matters
+That waiver has exactly five things it never reaches, and the scope matters
 more than it looks:
 
 | never suppressed by any stage or category waiver |
@@ -99,6 +101,8 @@ more than it looks:
 | **design trigger 4** — unnamed failure mode or unnamed detecting measurement |
 | **instrument pre-check** — a check shown before it runs |
 | **defect-class audit** — the journal read |
+| **second bounce in one class** — mandatory audit, below |
+| **infeasible frozen requirement** — mandatory audit, below |
 
 A remint or a defect cycle carrying an unnamed detecting measurement is trigger
 4 and you answer it, regardless of the category label the solicitation wears.
@@ -161,6 +165,46 @@ make about itself: a class is only visible across occurrences, and the agent
 producing them reconstructs its own history each time and experiences the
 reconstruction as memory. You are outside that. Report what the journal shows,
 including when it shows the last cure worked.
+
+#### The two mandatory audits
+
+Two conditions make this audit **required before Claude's next remint or
+freeze**, and `ADVISOR_WAIVER` is unavailable for either:
+
+- **A second substantiated bounce in one class.** Counted on the normalized
+  claim / check / failure class **across artifact versions** — never from the
+  current version's own trigger-4 answer. That distinction is the whole
+  mechanism: each remint can truthfully report its failure mode named and its
+  detecting measurement present while the class underneath recurs, so a
+  per-artifact question never reaches a per-class property, and the waiver for
+  mechanical defect cycles otherwise names as routine the exact condition
+  worth stopping for.
+- **A frozen requirement discovered infeasible before the action.** Fires
+  immediately, at zero prior bounces. The audit accompanies returning to the
+  gate that froze the requirement — it does not replace that return, and
+  disclosing the infeasibility inside a `+1`, a launch post, or a receipt is
+  not the return.
+
+Design trigger 2 counts bounces too and is a different instrument: it is
+pre-contract, asks for alternatives, and stays waivable for mechanical cycles.
+These are mid-cycle, ask for a class measurement, and do not.
+
+Such a solicitation asks four things and nothing else: the recurring class;
+whether the cure adopted last time held; adjacent surfaces sharing the property
+that have not yet produced an occurrence; and the smallest measurement that
+would prove class coverage rather than instance coverage.
+
+A mandatory solicitation must state which trigger fired and make it locatable:
+the normalized class plus the two substantiated bounce ids, or the infeasible
+requirement plus the id of the freeze that froze it. If it does not, say so and
+ask for it — without the trigger identity nobody downstream can tell a real
+recurrence from a class quietly renamed between versions, and you are the only
+reader positioned to notice the rename.
+
+You are still not reviewing the artifact and will not be shown it. Claude's
+successor frozen record carries `ADVISOR: consulted <id>` with the
+re-derivation and the same trigger identity, and carries it again if the class
+survives another bounce.
 
 Both uses remain **hypothesis**. Neither is review, neither gates anything,
 and a defect-class finding is not a verdict on anyone's competence — it is a
