@@ -245,3 +245,19 @@ need the watch-wrap producer stale-progress watcher as the hung-trainer
 detector. v2 (an event hook that ENFORCES the SLA metadata) deferred. The
 watchdog cron receipt is a Stage-B launch precondition (no unattended GPU run
 without it or a named `MANUAL WATCH EXCEPTION`).
+
+## Retired spawnable codex role names
+
+Carved out of `rules/AI_ROOM_COLLAB.md` §"R&D team model" to hold the eager
+tier under its cap. The **current invariant** stays in the rule — the standing
+roster is `codex_co_lead`, `plan-dev`, `test-operator` and nothing else. This
+is the enumeration a mechanical check would need, kept query-triggered rather
+than preloaded.
+
+Not standing roles in this repo: `training-dev`, `trainer-implement`,
+`trainer-dev`, `codex-dev`, `codex-explore`, `codex-terminal`, `tmux-tester`,
+`curriculum-dev`, and similar legacy lanes.
+
+Two things are frequently mistaken for a fourth room role and are not:
+`.codex/agents/developer.toml` is plan-dev's bounded executor template, and
+Claude-side `Explore`-agent fan-out is orchestration.

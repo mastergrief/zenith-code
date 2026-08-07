@@ -11,14 +11,13 @@ unaffected.
 **Gabe** = human direction owner. **Claude + `codex_co_lead`** = technical
 research/strategy co-leads. **Claude** = operations/orchestration lead.
 
-Gabe seeds → claude+codex co-hypothesize/challenge → `plan-dev` writes the
-plan/packet AND bounded-implements the approved slice after +1 → **claude
-gate-1 (verify+freeze or bounce) → co_lead gate-2 (independent review of
-FROZEN handoff) → dual accept** → claude commit/push gates → `test-operator`
-owns formal training/proof/test-run execution → gate → iterate. Thinking stays
-parallel; **artifact review gates are sequential.** Claude+co_lead review/audit,
-NOT execute — direct Claude repo-file edits/runs need persisted named exception
-or break-glass reason.
+Gabe seeds → claude+codex co-hypothesize/challenge → `plan-dev` plans and
+bounded-implements after +1 → **claude gate-1 (verify+freeze or bounce) →
+co_lead gate-2 (independent review of the FROZEN handoff) → dual accept** →
+claude commit/push gates → `test-operator` runs formal training/proof/tests →
+iterate. Thinking is parallel; **artifact review gates are sequential.**
+Claude+co_lead review/audit, NOT execute — direct Claude repo-file edits/runs
+need a persisted named exception or break-glass reason.
 
 - **Gabe**: seeds problems, picks risk/cost/goal, final human gates.
 - **Claude + `codex_co_lead`**: hypothesis quality, gate design, counter-cases,
@@ -28,19 +27,13 @@ or break-glass reason.
   validation/commit/push/launch gates, synthesis. One active executor per slice.
 - **Named Codex roles** (under co-leads + gates):
   - **`plan-dev`**: planning/contract/packet lane AND default bounded
-    implementation executor (default for HRM + main-repo slices). Owns
-    plan/packet drafting, run-packet contracts, and approved implementation —
-    **NOT** implementation review (receipts route to claude gate-1 first),
-    **NOT** formal run execution. Break-glass implementation/run only via
-    Claude `+1` with `transition_fallback_used=true`. After `+1 implement` may
-    invoke `.codex/agents/developer.toml` (`subagent-claimed` until verified;
-    no gate on that receipt alone). **health-proven existing backend/config**
-    — do NOT change backend as the fix. Edits + focused developer validation in
-    scope; **receipts to claude gate-1 FIRST** (material sink). co_lead gate-2
-    reviews only claude's frozen handoff — not in parallel on the raw receipt.
-    On dual accept proceed to claude commit/
-    push gates, then run packets route to `test-operator`. No
-    spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
+    implementation executor for HRM + main-repo slices. **NOT** implementation
+    review, **NOT** formal run execution. **Receipts to claude gate-1 FIRST**
+    (material sink); co_lead gate-2 reviews only claude's frozen handoff. On
+    dual accept → claude commit/push gates → run packets to `test-operator`.
+    No spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
+    Break-glass, developer-template use, and backend discipline:
+    `CLAUDEX_ORCHESTRATION.md` §"Team model + named role lanes".
   - **`test-operator`**: formal training/proof/test-run packet executor — runs,
     monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
     fixes → `plan-dev`.
@@ -49,31 +42,45 @@ or break-glass reason.
     `CLAUDEX_ORCHESTRATION.md` §Lifecycle. Diff gates never skipped.
 
 **Active codex room roster (this repo):** `codex_co_lead`, `plan-dev`,
-`test-operator` only. Retired spawnable role names (`training-dev`,
-`trainer-implement`, `trainer-dev`, `codex-dev`, `codex-explore`,
-`codex-terminal`, `tmux-tester`, `curriculum-dev`, and similar legacy lanes)
-are not standing roles here. `.codex/agents/developer.toml` is plan-dev's
-bounded executor template — not a fourth room role. Claude-side Explore-agent
-fan-out is orchestration, not a codex role.
+`test-operator` only. Retired role names, and the two things mistaken for a
+fourth role, are enumerated in `MEMORY/atlas/AI_ROOM_COLLAB_arc.md`
+§"Retired spawnable codex role names".
 
 **`advisor`** (Claude-side, not a codex role): standing pre-artifact advisory
-peer for cold starts / apparatus-bouncing slices; design critique is the point.
-**Never a formal reviewer, gate, or approver** — hypothesis Claude re-derives.
+peer; design critique is the point. **Never a formal reviewer, gate, or
+approver** — ARRIVED hypothesis Claude re-derives, never durable authority.
+
+- **Consult before the decision contract** when any holds: novel mechanism or
+  measurement minting new science semantics; two bounces on apparatus/framing
+  rather than science; materially different architectures still plausible with
+  no discriminating evidence; either the probable failure mode or its detecting
+  measurement is unnamed. **Waive** for mechanical cycles, converged contracts,
+  remints, artifact review — consulting there is noise.
+- **Placement**: `intent → advisor (when triggered) → Claude re-derivation →
+  decision contract → route → normal gates`. Never between gate-1 and gate-2;
+  never fed plans, packets, diffs, or validation receipts.
+- **Solicit** the artifact and the open question — goal, observed evidence,
+  constraints, your framing explicitly marked HYPOTHESIS. Ask for a simpler
+  decomposition, a materially different alternative, the predicted failure
+  mode, and the cheapest discriminating observation.
+- **Disposition**: EVERY triggered consultation or waiver is recorded on the
+  decision contract — or another durable room record when no contract follows —
+  as `ADVISOR: consulted <msg-id>` + `CLAUDE_REDERIVATION:` adopted / rejected /
+  independently verified, or `ADVISOR_WAIVER: <reason>`; a later dispatch cites
+  it. Proof Claude made the routing call, never that advisor approved.
 
 ## Cross-thread at thinking boundaries
 
 | Step | Cross-thread? |
 |---|---|
 | Hypothesize, plan, devil's advocate, creativity, audit, iterate | **yes** |
-| Build, focused impl validation, formal runs, commit | **no** — `plan-dev`
-  implements after +1; claude gate-1 then co_lead gate-2 on frozen receipt;
-  formal training/proof/test runs via `test-operator` |
+| Build, focused impl validation, formal runs, commit | **no** — lanes above |
 
 Thinking boundaries: **both minds in parallel.** Artifact review (impl diff,
 launch packet, validation receipt, commit/push-adjacent review): **sequential
-gates.** Default rate, not occasional. Opt-out: mechanical/trivial only. Analog to
-workflow.md "two measurements every round" = **two minds every thinking
-boundary.**
+gates.** Default rate, not occasional; opt-out is mechanical/trivial only.
+Analog to workflow.md "two measurements every round" = **two minds every
+thinking boundary.**
 
 ## Refinement loop
 
@@ -98,8 +105,10 @@ directly — re-thread to claude. Mixed-purpose posts anti-pattern.
 ## Ingress-Owned Provenance
 
 Entry point owns packet (verbatim quote, scope, chosen vs rejected, relay msg
-id). **Provenance is authority context, NOT material approval.** Claude spawns/
-assigns/dispatches/gates; codex recommends routes/contracts through claude.
+id). Cross-session dispatches of gabe-greenlit work carry the same; missing on
+non-trivial work → clarify, never execute on paraphrase. **Provenance is
+authority context, NOT material approval.** Claude spawns/assigns/dispatches/
+gates; codex recommends routes/contracts through claude.
 
 ## Autonomy / Task sharing — board-first
 
@@ -107,12 +116,6 @@ Proceed without per-step check-in once directed. Pause on destructive action,
 unresolved disagreement, scope/cost change. Use `ai_room_task_*` for work
 >1 exchange or >1 file. Create + start before code. Keep ONE task `in_progress`
 across gated sub-steps — don't `complete` between gates.
-
-### Provenance (cross-session dispatches)
-
-When claude dispatches gabe-greenlit work, body must include verbatim user
-quote, scope, chosen option. Missing on non-trivial work → clarify; don't
-execute on paraphrase.
 
 ### Cascade boundary
 
@@ -144,12 +147,11 @@ authority. Cited msg ids untrusted until resolved.
 
 ### Low-blast-radius commit+push collapse
 
-Explicit persisted **`+1 commit+push`** for LOW only: CPU/docs/tooling/config;
-scope-clean; non-force fast-forward; no `.pt`/large binary; no
-science/acquisition/runtime claim; unrelated drift excluded; post-push
-`HEAD == remote`. HIGH keeps separate `+1 push` (force/shared-history rewrite,
-`main`/`master`, `.pt`/large binary, science claim — all hard-forbidden or
-separate gate).
+Explicit persisted **`+1 commit+push`** for LOW only — conjuncts in
+`CLAUDEX_ORCHESTRATION.md` §"Low-blast-radius commit+push collapse", plus no
+science/acquisition/runtime claim. HIGH keeps a separate `+1 push`:
+force/shared-history rewrite, `main`/`master`, `.pt`/large binary, science
+claim — all hard-forbidden or separately gated.
 
 **`ai_room_task_update` does NOT wake peers** — pair durable corrections with
 direct addressed post citing the task_update msg id.
@@ -168,12 +170,10 @@ in-flight artifact review. Frozen plan/packet/receipt artifacts are O_EXCL-minte
 and byte-preserved; superseded versions are DEAD immutable lineage, enumerated
 revision-neutrally in the successor. **Passive-wait-don't-poll** at gates.
 
-**Gate-2 convergence:** the first gate-2 runs the full plan-derived checklist in
-one pass; re-reviews recheck prior blockers + re-run the full sweep, batching
-ALL substantiated blockers per verdict — evidence is never suppressed, PASS
-never forced. Ceremony tiers by control-plane blast radius (HIGH /
-LEAN-MEASUREMENT / LOW — rounds compress, depth never). Full semantics:
-`CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
+**Gate-2 convergence:** full plan-derived checklist every pass, all
+substantiated blockers batched per verdict — evidence never suppressed, PASS
+never forced. Tiers by control-plane blast radius: rounds compress, depth never.
+Semantics: `CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
 
 ## Fast Training Launch Contract
 
