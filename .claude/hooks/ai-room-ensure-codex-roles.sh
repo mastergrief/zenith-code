@@ -131,3 +131,9 @@ except Exception as e:
 PY
 
 echo "=== ensure-codex-roles done ==="
+
+# 3. Standing `advisor` peer — the Fable pre-artifact advisory lane. Kept in its
+#    own script: that lane spawns a DEFAULT-backend Claude peer (no grok/sol) and
+#    carries its own per-channel lock. Fail-soft and never evicting; invoked via
+#    `bash` so it does not depend on the checked-out exec bit.
+bash "$(dirname "${BASH_SOURCE[0]}")/ai-room-ensure-advisor.sh" || true
