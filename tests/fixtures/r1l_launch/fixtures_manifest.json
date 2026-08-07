@@ -1,0 +1,44 @@
+{
+  "FIXTURE_CONTENT_DIGEST": "fca61e87a6e34a73749080fc83b27f8d6b8991c7bcc82617adad91a6bb1ed859",
+  "member_key_form": "basename_with_dot_sh",
+  "members": {
+    "S0.sh": {
+      "bytes": 3973,
+      "path": "phases/S0.sh",
+      "sha256": "9a87c2430aa80adbf139083cb4aca1e35a528aa0a7273f59be8b042afc0104ff"
+    },
+    "S0b.sh": {
+      "bytes": 3079,
+      "path": "phases/S0b.sh",
+      "sha256": "4bfabaecc99b4968436bd906831451319347cc4d893b6b2c6d39a86561505b7e"
+    },
+    "S1.sh": {
+      "bytes": 7571,
+      "path": "phases/S1.sh",
+      "sha256": "d9b5f90de4e91c72b148bfc9d11e67dc50c695026e2acd8cbaff65a312508de5"
+    },
+    "S2.sh": {
+      "bytes": 8876,
+      "path": "phases/S2.sh",
+      "sha256": "b3b88b30aaaa579e558e650f42c084441fb3f0e788e10cd9d37721447eca838f"
+    },
+    "S3.sh": {
+      "bytes": 7267,
+      "path": "phases/S3.sh",
+      "sha256": "910df38ea17ecd17711b0421087cabff017a088d19fc605404e0216ccd9ad9c3"
+    },
+    "S4.sh": {
+      "bytes": 5870,
+      "path": "phases/S4.sh",
+      "sha256": "f1e3170b8a183361553809afd1e23a3ad6f5da91b7bb057e276bcc0ee57a8eda"
+    },
+    "S5.sh": {
+      "bytes": 15111,
+      "path": "phases/S5.sh",
+      "sha256": "92676a9389feef905a4520980829fcff8d0484cdf8a4a870c6bd27103aa9f90a"
+    }
+  },
+  "schema": "r1l_launch_fixtures_manifest/v1",
+  "source_plan_path": "artifacts/sub2_readiness/MAIN_LANE_REENTRY_STEP2_R1L_GPU_REMINT_PLAN_v13.json",
+  "source_plan_sha256": "0b8fa3805ee4d6e5ace8b311bc9a3928452be63fd63e7572f1d9a370df466531"
+}
