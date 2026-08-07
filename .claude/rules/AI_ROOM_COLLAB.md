@@ -56,6 +56,10 @@ are not standing roles here. `.codex/agents/developer.toml` is plan-dev's
 bounded executor template — not a fourth room role. Claude-side Explore-agent
 fan-out is orchestration, not a codex role.
 
+**`advisor`** (Claude-side, not a codex role): standing pre-artifact advisory
+peer for cold starts / apparatus-bouncing slices; design critique is the point.
+**Never a formal reviewer, gate, or approver** — hypothesis Claude re-derives.
+
 ## Cross-thread at thinking boundaries
 
 | Step | Cross-thread? |

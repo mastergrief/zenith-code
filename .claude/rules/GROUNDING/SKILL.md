@@ -65,9 +65,13 @@ any project's rules; the body references no repo-specific paths or tools.
 - Prohibitions quote what they forbid, so a matcher keyed on the spelling fires
   hardest on the document that bans the pattern. Before first use, run any
   matcher against a known-correct artifact and confirm it stays silent.
-- Delegated work inherits your scoping. An instruction that enumerates
-  occurrences will be satisfied by curing those occurrences — faithfully, and
-  incompletely. State the property; let the count come from the sweep.
+- Delegated work inherits your scoping and your framing. An instruction that
+  enumerates occurrences will be satisfied by curing those occurrences —
+  faithfully, and incompletely. State the property; let the count come from the
+  sweep. A delegate handed your premise may reason inside it rather than reopen
+  it, so a false premise buys excellent work on the wrong problem. When the
+  premise is itself unverified, send the artifact and the open question, and
+  label any shape you propose as hypothesis rather than settled framing.
 - Applies to your own output too. Noticing a value in something you printed is
   not the same as noticing its scope; re-read your own evidence for what it
   says about every member of the class.
