@@ -165,8 +165,8 @@ elif MODE in ('synthetic', 'synthetic_fail'):
         cuda_peak_allocated_bytes_recompute_median=32 * 1024 * 1024,
         cuda_peak_reserved_bytes_delta_median=0,
         log_artifact_sha256=log_sha,
-        applier_base_surface_count_sub2=3,
-        applier_result_sub2_surface_count=4,
+        applier_base_surface_count_sub2=3,  # Type-1: no mint
+        applier_result_sub2_surface_count=3,
         ancestry_verified_at_launch_preflight=True,
         r1_cpu_base_commit_sha=R1_CPU,
     )

@@ -1049,56 +1049,18 @@ def apply_live_r1_backward_wiring_surface_overrides(
         raise TypeError(
             "launch runtime receipt must be LaunchRuntimeBackwardValidationReceipt"
         )
-    validate_launch_runtime_backward_receipt(receipt)
-    if not receipt.live_readiness_row_flip_authorized:
-        raise ValueError("launch runtime receipt does not authorize readiness row flip")
-    authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
-    if authorized != AUTHORIZED_R1_L_SURFACE_TUPLE:
-        raise ValueError("launch runtime authorized surface tuple mismatch")
+    # Type-1 launch/liveness receipts cannot authorize a readiness row flip.
+    # Parked post claim-contract null: no row-flip authority mintable from smoke.
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        R1_ROW_FLIP_AUTHORITY_UNAVAILABLE,
+    )
 
-    surfaces = list(base_surfaces or current_repo_scaffold_surfaces())
-    base_by_id = {surface.surface_id: surface for surface in surfaces}
-    reason = (
-        f"{GATED_LOSSLESS_RECOMPUTE_REASON}; R1-L launch/runtime validation "
-        f"launch_source_commit_sha={receipt.launch_source_commit_sha}; "
-        "Step 3A1 saved-tensor-hook receipt proves no extra stored internal "
-        "recurrence-block saved payload while boundary z_H/z_L inputs remain "
-        "accounted under activations_residuals"
+    _ = (receipt, base_surfaces)
+    raise ValueError(
+        f"{R1_ROW_FLIP_AUTHORITY_UNAVAILABLE}: "
+        "Type-1 launch/liveness receipt cannot authorize readiness row flip; "
+        "row-flip authority is deferred (no Type-2 in tree)"
     )
-    proof_test = (
-        "calm/llm_computer/tests/test_hrm_text_158_full_sub2_runtime_readiness.py::"
-        "test_live_r1_launch_runtime_validation_flips_exactly_backward_row"
-    )
-    flipped = _with_surface(
-        tuple(surfaces),
-        SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS,
-        classification=RUNTIME_CLASS_SUB2,
-        reason=reason,
-        source_anchor="calm/hrm_text_158/native_full_stack/activation_relief.py:410",
-        proof_artifact_or_test=proof_test,
-    )
-    for surface in flipped:
-        if surface.surface_id == SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS:
-            continue
-        if surface.classification != base_by_id[surface.surface_id].classification:
-            raise ValueError(
-                "launch runtime flip changed more than backward_saved_tensors_transients"
-            )
-
-    result = build_full_sub2_runtime_ready_for_science(flipped)
-    if result.ready_for_main_science:
-        raise ValueError("launch runtime flip must not set ready_for_main_science")
-    if not result.ready_for_pre_full_stack_diagnostic:
-        raise ValueError(
-            "launch runtime flip must set ready_for_pre_full_stack_diagnostic"
-        )
-    if SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS not in {
-        surface.surface_id
-        for surface in flipped
-        if surface.classification == RUNTIME_CLASS_SUB2
-    }:
-        raise ValueError("launch runtime flip must set backward row to sub2")
-    return flipped
 
 
 def live_r1_backward_wiring_surfaces(

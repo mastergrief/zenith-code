@@ -1058,6 +1058,153 @@ LAUNCH_RUNTIME_NON_CLAIMS = (
     "does NOT authorize full training or optimizer resume",
     "tiny GPU smoke is liveness-only; cannot mint or flip",
 )
+R1_ROW_FLIP_AUTHORITY_UNAVAILABLE = "R1_ROW_FLIP_AUTHORITY_UNAVAILABLE"
+R1L_CLAIM_CEILING_PATH = "R1L_CLAIM_CEILING_PATH"
+R1L_EXPECTED_CLAIM_CEILING_SHA256 = "R1L_EXPECTED_CLAIM_CEILING_SHA256"
+CLAIM_CEILING_JSON_BASENAME = "claim_ceiling.json"
+LAUNCH_RUNTIME_CLAIM_CEILING = {
+    "schema": "hrm_text_158_r1l_launch_claim_ceiling/v1",
+    "summary_prose": (
+        "R1-L launch/runtime currency only; ready_for_main_science=false"
+    ),
+    "live_readiness_row_flip_authorized": False,
+    "readiness_row_flip_authorized_surface_names": (),
+    "applier_flipped_surface_ids": (),
+    "applier_base_surface_count_sub2": 3,
+    "applier_result_sub2_surface_count": 3,
+    "applier_result_ready_for_main_science": False,
+    "applier_result_ready_for_pre_full_stack_diagnostic": False,
+    "non_claims": LAUNCH_RUNTIME_NON_CLAIMS,
+    "authority": "launch_liveness_only",
+}
+
+
+def render_launch_runtime_claim_ceiling_json() -> bytes:
+    """Canonical claim_ceiling.json bytes from tracked LAUNCH_RUNTIME_CLAIM_CEILING."""
+    import json
+
+    payload = {
+        "schema": LAUNCH_RUNTIME_CLAIM_CEILING["schema"],
+        "summary_prose": LAUNCH_RUNTIME_CLAIM_CEILING["summary_prose"],
+        "live_readiness_row_flip_authorized": bool(
+            LAUNCH_RUNTIME_CLAIM_CEILING["live_readiness_row_flip_authorized"]
+        ),
+        "readiness_row_flip_authorized_surface_names": list(
+            LAUNCH_RUNTIME_CLAIM_CEILING["readiness_row_flip_authorized_surface_names"]
+        ),
+        "applier_flipped_surface_ids": list(
+            LAUNCH_RUNTIME_CLAIM_CEILING["applier_flipped_surface_ids"]
+        ),
+        "applier_base_surface_count_sub2": int(
+            LAUNCH_RUNTIME_CLAIM_CEILING["applier_base_surface_count_sub2"]
+        ),
+        "applier_result_sub2_surface_count": int(
+            LAUNCH_RUNTIME_CLAIM_CEILING["applier_result_sub2_surface_count"]
+        ),
+        "applier_result_ready_for_main_science": bool(
+            LAUNCH_RUNTIME_CLAIM_CEILING["applier_result_ready_for_main_science"]
+        ),
+        "applier_result_ready_for_pre_full_stack_diagnostic": bool(
+            LAUNCH_RUNTIME_CLAIM_CEILING[
+                "applier_result_ready_for_pre_full_stack_diagnostic"
+            ]
+        ),
+        "non_claims": list(LAUNCH_RUNTIME_CLAIM_CEILING["non_claims"]),
+        "authority": LAUNCH_RUNTIME_CLAIM_CEILING["authority"],
+    }
+    return (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def assert_launch_receipt_claim_coherent(receipt: "LaunchRuntimeBackwardValidationReceipt") -> None:
+    """Fail if authority-shaped fields contradict non_claims / Type-1 ceiling."""
+    if bool(receipt.live_readiness_row_flip_authorized):
+        raise ValueError(
+            "launch receipt claim incoherent: live_readiness_row_flip_authorized "
+            "true contradicts liveness-only non_claims (cannot mint or flip)"
+        )
+    surfaces = tuple(receipt.readiness_row_flip_authorized_surface_names or ())
+    if surfaces:
+        raise ValueError(
+            "launch receipt claim incoherent: non-empty "
+            "readiness_row_flip_authorized_surface_names under Type-1 ceiling"
+        )
+    flipped = tuple(getattr(receipt, "applier_flipped_surface_ids", ()) or ())
+    if flipped:
+        raise ValueError(
+            "launch receipt claim incoherent: non-empty applier_flipped_surface_ids "
+            "under Type-1 ceiling"
+        )
+    if bool(getattr(receipt, "applier_result_ready_for_main_science", False)):
+        raise ValueError(
+            "launch receipt claim incoherent: applier_result_ready_for_main_science true"
+        )
+    if bool(getattr(receipt, "applier_result_ready_for_pre_full_stack_diagnostic", False)):
+        raise ValueError(
+            "launch receipt claim incoherent: "
+            "applier_result_ready_for_pre_full_stack_diagnostic true under Type-1"
+        )
+    base_n = int(getattr(receipt, "applier_base_surface_count_sub2", -1))
+    result_n = int(getattr(receipt, "applier_result_sub2_surface_count", -1))
+    if result_n != base_n:
+        raise ValueError(
+            "launch receipt claim incoherent: applier_result_sub2_surface_count "
+            "must equal applier_base_surface_count_sub2 under Type-1 (no readiness mutation)"
+        )
+    if tuple(receipt.non_claims) != tuple(LAUNCH_RUNTIME_NON_CLAIMS):
+        raise ValueError("launch receipt claim incoherent: non_claims mismatch")
+    # non_claims must still carry the unqualified liveness sentence
+    if not any("cannot mint or flip" in str(x) for x in receipt.non_claims):
+        raise ValueError(
+            "launch receipt claim incoherent: missing cannot mint or flip non_claim"
+        )
+
+
+def compare_launch_receipt_to_claim_ceiling(
+    receipt: "LaunchRuntimeBackwardValidationReceipt",
+    ceiling: dict | None = None,
+) -> None:
+    """Tracked pure comparator: receipt fields vs claim ceiling predicates."""
+    import json
+
+    ceil = ceiling
+    if ceil is None:
+        ceil = json.loads(render_launch_runtime_claim_ceiling_json().decode("utf-8"))
+    if bool(receipt.live_readiness_row_flip_authorized) != bool(
+        ceil.get("live_readiness_row_flip_authorized", False)
+    ):
+        raise ValueError("claim_ceiling mismatch: live_readiness_row_flip_authorized")
+    if tuple(receipt.readiness_row_flip_authorized_surface_names or ()) != tuple(
+        ceil.get("readiness_row_flip_authorized_surface_names") or ()
+    ):
+        raise ValueError(
+            "claim_ceiling mismatch: readiness_row_flip_authorized_surface_names"
+        )
+    if tuple(getattr(receipt, "applier_flipped_surface_ids", ()) or ()) != tuple(
+        ceil.get("applier_flipped_surface_ids") or ()
+    ):
+        raise ValueError("claim_ceiling mismatch: applier_flipped_surface_ids")
+    if int(getattr(receipt, "applier_base_surface_count_sub2", -1)) != int(
+        ceil.get("applier_base_surface_count_sub2", -1)
+    ):
+        raise ValueError("claim_ceiling mismatch: applier_base_surface_count_sub2")
+    if int(getattr(receipt, "applier_result_sub2_surface_count", -1)) != int(
+        ceil.get("applier_result_sub2_surface_count", -1)
+    ):
+        raise ValueError("claim_ceiling mismatch: applier_result_sub2_surface_count")
+    if bool(getattr(receipt, "applier_result_ready_for_main_science", False)) != bool(
+        ceil.get("applier_result_ready_for_main_science", False)
+    ):
+        raise ValueError("claim_ceiling mismatch: applier_result_ready_for_main_science")
+    if bool(
+        getattr(receipt, "applier_result_ready_for_pre_full_stack_diagnostic", False)
+    ) != bool(ceil.get("applier_result_ready_for_pre_full_stack_diagnostic", False)):
+        raise ValueError(
+            "claim_ceiling mismatch: applier_result_ready_for_pre_full_stack_diagnostic"
+        )
+    if tuple(receipt.non_claims) != tuple(ceil.get("non_claims") or ()):
+        raise ValueError("claim_ceiling mismatch: non_claims")
+    assert_launch_receipt_claim_coherent(receipt)
+
 PROOF_ENV_HASH_KEYS = (
     "PYTHONDONTWRITEBYTECODE",
     "PYTHONPATH",
@@ -2232,7 +2379,7 @@ def build_launch_runtime_backward_validation_receipt(
     cuda_peak_reserved_bytes_delta_median: int,
     log_artifact_sha256: str,
     applier_base_surface_count_sub2: int = 3,
-    applier_result_sub2_surface_count: int = 4,
+    applier_result_sub2_surface_count: int = 3,
     ancestry_verified_at_launch_preflight: bool = True,
     r1_cpu_base_commit_sha: str = R1_CPU_BASE_COMMIT_SHA,
 ) -> LaunchRuntimeBackwardValidationReceipt:
@@ -2255,8 +2402,8 @@ def build_launch_runtime_backward_validation_receipt(
         schema_version=LAUNCH_RUNTIME_BACKWARD_RECEIPT_SCHEMA_VERSION,
         target_name=LAUNCH_RUNTIME_BACKWARD_TARGET_NAME,
         proof_kind=PROOF_KIND_LAUNCH_RUNTIME_VALIDATION,
-        live_readiness_row_flip_authorized=True,
-        readiness_row_flip_authorized_surface_names=AUTHORIZED_R1_L_SURFACE_TUPLE,
+        live_readiness_row_flip_authorized=False,
+        readiness_row_flip_authorized_surface_names=(),
         r1_cpu_base_commit_sha=r1_cpu_base_commit_sha,
         launch_source_commit_sha=launch_source_commit_sha,
         ancestry_verified_at_launch_preflight=ancestry_verified_at_launch_preflight,
@@ -2306,8 +2453,8 @@ def build_launch_runtime_backward_validation_receipt(
         applier_base_surface_count_sub2=applier_base_surface_count_sub2,
         applier_result_sub2_surface_count=applier_result_sub2_surface_count,
         applier_result_ready_for_main_science=False,
-        applier_result_ready_for_pre_full_stack_diagnostic=True,
-        applier_flipped_surface_ids=AUTHORIZED_R1_L_SURFACE_TUPLE,
+        applier_result_ready_for_pre_full_stack_diagnostic=False,
+        applier_flipped_surface_ids=(),
         log_artifact_sha256=log_artifact_sha256,
         canonical_launch_artifact_sha256="",
         non_claims=LAUNCH_RUNTIME_NON_CLAIMS,
@@ -2330,11 +2477,15 @@ def validate_launch_runtime_backward_receipt(
         raise ValueError("launch runtime receipt target mismatch")
     if receipt.proof_kind != PROOF_KIND_LAUNCH_RUNTIME_VALIDATION:
         raise ValueError("launch runtime receipt proof_kind mismatch")
-    if not receipt.live_readiness_row_flip_authorized:
-        raise ValueError("launch runtime receipt must authorize live row flip")
+    if receipt.live_readiness_row_flip_authorized:
+        raise ValueError(
+            "launch runtime receipt must not authorize live row flip (Type-1 liveness only)"
+        )
     authorized = tuple(receipt.readiness_row_flip_authorized_surface_names)
-    if authorized != AUTHORIZED_R1_L_SURFACE_TUPLE:
-        raise ValueError("launch runtime receipt authorized surface tuple mismatch")
+    if authorized:
+        raise ValueError(
+            "launch runtime receipt readiness_row_flip_authorized_surface_names must be empty"
+        )
     if receipt.r1_cpu_base_commit_sha != R1_CPU_BASE_COMMIT_SHA:
         raise ValueError("launch runtime receipt r1_cpu_base_commit_sha mismatch")
     launch_source = _require_nonempty_string(
@@ -2421,18 +2572,27 @@ def validate_launch_runtime_backward_receipt(
         raise ValueError("launch runtime receipt cuda threshold met flag mismatch")
     if not receipt.loss_finite_main:
         raise ValueError("launch runtime receipt requires finite main loss")
-    if receipt.applier_base_surface_count_sub2 != 3:
-        raise ValueError("launch runtime receipt applier base sub2 count must be 3")
-    if receipt.applier_result_sub2_surface_count != 4:
-        raise ValueError("launch runtime receipt applier result sub2 count must be 4")
+    if receipt.applier_base_surface_count_sub2 < 0:
+        raise ValueError("launch runtime receipt applier base sub2 count invalid")
+    if receipt.applier_result_sub2_surface_count < 0:
+        raise ValueError("launch runtime receipt applier result sub2 count invalid")
+    # Type-1: no readiness mutation — result count must equal base (not merely ≤)
+    if receipt.applier_result_sub2_surface_count != receipt.applier_base_surface_count_sub2:
+        raise ValueError(
+            "launch runtime receipt applier_result_sub2_surface_count must equal "
+            "applier_base_surface_count_sub2 (Type-1 liveness only; no readiness mutation)"
+        )
     if receipt.applier_result_ready_for_main_science:
         raise ValueError("launch runtime receipt applier must not set ready_for_main_science")
-    if not receipt.applier_result_ready_for_pre_full_stack_diagnostic:
+    if receipt.applier_result_ready_for_pre_full_stack_diagnostic:
         raise ValueError(
-            "launch runtime receipt applier must set ready_for_pre_full_stack_diagnostic"
+            "launch runtime receipt applier must not set "
+            "ready_for_pre_full_stack_diagnostic (Type-1 liveness only)"
         )
-    if tuple(receipt.applier_flipped_surface_ids) != AUTHORIZED_R1_L_SURFACE_TUPLE:
-        raise ValueError("launch runtime receipt applier flipped surface ids mismatch")
+    if tuple(receipt.applier_flipped_surface_ids):
+        raise ValueError(
+            "launch runtime receipt applier_flipped_surface_ids must be empty (Type-1)"
+        )
     if not _require_nonempty_string(
         receipt.log_artifact_sha256,
         field_name="log_artifact_sha256",
@@ -2440,6 +2600,8 @@ def validate_launch_runtime_backward_receipt(
         raise ValueError("launch runtime receipt requires log_artifact_sha256")
     if receipt.non_claims != LAUNCH_RUNTIME_NON_CLAIMS:
         raise ValueError("launch runtime receipt non-claims must be exact")
+    assert_launch_receipt_claim_coherent(receipt)
+    compare_launch_receipt_to_claim_ceiling(receipt)
     recomputed_hash = compute_canonical_launch_artifact_sha256(receipt.to_dict())
     if receipt.canonical_launch_artifact_sha256 != recomputed_hash:
         raise ValueError("launch runtime receipt canonical_launch_artifact_sha256 mismatch")

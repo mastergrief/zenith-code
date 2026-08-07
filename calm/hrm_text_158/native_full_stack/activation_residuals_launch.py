@@ -426,42 +426,16 @@ def derive_r2al_live_base_fields(
     p1_receipt: Any,
     r1l_receipt: Any,
 ) -> dict[str, object]:
-    from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
-        RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
-        RUNTIME_CLASS_SUB2,
-        SURFACE_ACTIVATIONS_RESIDUALS,
-        live_r1_backward_launch_surfaces,
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        R1_ROW_FLIP_AUTHORITY_UNAVAILABLE,
     )
 
-    base = live_r1_backward_launch_surfaces(
-        r1l_receipt,
-        p1_receipt,
-        require_source_at_head=False,
+    _ = (p1_receipt, r1l_receipt)
+    raise ValueError(
+        f"{R1_ROW_FLIP_AUTHORITY_UNAVAILABLE}: "
+        "derive_r2al_live_base_fields requires R1 row-flip authority; "
+        "Type-1 launch/liveness cannot mint it (deferred Type-2)"
     )
-    sub2_ids = canonicalize_base_sub2_surface_ids(
-        surface.surface_id
-        for surface in base.surfaces
-        if surface.classification == RUNTIME_CLASS_SUB2
-    )
-    activations = next(
-        surface
-        for surface in base.surfaces
-        if surface.surface_id == SURFACE_ACTIVATIONS_RESIDUALS
-    )
-    if activations.classification == RUNTIME_CLASS_SUB2:
-        raise ValueError("activations_residuals must not be sub2 before R2-A-L")
-    return {
-        "base_readiness_receipt_sha256": compute_base_readiness_receipt_sha256(base),
-        "base_sub2_surface_count": int(base.sub2_surface_count),
-        "base_sub2_surface_ids": sub2_ids,
-        "base_activations_residuals_classification": activations.classification,
-        "base_activations_residuals_is_sub2": False,
-        "base_ready_for_pre_full_stack_diagnostic": bool(
-            base.ready_for_pre_full_stack_diagnostic
-        ),
-        "base_ready_for_main_science": bool(base.ready_for_main_science),
-        "base_blocker_surface_names": tuple(base.blocker_surface_names),
-    }
 
 
 def validate_r2al_m1_mechanism_telemetry(telemetry: Mapping[str, object]) -> tuple[bool, bool]:
@@ -489,14 +463,8 @@ def validate_r2al_live_base_preflight(
     r1l_receipt_path: Path | None = None,
 ) -> None:
     from calm.hrm_text_158.native_full_stack.activation_relief import (
+        R1_ROW_FLIP_AUTHORITY_UNAVAILABLE,
         validate_launch_runtime_backward_receipt,
-    )
-    from calm.hrm_text_158.native_full_stack.full_sub2_runtime_readiness import (
-        RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC,
-        RUNTIME_CLASS_SUB2,
-        SURFACE_ACTIVATIONS_RESIDUALS,
-        current_repo_scaffold_surfaces,
-        live_r1_backward_launch_surfaces,
     )
     from calm.hrm_text_158.native_full_stack.trainer_sub2_authority import (
         validate_trainer_sub2_authority_live_conversion_receipt,
@@ -519,60 +487,12 @@ def validate_r2al_live_base_preflight(
         if sha256_file_bytes(r1l_receipt_path) != receipt.r1l_launch_runtime_receipt_sha256:
             raise ValueError("r1l_launch_runtime_receipt_sha256 mismatch")
 
-    base = live_r1_backward_launch_surfaces(
-        r1l_receipt,
-        p1_receipt,
-        require_source_at_head=False,
+    # Park: Type-1 R1-L cannot supply four-surface base via row flip.
+    raise ValueError(
+        f"{R1_ROW_FLIP_AUTHORITY_UNAVAILABLE}: "
+        "R2-A-L live base requires R1 row-flip authority; Type-1 launch/liveness "
+        "cannot mint it (deferred Type-2)"
     )
-    if compute_base_readiness_receipt_sha256(base) != receipt.base_readiness_receipt_sha256:
-        raise ValueError("base_readiness_receipt_sha256 mismatch")
-    if int(base.sub2_surface_count) != 4:
-        raise ValueError("live base sub2_surface_count must be 4")
-    if not base.ready_for_pre_full_stack_diagnostic:
-        raise ValueError("live base must be ready_for_pre_full_stack_diagnostic")
-    if base.ready_for_main_science:
-        raise ValueError("live base must not be ready_for_main_science")
-    if SURFACE_ACTIVATIONS_RESIDUALS not in base.blocker_surface_names:
-        raise ValueError("live base blockers must include activations_residuals")
-
-    sub2_ids = canonicalize_base_sub2_surface_ids(
-        surface.surface_id
-        for surface in base.surfaces
-        if surface.classification == RUNTIME_CLASS_SUB2
-    )
-    if sub2_ids != CANONICAL_R2A_L_BASE_SUB2_SURFACE_IDS:
-        raise ValueError("live base sub2 surface ids mismatch")
-    if tuple(receipt.base_sub2_surface_ids) != CANONICAL_R2A_L_BASE_SUB2_SURFACE_IDS:
-        raise ValueError("receipt base_sub2_surface_ids must use canonical sorted order")
-    if int(receipt.base_sub2_surface_count) != 4:
-        raise ValueError("receipt base_sub2_surface_count must be 4")
-
-    activations = next(
-        surface
-        for surface in base.surfaces
-        if surface.surface_id == SURFACE_ACTIVATIONS_RESIDUALS
-    )
-    if activations.classification != RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC:
-        raise ValueError("activations_residuals must be pre_full_stack_diagnostic before flip")
-    if receipt.base_activations_residuals_classification != RUNTIME_CLASS_PRE_FULL_STACK_DIAGNOSTIC:
-        raise ValueError("receipt base_activations_residuals_classification mismatch")
-    if receipt.base_activations_residuals_is_sub2:
-        raise ValueError("receipt base_activations_residuals_is_sub2 must be false")
-    if not receipt.base_ready_for_pre_full_stack_diagnostic:
-        raise ValueError("receipt base_ready_for_pre_full_stack_diagnostic must be true")
-    if receipt.base_ready_for_main_science:
-        raise ValueError("receipt base_ready_for_main_science must be false")
-    if SURFACE_ACTIVATIONS_RESIDUALS not in tuple(receipt.base_blocker_surface_names):
-        raise ValueError("receipt base_blocker_surface_names must include activations_residuals")
-
-    scaffold = current_repo_scaffold_surfaces()
-    scaffold_sub2 = canonicalize_base_sub2_surface_ids(
-        surface.surface_id
-        for surface in scaffold
-        if surface.classification == RUNTIME_CLASS_SUB2
-    )
-    if scaffold_sub2 == CANONICAL_R2A_L_BASE_SUB2_SURFACE_IDS:
-        raise ValueError("scaffold-only base must not satisfy banked live sub2 ids")
 
 
 def load_r2al_base_receipts_from_env(
@@ -821,6 +741,11 @@ def build_launch_runtime_activation_residuals_validation_receipt(
     r2a_cpu_base_commit_sha: str = R2A_CPU_BASE_COMMIT_SHA,
     live_base_preflight_pass: bool = True,
 ) -> LaunchRuntimeActivationResidualsValidationReceipt:
+    """Production builder. Input checks then park — never mints authority under Type-1."""
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        R1_ROW_FLIP_AUTHORITY_UNAVAILABLE,
+    )
+
     manifest = dict(launch_manifest_embedded)
     env = dict(proof_env_embedded)
     _require_nonempty_proof_env_keys(env, field_name="proof_env_embedded")
@@ -828,135 +753,37 @@ def build_launch_runtime_activation_residuals_validation_receipt(
         raise ValueError("launch manifest r2a_cpu_base_commit_sha mismatch")
     if r2a_cpu_base_commit_sha != R2A_CPU_BASE_COMMIT_SHA:
         raise ValueError("r2a_cpu_base_commit_sha must match R2A_CPU_BASE_COMMIT_SHA")
-    ancestry_verified_at_launch_preflight = verify_r2al_banked_p1_ancestor_preflight(
+    # Ancestry is a real preflight; still no mint after it.
+    verify_r2al_banked_p1_ancestor_preflight(
         p1_receipt=p1_receipt,
         launch_source_commit_sha=launch_source_commit_sha,
         repo_root=_resolve_r2al_repo_root(proof_env=env),
     )
-    live_base = derive_r2al_live_base_fields(p1_receipt=p1_receipt, r1l_receipt=r1l_receipt)
-    cuda_delta = (
-        measurements.cuda_peak_allocated_bytes_baseline_median
-        - measurements.cuda_peak_allocated_bytes_recompute_median
+    _ = (
+        proof_command_argv,
+        clean_run_dir_sha256,
+        w6_parent_path,
+        w6_parent_sha256,
+        gpu_name,
+        gpu_uuid,
+        driver_version,
+        cuda_version,
+        torch_version,
+        model_config_digest_sha256,
+        proof_batch_digest_sha256,
+        retained_support_digest_sha256,
+        r1l_receipt,
+        p1_receipt_path,
+        r1l_receipt_path,
+        measurements,
+        log_artifact_sha256,
+        live_base_preflight_pass,
     )
-    threshold = max(
-        8 * 1024 * 1024,
-        int(0.005 * measurements.cuda_peak_allocated_bytes_baseline_median),
+    raise ValueError(
+        f"{R1_ROW_FLIP_AUTHORITY_UNAVAILABLE}: "
+        "production R2-A-L builder cannot mint launch receipt under Type-1; "
+        "R1 row-flip authority is deferred (no Type-2 in tree)"
     )
-    threshold_met = cuda_delta >= threshold
-    validate_activation_relief_measurement(measurements.activation_relief_measurement)
-    gpu_memory_measurement_pass = threshold_met
-    launch_runtime_validation_pass = (
-        measurements.m1_mechanism_proof_pass
-        and measurements.m1_no_hidden_bf16_proof_pass
-        and gpu_memory_measurement_pass
-        and live_base_preflight_pass
-        and threshold_met
-        and measurements.paired_run_count >= 3
-        and measurements.loss_finite_main
-    )
-    gpu_identity_sha256 = compute_gpu_identity_sha256(
-        gpu_name=gpu_name,
-        gpu_uuid=gpu_uuid,
-        driver_version=driver_version,
-        cuda_version=cuda_version,
-        torch_version=torch_version,
-    )
-    receipt_without_hash = LaunchRuntimeActivationResidualsValidationReceipt(
-        schema_version=LAUNCH_RUNTIME_ACTIVATION_RESIDUALS_RECEIPT_SCHEMA_VERSION,
-        target_name=LAUNCH_RUNTIME_ACTIVATION_RESIDUALS_TARGET_NAME,
-        proof_kind=PROOF_KIND_LAUNCH_RUNTIME_ACTIVATION_RESIDUALS,
-        mechanism_id=MECHANISM_ID,
-        live_readiness_row_flip_authorized=True,
-        readiness_row_flip_authorized_surface_names=AUTHORIZED_R2A_L_SURFACE_TUPLE,
-        launch_source_commit_sha=launch_source_commit_sha,
-        r2a_cpu_base_commit_sha=r2a_cpu_base_commit_sha,
-        ancestry_verified_at_launch_preflight=ancestry_verified_at_launch_preflight,
-        live_base_preflight_pass=live_base_preflight_pass,
-        launch_runtime_validation_pass=launch_runtime_validation_pass,
-        m1_mechanism_proof_pass=measurements.m1_mechanism_proof_pass,
-        m1_no_hidden_bf16_proof_pass=measurements.m1_no_hidden_bf16_proof_pass,
-        gpu_memory_measurement_pass=gpu_memory_measurement_pass,
-        launch_manifest_sha256=compute_launch_manifest_sha256(manifest),
-        launch_manifest_embedded=manifest,
-        proof_env_embedded=env,
-        proof_command_argv=tuple(str(arg) for arg in proof_command_argv),
-        proof_env_hash_sha256=compute_r2al_proof_env_hash_sha256(env),
-        clean_run_dir_sha256=clean_run_dir_sha256,
-        w6_parent_path=w6_parent_path,
-        w6_parent_sha256_before=w6_parent_sha256,
-        w6_parent_sha256_after=w6_parent_sha256,
-        gpu_name=gpu_name,
-        gpu_uuid=gpu_uuid,
-        driver_version=driver_version,
-        cuda_version=cuda_version,
-        torch_version=torch_version,
-        gpu_identity_sha256=gpu_identity_sha256,
-        model_config_digest_sha256=model_config_digest_sha256,
-        proof_batch_digest_sha256=proof_batch_digest_sha256,
-        retained_support_digest_sha256=retained_support_digest_sha256,
-        p1_live_conversion_receipt_sha256=sha256_file_bytes(p1_receipt_path),
-        r1l_launch_runtime_receipt_sha256=sha256_file_bytes(r1l_receipt_path),
-        base_readiness_receipt_sha256=str(live_base["base_readiness_receipt_sha256"]),
-        base_sub2_surface_count=int(live_base["base_sub2_surface_count"]),
-        base_sub2_surface_ids=tuple(live_base["base_sub2_surface_ids"]),
-        base_activations_residuals_classification=str(
-            live_base["base_activations_residuals_classification"]
-        ),
-        base_activations_residuals_is_sub2=False,
-        base_ready_for_pre_full_stack_diagnostic=bool(
-            live_base["base_ready_for_pre_full_stack_diagnostic"]
-        ),
-        base_ready_for_main_science=bool(live_base["base_ready_for_main_science"]),
-        base_blocker_surface_names=tuple(live_base["base_blocker_surface_names"]),
-        m1_seam_handle_pack_count=measurements.m1_seam_handle_pack_count,
-        m1_registered_seam_tensor_full_pack_count=(
-            measurements.m1_registered_seam_tensor_full_pack_count
-        ),
-        m1_seam_remat_unpack_recompute_count_total=(
-            measurements.m1_seam_remat_unpack_recompute_count_total
-        ),
-        m1_saved_tensor_payload_bytes_delta=measurements.m1_saved_tensor_payload_bytes_delta,
-        m1_forbidden_closure_tensor_count_total=(
-            measurements.m1_forbidden_closure_tensor_count_total
-        ),
-        activation_relief_measurement=dict(measurements.activation_relief_measurement),
-        paired_run_count=measurements.paired_run_count,
-        cuda_peak_allocated_bytes_baseline_median=(
-            measurements.cuda_peak_allocated_bytes_baseline_median
-        ),
-        cuda_peak_allocated_bytes_recompute_median=(
-            measurements.cuda_peak_allocated_bytes_recompute_median
-        ),
-        cuda_peak_allocated_bytes_delta_median=cuda_delta,
-        cuda_peak_reduction_threshold_bytes=threshold,
-        cuda_peak_reduction_threshold_met=threshold_met,
-        cuda_peak_reserved_bytes_delta_median=(
-            measurements.cuda_peak_reserved_bytes_delta_median
-        ),
-        loss_finite_main=measurements.loss_finite_main,
-        applier_base_surface_count_sub2=4,
-        applier_result_sub2_surface_count=5,
-        applier_result_ready_for_main_science=False,
-        applier_result_ready_for_pre_full_stack_diagnostic=True,
-        applier_flipped_surface_ids=AUTHORIZED_R2A_L_SURFACE_TUPLE,
-        log_artifact_sha256=log_artifact_sha256,
-        canonical_launch_artifact_sha256="",
-        non_claims=LAUNCH_RUNTIME_ACTIVATION_RESIDUALS_NON_CLAIMS,
-    )
-    validate_r2al_live_base_preflight(
-        receipt_without_hash,
-        p1_receipt=p1_receipt,
-        r1l_receipt=r1l_receipt,
-        p1_receipt_path=p1_receipt_path,
-        r1l_receipt_path=r1l_receipt_path,
-    )
-    canonical_hash = compute_canonical_launch_artifact_sha256(receipt_without_hash.to_dict())
-    receipt = replace(
-        receipt_without_hash,
-        canonical_launch_artifact_sha256=canonical_hash,
-    )
-    validate_launch_runtime_activation_residuals_receipt(receipt)
-    return receipt
 
 
 def validate_launch_runtime_activation_residuals_receipt(

@@ -117,10 +117,9 @@ except Exception as exc:
     raise SystemExit(1)
 print('S3_CANONICAL_VALIDATORS_OK')
 
-assert receipt_obj.live_readiness_row_flip_authorized is True
-assert tuple(receipt_obj.readiness_row_flip_authorized_surface_names) == (
-    'backward_saved_tensors_transients',
-)
+assert receipt_obj.live_readiness_row_flip_authorized is False
+assert tuple(receipt_obj.readiness_row_flip_authorized_surface_names) == ()
+assert tuple(getattr(receipt_obj, 'applier_flipped_surface_ids', ()) or ()) == ()
 # log sha binding
 assert hashlib.sha256(log_bytes).hexdigest() == receipt_dict.get('log_artifact_sha256')
 
@@ -137,6 +136,8 @@ req(receipt_dict.get('r1_cpu_base_commit_sha') == R1_CPU, 'r1_cpu_base')
 req(receipt_dict.get('w6_parent_sha256_before') == W6_SHA, 'w6_before')
 req(receipt_dict.get('w6_parent_sha256_after') == W6_SHA, 'w6_after')
 req(receipt_dict.get('applier_result_ready_for_main_science') is False, 'ready_main_applier')
+req(receipt_dict.get('applier_result_ready_for_pre_full_stack_diagnostic') is False, 'ready_diag_applier')
+req(receipt_dict.get('applier_result_sub2_surface_count') == receipt_dict.get('applier_base_surface_count_sub2'), 'result_eq_base')
 req(receipt_dict.get('ready_for_main_science', False) is False, 'ready_main')
 req(receipt_dict.get('loss_finite_main') is True, 'loss_main')
 req(receipt_dict.get('loss_finite_retained') is True, 'loss_retained')

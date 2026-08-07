@@ -1236,36 +1236,22 @@ def test_live_r1_applier_rejects_forged_launch_runtime_receipt():
         _mint_valid_launch_receipt(),
         launch_runtime_validation_pass=False,
     )
-    with pytest.raises(ValueError, match="launch_runtime_validation_pass"):
+    # Type-1 park: override refuses all launch/liveness receipts before field checks.
+    with pytest.raises(ValueError, match="R1_ROW_FLIP_AUTHORITY_UNAVAILABLE"):
         apply_live_r1_backward_wiring_surface_overrides(
             forged,
             base_surfaces=_post_p1_base_surfaces(),
         )
 
 
-def test_live_r1_launch_runtime_validation_flips_exactly_backward_row():
+def test_live_r1_launch_runtime_validation_row_flip_authority_unavailable():
     base = _post_p1_base_surfaces()
-    base_by_id = {surface.surface_id: surface for surface in base}
     receipt = _mint_valid_launch_receipt()
-    readiness = live_r1_backward_wiring_surfaces(
-        receipt,
-        base_surfaces=base,
-    )
-    assert readiness.ready_for_main_science is False
-    assert readiness.ready_for_pre_full_stack_diagnostic is True
-    assert readiness.sub2_surface_count == 4
-    changed = {
-        surface.surface_id
-        for surface in readiness.surfaces
-        if surface.classification != base_by_id[surface.surface_id].classification
-    }
-    assert changed == {SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS}
-    backward = next(
-        surface
-        for surface in readiness.surfaces
-        if surface.surface_id == SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS
-    )
-    assert backward.classification == RUNTIME_CLASS_SUB2
+    with pytest.raises(ValueError, match="R1_ROW_FLIP_AUTHORITY_UNAVAILABLE"):
+        live_r1_backward_wiring_surfaces(
+            receipt,
+            base_surfaces=base,
+        )
 
 
 def test_current_repo_scaffold_unchanged_by_cpu_wiring_receipt():

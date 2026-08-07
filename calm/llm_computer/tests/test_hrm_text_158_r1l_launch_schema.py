@@ -299,15 +299,14 @@ def test_r1l_v3_forged_cuda_threshold_met_rejects():
         validate_launch_runtime_backward_receipt(receipt)
 
 
-def test_r1l_v4_applier_post_p1_3_to_4_passes():
+def test_r1l_v4_applier_post_p1_row_flip_authority_unavailable():
     receipt = _mint_valid_launch_receipt()
-    readiness = live_r1_backward_wiring_surfaces(
-        receipt,
-        base_surfaces=_post_p1_base_surfaces(),
-    )
-    assert readiness.sub2_surface_count == 4
-    assert readiness.ready_for_pre_full_stack_diagnostic is True
-    assert readiness.ready_for_main_science is False
+    assert receipt.live_readiness_row_flip_authorized is False
+    with pytest.raises(ValueError, match="R1_ROW_FLIP_AUTHORITY_UNAVAILABLE"):
+        live_r1_backward_wiring_surfaces(
+            receipt,
+            base_surfaces=_post_p1_base_surfaces(),
+        )
 
 
 def test_r1l_v5_cpu_wiring_receipt_applier_rejects():
@@ -441,17 +440,12 @@ def test_r1l_w6_pinned_constant():
     assert W6_PARENT_SHA256_PINNED.startswith("9b4e311a")
 
 
-def test_r1l_applier_flips_exactly_backward_row():
+def test_r1l_applier_row_flip_authority_unavailable():
     receipt = _mint_valid_launch_receipt()
-    base = _post_p1_base_surfaces()
-    base_by_id = {surface.surface_id: surface for surface in base}
-    readiness = live_r1_backward_wiring_surfaces(receipt, base_surfaces=base)
-    changed = {
-        surface.surface_id
-        for surface in readiness.surfaces
-        if surface.classification != base_by_id[surface.surface_id].classification
-    }
-    assert changed == {SURFACE_BACKWARD_SAVED_TENSORS_TRANSIENTS}
+    with pytest.raises(ValueError, match="R1_ROW_FLIP_AUTHORITY_UNAVAILABLE"):
+        live_r1_backward_wiring_surfaces(
+            receipt, base_surfaces=_post_p1_base_surfaces()
+        )
 
 
 def _write_live_r1_cli_inputs(
@@ -612,19 +606,15 @@ def test_cli_live_r1_missing_log_env_key_exits_nonzero(tmp_path, monkeypatch):
     assert not json_out.exists()
 
 
-def test_cli_live_r1_with_all_artifacts_emits_diagnostic_ready(tmp_path, monkeypatch):
+def test_cli_live_r1_with_all_artifacts_row_flip_authority_unavailable(tmp_path, monkeypatch):
     receipt_json, p1_json, json_out = _write_live_r1_cli_inputs(tmp_path)
-    exit_code, stdout = _run_live_r1_cli(
-        receipt_json,
-        p1_json,
-        json_out,
-        monkeypatch=monkeypatch,
-    )
-    assert exit_code == 0
-    payload = json.loads(stdout)
-    assert payload["ready_for_pre_full_stack_diagnostic"] is True
-    assert payload["ready_for_main_science"] is False
-    assert json_out.is_file()
+    with pytest.raises(ValueError, match="R1_ROW_FLIP_AUTHORITY_UNAVAILABLE"):
+        _run_live_r1_cli(
+            receipt_json,
+            p1_json,
+            json_out,
+            monkeypatch=monkeypatch,
+        )
 
 
 def test_r1li_v0_launch_proof_flag_default_off():
@@ -901,3 +891,132 @@ def test_r1l_log_snapshot_live_final_bytes_would_fail_old_binding():
             env_snapshot_bytes=env_bytes,
             log_bytes=growing_live_log,
         )
+
+
+def test_r1l_type1_rejects_known_bad_live_receipt():
+    """Known-bad live run receipt (flip true + 3->4 + cannot mint or flip)."""
+    import json
+    from pathlib import Path
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        launch_runtime_backward_receipt_from_dict,
+        validate_launch_runtime_backward_receipt,
+    )
+    known = Path(
+        "calm/llm_computer/tests/fixtures/"
+        "r1l_launch_runtime_receipt_known_bad_0f40390b.json"
+    )
+    assert known.is_file(), f"tracked known-bad fixture required: {known}"
+    digest = hashlib.sha256(known.read_bytes()).hexdigest()
+    assert digest == (
+        "0f40390b51c413b0d4c9e1e0ae057ae94f9d2c2b6dbb93b650ac993d8225810d"
+    ), digest
+    payload = json.loads(known.read_text())
+    receipt = launch_runtime_backward_receipt_from_dict(payload)
+    with pytest.raises(ValueError, match="must not authorize live row flip"):
+        validate_launch_runtime_backward_receipt(receipt)
+
+
+
+def test_r1l_type1_claim_ceiling_render_and_compare():
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        LAUNCH_RUNTIME_CLAIM_CEILING,
+        compare_launch_receipt_to_claim_ceiling,
+        render_launch_runtime_claim_ceiling_json,
+        assert_launch_receipt_claim_coherent,
+    )
+    import json
+    raw = render_launch_runtime_claim_ceiling_json()
+    assert raw.endswith(b"\n")
+    ceil = json.loads(raw.decode("utf-8"))
+    assert ceil["summary_prose"] == LAUNCH_RUNTIME_CLAIM_CEILING["summary_prose"]
+    assert ceil["live_readiness_row_flip_authorized"] is False
+    receipt = _mint_valid_launch_receipt()
+    assert_launch_receipt_claim_coherent(receipt)
+    compare_launch_receipt_to_claim_ceiling(receipt)
+    bad = replace(receipt, live_readiness_row_flip_authorized=True)
+    with pytest.raises(ValueError, match="incoherent|claim_ceiling"):
+        assert_launch_receipt_claim_coherent(bad)
+
+
+def test_r1l_type1_result_lt_base_rejects():
+    """B2 negative: result < base is readiness mutation under Type-1."""
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        assert_launch_receipt_claim_coherent,
+        validate_launch_runtime_backward_receipt,
+        compute_canonical_launch_artifact_sha256,
+    )
+    receipt = _mint_valid_launch_receipt()
+    bad = replace(
+        receipt,
+        applier_base_surface_count_sub2=3,
+        applier_result_sub2_surface_count=2,
+    )
+    bad = replace(
+        bad,
+        canonical_launch_artifact_sha256=compute_canonical_launch_artifact_sha256(bad.to_dict()),
+    )
+    with pytest.raises(ValueError, match="must equal|incoherent|readiness mutation"):
+        validate_launch_runtime_backward_receipt(bad)
+    with pytest.raises(ValueError, match="must equal|incoherent"):
+        assert_launch_receipt_claim_coherent(bad)
+
+
+def test_r1l_type1_result_gt_base_rejects():
+    """B2 negative: result > base is a mint under Type-1."""
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        assert_launch_receipt_claim_coherent,
+        validate_launch_runtime_backward_receipt,
+        compute_canonical_launch_artifact_sha256,
+    )
+    receipt = _mint_valid_launch_receipt()
+    bad = replace(
+        receipt,
+        applier_base_surface_count_sub2=3,
+        applier_result_sub2_surface_count=4,
+    )
+    bad = replace(
+        bad,
+        canonical_launch_artifact_sha256=compute_canonical_launch_artifact_sha256(bad.to_dict()),
+    )
+    with pytest.raises(ValueError, match="must equal|incoherent|readiness mutation|mint"):
+        validate_launch_runtime_backward_receipt(bad)
+    with pytest.raises(ValueError, match="must equal|incoherent"):
+        assert_launch_receipt_claim_coherent(bad)
+
+
+def test_r1l_type1_forged_diagnostic_ready_rejects():
+    """B2 negative: diagnostic-ready true is a new readiness state under Type-1."""
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        assert_launch_receipt_claim_coherent,
+        compare_launch_receipt_to_claim_ceiling,
+        validate_launch_runtime_backward_receipt,
+        compute_canonical_launch_artifact_sha256,
+    )
+    receipt = _mint_valid_launch_receipt()
+    bad = replace(receipt, applier_result_ready_for_pre_full_stack_diagnostic=True)
+    bad = replace(
+        bad,
+        canonical_launch_artifact_sha256=compute_canonical_launch_artifact_sha256(bad.to_dict()),
+    )
+    with pytest.raises(ValueError, match="pre_full_stack_diagnostic|incoherent|claim_ceiling"):
+        validate_launch_runtime_backward_receipt(bad)
+    with pytest.raises(ValueError, match="pre_full_stack_diagnostic|incoherent"):
+        assert_launch_receipt_claim_coherent(bad)
+    with pytest.raises(ValueError, match="pre_full_stack_diagnostic|claim_ceiling"):
+        compare_launch_receipt_to_claim_ceiling(bad)
+
+
+def test_r1l_type1_claim_ceiling_binds_count_and_diagnostic():
+    from calm.hrm_text_158.native_full_stack.activation_relief import (
+        LAUNCH_RUNTIME_CLAIM_CEILING,
+        render_launch_runtime_claim_ceiling_json,
+    )
+    import json
+    ceil = json.loads(render_launch_runtime_claim_ceiling_json().decode("utf-8"))
+    assert ceil["applier_base_surface_count_sub2"] == 3
+    assert ceil["applier_result_sub2_surface_count"] == 3
+    assert ceil["applier_result_ready_for_pre_full_stack_diagnostic"] is False
+    assert (
+        LAUNCH_RUNTIME_CLAIM_CEILING["applier_result_ready_for_pre_full_stack_diagnostic"]
+        is False
+    )
