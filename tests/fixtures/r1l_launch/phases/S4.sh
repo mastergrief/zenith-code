@@ -9,12 +9,19 @@ set +e
 {
 set -euo pipefail
 : "${R1L_ROOT:?}"
+: "${R1L_LAUNCH_SOURCE_COMMIT_SHA:?R1L_LAUNCH_SOURCE_COMMIT_SHA required (40-hex launch source)}"
 python3 - <<'PY'
 import hashlib, json, os, stat
 from pathlib import Path
 
 ROOT = Path(os.environ['R1L_ROOT'])
-HEAD = '0636177fbe52d8c6ff5db71312f51240b31fceb2'
+# Launch source commit — parameter (not a fixture literal). Distinct from P1-mint freeze head.
+import re as _re_launch
+_launch = os.environ.get('R1L_LAUNCH_SOURCE_COMMIT_SHA', '').strip()
+assert _re_launch.fullmatch(r'[0-9a-f]{40}', _launch), (
+    'R1L_LAUNCH_SOURCE_COMMIT_SHA_required_40hex', _launch,
+)
+HEAD = _launch  # launch_source only
 
 # Guard: freeze must not already exist
 fm = ROOT / 'r1l_freeze_manifest.json'

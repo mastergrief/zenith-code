@@ -285,7 +285,7 @@ def test_mint_content_digest_uses_basenames_matches_frozen_fixture_identity():
     with tempfile.TemporaryDirectory() as td:
         m = mint_phase_files(Path(td) / "phases", shells)
         assert m["CONTENT_DIGEST"] == FROZEN_FIXTURE_CONTENT_DIGEST
-        assert m["CONTENT_DIGEST"] == "fca61e87a6e34a73749080fc83b27f8d6b8991c7bcc82617adad91a6bb1ed859"
+        assert m["CONTENT_DIGEST"] == "30f545ccdc80c30d1e3ccd12c6f886b397d4a97ce6f78006ac57f62ca9a1d60f"
         re_resolve_phase_manifest(m)
 
 

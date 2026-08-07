@@ -18,6 +18,7 @@ if [ -n "${R1L_S5_INJECT_FAIL+x}" ] && [ -n "${R1L_S5_INJECT_FAIL}" ]; then
   echo "S5_INJECT_BATTERY_OVERRIDE_ACTIVE value=${R1L_S5_INJECT_FAIL}"
 fi
 : "${R1L_ROOT:?}"
+: "${R1L_LAUNCH_SOURCE_COMMIT_SHA:?R1L_LAUNCH_SOURCE_COMMIT_SHA required (40-hex launch source)}"
 : "${R1L_EV:?}"
 : "${R1L_RUNNER_LOG:?}"
 : "${R1L_PLAN_JSON:?}"
@@ -33,7 +34,13 @@ ROOT = Path(os.environ['R1L_ROOT'])
 EV = Path(os.environ['R1L_EV'])
 RUNNER_LOG = Path(os.environ['R1L_RUNNER_LOG'])
 PLAN_JSON = Path(os.environ['R1L_PLAN_JSON'])
-HEAD = '0636177fbe52d8c6ff5db71312f51240b31fceb2'
+# Launch source commit — parameter (not a fixture literal). Distinct from P1-mint freeze head.
+import re as _re_launch
+_launch = os.environ.get('R1L_LAUNCH_SOURCE_COMMIT_SHA', '').strip()
+assert _re_launch.fullmatch(r'[0-9a-f]{40}', _launch), (
+    'R1L_LAUNCH_SOURCE_COMMIT_SHA_required_40hex', _launch,
+)
+HEAD = _launch  # launch_source only
 EXP_PLAN = os.environ['R1L_EXPECTED_PLAN_SHA256']
 EXP_FM = os.environ['R1L_EXPECTED_GATE1_FREEZE_MANIFEST_SHA256']
 EXP_CD = os.environ['R1L_EXPECTED_CONTENT_DIGEST']

@@ -15,7 +15,7 @@ from calm.hrm_text_158.native_full_stack.r1l_launch.freeze_digest import (
 PHASE_ORDER = ("S0", "S0b", "S1", "S2", "S3", "S4", "S5")
 # Fixture / freeze identity digests over basenames with .sh (FIXTURE_CONTENT_DIGEST authority).
 FROZEN_FIXTURE_CONTENT_DIGEST = (
-    "fca61e87a6e34a73749080fc83b27f8d6b8991c7bcc82617adad91a6bb1ed859"
+    "30f545ccdc80c30d1e3ccd12c6f886b397d4a97ce6f78006ac57f62ca9a1d60f"
 )
 
 

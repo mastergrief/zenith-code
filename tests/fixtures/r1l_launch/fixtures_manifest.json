@@ -1,5 +1,5 @@
 {
-  "FIXTURE_CONTENT_DIGEST": "fca61e87a6e34a73749080fc83b27f8d6b8991c7bcc82617adad91a6bb1ed859",
+  "FIXTURE_CONTENT_DIGEST": "30f545ccdc80c30d1e3ccd12c6f886b397d4a97ce6f78006ac57f62ca9a1d60f",
   "member_key_form": "basename_with_dot_sh",
   "members": {
     "S0.sh": {
@@ -8,34 +8,34 @@
       "sha256": "9a87c2430aa80adbf139083cb4aca1e35a528aa0a7273f59be8b042afc0104ff"
     },
     "S0b.sh": {
-      "bytes": 3079,
+      "bytes": 3659,
       "path": "phases/S0b.sh",
-      "sha256": "4bfabaecc99b4968436bd906831451319347cc4d893b6b2c6d39a86561505b7e"
+      "sha256": "d67dbea32a7ba9275ad11254f5f4a29cb21a9d121f5e97ef8ac67751545e62ed"
     },
     "S1.sh": {
-      "bytes": 7571,
+      "bytes": 7965,
       "path": "phases/S1.sh",
-      "sha256": "d9b5f90de4e91c72b148bfc9d11e67dc50c695026e2acd8cbaff65a312508de5"
+      "sha256": "20108b53464238b62e79aa605afbd4a62e50be6a4134cff5c6ba5991b3ccbf85"
     },
     "S2.sh": {
-      "bytes": 8876,
+      "bytes": 9636,
       "path": "phases/S2.sh",
-      "sha256": "b3b88b30aaaa579e558e650f42c084441fb3f0e788e10cd9d37721447eca838f"
+      "sha256": "cfd0dcad848940796de06936f793cd9204b403712be2a561a6495099597eefdb"
     },
     "S3.sh": {
-      "bytes": 7267,
+      "bytes": 8226,
       "path": "phases/S3.sh",
-      "sha256": "910df38ea17ecd17711b0421087cabff017a088d19fc605404e0216ccd9ad9c3"
+      "sha256": "bf4940863341246b395f1d8df6f8f0e59814c00bd0ec0c1fe7c3d4c1ca062209"
     },
     "S4.sh": {
-      "bytes": 5870,
+      "bytes": 6264,
       "path": "phases/S4.sh",
-      "sha256": "f1e3170b8a183361553809afd1e23a3ad6f5da91b7bb057e276bcc0ee57a8eda"
+      "sha256": "203d715abfef329383d165cb759bea75e3913f4de7748131d9366cf9e214520d"
     },
     "S5.sh": {
-      "bytes": 15111,
+      "bytes": 15505,
       "path": "phases/S5.sh",
-      "sha256": "92676a9389feef905a4520980829fcff8d0484cdf8a4a870c6bd27103aa9f90a"
+      "sha256": "cac1bb66d38180fd64333b8311804b3978ec4a614418d145741c577c77291a5b"
     }
   },
   "schema": "r1l_launch_fixtures_manifest/v1",

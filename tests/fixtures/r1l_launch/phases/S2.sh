@@ -10,6 +10,7 @@ set +e
 {
 set -euo pipefail
 : "${R1L_ROOT:?}"
+: "${R1L_LAUNCH_SOURCE_COMMIT_SHA:?R1L_LAUNCH_SOURCE_COMMIT_SHA required (40-hex launch source)}"
 : "${R1L_S2_MODE:=gpu}"
 python3 - <<'PY'
 import hashlib, json, os, subprocess, sys, importlib.util
@@ -26,10 +27,46 @@ trainer_log.parent.mkdir(parents=True, exist_ok=True)
 if not trainer_log.exists():
     trainer_log.write_bytes(b'')
 
-ARGV_FROM_SCRIPT = ["/home/gabe/claw-code-creditdir/transient_fp_credit/r1l_launch_HEAD_0636177f_r1/code/scripts/train_hrm_text_158.py", "--load-from", "/home/gabe/claw-code-creditdir/transient_fp_credit/r1l_launch_HEAD_0636177f_r1/artifacts/w6_parent_readonly.pt", "--use-ternary-bulk", "--activation-relief-lossless-recompute-launch-proof", "--epochs", "1", "--n-train-cap", "8", "--batch-size", "8", "--max-len", "384", "--hidden-size", "512", "--n-layers", "8", "--num-heads", "4", "--expansion", "4", "--H-cycles", "2", "--L-cycles", "3", "--parent-consistency-weight", "1.0", "--retained-support", "L0b:0.01", "--retained-support-batch", "8", "--curriculum-rung", "R0", "--use-broad-tokenizer", "--seed", "17"]
-HEAD = '0636177fbe52d8c6ff5db71312f51240b31fceb2'
+# Launch source commit — parameter (not a fixture literal). Distinct from P1-mint freeze head.
+import re as _re_launch
+_launch = os.environ.get('R1L_LAUNCH_SOURCE_COMMIT_SHA', '').strip()
+assert _re_launch.fullmatch(r'[0-9a-f]{40}', _launch), (
+    'R1L_LAUNCH_SOURCE_COMMIT_SHA_required_40hex', _launch,
+)
+HEAD = _launch  # launch_source only
 R1_CPU = '717f6346324388f83126763769c30b9bad53dc45'
 W6_SHA = '9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'
+
+# proof_command_argv authority derived from required R1L_ROOT — no launch-root literal
+_w6_parent = str(env.get('R1L_W6_PARENT_PATH') or (ROOT / 'artifacts' / 'w6_parent_readonly.pt'))
+assert str(_w6_parent).startswith(str(ROOT)), (
+    'w6_parent_must_be_under_R1L_ROOT', _w6_parent, str(ROOT),
+)
+ARGV_FROM_SCRIPT = [
+    str(ROOT / 'code' / 'scripts' / 'train_hrm_text_158.py'),
+    '--load-from', _w6_parent,
+    '--use-ternary-bulk',
+    '--activation-relief-lossless-recompute-launch-proof',
+    '--epochs', '1',
+    '--n-train-cap', '8',
+    '--batch-size', '8',
+    '--max-len', '384',
+    '--hidden-size', '512',
+    '--n-layers', '8',
+    '--num-heads', '4',
+    '--expansion', '4',
+    '--H-cycles', '2',
+    '--L-cycles', '3',
+    '--parent-consistency-weight', '1.0',
+    '--retained-support', 'L0b:0.01',
+    '--retained-support-batch', '8',
+    '--curriculum-rung', 'R0',
+    '--use-broad-tokenizer',
+    '--seed', '17',
+]
+assert all('r1l_launch_HEAD_' not in str(a) for a in ARGV_FROM_SCRIPT), (
+    'launch_root_literal_forbidden_in_argv', ARGV_FROM_SCRIPT[:3],
+)
 
 code = Path(env['PYTHONPATH'])
 receipt_path = Path(env['R1L_LAUNCH_RECEIPT_JSON'])

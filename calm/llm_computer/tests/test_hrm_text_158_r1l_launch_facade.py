@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -158,6 +159,15 @@ def _make_dry_gate(td: Path):
     }
 
 
+def _live_launch_source_sha() -> str:
+    """Launch HEAD parameter for fixtures — live git HEAD of the HRM repo (40-hex)."""
+    out = subprocess.check_output(
+        ["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True
+    ).strip()
+    assert len(out) == 40 and all(c in "0123456789abcdef" for c in out), out
+    return out
+
+
 def _base_env(root: Path, ev: Path, rlog: Path, gate_info: dict) -> dict:
     env = os.environ.copy()
     env.update(
@@ -170,6 +180,9 @@ def _base_env(root: Path, ev: Path, rlog: Path, gate_info: dict) -> dict:
             "R1L_GATE1_FREEZE_MANIFEST_PATH": str(gate_info["gate"]),
             "R1L_EXPECTED_GATE1_FREEZE_MANIFEST_SHA256": gate_info["gate_sha"],
             "R1L_EXPECTED_CONTENT_DIGEST": gate_info["cd"],
+            # Launch source is a parameter supplied by the materializer/test host —
+            # fixtures no longer hardcode a commit (slice 1.5).
+            "R1L_LAUNCH_SOURCE_COMMIT_SHA": _live_launch_source_sha(),
             "R1L_S2_MODE": "synthetic",
             "HF_HUB_OFFLINE": "1",
             "HF_DATASETS_OFFLINE": "1",
@@ -193,9 +206,107 @@ def _run_shell(shell_text: str, env: dict, timeout: int = 600) -> subprocess.Com
     )
 
 
+def test_s0b_launch_head_param_wrong_fails_right_passes():
+    """Calibration: S0b live-HEAD assert still bites on wrong launch param; passes on live HEAD.
+
+    Wrong value must fail closed (assertion not a no-op). Right value is live git HEAD.
+    P1 freeze head stays distinct (0636177f…) and is not what this assert compares.
+    """
+    shells = _fixture_shells()
+    s0b = shells["S0b"]
+    live = _live_launch_source_sha()
+    wrong = "0" * 40
+    assert wrong != live
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        gate_info = _make_dry_gate(td_path)
+        # wrong launch source
+        env_bad = _base_env(td_path / "root_bad", td_path / "ev_bad", td_path / "log_bad", gate_info)
+        env_bad["R1L_LAUNCH_SOURCE_COMMIT_SHA"] = wrong
+        r_bad = _run_shell(s0b, env_bad, timeout=120)
+        blob_bad = r_bad.stdout + r_bad.stderr
+        assert r_bad.returncode != 0, blob_bad[-500:]
+        assert "head_mismatch" in blob_bad or "R1L_LAUNCH_SOURCE_COMMIT_SHA" in blob_bad
+        # right launch source
+        env_ok = _base_env(td_path / "root_ok", td_path / "ev_ok", td_path / "log_ok", gate_info)
+        assert env_ok["R1L_LAUNCH_SOURCE_COMMIT_SHA"] == live
+        r_ok = _run_shell(s0b, env_ok, timeout=120)
+        blob_ok = r_ok.stdout + r_ok.stderr
+        assert r_ok.returncode == 0, blob_ok[-800:]
+        assert "S0b_AUTHORITY_AND_DATA_PREFLIGHT_OK" in blob_ok
+        assert live in blob_ok
+    _record(
+        "s0b_launch_head_param_calibration",
+        ok=True,
+        live_launch_source=live,
+        wrong_rejected=True,
+        right_passed=True,
+    )
+
+
+def test_argv_from_script_derives_from_r1l_root_not_stale_literal():
+    """Calibration: S2 mint + S3 equality authority both use supplied R1L_ROOT.
+
+    Run root path deliberately avoids sha 0636177f so a stale
+    r1l_launch_HEAD_0636177f_r1 literal cannot match by coincidence.
+    Two wrongs that agree (hardcoded list in S2 and S3) is the defect this catches.
+    """
+    shells = _fixture_shells()
+    w6 = _require_w6()
+    w6_before = _sha_file(w6)
+    assert w6_before == W6_PIN
+    with tempfile.TemporaryDirectory(prefix="r1l_runroot_deadbeef_") as td:
+        td_path = Path(td)
+        # temp roots never contain the stale launch-root token
+        assert "r1l_launch_HEAD_" not in str(td_path)
+        assert "0636177f" not in str(td_path)
+        gate_info = _make_dry_gate(td_path)
+        root = td_path / "root_deadbeef_not_stale"
+        env = _base_env(root, td_path / "ev", td_path / "runner.log", gate_info)
+        env["R1L_S2_MODE"] = "synthetic"
+        for ph in ("S0", "S0b", "S1"):
+            r = _run_shell(shells[ph], env, timeout=600)
+            assert r.returncode == 0, (ph, (r.stdout + r.stderr)[-800:])
+        r2 = _run_shell(shells["S2"], env, timeout=300)
+        assert r2.returncode == 0, (r2.stdout + r2.stderr)[-800:]
+        receipt_path = root / "receipts" / "r1l_launch_runtime_receipt.json"
+        assert receipt_path.is_file()
+        receipt = json.loads(receipt_path.read_text())
+        argv = list(receipt.get("proof_command_argv") or [])
+        assert argv, "proof_command_argv missing"
+        # minted argv must bind the supplied root — not a stale launch-root literal
+        assert all("r1l_launch_HEAD_" not in str(a) for a in argv), argv[:4]
+        assert str(root / "code" / "scripts" / "train_hrm_text_158.py") == argv[0]
+        assert "--load-from" in argv
+        load_idx = argv.index("--load-from")
+        assert str(argv[load_idx + 1]).startswith(str(root)), (
+            "load-from not under supplied R1L_ROOT",
+            argv[load_idx + 1],
+            str(root),
+        )
+        # S3 equality authority must accept that argv (same derivation from ROOT)
+        r3 = _run_shell(shells["S3"], env, timeout=300)
+        blob3 = r3.stdout + r3.stderr
+        assert r3.returncode == 0, blob3[-800:]
+        assert "S3_ARGV_EQUALITY_OK" in blob3
+        assert "ARGV_MISMATCH" not in blob3
+        log = Path(env["R1L_RUNNER_LOG"]).read_text()
+        assert "R1L_TERMINAL_PASS" in log
+        assert "R1L_TERMINAL_FAIL" not in log
+    assert _sha_file(w6) == w6_before == W6_PIN
+    _record(
+        "argv_from_script_root_derived_calibration",
+        ok=True,
+        root_token="deadbeef",
+        minted_argv0_under_root=True,
+        s3_equality_ok=True,
+        no_stale_launch_root_literal=True,
+    )
+
+
 def test_00_fixture_digest_and_drift():
     man = _load_manifest()
-    assert man["FIXTURE_CONTENT_DIGEST"] == "fca61e87a6e34a73749080fc83b27f8d6b8991c7bcc82617adad91a6bb1ed859"
+    assert man["FIXTURE_CONTENT_DIGEST"] == "30f545ccdc80c30d1e3ccd12c6f886b397d4a97ce6f78006ac57f62ca9a1d60f"
     assert man["source_plan_sha256"] == "0b8fa3805ee4d6e5ace8b311bc9a3928452be63fd63e7572f1d9a370df466531"
     flat = {k: v["sha256"] for k, v in man["members"].items()}
     assert content_digest_from_members(flat) == man["FIXTURE_CONTENT_DIGEST"]
@@ -214,6 +325,92 @@ def test_arm12_stale_literal_sweep_over_fixture_shells():
                 hits.append((ph, lit))
     assert not any(h[1] in ("success_stop_on", "failure_stop_on") for h in hits)
     _record("arm12_stale_sweep", ok=True, hits=hits, mode="fixture_text_scan")
+
+
+# Value-keyed: launch-root path class (any hex), not a single sha and not arm12's stop-on set.
+LAUNCH_ROOT_LITERAL_RE = re.compile(r"r1l_launch_HEAD_[0-9a-f]+")
+
+
+def _launch_root_literal_hits(shells: dict[str, str]) -> list[tuple[str, int, str]]:
+    """Enumerate (phase, line_no, token) for launch-root path literals in phase texts."""
+    hits: list[tuple[str, int, str]] = []
+    for ph, text in shells.items():
+        for i, line in enumerate(text.splitlines(), 1):
+            for m in LAUNCH_ROOT_LITERAL_RE.finditer(line):
+                hits.append((ph, i, m.group(0)))
+    return hits
+
+
+def test_fixture_corpus_has_zero_launch_root_path_literals():
+    """Regression guard: no phase may embed r1l_launch_HEAD_<hex> launch-root paths.
+
+    Distinct from arm12 (success_stop_on / failure_stop_on / double-hash). Keyed on the
+    property — any hex — so re-baking a different sha is the same defect.
+    """
+    shells = _fixture_shells()
+    hits = _launch_root_literal_hits(shells)
+    assert hits == [], hits
+    # denominator: all seven phases scanned
+    assert set(shells.keys()) == set(PHASE_ORDER)
+    _record(
+        "launch_root_literal_corpus_sweep",
+        ok=True,
+        hits=hits,
+        phases_scanned=sorted(shells.keys()),
+        mode="value_keyed_launch_root_path_scan",
+    )
+
+
+def test_launch_root_literal_matcher_discriminates_known_bad():
+    """Both directions: matcher silent on live corpus; fires on pre-correction S2/S3 bytes."""
+    # known-good (live)
+    live = _fixture_shells()
+    assert _launch_root_literal_hits(live) == []
+
+    # known-bad: pre-correction fixture bytes at slice-1 HEAD (fc81ae12) still had the class
+    bad_s2 = subprocess.check_output(
+        [
+            "git",
+            "-C",
+            str(REPO),
+            "show",
+            "fc81ae12:tests/fixtures/r1l_launch/phases/S2.sh",
+        ],
+        text=True,
+    )
+    bad_s3 = subprocess.check_output(
+        [
+            "git",
+            "-C",
+            str(REPO),
+            "show",
+            "fc81ae12:tests/fixtures/r1l_launch/phases/S3.sh",
+        ],
+        text=True,
+    )
+    assert LAUNCH_ROOT_LITERAL_RE.search(bad_s2), "known-bad S2 must contain the class"
+    assert LAUNCH_ROOT_LITERAL_RE.search(bad_s3), "known-bad S3 must contain the class"
+    bad_shells = dict(live)
+    bad_shells["S2"] = bad_s2
+    bad_shells["S3"] = bad_s3
+    bad_hits = _launch_root_literal_hits(bad_shells)
+    assert bad_hits, "matcher must fire on known-bad reintroduction"
+    assert any(h[0] == "S2" for h in bad_hits)
+    assert any(h[0] == "S3" for h in bad_hits)
+    # property is any hex, not only 0636177f — synthetic re-bake still matches
+    synthetic = "ARGV = ['/tmp/r1l_launch_HEAD_deadbeef00aaaaaaaaaaaaaaaaaaaaaaaa/code/x.py']\n"
+    assert LAUNCH_ROOT_LITERAL_RE.search(synthetic)
+    assert _launch_root_literal_hits({"SX": synthetic}) == [
+        ("SX", 1, "r1l_launch_HEAD_deadbeef00aaaaaaaaaaaaaaaaaaaaaaaa")
+    ]
+    _record(
+        "launch_root_literal_matcher_calibration",
+        ok=True,
+        live_silent=True,
+        known_bad_fires=True,
+        any_hex_not_single_sha=True,
+        mode="matcher_both_directions",
+    )
 
 
 def test_arm13_launch_argv_list_authority():

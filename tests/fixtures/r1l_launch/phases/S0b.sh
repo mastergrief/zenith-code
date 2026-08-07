@@ -10,11 +10,19 @@ set +e
 {
 set -euo pipefail
 : "${R1L_ROOT:?}"
+: "${R1L_LAUNCH_SOURCE_COMMIT_SHA:?R1L_LAUNCH_SOURCE_COMMIT_SHA required (40-hex launch source)}"
 python3 - <<'PY'
 import hashlib, json, os, subprocess
 from pathlib import Path
 
-HEAD = '0636177fbe52d8c6ff5db71312f51240b31fceb2'
+P1_FREEZE_HEAD = '0636177fbe52d8c6ff5db71312f51240b31fceb2'  # P1-mint freeze head_sha identity (not launch)
+# Launch source commit — parameter (not a fixture literal). Distinct from P1-mint freeze head.
+import re as _re_launch
+_launch = os.environ.get('R1L_LAUNCH_SOURCE_COMMIT_SHA', '').strip()
+assert _re_launch.fullmatch(r'[0-9a-f]{40}', _launch), (
+    'R1L_LAUNCH_SOURCE_COMMIT_SHA_required_40hex', _launch,
+)
+HEAD = _launch  # launch_source only
 R1_CPU = '717f6346324388f83126763769c30b9bad53dc45'
 W6_SRC = Path('/mnt/c/Users/gabes/projects/claw-code-hrm-text-158/calm/hrm/checkpoints/hrm_text_158_phase3_L0c1_seed0017_replay83_n12k_lr7p5e5_pc1p0_rsL0b1math1r1b2_1_anchorsv1r3_from_L0b_final_step01500.pt')
 W6_SHA = '9b4e311a22787e7d4808bde7bc2953568d767a2ee8ac648942a3f5dbb7b4d5ec'
@@ -39,7 +47,7 @@ for name, (path, sha) in pins.items():
     assert got == sha, (name, 'sha_mismatch', got, sha)
 man = json.loads(Path(pins['freeze'][0]).read_text())
 assert str(man.get('r2_status', '')).startswith('FROZEN_EXCLUDED'), man.get('r2_status')
-assert man.get('head_sha') == HEAD
+assert man.get('head_sha') == P1_FREEZE_HEAD, ('freeze_head_sha_mismatch', man.get('head_sha'), P1_FREEZE_HEAD)
 assert man.get('root') == str(R3)
 assert W6_SRC.is_file() and not W6_SRC.is_symlink()
 got = hashlib.sha256(W6_SRC.read_bytes()).hexdigest()
