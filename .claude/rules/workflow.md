@@ -67,7 +67,7 @@ Protocol: `workflow_part_1.md` §"GPU bench discipline".
 
 ## Daemon state invariants
 
-Gemma daemon scripts: `clear_card_state()` at startup (hooks, `card_slots`,
+Daemon scripts: `clear_card_state()` at startup (hooks, `card_slots`,
 `reserved_channels` persist). Pattern: `workflow_part_1.md` §"Daemon state
 invariants".
 

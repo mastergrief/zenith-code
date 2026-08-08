@@ -19,7 +19,7 @@ paths:
 Settled positions for the current arc. Future sessions treat these as
 baseline context, not re-argue them.
 
-> Historical receipts + Gemma-substrate first instantiation detail:
+> Historical receipts + first-instantiation detail:
 > `MEMORY/atlas/augmentation_thesis_arc.md`.
 
 ## Core thesis
@@ -38,11 +38,11 @@ integer-dominated persistent train-state (toward sub-2-bit persistent;
 the banked win is FP-master-free for the eligible bulk — see
 `ternary_hybrid_stack.md` 3-ledger)
 
-**Gemma + substrate cards** were the **first shipped instantiation**
+**Base model + substrate cards** were the **first shipped instantiation**
 of the same pattern (routing → compiled correction → verification
 hook). That lane is **legacy/adjacent unless reopened**; the active
-default is native HRM-Text-1.58 (`hrm-158.md`). Arc detail: atlas
-§"Gemma-substrate instantiation".
+default is native HRM-Text-1.58 (`hrm-158.md`). Arc detail:
+`MEMORY/atlas/augmentation_thesis_arc.md`.
 
 ## Three-tier framework
 
@@ -54,7 +54,7 @@ default is native HRM-Text-1.58 (`hrm-158.md`). Arc detail: atlas
 
 **Convention note:** substrate install tiers (CardSlot, VerificationHook,
 hub injection) **map onto** these curriculum semantics by analogy — see
-atlas for Gemma-specific mechanics. Do not treat the mapping as a measured
+atlas for model-specific mechanics. Do not treat the mapping as a measured
 identity or banked doctrine.
 
 ## Classify before build
@@ -70,7 +70,7 @@ decision flows from the classification.
 | **Deep-diffuse** | Not distillable at known loss spaces; pivot to additive output correction |
 
 **Rule**: never attempt attention-level compilation without
-classifying via per-head ablation first. See atlas for Gemma-specific
+classifying via per-head ablation first. See atlas for model-specific
 markers and failure-mode lineage.
 
 ## Compositional hypothesis
@@ -134,4 +134,4 @@ thesis mid-task.
 - `tracing_intelligence.md` — first-principles bound on what's compilable
 - `capability_gain.md` — measurement discipline (raw + user-facing)
 - `workflow.md` — iteration discipline (hypothesis → test → commit)
-- `MEMORY/atlas/augmentation_thesis_arc.md` — empirical basis + Gemma instantiation
+- `MEMORY/atlas/augmentation_thesis_arc.md` — empirical basis + first instantiation

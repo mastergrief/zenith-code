@@ -42,22 +42,21 @@ tool definitions, and streaming invariants live in
 ## Running the Harness
 
 ```bash
-# Preferred: auto-starts llama.cpp with default ~/models/gemma-4-E4B-it-tq4-aligned.gguf at 512K
+# Preferred: auto-starts llama.cpp with the default GGUF in ~/models/ at 512K
 zenith
 
 # Pick a specific GGUF at launch time (new --gguf launcher flag)
-zenith --gguf ~/models/gemma-4-E4B-it-Q5_K_M.gguf
+zenith --gguf ~/models/<your-model>.gguf      # substitute your GGUF
 
 # Or set the env var once in your shell rc
-ZENITH_MODEL=~/models/gemma-4-E4B-it-Q5_K_M.gguf zenith
+ZENITH_MODEL=~/models/<your-model>.gguf zenith
 
 # Hot-swap from inside an active session (no restart needed)
-> /swap gemma       # substring match in ~/models/*.gguf
-> /swap qwen        # swap back
+> /swap <substring>  # substring match in ~/models/*.gguf
 
 # Manual: specify backend and model (bypasses bin/zenith)
 PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --backend llamacpp
-PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --model qwen3.5:4b --backend ollama
+PYTHONUTF8=1 PYTHONPATH=. python3 agents/harness.py --model <ollama-tag> --backend ollama
 
 # Programmatic / smoke-test invocation — pipe prompts via stdin, capture to log
 printf "what is 2+2?\n/exit\n" | zenith --effort max > /tmp/zenith.log 2>&1

@@ -33,7 +33,7 @@ Procedure targets use shaped computation supervision when answer-only rows memor
 Conventions:
 - Active training lane: native HRM-Text-1.58 (`hrm-158-base`).
 - Default method: auditable full-density finite support + slow-safe learning + 90/90 gate.
-- PT / DT / RDT / cards / Substrate / Gemma-substrate / CRLM / CHRLM are legacy/adjacent/reference unless explicitly reopened.
+- PT / DT / RDT / cards / Substrate / CRLM / CHRLM are legacy/adjacent/reference unless explicitly reopened.
 - CALM engine, Python agent harness, and Rust port stay live infrastructure.
 - Receipts live on the ai-room board / MEMORY, not this manifest or eager rules.
 
@@ -83,7 +83,7 @@ The repo carries four subsystems. Full details are path-scoped references; open 
 - Rust claw-code port: `rust/`.
 - Unified Single Tensor / substrate: `calm/llm_computer/`, legacy/adjacent unless reopened; atlas references: `.claude/MEMORY/atlas/Substrate_arc.md`, `delta_rule_arc.md`, `compute_facades_arc.md`, `recursion_arc.md`, `retrieval_arc.md`, `capability_gain_arc.md`, and `embed_intelligence_arc.md`.
 
-Serving, hardware, and VRAM details live in `.claude/rules/environment.md`. TurboQuant internals live in `.claude/rules/turboquant.md`. NIAH/model context validation lives in `.claude/rules/niah_validation.md`. Long-term commercial direction lives in `.claude/rules/commercial.md`.
+Serving, hardware, and VRAM details live in `.claude/rules/environment.md`. TurboQuant internals live in `.claude/rules/turboquant.md`. Long-term commercial direction lives in `.claude/rules/commercial.md`.
 
 ## Research Pointers
 

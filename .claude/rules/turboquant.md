@@ -54,7 +54,7 @@ Python: `calm/llm_computer/tq4_torch.py` (`quantize_tq4`, `dequantize_tq4`,
 `Tq4Tensor`). C reference Pi loader: `calm/llm_computer/tq4_pi_loader.py`
 (bit-exact from `turboquant_tables.h`).
 
-## Q6_K Format (Gemma token_embd)
+## Q6_K Format (token_embd)
 
 ```
 struct block_q6_K {      // 210 bytes, 256 elements
@@ -78,7 +78,7 @@ have discrete integer coefs (±1, ±16). Measured loss is catastrophic
 through tq4 roundtrip.
 
 **Fix**: `HybridGroupedSmall2DTransformer` with per-layer linear type:
-- **tq4 layers** (`Tq4LinearGGMLOriented`): Gemma's attention + FFN
+- **tq4 layers** (`Tq4LinearGGMLOriented`): the base model's attention + FFN
 - **FP32 layers** (`FP32LinearGGMLOriented`): compiled cards + HRMs
 
 Both share `y = x @ W` GGML convention. Forward loop unchanged.
@@ -110,7 +110,7 @@ Forward: `y = x @ W` (not `x @ W.T`). Byte-compatible with GGUF.
 | tq4 + tq4 KV (production) | ~5.0 GB | ~2.0 GB | ~7.0 GB |
 | Q5_K_M + f16 KV | 5.48 GB | ~4.0 GB | ~9.5 GB (OOM) |
 | Hybrid substrate (2 tq4 + 2 fp32) | varies | N/A | ~50 MB - 10 GB |
-| **Prod Gemma substrate (Triton stack)** | **~3.5 GB tq4 + Q6_K** | tq4/FP16 | **~5.0 GB baseline** |
+| **Prod substrate (Triton stack)** | **~3.5 GB tq4 + Q6_K** | tq4/FP16 | **~5.0 GB baseline** |
 
 Substrate baseline leaves ~3 GB headroom for FP32 hosting layers (see
 `MEMORY/substrate_registry.md` for per-card budget) plus activations +
@@ -196,7 +196,7 @@ K.d:  (n_heads_kv, N * bpr) fp32
 V.qs: same layout
 V.d:  same layout
 ```
-`bpr = d_head // 256` (= 1 for Gemma E4B d_head=256).
+`bpr = d_head // 256` (= 1 at d_head=256).
 
 **Math** (Pi orthogonal cancels in inner products):
 ```
@@ -260,5 +260,5 @@ Monitor(command="bin/watch-wrap --log /tmp/q.log --heartbeat 180 --error 'Traceb
 ## Related rules
 
 - `Substrate.md` — hybrid per-layer install pattern
-- `architecture.md` — Gemma substrate loader integration
+- `architecture.md` — substrate loader integration
 - `MEMORY/atlas/turboquant_arc.md` — per-kernel bench receipts + CUDA-vs-Triton lesson-transfer analysis

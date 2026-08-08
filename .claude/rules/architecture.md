@@ -72,9 +72,8 @@ interfaces, not internals.
 - **PT / DT** → `delta_rule.md` + `training.md` (legacy/adjacent)
 - **tq4 / flash-attn** → `turboquant.md`
 - **Serving + VRAM** → `environment.md`
-- **NIAH context limits** → `niah_validation.md`
 
-Substrate stack, extensions, card typology, Gemma install API, CRLM pipeline:
+Substrate stack, extensions, card typology, install API, CRLM pipeline:
 `Substrate.md` + `calm.md`.
 
 ## File Organization
@@ -125,7 +124,7 @@ Substrate stack, extensions, card typology, Gemma install API, CRLM pipeline:
   `BashRisk` enum with `classify_bash()` and `check_permission()`.
 - **Compaction** (`compact.py`): summarizes old messages, preserves
   last 4 verbatim. **Per-GGUF** context limits in
-  `MODEL_CONTEXT_LIMITS` (Gemma 4 E4B 200K, Qwen 3.5 4B 130K,
+  `MODEL_CONTEXT_LIMITS` (per-model validated limits,
   llama.cpp generic fallback 65K). NIAH-validated — don't change
   without re-running `scripts/needle_test.py`. Summary compression
   (1200 chars, 24 lines max). Env override: `ZENITH_AUTO_COMPACT_TOKENS`.
@@ -170,7 +169,7 @@ Substrate stack, extensions, card typology, Gemma install API, CRLM pipeline:
 - **89% safe-ctx compaction margin**
   (`harness.py:_compute_compact_threshold`): the threshold is
   `min(per-GGUF model limit, int(ctx_size * 0.89))`. At default
-  256K ctx the binding constraint is the Gemma model entry
+  256K ctx the binding constraint is the per-model entry
   (232960 = 227.5K), giving 29184 tokens of headroom. **This is BELOW
   `EFFORT_LEVELS["max"]["max_tokens"]` (32768)** by user choice —
   max-effort responses can soft-truncate by ~3.5K when conversation
