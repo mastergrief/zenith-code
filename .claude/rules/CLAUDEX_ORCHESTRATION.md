@@ -11,8 +11,16 @@ boundary (multi-task audit by design).
 ## Principle
 
 Dispatch narrowest task with independent evidence. Plans/contracts AND bounded
-implementation → `plan-dev`; formal run packets → `test-operator`. Workers
-never `@gabe` — bubble to claude; slice-scoped, recycle after shipped slices.
+implementation → `plan-dev`; formal run packets execute **claude-side as
+test-operator**. Workers never `@gabe` — bubble to claude; slice-scoped, recycle
+after shipped slices.
+
+**No worker is codex-backed.** Every peer is a Claude peer spawned by
+`ai_room_spawn_claude` on a legacy `codex*` handle — `codex_co_lead` `sol=true`
+(GPT), `plan-dev` on handle `codex` `grok=true` (grok), `advisor` on Fable,
+Claude on Opus. "Codex role" in this file means **worker role on a codex
+handle**; the `.codex-roles` paths and `claudex` tool names are naming artifacts,
+not evidence of a codex backend.
 
 ## Team model + named role lanes
 
@@ -35,14 +43,17 @@ read-only.
   Edits + focused developer validation in scope; **material receipts to claude
   gate-1 ONLY** (`REPORT_TO: [claude]` — naming co_lead in `REPORT_TO` does NOT
   wake or route to co_lead); on dual accept proceed to claude commit/push
-  gates, then run packets route to `test-operator`. FORBIDDEN: spawn/kill/grant/
+  gates, then run packets execute claude-side. FORBIDDEN: spawn/kill/grant/
   dispatch, training launch, commit/push unless the claude gate authorizes.
   Role home: `~/.ai-room/.codex-roles/plan-dev/`.
-- **`test-operator`** — formal training/proof/test-run packet executor. Runs
-  specified packet, monitors artifacts, posts the terminal receipt to claude
-  gate-1 ONLY; co_lead gate-2 only after claude freezes/hands off. FORBIDDEN:
-  source edits, improvisation, commits/pushes.
-  Underspecified → STOP. Code fixes → `plan-dev`; packet fixes → `plan-dev`.
+
+**`test-operator` is Claude-carried, not a spawnable worker role.** Under the
+standing auto-research directive Claude runs the frozen packet directly (shell +
+Monitor, minimal polling to a terminal condition) and posts the terminal receipt.
+Unchanged by that: no source edits or improvisation inside a run, underspecified
+packet → STOP, code fixes → `plan-dev`, packet fixes → `plan-dev`. Claude running
+the packet does **not** let Claude authorize it — the launch still needs a
+persisted `+1 launch` after gate-1 freeze and co_lead gate-2 on the frozen bytes.
 
 **Role vs handle**: `role="<name>"` loads role home; routable target is a
 `codex_N` handle — role name is NOT a room handle; developer executor reports
@@ -54,7 +65,8 @@ through `plan-dev`. **Not a second dispatcher**: co_lead recommends only.
 claude creates task + provenance → plan-dev plan → claude gate-1 freeze →
 co_lead gate-2 plan review → +1 implement → plan-dev implements → claude
 gate-1 → co_lead gate-2 implementation review (dual accept) → +1 commit →
-commit → +1 push → push → test-operator run packets → complete + recycle
+commit → +1 push → push → +1 launch → claude-as-test-operator runs packets →
+complete + recycle
 ```
 
 Claude load-bearing at gate-1 freeze/verify, commit, push, and launch gates;
@@ -131,6 +143,31 @@ Read-only handles that mutate = safety failure. Plan gate = refinement loop
 Match risk + user impact. Receipts: commands, outputs, artifacts, cites, msg
 ids, caveats. Cited gate ids must resolve as authored records. Receipt commands
 are exact replayable argv (env vars verbatim, no ellipsis) — else receipt defect.
+
+**Check pre-registration.** Every check in a plan/packet carries, row-exhaustively
+over ALL checks with the denominator stated (never only the bounced ones): the
+deciding property; a known-bad fixture observed FIRING plus a known-good observed
+SILENT, where the silent side asserts the check's **emitted fields**, not the
+verdict alone; per-operand declared provenance disjointness; a safe-execution seam
+or explicit STOP. Operands sharing one provenance are tautological BY
+CONSTRUCTION — no added read cures it, and **deleting a tautological check is a
+valid cure**. Aggregates report extremal row + failing-row set, never a bare mean.
+
+**Temporal unsatisfiability** — a check needing an input that cannot exist when it
+must run. For every validation declared REQUIRED for a named gate, name the
+authority each placeholder needs and the gate that issues it; gate-1 BLOCKS if the
+issuing gate is downstream, regardless of closure. Split bindings so no object
+must cite an id younger than itself.
+
+**Consumption is the effect surface.** A measurement run ahead of its gates
+becomes a MATERIAL breach the moment its output feeds a decision — discarded-and-
+rerun is a process defect, consumed is material. Re-running under authority does
+not retract a consumed claim; a post-hoc PASS on consumed output is itself
+consumption. **Non-citable thereafter**: the ungated run and any PASS issued over
+its output are never later cited as a properly gated measurement — not in a
+receipt, a freeze, a successor packet, or an atlas entry. Citing the pair as
+authority is a fresh gate defect, and its own record must carry the ungated
+marking so a later reader cannot mistake it for one.
 
 ## Gate-2 convergence + review-risk tier
 

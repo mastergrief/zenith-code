@@ -14,10 +14,25 @@ research/strategy co-leads. **Claude** = operations/orchestration lead.
 Gabe seeds → claude+codex co-hypothesize/challenge → `plan-dev` plans and
 bounded-implements after +1 → **claude gate-1 (verify+freeze or bounce) →
 co_lead gate-2 (independent review of the FROZEN handoff) → dual accept** →
-claude commit/push gates → `test-operator` runs formal training/proof/tests →
-iterate. Thinking is parallel; **artifact review gates are sequential.**
-Claude+co_lead review/audit, NOT execute — direct Claude repo-file edits/runs
+claude commit/push gates → **claude as test-operator** runs formal training/
+proof/tests → iterate. Thinking is parallel; **artifact review gates are
+sequential.** Claude+co_lead review/audit — direct Claude repo-file edits/runs
 need a persisted named exception or break-glass reason.
+
+**Standing auto-research mode (this is the live topology).** Gabe's gates are
+WAIVED by standing directive, including pushes and GPU runs. **Peer gates are
+never waived**: claude gate-1 verify+freeze → co_lead gate-2 on the frozen
+handoff → dual accept, then persisted `+1 implement` / `+1 commit` / `+1 push` /
+`+1 launch` records. Claude carries **`test-operator` directly** (shell +
+Monitor, minimal polling to a terminal condition). Waiving the human gate raises
+the peer gates' load; it never lowers them.
+
+**Peers are Claude peers on legacy codex handles — no peer is codex-backed.**
+All are spawned by `ai_room_spawn_claude`: `codex_co_lead` with `sol=true`
+(GPT-backed), `plan-dev` on handle `codex` with `grok=true` (grok-backed),
+`advisor` on Anthropic Fable, Claude on Opus. The `codex*` handle names are a
+naming artifact kept for routing stability — read "codex role" anywhere in these
+rules as **worker role on a codex handle**, never as a codex-backed session.
 
 - **Gabe**: seeds problems, picks risk/cost/goal, final human gates.
 - **Claude + `codex_co_lead`**: hypothesis quality, gate design, counter-cases,
@@ -30,21 +45,23 @@ need a persisted named exception or break-glass reason.
     implementation executor for HRM + main-repo slices. **NOT** implementation
     review, **NOT** formal run execution. **Receipts to claude gate-1 FIRST**
     (material sink); co_lead gate-2 reviews only claude's frozen handoff. On
-    dual accept → claude commit/push gates → run packets to `test-operator`.
+    dual accept → claude commit/push gates → run packets execute claude-side.
     No spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
     Break-glass, developer-template use, and backend discipline:
     `CLAUDEX_ORCHESTRATION.md` §"Team model + named role lanes".
-  - **`test-operator`**: formal training/proof/test-run packet executor — runs,
-    monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
-    fixes → `plan-dev`.
+  - **`test-operator` is NOT a live worker role** — Claude carries it directly:
+    runs the frozen packet, monitors, posts the terminal receipt. Code fixes and
+    packet fixes still route to `plan-dev`. (`.claude/agents/test-operator.md` is
+    a retained, non-default Claude-side subagent — a different mechanism, not
+    this lane.)
   - **Fast path**: converged-contract slices (defect cycles, mechanical
     re-scopes) may carry plan + `+1 implement` in the dispatch itself —
     `CLAUDEX_ORCHESTRATION.md` §Lifecycle. Diff gates never skipped.
 
-**Active codex room roster (this repo):** `codex_co_lead`, `plan-dev`,
-`test-operator` only. Retired role names, and the two things mistaken for a
-fourth role, are enumerated in `MEMORY/atlas/AI_ROOM_COLLAB_arc.md`
-§"Retired spawnable codex role names".
+**Active worker roster (this repo):** `codex_co_lead` and `plan-dev` only —
+`test-operator` is Claude-carried, not a spawnable worker role. Retired role
+names, and the things mistaken for further roles, are enumerated in
+`MEMORY/atlas/AI_ROOM_COLLAB_arc.md` §"Retired spawnable codex role names".
 
 **`advisor`** (Claude-side, not a codex role): standing advisory peer, three
 modes; **never reviewer, gate, or approver** — ARRIVED hypothesis Claude
@@ -78,6 +95,15 @@ re-derives. Modes, triggers, solicitation shape: `.claude/agents/fable-advisor.m
   `CLAUDE_REDERIVATION:` adopted / rejected / independently verified, or
   `ADVISOR_WAIVER: <reason>`; mandatory-trigger successors require the consulted
   form, again if the class survives another bounce. Absent field = gate defect.
+- **Solicitation transport**: `kind=msg` or `design_proposal` ONLY — never
+  `review_request`/`task_dispatch` — and no `requires_response_from` deadline: a
+  deadline may not bind to a path unverified as open.
+- **Class normalization**: defect classes normalize on the observed PROPERTY,
+  never on artifact lineage or file location. Lineage-scoped naming AND
+  re-labelling a class by its cure shape both reset the counter through the back
+  door. The counter stays and increments; a separate **cure ledger** records cure
+  shape per round, so "add-a-comparison: 0 for 3" becomes the measurement that
+  licenses a method change rather than another instance patch.
 
 ## Cross-thread at thinking boundaries
 
@@ -172,7 +198,10 @@ co_lead review). **REVIEW_ORDER** = gate sequencing. Freeze discipline: immutabl
 filename per version; on-disk sha self-verify before any frozen claim; no
 in-flight artifact review. Frozen plan/packet/receipt artifacts are O_EXCL-minted
 and byte-preserved; superseded versions are DEAD immutable lineage, enumerated
-revision-neutrally in the successor. **Passive-wait-don't-poll** at gates.
+revision-neutrally in the successor. **Draft mutable, freeze once**: a plan
+artifact converges as ONE 0644 draft re-hashed per review pass and is
+O_EXCL-frozen exactly once, on PASS — a freeze is never a drafting surface.
+**Passive-wait-don't-poll** at gates.
 
 **Gate-2 convergence:** full plan-derived checklist every pass, all
 substantiated blockers batched per verdict — evidence never suppressed, PASS
@@ -184,8 +213,7 @@ Semantics: `CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
 Compress gates, not safety: (1) `plan-dev` drafts launch packet; (2) claude
 gate-1 validates hash/paths/preflight + FREEZE; (3) co_lead gate-2 launch-plan
 review of frozen packet; (4) claude `+1 launch/watch-to-terminal-condition`;
-(5) `test-operator` runs + posts terminal receipt (break-glass `plan-dev` run
-only via Claude `+1` with `transition_fallback_used=true`); (6) interrupt only
+(5) **claude as test-operator** runs + posts terminal receipt; (6) interrupt only
 for bank/fail/criteria/liveness/deviation; (7) one terminal receipt.
 GPU-hot-loop = kernelized execution, not merely `device=cuda:0`. `.pt` not
 committed. Sibling for measurement-only CPU slices whose claim effect is a

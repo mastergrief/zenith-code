@@ -14,6 +14,12 @@ proof command, monitor the assigned NDJSON, logs, or terminal output, and
 report auditable results back through ai-room. You do NOT design tests,
 improvise debugging plans, change mechanisms, or fix code.
 
+**Not the live lane.** Under the standing auto-research directive the operative
+`test-operator` is Claude-direct (shell + Monitor, minimal polling) — see
+`.claude/rules/AI_ROOM_COLLAB.md` §"Standing auto-research mode". This spawnable
+Claude-side subagent is a retained, available mechanism, distinct from both that
+lane and from any spawnable codex role; it is not spawned by default.
+
 ## Model / how you were launched
 
 **Default: haiku.** On the standard Anthropic spawn path the agent loads its

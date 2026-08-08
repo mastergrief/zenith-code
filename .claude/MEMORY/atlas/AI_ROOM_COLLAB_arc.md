@@ -246,13 +246,26 @@ detector. v2 (an event hook that ENFORCES the SLA metadata) deferred. The
 watchdog cron receipt is a Stage-B launch precondition (no unattended GPU run
 without it or a named `MANUAL WATCH EXCEPTION`).
 
+## co_lead peer spawn mechanics (2026-07-23)
+
+- `codex_co_lead` is a **Claude peer**: cycle with `ai_room_kill_claude` +
+  `ai_room_spawn_claude` (`agent="co-lead"`, `sol=true`, allow_dangerous) —
+  NOT the `claudex` spawn/kill tools (those are codex-role sessions).
+- Sol compact policy for MCP-spawned peers lives in
+  `~/.ai-room/mcp_server_lib/tools/spawn/processes.py`
+  (`_SOL_COMPACT_WINDOW=372000`, `_SOL_AUTOCOMPACT_PCT=85`); the MCP server
+  caches the module — restart the ai-room MCP server (then `/mcp` reconnect)
+  before respawns after editing it. `scripts/sol` + `windows/launch_contract.json`
+  carry the same values for the interactive/windows lanes.
+
 ## Retired spawnable codex role names
 
 Carved out of `rules/AI_ROOM_COLLAB.md` §"R&D team model" to hold the eager
 tier under its cap. The **current invariant** stays in the rule — the standing
-roster is `codex_co_lead`, `plan-dev`, `test-operator` and nothing else. This
-is the enumeration a mechanical check would need, kept query-triggered rather
-than preloaded.
+roster is `codex_co_lead` and `plan-dev` and nothing else; `test-operator` was
+carved off this roster by the topology codification below and is Claude-carried.
+This is the enumeration a mechanical check would need, kept query-triggered
+rather than preloaded.
 
 Not standing roles in this repo: `training-dev`, `trainer-implement`,
 `trainer-dev`, `codex-dev`, `codex-explore`, `codex-terminal`, `tmux-tester`,
@@ -347,3 +360,166 @@ ranking (dead-letter first) and amended the calibration predicate, since a
 paired `test_<hook>.py` measures filename adjacency, not calibration. Measured
 then: 14 non-test hooks, 8 paired, 6 unpaired including the control-plane
 `task_dispatch_child_boundary_gate.py`.
+
+## Six adopted process rules landed into the rules tier
+
+Gabe directive relayed by advisor at `1786208159435-8364f138`, following its
+measurement that the rules tier did not yet carry them (grep over
+`.claude/rules/` → one generic hit at `GROUNDING/SKILL.md:127`). Two Gabe
+decisions captured chat-side and relayed at `1786208436028-29907d95`: codify the
+live topology (rejected: restoring the described codex-role topology, and
+codify-plus-named-guard); Claude executes the rule edits directly, a named
+exception to the `plan-dev` default, bounded to this slice.
+
+Invariant text went to the rules; these adopting records are the receipts:
+
+| Rule | Landed in | Adopting record |
+|---|---|---|
+| Advisor solicitation transport (`kind=msg`/`design_proposal` only, no `requires_response_from`) | `AI_ROOM_COLLAB.md` §advisor | `1786181664726-251dfe7d` |
+| Bytes-at-locator | `GROUNDING/SKILL.md` §"Report faithfully" | `1786197080317-b68dc5ae` |
+| Draft mutable, freeze once | `AI_ROOM_COLLAB.md` §"Review gate glossary" | `1786193364990-f1e72a1f`, confirmed `1786193423481-c98999d9` |
+| Check pre-registration | `CLAUDEX_ORCHESTRATION.md` §"Validation and receipts" | `1786180863849-a6ac7077` Q3.1, `1786193455317-69cece7f` Q2, `1786196794630-c725b3b7`, `1786199248655-bc7a6f1e` |
+| Property-scoped counters + cure ledger | `AI_ROOM_COLLAB.md` §advisor | `1786192829512-ba3c464e` → `1786196902531-3d2a8e8b` |
+| Consumption is the effect surface | `CLAUDEX_ORCHESTRATION.md` §"Validation and receipts" | `1786199340002-a96e11f4` (adopted against interest) |
+
+**Temporal unsatisfiability** landed alongside them as the already-named class it
+is (`1785149520849-c805845a` blocker 1 is the prior instance) — a check requiring
+an input that cannot exist when it must run. It is the axis Phase-4c v1 was
+BLOCKed on and that v3 and v7 were re-checked against.
+
+**Three places the advisor's compression was lossy, re-derived from the adopting
+records instead** — co_lead independently confirmed it would have contested the
+second had it gone in (`1786208496767-709e1893`): provenance-disjointness is
+auditable on paper before any run, and *deleting* a tautological conjunct is a
+valid cure; the denominator is ALL conjuncts, never only the bounced ones (same
+property as "reviewing against your prior blocker list is reviewing your
+memory"); and re-labelling a class by cure shape resets the counter exactly as
+lineage-scoping does — the counter stays and increments, the cure ledger is a
+separate object recording cure shape per round ("add-a-comparison: 0 for 3").
+
+**Topology sweep.** `test-operator` was described as a spawnable codex role while
+the live directive had Claude carrying it; the rules described a safer topology
+than the one running, which is the mode both material breaches of this session
+occurred in. The codification states the waiver's direction explicitly: Gabe's
+gates are waived, peer gates are never waived, and Claude running a packet does
+not let Claude authorize it.
+
+**The sweep denominator was wrong twice, and the second miss is the instructive
+one.** Round 1 searched `.claude/CLAUDE.md` + `.claude/rules/` + root `CLAUDE.md`
+→ 11 hits; the enforcement script's own output then revealed the `.codex/`
+mirrors (+10). Round 2 still under-scoped: co_lead's BLOCK gave the real space as
+repo-wide, independently reproduced by `git grep -c
+'test-operator\|test_operator' HEAD -- .` → **48 matching lines across 19 tracked
+files at HEAD** (the 19th is `.claude/hooks/post-compact-directive.py`, deleted in
+the worktree, contributing 1 line). Untracked hits are confined to
+`.claude/MEMORY/minutes/*` (immutable session records, out of scope by rule, not
+by oversight).
+
+**Rounds 3 and 4 were the same class one ring in, and both landed in this
+paragraph.** Round 3: an earlier revision read "48 occurrences across 18 files"
+and the room post called 48/18 a *post-edit* recount, when the figure had been
+measured mid-slice — before the backend blocks and atlas edits landed. Two
+precision defects rode along: `git grep -c` counts **matching lines, not
+occurrences**, and "net zero" was never the expected property — reconciling
+topology prose rewords in place and adds a backend statement, so the count must
+rise. Round 4: the round-3 correction then asserted the pre-slice worktree was
+**47/18**, reasoning that the deleted file was the only HEAD-vs-worktree delta.
+That was an **unmeasured absence claim about the other deltas**, made inside the
+paragraph curing the class. Computed properly — HEAD content for the 13 slice
+files, worktree content elsewhere, deleted file excluded — it is **50/18**;
+co_lead caught it and both of us reproduce 50. The second delta is
+`.claude/hooks/auto-research-resume-directive.py`: **1** matching line at HEAD,
+**4** in the worktree, the +3 being pre-existing unstaged drift.
+
+**No pre-slice worktree figure is stated here as a baseline, deliberately.** That
+surface stops existing at commit, so no later reader can reproduce it; 50/18 above
+is a *computed reconstruction*, labelled as one. **HEAD is the only durably
+reproducible baseline** and is the one this entry pins. A receipts file should
+carry numbers a stranger can re-derive from committed bytes.
+
+Round 5 moved the class off counts entirely: this entry claimed a hook comment
+"already documented" the backend mechanism, when that text is worktree-only and
+HEAD says the opposite — an unstated-surface claim about **text** rather than
+about a number.
+
+Rounds 1-2 reported a sweep without naming its **directory**; round 3 without
+naming its **surface** or its **moment**; round 4 asserted a delta set without
+measuring it; round 5 quoted a file without naming which surface it was quoting.
+The defect was never the number. **A count and a quotation are both measurements,
+and neither is complete until its surface, its noun, and its instant are named
+beside it** — and a claim that one thing accounts for a difference is a sweep of
+its own. "Already documented" is itself a claim about a surface.
+
+Files reconciled: `.claude/CLAUDE.md`, `.codex/AGENTS.md`, both
+`AI_ROOM_COLLAB.md` (team model, plan-dev lane, roster, Fast Training Launch
+Contract), both `CLAUDEX_ORCHESTRATION.md` (principle, role lanes, lifecycle),
+both `ternary_hybrid_stack.md` §"Fastest-science loop", `.claude/agents/co-lead.md`
+(co_lead's own role prompt, 3 sites), `.claude/commands/PIPELINE.md` (STEP 9 +
+roles). Verified-correct-as-is, no edit — **surface stated per file, because for
+one of them it decides the claim**: `auto-research-resume-directive.py` already
+Claude-direct **in the worktree only** (see caveat below),
+`ai-room-ensure-codex-roles.sh` already "on-demand haiku subagent, not
+SessionStart-ensured" (HEAD and worktree agree),
+`at_gabe_askuserquestion_gate.py` regex alternation (agree),
+`ai-room-session-brief.sh` comment (agree), `ternary-rotor.md` receipt (agree).
+
+**Caveat, load-bearing at commit time — TWO hooks, one for each topology fact.**
+Both carry their correct wording only as **unstaged drift**, both are deliberately
+preserved and not staged (someone else's uncommitted work), and in both cases the
+executable copy's correct version is absent from this commit.
+
+- `.claude/hooks/auto-research-resume-directive.py` — the **test-operator** fact.
+  At HEAD its single matching line is `"plan-dev (plan + implementation),
+  test-operator (formal training/proof/test "`: the OLD topology.
+- `.claude/hooks/ai-room-ensure-codex-roles.sh` — the **backend** fact, the newer
+  and larger of the two. At HEAD its header reads `codex_co_lead via the proven
+  ensure-co-lead CLI path, plus plan-dev … via lease-backed auto codex_N handles`
+  — the legacy codex-backend path that the worktree version explicitly marks as
+  *"NOT the legacy codex-backend ensure-co-lead CLI"*. `SOL-BACKEND` and
+  `GROK-BACKEND` occur **0** times at HEAD, once each in the worktree. Its
+  `test-operator` line, by contrast, **does** agree across both surfaces.
+
+So after this commit the rules assert Claude-carried `test-operator` and "no
+worker is codex-backed" while the committed bytes of the two hooks that
+*implement* and *spawn* those peers still describe the old role split and the
+codex-backend CLI path. Executable copies outrank prose; here the repo's
+committed state describes a topology only the working tree implements, and
+whoever lands those hooks inherits the reconciliation.
+
+**Disposition — `.claude/agents/test-operator.md` + its frontmatter test.** Both
+RETAINED. That subagent is a Claude-side spawnable haiku peer, a different
+mechanism from both the Claude-direct lane and any spawnable worker role;
+deleting it is a larger, less reversible change than "codify the live mode"
+authorizes. It carries a one-line not-the-live-lane marking instead, and
+`tests/test_test_operator_agent_frontmatter_v1.py` stays as the least-privilege
+pin (run this round: 4 passed). Consequence of retention: blanket "not spawnable"
+became false, so the rules now say **"not a spawnable worker role"** — the
+disposition forced that precision, it was not cosmetic.
+
+**No worker is codex-backed.** Gabe corrected this mid-slice: every peer is a
+Claude peer spawned by `ai_room_spawn_claude` on a legacy `codex*` handle —
+`codex_co_lead` `sol=true` (GPT), `plan-dev` on handle `codex` `grok=true`
+(grok), `advisor` on Anthropic Fable, Claude on Opus.
+
+**Authority for that fact is Gabe's directive, which needs no corroboration.**
+The hook comment at `ai-room-ensure-codex-roles.sh:2-8` ("SOL-BACKEND CLAUDE PEER
+… GROK-BACKEND CLAUDE PEER … NOT the legacy codex-backend claudex spawn") is
+supporting evidence **in the worktree only** — see the caveat above. At HEAD the
+same header states the opposite mechanism, so "already documented / already-live"
+is true of a dirty file, not of committed state. An earlier revision of this entry
+asserted it unqualified: an ARRIVED claim in the grammar of an OBSERVED baseline,
+the one move this entry exists to forbid. Cured at class level rather than by
+renaming ~100 "codex role" occurrences: one authoritative backend statement in
+each manifest and each of the four charter files, plus a reading rule that
+"codex role" means **worker role on a codex handle**, and that `.codex-roles`
+paths and `claudex` tool names are naming artifacts. A mass rename would have
+orphaned the frozen-record citation chain for no gain.
+
+**Consumption rule gained its non-citable clause** (co_lead's required item): the
+ungated run and any PASS over its output are never later cited as a properly
+gated measurement, and the record must carry the ungated marking so a later
+reader cannot mistake it for one.
+
+**Declared interest.** co_lead noted the consumption prohibition covers its own
+PASS at `1786199187381-d5c65123`, one of the consumers of the ungated Phase-4b
+output, and asked that someone other than it stress-test that clause's wording.

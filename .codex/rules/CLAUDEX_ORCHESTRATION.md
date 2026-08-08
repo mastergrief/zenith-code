@@ -24,13 +24,20 @@ Codex executor view of ai-room dispatches. Canonical:
     until verified). **cwd = provenance match, not permission boundary.**
     **health-proven existing backend/config** — do NOT change backend as the
     fix. Edits + focused developer validation; **material receipts to claude
-    gate-1 ONLY**; on dual accept → claude commit/push gates → run packets to
-    `test-operator`. No spawn/grant/dispatch; no commit/push unless the claude
+    gate-1 ONLY**; on dual accept → claude commit/push gates → run packets
+    execute claude-side. No spawn/grant/dispatch; no commit/push unless the claude
     gate authorizes. Role home: `~/.ai-room/.codex-roles/plan-dev/`.
-  - **`test-operator`**: formal training/proof/test-run packet executor — runs,
-    monitors, posts terminal receipts to claude gate-1 ONLY; co_lead gate-2 only
-    after claude freezes/hands off. Code fixes → `plan-dev`; packet fixes →
-    `plan-dev`.
+  - **`test-operator` is NOT a spawnable worker role** — Claude carries it
+    directly: runs the frozen packet, monitors, posts the terminal receipt. Code
+    fixes and packet fixes still route to `plan-dev`; underspecified packet →
+    STOP. Claude running the packet does not let Claude authorize it — `+1
+    launch` still follows gate-1 freeze and co_lead gate-2.
+
+**No worker is codex-backed.** You are a Claude peer spawned by
+`ai_room_spawn_claude` on a legacy `codex*` handle (`codex_co_lead` `sol=true`
+GPT; `plan-dev` on handle `codex` `grok=true` grok; `advisor` Fable; Claude
+Opus). "Codex role", `.codex-roles`, and `claudex` tool names are naming
+artifacts, not a codex backend.
 - **Ad-hoc worker handle**: cold-context / overflow; slice-scoped.
 
 **Role vs handle**: role loads role home; routable target is `codex_N` — role

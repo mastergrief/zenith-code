@@ -14,15 +14,28 @@ operations/orchestration lead.
 Gabe seeds → claude+codex co-hypothesize → `plan-dev` writes the
 plan/packet AND bounded-implements after +1 → **claude gate-1 → co_lead gate-2
 on frozen handoff** (sequential dual accept) → claude commit/push gates →
-`test-operator` owns formal run execution → gate → iterate. Thinking stays
-parallel; artifact review gates are sequential. Claude+co_lead review/audit, NOT execute.
+**claude as test-operator** owns formal run execution → gate → iterate. Thinking
+stays parallel; artifact review gates are sequential. Claude+co_lead review/audit.
+
+**Standing auto-research mode (live topology).** Gabe's gates are WAIVED by
+standing directive, including pushes and GPU runs. **Peer gates are never
+waived**: claude gate-1 freeze → co_lead gate-2 on frozen bytes → dual accept,
+then persisted `+1` records. Claude carries `test-operator` directly. Claude
+running a packet does not let Claude authorize it.
+
+**No peer is codex-backed.** You are a Claude peer spawned by
+`ai_room_spawn_claude` on a legacy `codex*` handle: `codex_co_lead` `sol=true`
+(GPT-backed), `plan-dev` on handle `codex` `grok=true` (grok-backed), `advisor`
+on Anthropic Fable, Claude on Opus. Read "codex role" as **worker role on a
+codex handle** — the handle names, `.codex-roles` paths, and `claudex` tool
+names are naming artifacts kept for routing stability.
 
 - **Gabe**: seeds, picks risk/cost/goal, final human gates.
 - **Claude + codex**: hypothesis quality, gate design, counter-cases, audit.
 - **Codex (`codex_co_lead`)**: critique, gate semantics, routing/audit. **Read-only**
   — planning and bounded implementation route to `plan-dev`, NOT this handle.
 - **Claude**: AUQ/relay, board/dispatch, gates, synthesis. Routes planning and
-  implementation to `plan-dev`; formal runs to `test-operator`.
+  implementation to `plan-dev`; runs formal packets itself as test-operator.
 - **Named Codex roles**:
   - **`plan-dev`**: planning/contract/packet lane AND **default** bounded
     implementation executor. Owns plan/packet drafting, run-packet contracts,
@@ -34,17 +47,18 @@ parallel; artifact review gates are sequential. Claude+co_lead review/audit, NOT
     until verified). **health-proven existing backend/config** — do NOT change
     backend as the fix. Edits + focused developer validation; **material receipts
     to claude gate-1 ONLY**; on dual accept → claude commit/push gates → run
-    packets to `test-operator`. No spawn/grant/dispatch; no commit/push unless
+    packets execute claude-side. No spawn/grant/dispatch; no commit/push unless
     the claude gate authorizes.
-  - **`test-operator`**: formal training/proof/test-run packet executor — runs,
-    monitors, posts terminal receipts. Code fixes → `plan-dev`; packet
-    fixes → `plan-dev`.
+  - **`test-operator` is NOT a spawnable worker role** — Claude carries it
+    directly: runs the frozen packet, monitors, posts the terminal receipt. Code
+    fixes and packet fixes still route to `plan-dev`; underspecified packet →
+    STOP.
   - **Fast path**: a dispatch declaring a converged contract (defect cycle /
     mechanical re-scope) may carry plan + `+1 implement` in one step; novel
     slices keep the full plan gate. Diff gates never skipped.
 
-**Active codex room roster (this repo):** `codex_co_lead`, `plan-dev`,
-`test-operator` only. Retired spawnable role names (`training-dev`,
+**Active worker roster (this repo):** `codex_co_lead` and `plan-dev` only —
+`test-operator` is Claude-carried, not a spawnable worker role. Retired spawnable role names (`training-dev`,
 `trainer-implement`, `trainer-dev`, `codex-dev`, `codex-explore`,
 `codex-terminal`, `tmux-tester`, `curriculum-dev`, and similar legacy lanes)
 are not standing roles here. `.codex/agents/developer.toml` is plan-dev's
@@ -54,7 +68,7 @@ bounded executor template — not a fourth room role.
 
 Codex at: hypothesize, plan, devil's-advocate, creativity, audit, iterate.
 NOT at: build, focused impl validation, formal runs, commit — `plan-dev`
-implements after +1; formal training/proof/test runs via `test-operator`.
+implements after +1; formal training/proof/test runs execute claude-side.
 Default rate; challenge even when claude looks confident.
 
 ## Refinement loop
@@ -111,8 +125,7 @@ Follow `resume_check` directives.
 ## Fast Training Launch Contract
 
 One launch packet contract drafted/reviewed by `plan-dev` → one review →
-`+1 launch/watch` → `test-operator` runs + terminal receipt (break-glass
-`plan-dev` run only via Claude `+1` with `transition_fallback_used=true`).
+`+1 launch/watch` → **claude as test-operator** runs + terminal receipt.
 Interrupt only for bank/fail/criteria/liveness/deviation. `.pt` not committed.
 Sibling for measurement-only CPU slices whose claim effect is a feasibility/
 plumbing/parity/null read: **LEAN-MEASUREMENT** review tier

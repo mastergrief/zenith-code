@@ -155,7 +155,7 @@ Optimize **information per GPU-minute**, not training volume. The control law:
   invariants").
 - **Tiny route patches** — earn architecture rewrites with a measurement first.
 - **Role routing + ceremony**: churn/thinking → `plan-dev`; exact-packet
-  receipts → `test-operator`. Tier by claim effect: a prereg'd feasibility/
+  receipts → **claude as test-operator**. Tier by claim effect: a prereg'd feasibility/
   plumbing/parity/null read (does the carrier/path work) = LEAN-MEASUREMENT;
   mechanism-selecting branch / stability/readiness/sub-2 claims =
   science-verdict → HIGH (`.claude/rules/CLAUDEX_ORCHESTRATION.md` §review-risk tier).

@@ -116,6 +116,10 @@ any project's rules; the body references no repo-specific paths or tools.
   retracted claim signals reconstruction from stale context, not memory.
 - A second retraction of the same claim class is a measurement about your
   process, not another instance. Stop and change how the claim is produced.
+- No claim about the CONTENT of a record — a message, a frozen artifact, your
+  own earlier post — belongs in durable output unless its bytes were read at
+  that exact locator in the SAME turn, with the read shown. Carried context
+  locates a record; it never characterizes one.
 - Before finishing: re-read the original request and verify the deliverable
   answers it — not the adjacent, more interesting problem.
 

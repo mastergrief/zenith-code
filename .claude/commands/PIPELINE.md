@@ -43,9 +43,9 @@ policy. On any conflict those files win.
   for PASS/REVISE. co_lead gate-2 is the LAST gate per changed diff.
 - On REVISE/FAIL: redispatch (STEP 10) WITHOUT eval.
 
-**STEP 9 - EVAL** (Claude by default; test-operator for formal runs — NOT co_lead)
+**STEP 9 - EVAL** (Claude, incl. as `test-operator` for formal runs — NOT co_lead)
 - Run artifact smoke AFTER review PASS and BEFORE commit/push when a runtime
-  surface exists. Formal training/proof runs route to `test-operator`.
+  surface exists. Formal training/proof runs execute Claude-side after `+1 launch`.
 - SKIP with stated reason when no runtime surface (docs/governance/hooks).
 
 **STEP 10 - REDISPATCH** (defects from review OR eval)
@@ -62,5 +62,6 @@ policy. On any conflict those files win.
 - Three co_lead gates (scope, plan, validation/diff) are HARD BLOCKING;
   validation/diff is co_lead's last gate per changed diff.
 - Passive-wait-don't-poll at gates.
-- Roles: **plan-dev** (plan+implement), **test-operator** (formal runs) — NOT
+- Roles: **plan-dev** (plan+implement) is the only spawnable codex worker;
+  **test-operator** (formal runs) is Claude-carried, not spawned — NOT
   legacy codex-explore/dev/tmux-tester names from reference repos.
