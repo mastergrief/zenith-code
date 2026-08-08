@@ -13,7 +13,7 @@ Rules for editing anything under `.claude/` (agents, CLAUDE.md, commands, rules,
 
 ## Eager-tier line caps
 
-- `.claude/rules/*.md`: **target ≤ 150 lines, hard cap 200**. Past cap →
+- **Eager** `.claude/rules/*.md`: **target ≤ 150 lines, hard cap 250**. Past cap →
   carve receipts to `MEMORY/atlas/<topic>_arc.md`. **DO NOT split into
   `_part_1/_part_2`** — splitting doesn't reduce eager-tier preload, it
   just hides the bloat.
@@ -51,8 +51,13 @@ SHA / "we tried X and it didn't work" to a rules file — that's a
 receipt. Append it to the matching atlas instead, and update the
 rule only if a current invariant changed.
 
-`/update` Phase 0 enforces this via grep against `rules/*.md`. Phase 5
-fail-closed via `python3 scripts/measure_preload.py --surface both --max-tokens 150000`.
+`/update` Phase 0 enforces the receipt ban via grep against `rules/*.md`.
+Phase 0 and Phase 5 both run `python3 scripts/measure_preload.py --surface
+both --max-tokens 150000`, fail-closed — that one invocation enforces the
+token budget AND the eager-tier per-file line cap (`--max-lines`, default
+250), reporting every violation in one pass. It is the only enforcement
+point; do not add a second. Path-scoped rules (`paths:` frontmatter) load
+only when a matching file is read, so the line cap does not apply to them.
 The `--surface` flag accepts `claude | codex | both` (default `both`)
 so the gate covers `.claude/CLAUDE.md` + `.claude/rules/` AND
 `.codex/AGENTS.md` + `.codex/rules/` in one invocation.

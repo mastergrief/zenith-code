@@ -129,7 +129,7 @@ Call `ExitPlanMode` when ready; do not ask "is this ok?" in prose.
 - One P-tier per commit (3 commits total for a full-scope session). Before committing any tier that edits `.codex/*` or both eager surfaces, post the proposed diff to Codex for cross-review and resolve blockers. Each commit message cites the receipts (commits from this session, eval deltas, null-round counts).
 - Use `Edit`, not `Write` — preserve structure, tone, and terse imperative voice.
 - Match existing section depth / bullet style / table format.
-- **Eager-tier line cap**: rules files target ≤ 150 lines, hard cap 200. Atlas files unbounded (query-triggered). If a new section pushes a rule past cap, carve receipts to atlas/ — don't split into `_part_1/_part_2`.
+- **Eager-tier line cap**: eager rules files target ≤ 150 lines, hard cap 250. Path-scoped rules (`paths:` frontmatter) and atlas files are uncapped. If a new section pushes an eager rule past cap, carve receipts to atlas/ — don't split into `_part_1/_part_2`.
 
 ### Phase 5 — verification (fail-closed)
 
@@ -141,17 +141,15 @@ Run every verification check listed in the plan file. Typical set:
   grep -nP '\b(R\d+(\.\d+)?|R-[a-z]+-\d+)\b|\b[a-f0-9]{7,}\b|\b20\d{2}-\d{2}-\d{2}(?![_A-Za-z0-9])|\b[Ss]ession \d+' \
     .claude/rules/*.md .codex/rules/*.md && echo "FAIL: rules/ contains receipts — migrate to MEMORY/atlas/"
   ```
-- **Eager-tier line cap** (200 hard cap):
-  ```bash
-  for f in .claude/CLAUDE.md .claude/rules/*.md .codex/AGENTS.md .codex/rules/*.md; do
-    lines=$(wc -l <"$f")
-    [ "$lines" -gt 200 ] && echo "OVER: $f: $lines lines (cap 200)"
-  done
-  ```
-- **Eager-tier token gate** (must pass):
+- **Eager-tier token gate + line cap** (must pass — one invocation enforces
+  both, and reports every violation in one run):
   ```bash
   python3 scripts/measure_preload.py --surface both --max-tokens 150000
   ```
+  `--max-lines` defaults to 250 and applies to **eager** `rules/*.md` only.
+  Path-scoped rules (`paths:` frontmatter) load solely when a matching file
+  is read, and the manifests carry their own target in `config_editing.md`;
+  neither is covered.
 - Spot-read 2-3 edited files for coherent integration, not tacked-on appendices
 
 If verification fails, fix before declaring done. If a finding is lost, add it OR explicitly note "see <script>:<line>" in a rule.
@@ -236,9 +234,10 @@ If verification fails, fix before declaring done. If a finding is lost, add it O
   This is the load-bearing discipline that keeps eager-tier preload
   bounded — it's why `/update` Phase 0 grep-checks before any audit.
 - **Eager-tier line caps**:
-  - `.claude/rules/*.md` and `.codex/rules/*.md`: target ≤ 150 lines,
-    hard cap 200. If past cap, carve receipts to atlas — DO NOT split
-    into `_part_1/_part_2`.
+  - **Eager** `.claude/rules/*.md` and `.codex/rules/*.md`: target ≤ 150
+    lines, hard cap 250. If past cap, carve receipts to atlas — DO NOT
+    split into `_part_1/_part_2`. Path-scoped rules (`paths:` frontmatter)
+    load only on a matching file read and are not capped.
   - `.claude/MEMORY/atlas/*.md` and `.codex/MEMORY/atlas/*.md`: unbounded
     (query-triggered, not preloaded).
 - **Replace, don't append**. If a section says "5 tools" and there are now 7, change the number. Don't add a note.

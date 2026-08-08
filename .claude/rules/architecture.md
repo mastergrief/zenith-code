@@ -34,7 +34,7 @@ Subsystem specs live in their own rule files — cross-refs below.
 - System prompt builder: auto-discovers CLAUDE.md, adds cwd/date/tools,
   caps at 2000 chars
 - Effort mode: `low` (3072 tokens, concise), `medium` (6144, default),
-  `max` (32768, deep thinking)
+  `max` (49152, deep thinking)
 - llama.cpp sampling: `temperature=0.7, frequency_penalty=0.8,
   presence_penalty=0.3, max_tokens=effort-dependent`. Same params on
   streaming and non-streaming paths.
@@ -166,14 +166,6 @@ Substrate stack, extensions, card typology, install API, CRLM pipeline:
   refresh this cache AND call `_compute_compact_threshold()` to
   update `max_context_tokens` on every agent. Forgetting leaves
   agents compacting on the OLD model's limit.
-- **89% safe-ctx compaction margin**
-  (`harness.py:_compute_compact_threshold`): the threshold is
-  `min(per-GGUF model limit, int(ctx_size * 0.89))`. At default
-  256K ctx the binding constraint is the per-model entry
-  (232960 = 227.5K), giving 29184 tokens of headroom. **This is BELOW
-  `EFFORT_LEVELS["max"]["max_tokens"]` (32768)** by user choice —
-  max-effort responses can soft-truncate by ~3.5K when conversation
-  sits right at the threshold.
 
 ## Serving + VRAM + training
 
