@@ -84,6 +84,11 @@ enumerates with `rglob("*.md")` and would count a nested path, but the
 documented Codex eager surface is `.codex/rules/*.md`, and nested auto-load is
 confirmed only on the Claude surface.
 
+**SUPERSEDED — do not act on the mirror option above.** The Codex doc-mirror was
+retired on Gabe's direction; see §"Five adopted invariants" below. The conditional
+"if authorized, mirror flat" is kept as the record of what was considered, not as
+a live option.
+
 It was mirrored once and then reverted. The standing autonomy directive waives
 Gabe's *gates*; adding an always-loaded governance artifact to a second agent
 surface is a *scope* change, and the direct instruction that authorized this
@@ -163,3 +168,72 @@ authorizing effects BY CAUSE, not by list; co_lead `1785831090174`), and 8
 substring over-fires of the staged-digest gate classifier in one day (task
 `1785437094843-e23dd080`), two of them triggered by prose *describing* this
 very work — the prohibition-quotes-what-it-forbids bullet, live.
+
+## Five adopted invariants (2026-08-08) — Gabe-directed, direct-implementation exception
+
+Five rules adopted in-room across one session and living only in the channel
+journal until now. Absence re-derived before the edit, not adopted from the
+relay: five property-keyed patterns over `.claude/rules/` returned 0 hits each,
+and the same patterns fired 4-100x against the room journal — matcher calibrated
+in both directions, per the rule it was checking for.
+
+1. **Empty-denominator = FAIL** (`1786213635220-49f8589b` thread). A sweep whose
+   denominator resolves empty exits nonzero. Zero occurrences and zero scope are
+   indistinguishable from outside, and the second reports success.
+2. **Inventory-denominator + totality question** (same thread). Every cure to
+   that point had derived its scope from the *bounced artifact's structure*
+   (`section 2`, `### F` headers, `clean_conjuncts` vocabulary) rather than from
+   its claims. The advisor recorded its own fingerprints on the instance-6
+   opening: it prescribed fixture-vocabulary scoping and named the guarantee
+   list for the stub but not for the rules.
+3. **Two-implementation differential** (`1786214563446-0b1f53a2`). Sharp property
+   is *post-choice binding*: a check bound to an object produced downstream of
+   the deciding event cannot see the choice. Calibrate by running the conforming
+   AND the declared-unsafe implementation through the fixtures.
+4. **Deny-by-default attribution** (`1786219135553-2346de8b`). Measured by
+   binding position rather than time: the class was migrating outward from
+   operative positions to annotation positions, because prereg'd classifiers and
+   pinned witnesses already occupied the operative layer. The cure is not a
+   fifth guard against writing the sentence — it is making the sentence inert.
+5. **Generate-don't-transcribe** (`1786225189316-0b955181`). Prior cures all
+   verified a hand-made transfer after the fact; this one removes the transfer.
+   Held on its own surface the same night: typed checkpoint basenames in the
+   PHASE4D packet went 3 -> 0.
+
+Placed into existing sections rather than appended as a block. 169 -> 193 lines
+(hard cap 250). Gate EXIT=0 under the surface it now enforces: `measure_preload.py
+--max-tokens 150000` (bare, default now `claude`) reports 13 eager files / 1887
+lines / ~27169 tokens. `--surface both` remains available and reports 24 files /
+~47049 tokens — the figure the pre-retirement runs cited.
+
+Item 4 landed on its second attempt. The first draft asserted that an attribution
+claim "binds only from a schema-owned field" and that "the same claim in prose is
+void". co_lead blocked it: that is the half of the advisor's framing I had
+**rejected** on the record in three durable places, and it was being restated
+inside the file whose own §"Report faithfully" calls restating a retraction a
+distinct failure. The live counter-example is ours — `traces_truncate_or_absent`
+is schema-owned *and* was defective (a bare `else` on a four-conjunct AND, atlas
+§7 defect #4, which is how arm A got a truncation label at `too_long == 0`). So
+"schema-owned ⇒ binds" was already falsified in this repo. The landed text binds
+on **basis + locator regardless of layer** and keeps the field layer as a
+*survival* claim, not a truth claim.
+
+**Codex mirror not written, and the mirror instruction is being retired** on
+Gabe's direction ("you can delete wherever it says to do codex mirrors"). There
+was no codex-side grounding analogue to mirror into: no `GROUNDING` file under
+`.codex/rules/`, and 0 hits for the observed/inferred/arrived vocabulary across
+that surface.
+
+**Same-session evidence for items 3 and 5, from the gate that adopted them.**
+Gate-1 on the PHASE4D packet raised six blockers across four passes and
+*produced two of them itself*: a reachability derivation whose fixture sampled
+six rows that all shared the same value of the deciding variable — shipped with
+a true-but-irrelevant execution receipt attached, which is what let it survive
+two reviews — and a resolver prefilter that excluded the files it was resolving.
+Filed as **discrimination** (evidence structurally cannot decide the
+proposition), not content-provenance, per the sorting rule at
+`1786226920534-236ef49c`: source exists and claim diverges -> content-provenance;
+evidence cannot decide -> discrimination. The reviewing instrument generating the
+defects the review exists to catch is why the same audit proposed gate-symmetry:
+blockers resting on a derivation owe the same pre-registration fields a packet
+check owes. Adopted in-room, NOT in this change's scope.

@@ -17,7 +17,7 @@ exact counts pipe through tiktoken.
 Used by /update Phase 0 + Phase 5 as a fail-closed gate. Enforces both the
 eager token budget and the eager-tier per-file line cap from
 config_editing.md:
-  python3 scripts/measure_preload.py --surface both --max-tokens 150000
+  python3 scripts/measure_preload.py --surface claude --max-tokens 150000
 """
 from __future__ import annotations
 
@@ -123,16 +123,29 @@ def measure(repo: Path, surface: str) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--quiet", action="store_true", help="totals only")
-    ap.add_argument("--surface", choices=SURFACES, default="both",
-                    help="instruction surface to measure (default: both)")
+    ap.add_argument("--surface", choices=SURFACES, default="claude",
+                    help="instruction surface to measure (default: claude)")
     ap.add_argument("--max-tokens", type=int, default=None,
                     help="exit non-zero if eager-tier totals exceed this token budget")
     ap.add_argument("--max-lines", type=int, default=DEFAULT_MAX_LINES,
                     help=f"exit non-zero if any eager rules/*.md exceeds this many "
                          f"lines (default: {DEFAULT_MAX_LINES}; 0 disables)")
+    ap.add_argument("--list-eager-rules", action="store_true",
+                    help="print eager rule paths, one per line, and exit; the "
+                         "receipt-ban gate consumes this so both gates share one "
+                         "enumeration instead of a parallel glob")
     args = ap.parse_args()
 
     result = measure(REPO, args.surface)
+
+    if args.list_eager_rules:
+        paths = [label for label, _, _, _, scope, is_rule in result["rows"]
+                 if is_rule and scope == "eager"]
+        if not paths:
+            print("FAIL: eager rule enumeration resolved empty", file=sys.stderr)
+            return 1
+        print("\n".join(paths))
+        return 0
 
     if not args.quiet:
         print(f"surface: {args.surface}")

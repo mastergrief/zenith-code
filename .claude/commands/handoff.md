@@ -32,12 +32,12 @@ Write to `.claude/MEMORY/SESSION_HANDOFF.md` (overwrite previous). Do not declar
 
 ## Phase 3 — Codex cross-review when in collab mode
 
-Run this phase when the user asks for Codex review, when the session used ai-room collaboration, or when the handoff records Codex-owned / dual-surface work. Skip only for Claude-only sessions with no Codex or ai-room state.
+Run this phase when the user asks for Codex review, when the session used ai-room collaboration, or when the handoff records Codex-owned work. Skip only for Claude-only sessions with no Codex or ai-room state.
 
 Post the drafted handoff to Codex via ai-room before final confirmation. Ask Codex to review:
 
 - uncommitted-state classification: session-critical vs supporting vs runtime/cache vs parallel/upstream
-- commit coverage, especially Codex-authored or dual-surface work
+- commit coverage, especially Codex-authored work
 - pending ai-room tasks and ownership state
 - next-step priority and blockers
 - in-flight evals, daemons, logs, and process state

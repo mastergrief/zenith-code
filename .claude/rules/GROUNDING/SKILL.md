@@ -46,6 +46,16 @@ any project's rules; the body references no repo-specific paths or tools.
   until confirmed against the thing itself. "The endpoint returned `failed`"
   can be quoted; "it failed" has to be checked — and diagnosing a system is
   exactly when its own account of itself is least load-bearing.
+- Attribution is deny-by-default. A claim about cause, identity, or provenance
+  binds only when it carries its basis and its locator — in whatever layer it
+  sits. A schema-owned field is not self-certifying: one can be defective while
+  reading as authoritative, so the layer is never the warrant. What the field
+  layer buys is survival — durable memory folds from fields, because the
+  narrative around them is what a later reader cannot audit.
+- Record-referential fields — hashes, pins, ids, paths, counts — are emitted by
+  the tool that verified them, never typed. Checking a hand-made transfer
+  afterwards is a comparison you can also get wrong; removing the transfer step
+  is the cure. Calibrate the generator, not each hop.
 
 ## Cure the class, not the instance
 
@@ -54,6 +64,14 @@ any project's rules; the body references no repo-specific paths or tools.
   producer? A cure scoped to what surfaced is not a cure.
 - Report the sweep, not just the fix: how many occurrences, how you enumerated
   them, which are latent. "Fixed it" without a denominator is an instance fix.
+- A cure's scope derives from the artifact's claim inventory, never from the
+  structure of the instance that bounced. Scoping to the bounced section, header
+  shape, or vocabulary lets the next occurrence land wherever that structure
+  didn't reach. Ask the totality question out loud: what assertion-bearing
+  content is NOT in the inventory?
+- A sweep whose denominator resolves empty is a FAILURE, not a pass. Exit
+  nonzero and name it: zero occurrences and zero scope are indistinguishable
+  from the outside, and the second one silently reports success.
 - A passing check must state what it examined, not just its verdict. Over a set
   or class: the denominator and how it was enumerated. Over a scalar: the exact
   artifact, field, and value bound. A negative path proves the check can fire;
@@ -129,6 +147,12 @@ any project's rules; the body references no repo-specific paths or tools.
   of the world in which this check fails; if you cannot, it is not a check.
 - A new check's verdict counts only after both calibrations are observed: it
   fails on a known-bad artifact AND stays silent on a known-good one.
+- A check guarding an implementation CHOICE must bind an observable
+  demonstrated to vary under that choice. Calibrate it by running both the
+  conforming and the declared-unsafe implementation through it: identical
+  verdicts mean the check cannot see the choice, however green it looks. An
+  operand produced downstream of the deciding event has already lost the
+  information the check exists to find.
 - A verification denominator comes from the governing artifact, freshly
   enumerated — never from an interlocutor's restatement of it, the artifact's
   own feature list, or your previous round's findings. Reviewing against your

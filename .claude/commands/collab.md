@@ -29,8 +29,6 @@ entrypoint; `.claude/rules/AI_ROOM_COLLAB.md` is the full charter and
 - Preserve the execution asymmetry: Claude may use documented
   slash-command subagents where a command explicitly allows them;
   Codex does not spawn subagents unless the user explicitly asks.
-- For edits touching `.codex/*` or both eager surfaces, get Codex
-  cross-review before commit.
 - Ground disagreements in live evidence. Prefer one load-bearing
   `file:line`, test, or commit cite over broad concern lists.
 

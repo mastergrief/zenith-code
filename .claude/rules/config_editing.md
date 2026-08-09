@@ -51,17 +51,17 @@ SHA / "we tried X and it didn't work" to a rules file — that's a
 receipt. Append it to the matching atlas instead, and update the
 rule only if a current invariant changed.
 
-`/update` Phase 0 enforces the receipt ban via grep against `rules/*.md`.
+`/update` Phase 0 enforces the receipt ban by grepping the eager rule list
+that `measure_preload.py --list-eager-rules` emits — not a glob, which both
+misses nested eager rules and reaches path-scoped ones the ban doesn't govern.
 Phase 0 and Phase 5 both run `python3 scripts/measure_preload.py --surface
-both --max-tokens 150000`, fail-closed — that one invocation enforces the
+claude --max-tokens 150000`, fail-closed — that one invocation enforces the
 token budget AND the eager-tier per-file line cap (`--max-lines`, default
 250), reporting every violation in one pass. It is the only enforcement
 point; do not add a second. Path-scoped rules (`paths:` frontmatter) load
 only when a matching file is read, so the line cap does not apply to them.
-The `--surface` flag accepts `claude | codex | both` (default `both`)
-so the gate covers `.claude/CLAUDE.md` + `.claude/rules/` AND
-`.codex/AGENTS.md` + `.codex/rules/` in one invocation.
-Don't subvert by going inline.
+The gate covers root `CLAUDE.md`, `.claude/CLAUDE.md`, and `.claude/rules/`
+including nested rules. Don't subvert by going inline.
 
 ## Related rules
 
