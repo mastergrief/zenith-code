@@ -179,6 +179,7 @@ freeze**, and `ADVISOR_WAIVER` is unavailable for either:
   per-artifact question never reaches a per-class property, and the waiver for
   mechanical defect cycles otherwise names as routine the exact condition
   worth stopping for.
+- On a mandatory-trigger solicitation, return the audit and recommendation for Claude re-derivation; do not route escalation into a Gabe-binary wait.
 - **A frozen requirement discovered infeasible before the action.** Fires
   immediately, at zero prior bounces. The audit accompanies returning to the
   gate that froze the requirement — it does not replace that return, and

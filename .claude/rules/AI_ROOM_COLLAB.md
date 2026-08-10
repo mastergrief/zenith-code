@@ -104,6 +104,7 @@ re-derives. Modes, triggers, solicitation shape: `.claude/agents/fable-advisor.m
   door. The counter stays and increments; a separate **cure ledger** records cure
   shape per round, so "add-a-comparison: 0 for 3" becomes the measurement that
   licenses a method change rather than another instance patch.
+- Mandatory-trigger counters are ledger-owned and never author-estimated; no ledger-backed counter or emitter exists today, so no current mechanical count is claimed. For this defect-class escalation, the advisor supplies the audit/recommendation and Claude re-derives it; the path does not wait for a Gabe binary.
 
 ## Cross-thread at thinking boundaries
 

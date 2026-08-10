@@ -523,3 +523,31 @@ reader cannot mistake it for one.
 **Declared interest.** co_lead noted the consumption prohibition covers its own
 PASS at `1786199187381-d5c65123`, one of the consumers of the ungated Phase-4b
 output, and asked that someone other than it stress-test that clause's wording.
+
+## Workflow hardening v7 — reduced A-minus D2 codification (receipt)
+
+Eleven labels were enumerated from the advisor source; mechanisms remain deferred. This reduced slice landed one label (D2) as invariant text only — in `.claude/rules/AI_ROOM_COLLAB.md` and `.claude/agents/fable-advisor.md`. C3 remains displaced to `GROUNDING/SKILL.md` solicitation guidance. C1/C2 are carved to this atlas (self-declared unmechanized interaction shapes do not earn eager-tier preload). A1–A4, B1, B2, D1, and the coverage-attachment apparatus are deferred to a successor task and unblock only when their mechanisms are tracked and CI-exercised. Acceptance meaning and validator worlds remain co_lead-authored; this atlas entry is receipt only. No parallel restatement blocks; `CLAUDEX_ORCHESTRATION.md` and `config_editing.md` were not touched.
+
+### Why C1/C2 live here rather than in `rules/`
+
+Self-declared unmechanized interaction shapes do not earn eager-tier preload under the E1 resolvability predicate (tracked and CI-exercised). The invariant text is preserved here as query-triggered atlas content rather than 250-cap preload residence.
+
+- Supersession and artifact-content restatement cite prior hash or locator and do not copy superseded narrative or artifact body; the User-input Capture payload and the Ingress-Owned Provenance packet remain required content and are not restatement. This line is a weak interaction-shape layer with no mechanized enforcement.
+
+- A dispatch declares a plan byte/line budget; exceeding it is a scope alarm and split trigger (distinct from the rule-file cap above). This line is a weak interaction-shape layer with no mechanized enforcement.
+
+### Day's null — reduced v4 surface
+
+The original atlas claim merged two different searches and was never measured as stated (defect found by co_lead at gate-2). Search A grepped nine mechanism names over `claw-code` tracked files only (`git ls-files | xargs grep`) and structurally cannot see `~/.ai-room`; search B ran filename-only `find -name 'gate_mint*'` over a separate multi-root filename sweep for one mechanism. Neither search supports asserting A's name-list over B's roots.
+
+The correct measurement, re-run over both spaces:
+
+- Over `claw-code` tracked files (n=1399), all nine names return 0 files; matcher calibrated both ways (controls `worker_gate_wake_pairing_gate`=7 files, `CROSS_THREAD_REQUIRED`=4).
+- Over `~/.ai-room` tracked files (n=553), matcher calibrated by `ai_room_post`=84: `require_live_recipient` is present as tracked implementation and tracked tests at `ai_room_lib/message_args.py`, `mcp_server_lib/routing.py`, `mcp_server_lib/tools/messages.py`, and `tests/test_recipient_routing.py`; the other eight names return 0 files.
+- `gate_mint.py` exists **untracked** at `/home/gabe/claw-code-creditdir/transient_fp_credit/r1l_gate_records_370025c9/gate_mint.py`.
+- No CI workflow was found among `~/.ai-room` tracked files, so CI execution of `tests/test_recipient_routing.py` is **UNVERIFIED** — do not upgrade `require_live_recipient` to verified CI-exercised.
+- No absence claim is made beyond those two enumerated spaces.
+
+The adopted coverage-attachment cure reproduced its own defect class at first use; temporal unsatisfiability was caught pre-ship on 6 of 9 attachment rows because this slice's own insertions land inside the base sections those rows cited. Unit-opening sweep: 0 ambiguous unit-opening markers across the nine cited sections, but 3 bold units carrying an internal blank line at `AI_ROOM_COLLAB.md:11`, `:30`, `:66`.
+
+**What landed this slice (v4-reduced A-minus):** only D2 into `.claude/rules/AI_ROOM_COLLAB.md` and `.claude/agents/fable-advisor.md` (bytes already sha-verified; co_lead wording accept `1786369247511-a421db4c`), plus this atlas append carrying the ATLAS base receipt + C1/C2 carve-out + this null. CLAUDEX_ORCHESTRATION.md and config_editing.md NOT touched. A1, A2, A3, A4, B1, B2, D1 and the coverage-attachment apparatus deferred to a successor task. Authority: advisor design consultation `1786394774058-bae46720`, Claude re-derivation, board record `1786395147169-da5d9fa8`, dispatch `1786398012141-64ab5f1a`. Gabe locked ordering: "Codify all rule lines now, mechanisms follow."; window: "we have 45 min so lets see what we can get done"; plan: "ok this is the plan of action for the morning then".
