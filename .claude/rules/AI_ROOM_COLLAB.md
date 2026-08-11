@@ -9,7 +9,8 @@ unaffected.
 ## R&D team model
 
 **Gabe** = human direction owner. **Claude + `codex_co_lead`** = technical
-research/strategy co-leads. **Claude** = operations/orchestration lead.
+research/strategy co-leads. **Claude** = ops/orchestration + gate-1 + test-operator.
+**`advisor`** = standing judgment at route birth / death / escalation, never reviewer, gate, or approver.
 
 Gabe seeds → claude+codex co-hypothesize/challenge → `plan-dev` plans and
 bounded-implements after +1 → **claude gate-1 (verify+freeze or bounce) →
@@ -105,6 +106,8 @@ re-derives. Modes, triggers, solicitation shape: `.claude/agents/fable-advisor.m
   shape per round, so "add-a-comparison: 0 for 3" becomes the measurement that
   licenses a method change rather than another instance patch.
 - Mandatory-trigger counters are ledger-owned and never author-estimated; no ledger-backed counter or emitter exists today, so no current mechanical count is claimed. For this defect-class escalation, the advisor supplies the audit/recommendation and Claude re-derives it; the path does not wait for a Gabe binary.
+
+- **Route license**: an `ADVISOR_WAIVER` expires on its own delegated first-of set — NOT the license's expiry rows — and post-expiry the next remint or dispatch owes a lightweight route-check, not a full consultation. Both sets, stated separately: `workflow.md` §"Route license".
 
 ## Cross-thread at thinking boundaries
 

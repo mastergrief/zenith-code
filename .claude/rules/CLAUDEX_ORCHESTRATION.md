@@ -25,8 +25,8 @@ not evidence of a codex backend.
 ## Team model + named role lanes
 
 **Gabe** = direction owner. **Claude + `codex_co_lead`** = co-leads. **Claude**
-= orchestrator, AUQ/dispatch, gatekeeper, synthesizer. **codex_co_lead**
-read-only.
+= orchestrator, AUQ/dispatch, gatekeeper, synthesizer. **codex_co_lead** read-only.
+**`advisor`** = judgment at route birth / death / escalation, never reviewer, gate, or approver.
 
 **Named Codex role lanes** — normal route for gated mutating repo-file work:
 

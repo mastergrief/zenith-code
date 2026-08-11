@@ -45,6 +45,47 @@ Full table + adapter-robustness: `workflow_part_1.md` §"Always check two things
 wrong line (suspicious ratio to reference, unused headroom, compute/bandwidth
 math mismatch).
 
+## Route license
+
+Every lineage carries a **route license**: the terminal measurement it heads for
+plus its named branches. Issuance at lineage birth IS the route-check, not a
+separate mechanism. No license means no named terminal — the work has already
+drifted and nobody can say from what.
+
+An expired license means **no further work on that lineage** until a lightweight
+route-check renews or kills it. Renewal at expiry is the one unwaivable step.
+Expiry fires on the first of: **never issued** (work began with no named
+terminal); **defect** (second substantiated gate-2 BLOCK on the lineage, or a task
+supersession whose deliverable shas are unchanged); **time** (90 min active work on
+one lineage with neither a branch-selecting measurement produced nor a renewal).
+
+A running measurement with a live prereg **is** a terminal ahead — the clock does
+not fire while it runs.
+
+An `ADVISOR_WAIVER` expires on a **different** first-of set, and merging the two
+silently rewrites a delegated value: a second substantiated gate-2 BLOCK on that
+lineage; a task supersession whose deliverable shas are unchanged; the clock firing.
+Post-expiry the next remint or dispatch owes a route-check, not a full consultation.
+
+**Every disposition names a delta or names its absence.** A consultation MATTERED
+iff its disposition names a route changed or killed, a premise corrected, a branch
+added or removed, or a prescription refuted — refuting the advisor counts. It was
+PERFORMED iff the disposition reads "no delta: plan confirmed intact", which is a
+legal outcome, because forcing deltas manufactures them. A delta counts only if the
+frozen artifact's change list cites the consult id: a delta that never reaches bytes
+is ceremony wearing a delta.
+
+**Enforcement is one check, not three.** Field presence on a frozen record is
+greppable. The windowed no-delta rate and the lineage clock have **no emitter**, so
+both are declared obligations, self-assessed, and no mechanical count is claimed
+until an emitter lands — a rate asserted without one is a number nobody computed.
+
+**Daily terminal.** The day ends with ≥1 branch-selecting measurement — prereg
+written BEFORE the run, branches diverging in next-action, ≥1 branch terminal for a
+route — OR a one-paragraph post naming the blocking seam and tomorrow's first slice.
+Dressing non-measurement work up as the terminal is the failure this clause exists
+to catch.
+
 ## Empirical pace
 
 Minutes-to-hours on this stack, not mechinterp weeks-to-months. If a step

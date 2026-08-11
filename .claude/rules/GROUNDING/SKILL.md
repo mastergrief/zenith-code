@@ -183,6 +183,42 @@ any project's rules; the body references no repo-specific paths or tools.
   and "Rounds on this defect class: N" — so the two rules above survive
   fatigue.
 
+## Verdicts are compressed from evidence, never authored beside it
+
+A verdict written alongside its evidence drifts from it: the summary layer and the
+evidence layer are authored in parallel, and nothing forces them to agree. The
+recurring shape is a stated verdict stronger than the property its instrument binds,
+with the gap unstated. It lives at the **compression step** — verdict fields,
+headings, contract descriptions, receipts — and it comes in two shapes.
+
+**Coverage.** An aggregate verdict may not be authored by the same pass that produced
+what it summarizes. "All checks pass" over four of six rows is the canonical failure,
+and it reads as diligence. Composing an aggregate belongs to a head that did not
+author the work — which is what a review gate already is.
+
+**Scope-naming.** Every claim carries its instrument's scope inline, taken from the
+instrument rather than from your description of it: "tracked-worktree parity
+(`--untracked-files=no`)", never "whole-worktree parity".
+
+Citing an emitted result is **not sufficient** when the operand was chosen after the
+fix existed. A check written in the same pass as the change it verifies binds the
+change's shape, not the requirement's property — a matcher follows the clause you
+just moved and reports success. Derive operands from the REQUIREMENT before writing
+the fix; if writing the fix changes what the check must look at, that is the signal
+the check is measuring the fix.
+
+### Borrow instruments; do not author them
+
+Every instrument you write is itself a new claim surface for this class, so
+instrument-side cures do not converge — each one adds habitat. Before building any
+check, answer one question per validation property: **which EXISTING instrument
+covers it?** A new check is buildable only for a property with no existing coverage
+AND a failure world that is silent. Prefer instruments whose failure mode you did not
+author and cannot overstate: a tool that refuses on a non-unique anchor, a repo gate
+that already fails closed, a diff a reviewer reads. Deleting a tautological check is a
+valid cure, and an apparatus that outgrows the deliverable it guards is the signal to
+delete rather than extend.
+
 ## Notes on use
 
 - The "unverified assumption:" marker is load-bearing: cheap, visible, and it
