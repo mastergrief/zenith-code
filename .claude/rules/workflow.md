@@ -118,6 +118,13 @@ Commit completed measured work before the next round; one round per commit;
 before/after table in perf/correctness messages; checkpoint before risky
 swings. Template: `workflow_part_1.md` §"Commit discipline".
 
+Commit shell shape: prefer `git -C <literal-path> commit -F <file>`.
+Do not pipe a commit through another command — that defeats the
+co_lead-gate shape allowlist and masks the commit's exit status.
+Authoritative accepted forms live in the live recognizer
+`.claude/hooks/commit_precondition_colead_gate.py` (its denial text);
+this line is one preferred form + pointer, not a second allowlist.
+
 ## Informative null results
 
 A null that diagnoses the failure mode IS shippable (same before/after
