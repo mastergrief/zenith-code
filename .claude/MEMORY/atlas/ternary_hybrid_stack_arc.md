@@ -465,6 +465,179 @@ Terminal dual-accepted science result committed at work-repo
   "measurement-backed" → "measurement-backed AND parity-proven"; remaining
   transient_fp_debt work named as carrier-landing, not feasibility.
 
+### 2026-08-11 — Forgotten-accum 4-arm formal path: feasibility null (no science answer)
+
+**Headline (true strength):** the forgotten-accum U/E/R0/RW training-equivalence
+apparatus **cannot emit its own science answer** in tracked source. Not merely
+"non-claimable" — the four FORGET_* verdicts that would answer "does the
+accumulator need to exist / is forget bank-equivalent" have **0 assignment
+sites** across `calm/hrm_text_158/**/*.py`. The four names appear in exactly
+**1 file**: the enum body at
+`forgotten_accum_training_equivalence_contracts.py:87-92`
+(`FORGET_NO_REWARM_BANK_EQUIVALENT`,
+`FORGET_REWARM_BANK_EQUIVALENT_WITHIN_FROZEN_COST_CAP`,
+`FORGET_REWARM_PARTIAL_OR_CUT_DEPENDENT`, `FORGET_REWARM_NOT_TOLERATED`).
+Calibrated search for `FailClosedClass.FORGET_` assignments: 0 hits. Only
+reachable formal outcomes are refuse/invalid classes.
+
+HRM-fork HEAD at measurement:
+`370025c99f0939beb56dffe17ad257fb8e7103c2`
+(`/mnt/c/Users/gabes/projects/claw-code-hrm-text-158`).
+
+**Arm labels (source, not earlier mis-labelling):** U = uninterrupted (no
+resume policy); E = `exact_preserve`; R0/RW = `zero_strip`; RW also defers
+flips during W. Forget arms are **R0/RW**, not E
+(`contracts.policy_for_arm`, `:135-141`).
+
+**Four blockers in launch order** (`forgotten_accum_run_arms_launch.launch_run_arms`):
+
+1. `refuse_formal_unresolved_policy(bank_inputs=None)` always raises for
+   formal — `bank_measure.py:40-50`, refuse text at `:46-49` ("measured
+   CloseSibling producer unwired and A-SPEC Option B schema is
+   readiness-only") → `BANK_INPUTS_INVALID` **before materialize/GPU**.
+2. Option A geometry refuse for formal constants (500, 1500, 32) —
+   `OPTION_A_ADMITTED_CHARACTERIZATION_GEOMETRIES = {(2,4,1),(2,6,2)}` at
+   `contracts.py:98-99`; formal `T_CUT/RUNWAY_STEPS/W_REWARM_STEPS` at
+   `contracts.py:55-57` are not members →
+   `option_a_geometry_refuse_receipt` (`:118-128`) with
+   `A_LEDGER_ACCOUNTING_UNVERIFIED`, `claimable_science=False`,
+   `bankable=False`, arm_call_counts all 0.
+3. `apply_claim_coupling` hard-assigns `claimable_science=False` /
+   `bankable=False` — `bank_measure.py:273-274` (docstring `:226`: never
+   sets True from mode alone). `BASE_FORMAL_CLAIM_BLOCKERS =
+   ("RULE_CONFLICT_UNRESOLVED", "A_LEDGER_SYNTHETIC")` at `:31`.
+4. Driver double A_LEDGER — early refuse
+   `science_driver.py:273-277` (non-admitted +
+   `notes_indicate_unverified_ledger`); late refuse `:371-374` (comment:
+   "OK unreachable under Option A"). Ledger arm counts SYNTHETIC
+   (`science_driver.py:360-364`; `synthetic_ledger_notes`
+   `bank_measure.py:286-297`).
+
+**Mutually unsatisfiable pair (sharpest structural fact):**
+`assert_formal_canonical_params` (`materialization.py:390-402`) raises
+`PREFLIGHT_REFUSE` unless `(t_cut, runway_steps, W) == (500, 1500, 32)`.
+`is_option_a_admitted_characterization_geometry` admits only
+`{(2,4,1),(2,6,2)}`. **No input satisfies both.** Named by
+`RULE_CONFLICT_UNRESOLVED` in `BASE_FORMAL_CLAIM_BLOCKERS`
+(`bank_measure.py:31`). **Test-pinned** at
+`test_forgotten_accum_a_ledger_option_a_unverified_refuse_v0.py:50`
+(triple `(500, 1500, 32)` asserted not admitted).
+
+**Fail-closed safety behavior, not a stub** (observed enforcement only):
+- `notes_indicate_unverified_ledger` is total-`return True`
+  (`contracts.py:113-115`) with comment "forged MEASURED/claimable cannot
+  mint validity"; docstring: "no measured seam — every notes shape is
+  unverified. Never VERIFIED."
+- `test_forgotten_accum_a_bank_fail_closed_v0.py:170-189` **forges**
+  `claimable_science=True` and `bankable=True` into the input; requires
+  `apply_claim_coupling` to force both back **False** with
+  `RULE_CONFLICT_UNRESOLVED` + `A_LEDGER_SYNTHETIC`.
+- `test_forgotten_accum_a_ledger_option_a_unverified_refuse_v0.py:31-39`
+  forges `ledger_claimable: True` + MEASURED provenance; still requires
+  unverified=True.
+- Anti-forge is product behaviour. Recorded as observed enforcement, not
+  as a claim about author psychology.
+
+**Calibrated claim-flag sweep** (auditable negative):
+- Denominator: `calm/hrm_text_158` paths matching `*forgotten_accum*`, every
+  occurrence of keys `claimable_science` and `bankable`.
+- `claimable_science`: 5 of 5 production/docstring sites are literal False
+  or the non-claim docstring (`run_arms_launch.py:91,212`;
+  `bank_measure.py:226,273`; `contracts.py:124`).
+- `bankable`: 9 of 9 are literal False, non-claim docstring, or prose
+  (`a_ledger_accounting_v2.py:45`, `a_ledger_accounting_v2_core.py:16`,
+  `ordered_apply_event.py:4,187`, `run_arms_launch.py:92,213`,
+  `bank_measure.py:226,274`, `contracts.py:125`).
+- Instrument calibration: regex
+  `(claimable_science|bankable|ledger_claimable)…True` → **0 hits**;
+  identical shape against `False` → **13 hits across 6 files**.
+- Residual **not** searched as authority: synonyms outside `calm/`, untracked
+  creditdir overlays, and `claimable_physical_sub2` (bpw packing ledgers —
+  different claim surface, not a promoter of forgotten-accum arm receipts).
+- `science_label` is nomenclature only (`ScienceDriverResult.science_label`
+  type-pinned to `None` at `science_driver.py:178`); never a claim flag.
+
+**Density trajectory (disfavours compression as fallback):**
+From r4 treatment sidecar
+`…/r4_1_q_bytepacked_tensorwide_seed43_20260622T164500Z/w6_on_q_on_treatment/headroom_wiring_sidecar.jsonl`
+(live `exact_accumulator_shadow` int16 via
+`s3bb_headroom_telemetry._shadow_tensors_from_states`). Full aggregation over
+all 256 records (8 steps × 32 state_keys); **29,360,128 eligible lanes per
+step**. Tool-emitted series (claude independent aggregation + co_lead; prior
+two-row compressed table was wrong — step 3 was mis-stated as 88.50%, which
+is step 4):
+
+| step | density | max_abs | min_lossless_width |
+|---|---|---|---|
+| 3 | 90.8362% | 12 | 5 |
+| 4 | 88.5024% | 16 | 6 |
+| 5 | 96.7949% | 20 | 6 |
+| 6 | 93.4794% | 21 | 6 |
+| 7 | 98.3238% | 24 | 6 |
+| 8 | 95.1825% | 26 | 6 |
+| 9 | 98.4482% | 28 | 6 |
+| 10 | 95.9168% | 29 | 6 |
+
+**No decay signal over steps 3–10; the series OSCILLATES at high density
+(88.50%–98.45%); terminal density (95.9168%) exceeds initial (90.8362%);
+horizon 10 remains non-adjudicative.** co_lead pre-mortem (gate-2): a future
+route must not read this oscillatory 8-step series as monotonic density
+growth and over-demote the trajectory experiment on a false trend.
+
+**`max_abs` grows MONOTONICALLY 12 → 29 across steps 3–10** while density
+oscillates; `min_lossless_width` steps 5 → 6 at step 4 and holds at 6 for
+steps 4–10 (seven consecutive steps, no further movement). **Fixed-width
+narrowing does not reopen within the observed window** — no width below 6 is
+available anywhere in steps 4–10. The `max_abs` series is **independent
+in-window evidence on the fixed-width axis**, explicitly distinct from the
+density series which bears on the sparse axis (the two bit-width axes stay
+separate per `ternary_hybrid_stack.md`). Longer-horizon `max_abs` and width
+direction is **UNMEASURED and stays unknown**.
+
+Cross-check: step 10 nonzero count = **28,161,293**, byte-identical to
+`non_default_count` / `hot_exact_row_count` in
+`r5_acc_term_measurement_seed43_receipt.json` (confirms r5 static probe at
+step 10; both reads agree).
+
+Arithmetic that makes the thresholds meaningful (r5 static receipt, same
+head): 43.0 bits per stored sparse entry; acc budget at ≤2.5 working bar with
+q at 1.6 bpw = 0.9 bpw → density ≤ 0.9/43.0 = **2.09%** for sparse-to-bar;
+≤ 6.0/43.0 = **13.95%** to merely beat dense-6. Required cut is ~46× from
+terminal **95.92%** (95.9168%). Horizon 10 cannot adjudicate
+decay-vs-steady-state; with oscillation at high density and no decay signal,
+the ≤2.09% density-compression route is the less promising of the two routes,
+not a safe fallback after forget fails.
+
+**Five seams (B→C→A→D then E), dependency order — not S2-first:**
+
+| id | seam | note |
+|---|---|---|
+| B | bank producer | measured CloseSibling + bank-evidence v2 so formal is not permanently refused at `bank_measure.py:46-49` |
+| C | geometry admission | resolve formal (500,1500,32) vs Option A closed set; distinct formal admission without implying science unblocked |
+| A | measured A-ledger | replace total-True `notes_indicate_unverified_ledger` + SYNTHETIC counts with measured provenance |
+| D | claim-coupling positive branch | only after A–C: allow `apply_claim_coupling` to set claimable under empty blockers + measured bank (no such branch exists) |
+| E | FORGET_* classifier | reducer that assigns the four success verdicts from bank outcomes |
+
+**A alone unlocks nothing** — launch dies at B before materialize. Selecting
+the first implementation slice requires a **five-seam dependency plan
+identifying the smallest VERTICAL slice with an observable positive path**
+(gate-2 correction `codex_co_lead` `1786438096151-84108827`): "smallest
+contradiction" (geometry) is not "first slice", because geometry admission
+alone still yields a non-claimable run and cannot exercise the experiment's
+science answer. If geometry admission is chosen first, its own calibrated
+test must distinguish formal admission from Option-A characterization
+**without** implying science is unblocked.
+
+**Not claimed / not done:** no readiness, stability, acquisition, bank, or
+sub-2 claim; `ready_for_main_science` stays false; no GPU run; no arm
+executed; zero `.pt` touched; staged 0 at record time. Original formal 4-arm
+launch packet CANCELLED (cannot emit science answer), not deferred. Room
+lineage: plan-dev findings `1786437990214-69efbfd7` +
+`1786438080666-3a32dc52`; claude disposition `1786438086043-90798ea2`;
+atlas dispatch `1786438151770-9c90d2c4` + `+1 implement`
+`1786438190814-14f82893`; density/seam correction round `+1 implement`
+`1786439212663-7e19adec` (gate-2 BLOCK `1786438940559-4c5d9d2c`).
+
 ## Origin
 
 Lane separated from `hrm-158.md` so the curriculum lane (90/90 bank gate,
