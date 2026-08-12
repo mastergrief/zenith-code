@@ -8,11 +8,13 @@ unaffected.
 
 ## R&D team model
 
-**Gabe** = human direction owner. **Claude + `codex_co_lead`** = technical
-research/strategy co-leads. **Claude** = ops/orchestration + gate-1 + test-operator.
-**`advisor`** = standing judgment at route birth / death / escalation, never reviewer, gate, or approver.
+**Gabe** = human direction owner, final authority. **`advisor`** = direction
+lead — **binding** route judgement at route birth / death / escalation, never an
+artifact reviewer or gate. **Claude** = ops/orchestration + gate-1 +
+test-operator. **`codex_co_lead`** = gate-2 review authority.
 
-Gabe seeds → claude+codex co-hypothesize/challenge → `plan-dev` plans and
+Gabe seeds → **advisor licenses the route** → claude+co_lead
+co-hypothesize/challenge inside it → `plan-dev` plans and
 bounded-implements after +1 → **claude gate-1 (verify+freeze or bounce) →
 co_lead gate-2 (independent review of the FROZEN handoff) → dual accept** →
 claude commit/push gates → **claude as test-operator** runs formal training/
@@ -36,12 +38,14 @@ naming artifact kept for routing stability — read "codex role" anywhere in the
 rules as **worker role on a codex handle**, never as a codex-backed session.
 
 - **Gabe**: seeds problems, picks risk/cost/goal, final human gates.
+- **`advisor`**: route judgement — issues, renews, or kills the route license.
+  Binding; Claude executes and escalates disagreement to Gabe, never overrides.
 - **Claude + `codex_co_lead`**: hypothesis quality, gate design, counter-cases,
-  audit. Neither outranks on the technical call. **codex_co_lead** read-only;
-  planning and bounded implementation route to `plan-dev`.
+  audit — inside the licensed route, never over it. **codex_co_lead** read-only
+  gate-2 authority; planning and bounded implementation route to `plan-dev`.
 - **Claude**: AUQ/relay, board/dispatch, launch dispatch+review, plan/
   validation/commit/push/launch gates, synthesis. One active executor per slice.
-- **Named Codex roles** (under co-leads + gates):
+- **Named Codex roles** (under the licensed route + gates):
   - **`plan-dev`**: planning/contract/packet lane AND default bounded
     implementation executor for HRM + main-repo slices. **NOT** implementation
     review, **NOT** formal run execution. **Receipts to claude gate-1 FIRST**
@@ -64,39 +68,37 @@ rules as **worker role on a codex handle**, never as a codex-backed session.
 names, and the things mistaken for further roles, are enumerated in
 `MEMORY/atlas/AI_ROOM_COLLAB_arc.md` §"Retired spawnable codex role names".
 
-**`advisor`** (Claude-side, not a codex role): standing advisory/judgement peer, three
-modes; **never reviewer, gate, or approver** — ARRIVED hypothesis Claude
-re-derives. Modes, triggers, solicitation shape: `.claude/agents/fable-advisor.md`.
+**`advisor`** (Claude-side, not a codex role): standing **direction lead**, three
+modes. Route decisions **BIND** — Claude executes, never re-derives or overrides
+in place; disagreement escalates to Gabe. Authority stops at the artifact bar:
+never an artifact reviewer, never at gate-1 or gate-2. Modes, deliverables,
+solicitation shape: `.claude/agents/fable-advisor.md`.
 
 - **Advisor is not a subagent path:** never invoke the advisor via Claude Code subagent spawn. The agent definition file's existence does not authorize that path; use the documented in-room spawn (see peers paragraph above).
 - **Mode is set by what the solicitation carries**, never by stage label, under
-  total precedence **check > journal request > design question**: answer the
-  highest-priority present, return the rest, never blend two. Non-design modes
-  and trigger 4 are stage-independent; only triggers 1-3 need pre-contract.
-- **Design triggers** (consultation): (1) novel mechanism/measurement minting
-  science semantics, no converged contract; (2) two bounces on apparatus rather
-  than science; (3) materially different architectures plausible with no
-  discriminating evidence; (4) failure mode or its detecting measurement
-  unnamed — keys on the **instrument**, so no stage label waives it.
-- **MANDATORY defect-class audit, `ADVISOR_WAIVER` unavailable, blocking the
+  total precedence **check > journal request > route question**: answer the
+  highest-priority present, return the rest, never blend two. No mode is
+  stage-bounded: there is no admission trigger and no waiver — a lane that has
+  to be admitted is a lane that gets routed around.
+- **Route judgement** (standing): issues, renews, or kills the lineage's route
+  license — terminal measurement plus named branches. A route whose terminal
+  measurement is unnamed or unobservable is NOT licensable, so the instrument
+  question is asked by construction rather than by a waivable trigger.
+- **MANDATORY defect-class escalation, no waiver, blocking the
   next remint/freeze**: a second substantiated bounce in one normalized class —
   normalize on **observed** variance, so an uncalibrated-but-possibly-correct
-  check is in class — counted across artifact VERSIONS, never from this
-  version's trigger-4 answer; or a frozen requirement found infeasible, raised
-  before the action alongside reopening the gate that froze it, never as
-  `+1`/receipt disclosure. **Solicitation AND successor must make the trigger
-  identity locatable**: normalized class plus the two substantiated bounce ids,
-  or the infeasible requirement plus the id of the freeze that froze it.
-  `ADVISOR: consulted <id>` proves consultation, never why it was mandatory.
-- **Waive design triggers 1-3** for mechanical cycles, converged contracts, and
-  remints, plus artifact review. NEVER reaches trigger 4, instrument pre-check,
-  defect-class audit, or the mandatory triggers. **Placement**: `intent →
-  advisor → re-derivation → contract → route → gates`; never between gate-1 and
-  gate-2; never fed plans, packets, diffs, receipts.
-- **Disposition on EVERY frozen record**: `ADVISOR: consulted <id>` +
-  `CLAUDE_REDERIVATION:` adopted / rejected / independently verified, or
-  `ADVISOR_WAIVER: <reason>`; mandatory-trigger successors require the consulted
-  form, again if the class survives another bounce. Absent field = gate defect.
+  check is in class — counted across artifact VERSIONS; or a frozen requirement
+  found infeasible, raised before the action alongside reopening the gate that
+  froze it, never as `+1`/receipt disclosure. **Solicitation AND successor must
+  make the trigger identity locatable**: normalized class plus the two
+  substantiated bounce ids, or the infeasible requirement plus the id of the
+  freeze that froze it. Where the audit prescribes a route, that prescription
+  binds exactly as route judgement does.
+- **Placement**: `intent → advisor route license → contract → dispatch → gates`;
+  never between gate-1 and gate-2; never fed plans, packets, diffs, receipts.
+- **Disposition on EVERY frozen record**: `ADVISOR_ROUTE: <id>` citing the route
+  decision the lineage runs under. No alternative form, no waiver. Absent field
+  = gate defect.
 - **Solicitation transport**: `kind=msg` or `design_proposal` ONLY — never
   `review_request`/`task_dispatch` — and no `requires_response_from` deadline: a
   deadline may not bind to a path unverified as open.
@@ -106,9 +108,9 @@ re-derives. Modes, triggers, solicitation shape: `.claude/agents/fable-advisor.m
   door. The counter stays and increments; a separate **cure ledger** records cure
   shape per round, so "add-a-comparison: 0 for 3" becomes the measurement that
   licenses a method change rather than another instance patch.
-- Mandatory-trigger counters are ledger-owned and never author-estimated; no ledger-backed counter or emitter exists today, so no current mechanical count is claimed. For this defect-class escalation, the advisor supplies the audit/recommendation and Claude re-derives it; the path does not wait for a Gabe binary.
+- Mandatory-trigger counters are ledger-owned and never author-estimated; no ledger-backed counter or emitter exists today, so no current mechanical count is claimed. The escalation path does not wait for a Gabe binary.
 
-- **Route license**: an `ADVISOR_WAIVER` expires on its own delegated first-of set — NOT the license's expiry rows — and post-expiry the next remint or dispatch owes a lightweight route-check, not a full consultation. Both sets, stated separately: `workflow.md` §"Route license".
+- **Route license**: issued, renewed, and killed by the advisor. ONE expiry set, one owner — rows in `workflow.md` §"Route license".
 
 ## Cross-thread at thinking boundaries
 
@@ -196,7 +198,7 @@ direct addressed post citing the task_update msg id.
 **UNIFYING RULE:** routine material receipts (plan/packet/validation/diff/proof/
 launch) → **claude gate-1 sink ONLY**. co_lead gate-2 follows claude's frozen
 handoff. Only **safety/liveness escalations** (stall, commit/push/launch safety
-blockers) may cc both co-leads, with **claude as the sole required responder**.
+blockers) may cc both claude and co_lead, with **claude as the sole required responder**.
 
 **REPORT_TO** on worker dispatches = `claude` only for routing (not parallel
 co_lead review). **REVIEW_ORDER** = gate sequencing. Freeze discipline: immutable

@@ -23,7 +23,7 @@ say so and ask the user.
 6. **Binary decision** — ship, or revert with a one-line ruled-out log.
 7. **Next hypothesis.**
 
-At **route birth** (and death / escalation): when advisor design or mandatory triggers fire, place consult before contract/gates (`AI_ROOM_COLLAB.md` §advisor). Not a gate; not a reviewer.
+At **route birth** (and death / escalation): `advisor` issues the route license before contract/gates, and it **binds** — Claude executes, escalating disagreement to Gabe rather than overriding (`AI_ROOM_COLLAB.md` §advisor). Direction lead, not an artifact reviewer or gate.
 
 Target: **< 5 minutes per round**; use a lighter proxy if slower.
 
@@ -50,9 +50,10 @@ math mismatch).
 ## Route license
 
 Every lineage carries a **route license**: the terminal measurement it heads for
-plus its named branches. Issuance at lineage birth IS the route-check, not a
-separate mechanism. No license means no named terminal — the work has already
-drifted and nobody can say from what.
+plus its named branches. `advisor` issues, renews, and kills it; issuance at
+lineage birth IS the route-check, not a separate mechanism. No license means no
+named terminal — the work has already drifted and nobody can say from what. A
+route whose terminal measurement is unnamed or unobservable is not licensable.
 
 An expired license means **no further work on that lineage** until a lightweight
 route-check renews or kills it. Renewal at expiry is the one unwaivable step.
@@ -64,10 +65,9 @@ one lineage with neither a branch-selecting measurement produced nor a renewal).
 A running measurement with a live prereg **is** a terminal ahead — the clock does
 not fire while it runs.
 
-An `ADVISOR_WAIVER` expires on a **different** first-of set, and merging the two
-silently rewrites a delegated value: a second substantiated gate-2 BLOCK on that
-lineage; a task supersession whose deliverable shas are unchanged; the clock firing.
-Post-expiry the next remint or dispatch owes a route-check, not a full consultation.
+There is ONE expiry set with one owner. Expiry sends the lineage back to
+`advisor` for renewal or kill — there is no delegated variant that expires on
+its own rows, and no waiver.
 
 **Every disposition names a delta or names its absence.** A consultation MATTERED
 iff its disposition names a route changed or killed, a premise corrected, a branch
@@ -87,7 +87,7 @@ written BEFORE the run, branches diverging in next-action, ≥1 branch terminal 
 route — OR a one-paragraph post naming the blocking seam and tomorrow's first slice.
 Dressing non-measurement work up as the terminal is the failure this clause exists
 to catch.
-If the day's work freezes any record, **Disposition on EVERY frozen record** applies (`AI_ROOM_COLLAB.md` §advisor disposition) — not optional on freeze days.
+If the day's work freezes any record, **Disposition on EVERY frozen record** applies — `ADVISOR_ROUTE: <id>` (`AI_ROOM_COLLAB.md` §advisor disposition) — not optional on freeze days.
 
 ## Empirical pace
 

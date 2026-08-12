@@ -5,7 +5,7 @@
 Task-dispatch lifecycle for claude-orchestrated codex handles; companion to
 `AI_ROOM_COLLAB.md` — dispatch, recycle boundaries, hook-enforced gates.
 
-**Default handle**: `codex_co_lead` — always-on co-lead; exempt from child-task
+**Default handle**: `codex_co_lead` — always-on gate-2 reviewer; exempt from child-task
 boundary (multi-task audit by design).
 
 ## Principle
@@ -24,9 +24,10 @@ not evidence of a codex backend.
 
 ## Team model + named role lanes
 
-**Gabe** = direction owner. **Claude + `codex_co_lead`** = co-leads. **Claude**
-= orchestrator, AUQ/dispatch, gatekeeper, synthesizer. **codex_co_lead** read-only.
-**`advisor`** = judgment at route birth / death / escalation, never reviewer, gate, or approver.
+**Gabe** = direction owner, final authority. **`advisor`** = direction lead —
+binding route judgement at route birth / death / escalation, never an artifact
+reviewer or gate. **Claude** = orchestrator, AUQ/dispatch, gate-1 gatekeeper,
+synthesizer. **`codex_co_lead`** = read-only gate-2 review authority.
 
 **Named Codex role lanes** — normal route for gated mutating repo-file work:
 
@@ -69,7 +70,7 @@ commit → +1 push → push → +1 launch → claude-as-test-operator runs packe
 complete + recycle
 ```
 
-**Advisor at route birth / death / escalation:** place consult before contract/gates when design or mandatory triggers fire; never between gate-1 and gate-2; never fed plans/packets/diffs/receipts. Canonical sequence and non-authority: `AI_ROOM_COLLAB.md` §advisor (**Placement**).
+**Advisor at route birth / death / escalation:** the route license is issued before contract/gates and **binds** — Claude executes it, escalating disagreement to Gabe rather than overriding in place; never between gate-1 and gate-2; never fed plans/packets/diffs/receipts. Canonical sequence and authority bar: `AI_ROOM_COLLAB.md` §advisor (**Placement**).
 
 Claude load-bearing at gate-1 freeze/verify, commit, push, and launch gates;
 co_lead gate-2 reviews frozen handoffs only (independent, not rubber-stamp).
@@ -106,7 +107,7 @@ PreToolUse block-and-explain guards on `ai_room_post`/`_reply` (fail-open on par
 - **`task_dispatch_child_boundary_gate.py`** — blocks new child dispatch to
   in-progress handle without RETAIN OVERRIDE.
 - **`task_dispatch_cross_thread_gate.py`** — blocks worker dispatches that route
-  material receipts to both co-leads in parallel; requires `REPORT_TO: [claude]`
+  material receipts to both claude and co_lead in parallel; requires `REPORT_TO: [claude]`
   + `CROSS_THREAD_REQUIRED: yes` (or `CROSS_THREAD_WAIVER`). co_lead handoff
   dispatches exempt.
 - **`commit_precondition_colead_gate.py`** (Bash matcher) — once `git commit` is
@@ -146,7 +147,7 @@ Match risk + user impact. Receipts: commands, outputs, artifacts, cites, msg
 ids, caveats. Cited gate ids must resolve as authored records. Receipt commands
 are exact replayable argv (env vars verbatim, no ellipsis) — else receipt defect.
 
-**Disposition on EVERY frozen record** (quantifier quoted from `AI_ROOM_COLLAB.md`): required on every frozen record; field alternatives and gate-defect semantics live there — `ADVISOR: consulted <id>` + `CLAUDE_REDERIVATION: adopted` / `rejected` / `independently verified`, or `ADVISOR_WAIVER: <reason>`; absent field = gate defect. Do not restate the full table.
+**Disposition on EVERY frozen record** (quantifier quoted from `AI_ROOM_COLLAB.md`): required on every frozen record — `ADVISOR_ROUTE: <id>` citing the route decision the lineage runs under. One form, no alternative, no waiver; absent field = gate defect. Gate-defect semantics live there; do not restate them.
 
 **Check pre-registration.** Every check in a plan/packet carries, row-exhaustively
 over ALL checks with the denominator stated (never only the bounced ones): the
