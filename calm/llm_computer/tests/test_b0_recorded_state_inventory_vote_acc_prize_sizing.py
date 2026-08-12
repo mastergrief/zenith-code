@@ -121,7 +121,10 @@ def test_b0_capture2_bundle_revalidation_matches_frozen_fingerprint() -> None:
     assert result["frozen_fingerprint_compare"]["passed"] is True
     assert result["readiness_fixtures"]["neither_is_launch_pass"] is True
     scaffold = result["readiness_fixtures"]["embedded_current_repo_scaffold"]
-    assert scaffold["ready_for_pre_full_stack_diagnostic"] is False
+    # current_repo_scaffold ledger is diagnostic-eligible once the two MISSING
+    # rows carry justified exception fields; main-science still fail-closed.
+    assert scaffold["ready_for_pre_full_stack_diagnostic"] is True
+    assert scaffold["ready_for_main_science"] is False
     assert len(scaffold["blocker_surface_names"] or []) == 8
 
 

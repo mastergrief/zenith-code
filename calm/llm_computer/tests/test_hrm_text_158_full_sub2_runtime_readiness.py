@@ -1072,11 +1072,15 @@ def test_live_p1_authority_conversion_flips_exactly_authorized_rows():
             assert surface.classification == base_by_id[surface.surface_id].classification
 
 
-def test_live_p1_authority_conversion_keeps_main_and_diag_false():
+def test_live_p1_authority_conversion_keeps_main_false_diag_follows_ledger():
+    # Recomputed readiness receipt (from live_p1_authority_conversion_surfaces)
+    # follows the fixture ledger: diagnostic eligibility may be True when the
+    # scaffold justifies remaining MISSING rows. The source P1 conversion
+    # receipt is a different object and stays non-diagnostic.
     receipt = _mint_live_conversion_receipt()
     readiness = live_p1_authority_conversion_surfaces(receipt)
     assert readiness.ready_for_main_science is False
-    assert readiness.ready_for_pre_full_stack_diagnostic is False
+    assert readiness.ready_for_pre_full_stack_diagnostic is True
     assert receipt.ready_for_main_science is False
     assert receipt.ready_for_pre_full_stack_diagnostic is False
 
@@ -1256,7 +1260,7 @@ def test_live_r1_launch_runtime_validation_row_flip_authority_unavailable():
 
 def test_current_repo_scaffold_unchanged_by_cpu_wiring_receipt():
     current = fixture_full_sub2_runtime_ready_for_science(FIXTURE_CURRENT_REPO)
-    assert current.ready_for_pre_full_stack_diagnostic is False
+    assert current.ready_for_pre_full_stack_diagnostic is True
     backward = next(
         surface
         for surface in current.surfaces

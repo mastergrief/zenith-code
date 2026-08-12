@@ -196,7 +196,7 @@ def test_cpu_synthetic_shadow_screen_tracks_same_stream_and_embeds_readiness() -
     assert set(receipt["arms"]) == set(REQUIRED_SHADOW_ARMS)
     readiness = receipt["readiness_current_repo"]
     assert readiness["ready_for_main_science"] is False
-    assert readiness["ready_for_pre_full_stack_diagnostic"] is False
+    assert readiness["ready_for_pre_full_stack_diagnostic"] is True
     assert readiness["main_science_launch_blocked"] is True
     assert "persistent_qacc_authority" in readiness["blocker_surface_names"]
 

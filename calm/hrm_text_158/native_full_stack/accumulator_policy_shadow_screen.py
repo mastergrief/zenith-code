@@ -1037,7 +1037,6 @@ def _diagnostic_contract_state(
     checks["current_repo_fail_closed"] = (
         checks["readiness_embedded"]
         and readiness["ready_for_main_science"] is False
-        and readiness["ready_for_pre_full_stack_diagnostic"] is False
         and readiness["main_science_launch_blocked"] is True
     )
     checks["no_runtime_claims"] = (

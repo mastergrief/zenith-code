@@ -622,6 +622,36 @@ def current_repo_scaffold_surfaces() -> tuple[FullSub2RuntimeSurfaceReceipt, ...
         reason="current scaffold still names dense_int16_accumulator_control as a blocked/off-path control",
         source_anchor="calm/hrm_text_158/native_full_stack/sub2_native_birth_scaffold.py:1015",
         proof_artifact_or_test="calm/llm_computer/tests/test_hrm_text_158_native_sub2_native_birth_scaffold.py",
+        diagnostic_exception_reason=(
+            "Stability/functional-veto diagnostics measure flip dynamics on the "
+            "**existing dense LIVE vote-acc path** that this row already records "
+            "as control/baseline, not candidate sub-2 authority. The diagnostic is "
+            "informative while absence stays open because it answers whether "
+            "ternary still trains under functional-window-veto **on that control "
+            "path** — a mechanism-arm branch selection — without reclassifying the "
+            "row, without claiming the int16 container is sub-2, and without "
+            "promoting it to candidate authority. Closing the absence first means "
+            "landing a production sparse/event-coded (or other sub-2) live carrier "
+            "for vote-acc with parity and readiness reclass; that stack investment "
+            "is only justified after the mechanism arm is known not to be "
+            "rate-limited freeze. The diagnostic therefore buys a taxonomy branch "
+            "before that investment, not a free pass on the ledger row."
+        ),
+        why_cheaper_than_full_stack_first=(
+            "One bounded stability window (CPU/schema + GPU dynamics under the "
+            "lane recipe) is cheaper than multi-phase sparse/event-coded acc "
+            "production landing + parity + readiness reclass of this surface to "
+            "sub2. Completing closure first also inverts information order: stack "
+            "cost without knowing whether the mechanism arm is freeze-class."
+        ),
+        diagnostic_exclusion_reason=(
+            "This diagnostic's claim surface is flip/veto dynamics under the "
+            "existing dense LIVE control path only. It does not consume a sub-2 "
+            "dense-acc replacement, does not reclassify this row, and does not "
+            "authorize main-science or sub-2 claims. The absence remains a "
+            "standing MAIN-science blocker (`missing` still blocks "
+            "`ready_for_main_science`)."
+        ),
     )
     surfaces = _with_surface(
         surfaces,
@@ -660,6 +690,26 @@ def current_repo_scaffold_surfaces() -> tuple[FullSub2RuntimeSurfaceReceipt, ...
         reason="no dedicated backward saved-tensor/transient sub2 proof seam is present in Step 1",
         source_anchor="calm/hrm_text_158/native_full_stack/activation_relief.py:1",
         proof_artifact_or_test="test_hrm_text_158_full_sub2_runtime_readiness.py::test_missing_required_surfaces_fail_closed",
+        diagnostic_exception_reason=(
+            "Weight-side stability diagnostics (flip dynamics / "
+            "functional-window-veto) do not execute the backward-saved-tensor "
+            "remat/offload seam. The measurement's operands are q/acc flip state "
+            "and protected-row surrogates, not saved-activation quantization. "
+            "Completing this seam first is activation-runtime stack work the "
+            "stability taxonomy does not ask for; the row stays missing for MAIN "
+            "science."
+        ),
+        why_cheaper_than_full_stack_first=(
+            "One stability diagnostic window is cheaper than GPU-hot "
+            "remat/offload residency proof + live peak-memory receipts that "
+            "`activation_relief.py` already defers as out of CPU scope."
+        ),
+        diagnostic_exclusion_reason=(
+            "Diagnostic claim surface excludes backward-saved-tensor sub-2 proof. "
+            "Absence remains a MAIN-science blocker. No inference that "
+            "activations/backward surfaces \"do not matter\" is licensed "
+            "(ternary_hybrid_stack.md:68)."
+        ),
     )
     surfaces = _with_surface(
         surfaces,
@@ -992,9 +1042,12 @@ def live_p1_authority_conversion_surfaces(
 ) -> FullSub2RuntimeReadyForScienceReceipt:
     overridden = apply_live_p1_conversion_surface_overrides(receipt)
     result = build_full_sub2_runtime_ready_for_science(overridden)
-    if result.ready_for_main_science or result.ready_for_pre_full_stack_diagnostic:
+    # Diagnostic eligibility follows the fixture ledger on the recomputed readiness
+    # receipt. The source P1 conversion receipt's own non-diagnostic field is a
+    # different object and is not rewritten here.
+    if result.ready_for_main_science:
         raise ValueError(
-            "P1b live conversion must not set ready_for_main_science or diagnostic readiness"
+            "P1b live conversion must not set ready_for_main_science"
         )
     return result
 
