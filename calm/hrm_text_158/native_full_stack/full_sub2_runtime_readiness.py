@@ -623,34 +623,24 @@ def current_repo_scaffold_surfaces() -> tuple[FullSub2RuntimeSurfaceReceipt, ...
         source_anchor="calm/hrm_text_158/native_full_stack/sub2_native_birth_scaffold.py:1015",
         proof_artifact_or_test="calm/llm_computer/tests/test_hrm_text_158_native_sub2_native_birth_scaffold.py",
         diagnostic_exception_reason=(
-            "Stability/functional-veto diagnostics measure flip dynamics on the "
-            "**existing dense LIVE vote-acc path** that this row already records "
-            "as control/baseline, not candidate sub-2 authority. The diagnostic is "
-            "informative while absence stays open because it answers whether "
-            "ternary still trains under functional-window-veto **on that control "
-            "path** — a mechanism-arm branch selection — without reclassifying the "
-            "row, without claiming the int16 container is sub-2, and without "
-            "promoting it to candidate authority. Closing the absence first means "
-            "landing a production sparse/event-coded (or other sub-2) live carrier "
-            "for vote-acc with parity and readiness reclass; that stack investment "
-            "is only justified after the mechanism arm is known not to be "
-            "rate-limited freeze. The diagnostic therefore buys a taxonomy branch "
-            "before that investment, not a free pass on the ledger row."
+            "Live license `1786532037166-883850ad` claim ceiling (verbatim): "
+            "\"this terminal claims ONLY which operands the artifact contains and "
+            "at what paths and types. It mints no mechanism, stability, forgetting, "
+            "freeze, acquisition, bank, readiness, or sub-2 verdict and selects no "
+            "arm of the decay comparison.\" The dense int16 persistent accumulator "
+            "absence remains a main-science blocker regardless of any diagnostic "
+            "outcome."
         ),
         why_cheaper_than_full_stack_first=(
-            "One bounded stability window (CPU/schema + GPU dynamics under the "
-            "lane recipe) is cheaper than multi-phase sparse/event-coded acc "
-            "production landing + parity + readiness reclass of this surface to "
-            "sub2. Completing closure first also inverts information order: stack "
-            "cost without knowing whether the mechanism arm is freeze-class."
+            "ESTIMATE, terminal-local: cheaper than minting or running the "
+            "dependent decay terminal on unknown inputs; neither justifies nor "
+            "deprioritizes closure of either surface."
         ),
         diagnostic_exclusion_reason=(
-            "This diagnostic's claim surface is flip/veto dynamics under the "
-            "existing dense LIVE control path only. It does not consume a sub-2 "
-            "dense-acc replacement, does not reclassify this row, and does not "
-            "authorize main-science or sub-2 claims. The absence remains a "
-            "standing MAIN-science blocker (`missing` still blocks "
-            "`ready_for_main_science`)."
+            "The dense int16 persistent accumulator absence remains a "
+            "main-science blocker regardless of any diagnostic outcome "
+            "(`missing` still blocks `ready_for_main_science`). No main-science, "
+            "bank, acquisition, or sub-2 claim is authorized."
         ),
     )
     surfaces = _with_surface(
@@ -691,24 +681,24 @@ def current_repo_scaffold_surfaces() -> tuple[FullSub2RuntimeSurfaceReceipt, ...
         source_anchor="calm/hrm_text_158/native_full_stack/activation_relief.py:1",
         proof_artifact_or_test="test_hrm_text_158_full_sub2_runtime_readiness.py::test_missing_required_surfaces_fail_closed",
         diagnostic_exception_reason=(
-            "Weight-side stability diagnostics (flip dynamics / "
-            "functional-window-veto) do not execute the backward-saved-tensor "
-            "remat/offload seam. The measurement's operands are q/acc flip state "
-            "and protected-row surrogates, not saved-activation quantization. "
-            "Completing this seam first is activation-runtime stack work the "
-            "stability taxonomy does not ask for; the row stays missing for MAIN "
-            "science."
+            "Live license `1786532037166-883850ad` claim ceiling (verbatim): "
+            "\"this terminal claims ONLY which operands the artifact contains and "
+            "at what paths and types. It mints no mechanism, stability, forgetting, "
+            "freeze, acquisition, bank, readiness, or sub-2 verdict and selects no "
+            "arm of the decay comparison.\" The backward saved-tensor transients "
+            "surface remains a main-science blocker regardless of any diagnostic "
+            "outcome."
         ),
         why_cheaper_than_full_stack_first=(
-            "One stability diagnostic window is cheaper than GPU-hot "
-            "remat/offload residency proof + live peak-memory receipts that "
-            "`activation_relief.py` already defers as out of CPU scope."
+            "ESTIMATE, terminal-local: cheaper than minting or running the "
+            "dependent decay terminal on unknown inputs; neither justifies nor "
+            "deprioritizes closure of either surface."
         ),
         diagnostic_exclusion_reason=(
-            "Diagnostic claim surface excludes backward-saved-tensor sub-2 proof. "
-            "Absence remains a MAIN-science blocker. No inference that "
-            "activations/backward surfaces \"do not matter\" is licensed "
-            "(ternary_hybrid_stack.md:68)."
+            "The backward saved-tensor transients surface remains a main-science "
+            "blocker regardless of any diagnostic outcome (`missing` still blocks "
+            "`ready_for_main_science`). No activation/KV/backward runtime readiness "
+            "claim and no main-science/sub-2 claim is authorized."
         ),
     )
     surfaces = _with_surface(
