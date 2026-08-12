@@ -64,10 +64,11 @@ rules as **worker role on a codex handle**, never as a codex-backed session.
 names, and the things mistaken for further roles, are enumerated in
 `MEMORY/atlas/AI_ROOM_COLLAB_arc.md` §"Retired spawnable codex role names".
 
-**`advisor`** (Claude-side, not a codex role): standing advisory peer, three
+**`advisor`** (Claude-side, not a codex role): standing advisory/judgement peer, three
 modes; **never reviewer, gate, or approver** — ARRIVED hypothesis Claude
 re-derives. Modes, triggers, solicitation shape: `.claude/agents/fable-advisor.md`.
 
+- **Advisor is not a subagent path:** never invoke the advisor via Claude Code subagent spawn. The agent definition file's existence does not authorize that path; use the documented in-room spawn (see peers paragraph above).
 - **Mode is set by what the solicitation carries**, never by stage label, under
   total precedence **check > journal request > design question**: answer the
   highest-priority present, return the rest, never blend two. Non-design modes

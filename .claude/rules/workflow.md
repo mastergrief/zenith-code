@@ -23,6 +23,8 @@ say so and ask the user.
 6. **Binary decision** — ship, or revert with a one-line ruled-out log.
 7. **Next hypothesis.**
 
+At **route birth** (and death / escalation): when advisor design or mandatory triggers fire, place consult before contract/gates (`AI_ROOM_COLLAB.md` §advisor). Not a gate; not a reviewer.
+
 Target: **< 5 minutes per round**; use a lighter proxy if slower.
 
 ## Always check two things
@@ -85,6 +87,7 @@ written BEFORE the run, branches diverging in next-action, ≥1 branch terminal 
 route — OR a one-paragraph post naming the blocking seam and tomorrow's first slice.
 Dressing non-measurement work up as the terminal is the failure this clause exists
 to catch.
+If the day's work freezes any record, **Disposition on EVERY frozen record** applies (`AI_ROOM_COLLAB.md` §advisor disposition) — not optional on freeze days.
 
 ## Empirical pace
 

@@ -69,6 +69,8 @@ commit → +1 push → push → +1 launch → claude-as-test-operator runs packe
 complete + recycle
 ```
 
+**Advisor at route birth / death / escalation:** place consult before contract/gates when design or mandatory triggers fire; never between gate-1 and gate-2; never fed plans/packets/diffs/receipts. Canonical sequence and non-authority: `AI_ROOM_COLLAB.md` §advisor (**Placement**).
+
 Claude load-bearing at gate-1 freeze/verify, commit, push, and launch gates;
 co_lead gate-2 reviews frozen handoffs only (independent, not rubber-stamp).
 
@@ -143,6 +145,8 @@ Read-only handles that mutate = safety failure. Plan gate = refinement loop
 Match risk + user impact. Receipts: commands, outputs, artifacts, cites, msg
 ids, caveats. Cited gate ids must resolve as authored records. Receipt commands
 are exact replayable argv (env vars verbatim, no ellipsis) — else receipt defect.
+
+**Disposition on EVERY frozen record** (quantifier quoted from `AI_ROOM_COLLAB.md`): required on every frozen record; field alternatives and gate-defect semantics live there — `ADVISOR: consulted <id>` + `CLAUDE_REDERIVATION: adopted` / `rejected` / `independently verified`, or `ADVISOR_WAIVER: <reason>`; absent field = gate defect. Do not restate the full table.
 
 **Check pre-registration.** Every check in a plan/packet carries, row-exhaustively
 over ALL checks with the denominator stated (never only the bounced ones): the
