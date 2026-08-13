@@ -144,9 +144,10 @@ any project's rules; the body references no repo-specific paths or tools.
 ## Verification discipline
 
 - Operative test for any check, acceptance criterion, or gate: name the state
-  of the world in which this check fails; if you cannot, it is not a check.
-- A new check's verdict counts only after both calibrations are observed: it
-  fails on a known-bad artifact AND stays silent on a known-good one.
+  of the world in which this check fails and the consequence it produces (not
+  only an emitted field); if you cannot name both, it is not a check.
+- A new check's verdict counts only after both calibrations are observed: the
+  known-bad side produces that consequence AND the known-good side stays silent.
 - A check guarding an implementation CHOICE must bind an observable
   demonstrated to vary under that choice. Calibrate it by running both the
   conforming and the declared-unsafe implementation through it: identical

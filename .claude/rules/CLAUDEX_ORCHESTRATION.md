@@ -151,10 +151,10 @@ are exact replayable argv (env vars verbatim, no ellipsis) — else receipt defe
 
 **Check pre-registration.** Every check in a plan/packet carries, row-exhaustively
 over ALL checks with the denominator stated (never only the bounced ones): the
-deciding property; a known-bad fixture observed FIRING plus a known-good observed
+deciding property; the declared consequence; a known-bad fixture observed FIRING
+(that consequence occurs, not only an emitted field) plus a known-good observed
 SILENT, where the silent side asserts the check's **emitted fields**, not the
-verdict alone; per-operand declared provenance disjointness; a safe-execution seam
-or explicit STOP. Operands sharing one provenance are tautological BY
+verdict alone; per-operand declared provenance disjointness; a safe-execution seam or explicit STOP. Operands sharing one provenance are tautological BY
 CONSTRUCTION — no added read cures it, and **deleting a tautological check is a
 valid cure**. Aggregates report extremal row + failing-row set, never a bare mean.
 
