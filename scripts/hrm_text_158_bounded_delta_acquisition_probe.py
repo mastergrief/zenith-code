@@ -264,6 +264,8 @@ from calm.hrm_text_158.native_full_stack.two_tier_transient_selection import (
 )
 from calm.hrm_text_158.native_full_stack.receipt_compactness_guard import (
     compact_probe_receipt_for_banking,
+    omit_step_result_tensor_stats,
+    should_omit_tensor_stats_for_decay_n50,
     validate_bankable_probe_receipt,
 )
 from calm.hrm_text_158.native_full_stack.s3bb_headroom_telemetry import (
@@ -7792,6 +7794,10 @@ def run_bounded_delta_steps(
                     ),
                 ):
                     step_result_compact = compact_d_diagnostic_step_result(
+                        step_result_compact
+                    )
+                if should_omit_tensor_stats_for_decay_n50(str(phase)):
+                    step_result_compact = omit_step_result_tensor_stats(
                         step_result_compact
                     )
                 if (

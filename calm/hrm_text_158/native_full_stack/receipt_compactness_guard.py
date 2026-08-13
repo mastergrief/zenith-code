@@ -313,6 +313,37 @@ def compact_tensor_stats_for_bankable_receipt(
     return compact
 
 
+DECAY_STABILITY_N50_PHASES: frozenset[str] = frozenset(
+    {
+        "ful-decay-stability-n50-control",
+        "ful-decay-stability-n50-treatment",
+    }
+)
+
+
+def should_omit_tensor_stats_for_decay_n50(phase: str) -> bool:
+    return str(phase) in DECAY_STABILITY_N50_PHASES
+
+
+def omit_step_result_tensor_stats(step_result: Mapping[str, Any]) -> dict[str, Any]:
+    """Replace per-module tensor_stats with a stub. Keeps global_summary.
+
+    Existing bankable compact only rewrites raw index arrays; existing D-slim
+    still leaves N50 over the 10 MiB cap. A-D predicates read global_summary
+    and prior_audit, not tensor_stats.
+    """
+
+    out = dict(step_result)
+    ts = out.get("tensor_stats")
+    n_modules = len(ts) if isinstance(ts, dict) else None
+    out["tensor_stats"] = {
+        "omitted": True,
+        "reason": "decay_stability_n50_receipt_cap",
+        "n_modules": n_modules,
+    }
+    return out
+
+
 def compact_step_reports_for_bankable_receipt(
     step_reports: Mapping[str, Any],
     *,

@@ -366,3 +366,95 @@ def test_compact_guard_front_c_identity_signal_transitions_to_count_hash_not_nei
         stats["global_rate_cap_deferred_indices_summary"]["order_sensitive_content_hash16"]
         != stats["global_rate_cap_deferred_indices_sha256"]
     )
+
+
+def test_decay_n50_phase_gate_only_two_phases() -> None:
+    from calm.hrm_text_158.native_full_stack.receipt_compactness_guard import (
+        should_omit_tensor_stats_for_decay_n50,
+    )
+
+    assert should_omit_tensor_stats_for_decay_n50("ful-decay-stability-n50-control")
+    assert should_omit_tensor_stats_for_decay_n50("ful-decay-stability-n50-treatment")
+    assert not should_omit_tensor_stats_for_decay_n50("d-recompute-window-feasibility")
+    assert not should_omit_tensor_stats_for_decay_n50("ful-decay-feasibility-shape-s2")
+
+
+def test_omit_tensor_stats_replaces_module_map_and_keeps_operands() -> None:
+    from calm.hrm_text_158.native_full_stack.receipt_compactness_guard import (
+        omit_step_result_tensor_stats,
+        should_omit_tensor_stats_for_decay_n50,
+    )
+
+    global_summary = {
+        "global_rate_cap_accepted_count": 12,
+        "global_rate_cap_deferred_count": 4,
+        "global_deferred_ratio": 0.25,
+        "deferred_backlog_size": 7,
+        "deferred_backlog_max_age_steps": 3,
+        "global_rate_cap_ordering_summary": {"full_demand_count": 16},
+    }
+    tensor_stats = {
+        "model.module_0": {"q_changed_count": 1, "applied_indices": [0, 1, 2]},
+        "model.module_1": {"q_changed_count": 0},
+    }
+    receipt = {
+        "step_reports": {
+            "1": {
+                "step_result": {
+                    "global_summary": copy.deepcopy(global_summary),
+                    "tensor_stats": copy.deepcopy(tensor_stats),
+                    "vote_pressure": [{"state_key": "m0"}],
+                }
+            },
+            "2": {
+                "step_result": {
+                    "global_summary": copy.deepcopy(global_summary),
+                    "tensor_stats": copy.deepcopy(tensor_stats),
+                    "vote_pressure": [{"state_key": "m0"}],
+                }
+            },
+        },
+        "prior_audit": {
+            "final_reports": {"L0b": {"acquired": True}},
+            "deltas": {
+                "math_a0": {"no_new_broad_cluster": True},
+                "L0b": {"no_new_broad_cluster": True, "new_strict_failure_count": 0},
+                "L0c1": {"new_strict_failure_count": 0},
+            },
+        },
+    }
+
+    for step in receipt["step_reports"].values():
+        original_ts = step["step_result"]["tensor_stats"]
+        step["step_result"] = omit_step_result_tensor_stats(step["step_result"])
+        stub = step["step_result"]["tensor_stats"]
+        assert stub == {
+            "omitted": True,
+            "reason": "decay_stability_n50_receipt_cap",
+            "n_modules": 2,
+        }
+        assert "model.module_0" not in stub
+        assert original_ts == tensor_stats
+        gs = step["step_result"]["global_summary"]
+        assert gs == global_summary
+        assert step["step_result"]["vote_pressure"] == [{"state_key": "m0"}]
+
+    pa = receipt["prior_audit"]
+    assert pa["final_reports"]["L0b"]["acquired"] is True
+    assert pa["deltas"]["math_a0"]["no_new_broad_cluster"] is True
+    assert pa["deltas"]["L0b"]["no_new_broad_cluster"] is True
+    assert pa["deltas"]["L0b"]["new_strict_failure_count"] == 0
+    assert pa["deltas"]["L0c1"]["new_strict_failure_count"] == 0
+
+    assert should_omit_tensor_stats_for_decay_n50("ful-decay-stability-n50-control")
+    assert should_omit_tensor_stats_for_decay_n50("ful-decay-stability-n50-treatment")
+    for near_miss in (
+        "d-recompute-window-feasibility",
+        "ful-decay-feasibility-shape-s2",
+        "ful-decay-stability-n50",
+        "",
+        "FUL-DECAY-STABILITY-N50-CONTROL",
+        "ful-decay-stability-n50-control ",
+        "ful-decay-stability-n50-control-extra",
+    ):
+        assert not should_omit_tensor_stats_for_decay_n50(near_miss)
