@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields as dataclass_fields, replace
 import faulthandler
 import hashlib
 import json
@@ -78,6 +78,11 @@ from calm.hrm_text_158.native_full_stack.r7_selective_drain_eligibility_census i
     SIDECAR_FILENAME as R7_SELECTIVE_DRAIN_ELIGIBILITY_CENSUS_SIDECAR_FILENAME,
     ObserverContinuityTracker,
     initialize_selective_drain_census_observer_continuity_at_step0,
+)
+from calm.hrm_text_158.native_full_stack.attribution_read_arbiter import (
+    CONSUMED_INPUTS_INVENTORY_KEY,
+    emit_object_inventory,
+    emit_raw_value,
 )
 from calm.hrm_text_158.native_full_stack.d_recompute_window_live_carrier_snapshot import (
     emit_live_carrier_snapshots_for_probe_step,
@@ -411,10 +416,11 @@ B1_PRIOR_AUDIT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_audit/v0"
 B1_PRIOR_SUPPORT_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_adapter/v0"
 B1_PRIOR_AUDIT_DELTA_SCHEMA_VERSION = "hrm_text_158_b1_prior_support_delta/v0"
 B2_RETAINED_SUPPORT_SCHEMA_VERSION = "hrm_text_158_b2_retained_support_vote_aux/v0"
-B2_FULL_VERDICT_SCHEMA_VERSION = "hrm_text_158_b2_full_retention_verdict/v0"
+B2_FULL_VERDICT_SCHEMA_VERSION = "hrm_text_158_b2_full_retention_verdict/v1"
 B2_RETAINED_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0")
 B2_FULL_STOP_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0")
 B2_PC_AUX_MODES: tuple[str, ...] = ("telemetry", "veto")
+B2_REPLAY_CE_MODES: tuple[str, ...] = ("off", "telemetry", "veto")
 SCIENCE_ARM_CHOICES: tuple[str, ...] = (
     ARM_A0_RANK_BUCKET_CURRENT,
     ARM_A1_RANK_BUCKET_ORDER_MATCHED,
@@ -926,9 +932,7 @@ def make_front_c_identity_observer_for_step(
     step: int,
     total_steps: int,
 ) -> Callable[[Mapping[str, Any]], None] | None:
-    if front_c_identity_collector is None:
-        return None
-    if not front_c_identity_collector.should_collect_step(
+    if front_c_identity_collector is None or not front_c_identity_collector.should_collect_step(
         int(step),
         total_steps=int(total_steps),
     ):
@@ -946,6 +950,267 @@ def make_front_c_identity_observer_for_step(
         )
 
     return front_c_identity_observer
+
+
+def emit_planner_provenance(planner: Any) -> dict[str, str]:
+    return {
+        "planner_function": planner.__name__,
+        "planner_module": planner.__module__,
+    }
+
+
+def _attribution_inputs_with_mode(src: Any, mode: str) -> Any:
+    return VoteUpdateInputs(
+        votes=src.votes,
+        replay_ce_veto_votes=src.replay_ce_veto_votes,
+        replay_ce_veto_moves=src.replay_ce_veto_moves,
+        pc_aux_votes=src.pc_aux_votes,
+        pc_aux_moves=src.pc_aux_moves,
+        pc_aux_mode=src.pc_aux_mode,
+        replay_ce_mode=str(mode),
+        vote_format=src.vote_format,
+        local_loss_delta=src.local_loss_delta,
+        vote_active_flat_indices=getattr(src, "vote_active_flat_indices", None),
+        sparse_vote_events=getattr(src, "sparse_vote_events", None),
+    )
+
+
+def _attribution_replan(
+    *,
+    state: Any,
+    inputs: Any,
+    spec: Any,
+    apply_plan: Any,
+    two_tier_carry_w6_enabled: bool,
+) -> Any:
+    return plan_integer_vote_update_reference(
+        state,
+        inputs,
+        spec,
+        local_selection_ordering_mode=str(apply_plan.stats["local_selection_ordering_mode"]),
+        local_selection_ordering_seed=int(apply_plan.stats["local_selection_ordering_seed"]),
+        local_selection_ordering_step=int(apply_plan.stats["local_selection_ordering_step"]),
+        two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+    )
+
+
+def _attribution_input_hashes(*, state: Any, inputs: Any) -> dict[str, str]:
+    """Wire-emitted bytes of the tensors the replan consumes. Borrowed hasher."""
+    return {
+        "q_sha256": tensor_sha256(state.q_levels),
+        "acc_sha256": tensor_sha256(state.accumulators),
+        "votes_sha256": tensor_sha256(inputs.votes),
+    }
+
+
+def _emit_raw_value(val: Any) -> Any:
+    return emit_raw_value(val, tensor_hasher=tensor_sha256)
+
+
+def _emit_object_inventory(obj: Any) -> dict[str, Any]:
+    return emit_object_inventory(obj, tensor_hasher=tensor_sha256)
+
+
+def _attribution_read_receipt_from_observation(
+    observation: Mapping[str, Any],
+    *,
+    two_tier_carry_w6_enabled: bool = False,
+) -> dict[str, Any]:
+    """Emit raw operands only. No classification in this path."""
+    from calm.hrm_text_158.native_full_stack.attribution_read_arbiter import (
+        control_emission,
+    )
+
+    plans_by_key = dict(observation.get("plans_by_key") or {})
+    q_acc_by_key = dict(observation.get("q_acc_by_key") or {})
+    states_by_key = dict(observation.get("states_by_key") or {})
+    inputs_by_key = dict(observation.get("inputs_by_key") or {})
+    specs_by_key = dict(observation.get("specs_by_key") or {})
+    consumed_inputs_by_key = dict(observation.get(CONSUMED_INPUTS_INVENTORY_KEY) or {})
+    if not plans_by_key or not q_acc_by_key or not states_by_key or not inputs_by_key or not specs_by_key:
+        return {
+            "schema": "hrm_text_158_attribution_emission/v0",
+            "observation_keys": sorted(observation.keys()),
+            "present": {
+                "plans_by_key": bool(plans_by_key),
+                "q_acc_by_key": bool(q_acc_by_key),
+                "states_by_key": bool(states_by_key),
+                "inputs_by_key": bool(inputs_by_key),
+                "specs_by_key": bool(specs_by_key),
+                CONSUMED_INPUTS_INVENTORY_KEY: CONSUMED_INPUTS_INVENTORY_KEY in observation,
+            },
+            "per_key": {},
+        }
+    per_key: dict[str, Any] = {}
+    for state_key, apply_plan in sorted(plans_by_key.items()):
+        if (
+            state_key not in q_acc_by_key
+            or state_key not in states_by_key
+            or state_key not in inputs_by_key
+            or state_key not in specs_by_key
+        ):
+            per_key[state_key] = {
+                "observation_key_presence": {
+                    "q_acc_by_key": state_key in q_acc_by_key,
+                    "states_by_key": state_key in states_by_key,
+                    "inputs_by_key": state_key in inputs_by_key,
+                    "specs_by_key": state_key in specs_by_key,
+                }
+            }
+            continue
+        q_before = states_by_key[state_key].q_levels.flatten()
+        acc_before = states_by_key[state_key].accumulators.flatten()
+        acc_pre = apply_plan.new_acc_i32.flatten()
+        q_after = q_acc_by_key[state_key]["q_levels"].flatten()
+        acc_after = q_acc_by_key[state_key]["accumulators"].flatten()
+        apply_idx = [int(v) for v in apply_plan.applied_indices.flatten().tolist()]
+        apply_dirs = [int(v) for v in apply_plan.applied_directions.flatten().tolist()]
+        apply_thrs = [int(v) for v in apply_plan.applied_thresholds.flatten().tolist()]
+        dir_by = dict(zip(apply_idx, apply_dirs))
+        thr_by = dict(zip(apply_idx, apply_thrs))
+        src_inputs = inputs_by_key[state_key]
+        apply_mode = str(src_inputs.normalized_replay_ce_mode.value)
+        modeless_inputs = _attribution_inputs_with_mode(src_inputs, "veto")
+        mode_fed_inputs = _attribution_inputs_with_mode(src_inputs, apply_mode)
+        modeless_plan = _attribution_replan(
+            state=states_by_key[state_key],
+            inputs=modeless_inputs,
+            spec=specs_by_key[state_key],
+            apply_plan=apply_plan,
+            two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+        )
+        mode_fed_plan = _attribution_replan(
+            state=states_by_key[state_key],
+            inputs=mode_fed_inputs,
+            spec=specs_by_key[state_key],
+            apply_plan=apply_plan,
+            two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+        )
+        listed = [int(v) for v in modeless_plan.replay_ce_veto_indices.flatten().tolist()]
+        apply_veto_indices = [
+            int(v) for v in apply_plan.replay_ce_veto_indices.flatten().tolist()
+        ]
+        apply_veto = apply_plan.stats.get("replay_ce_veto_count")
+        mode_fed_veto = [int(v) for v in mode_fed_plan.replay_ce_veto_indices.flatten().tolist()]
+        mode_fed_applied = [int(v) for v in mode_fed_plan.applied_indices.flatten().tolist()]
+        examined = sorted(set(listed) | set(apply_idx))
+        examined_rows: dict[str, Any] = {}
+        for idx in examined:
+            examined_rows[str(idx)] = {
+                "q_before": int(q_before[idx].item()),
+                "q_after": int(q_after[idx].item()),
+                "acc_before": int(acc_before[idx].item()),
+                "acc_pre_writeback": int(acc_pre[idx].item()),
+                "acc_after": int(acc_after[idx].item()),
+                "direction": dir_by[idx] if idx in dir_by else None,
+                "threshold": thr_by[idx] if idx in thr_by else None,
+            }
+        numel = int(q_before.numel())
+        used_idx = list(set(listed) | set(apply_idx))
+        used = torch.zeros(numel, dtype=torch.bool)
+        if used_idx:
+            used[torch.as_tensor(used_idx, dtype=torch.long)] = True
+        control_mask = ~used
+        untouched_t = (q_after == q_before) & (acc_after == acc_pre)
+        failing_t = control_mask & ~untouched_t
+        failing = [int(v) for v in failing_t.nonzero(as_tuple=False).flatten().tolist()]
+        control_n = int(control_mask.sum().item())
+        untouched_n = int((control_mask & untouched_t).sum().item())
+        control_idx_t = control_mask.nonzero(as_tuple=False).flatten()
+        raw_by = {}
+        untouched_by = {idx: False for idx in failing}
+        for idx in failing:
+            raw_by[idx] = {
+                "q_before": int(q_before[idx].item()),
+                "q_after": int(q_after[idx].item()),
+                "acc_before": int(acc_before[idx].item()),
+                "acc_pre_writeback": int(acc_pre[idx].item()),
+                "acc_after": int(acc_after[idx].item()),
+                "UNTOUCHED": False,
+            }
+        empty = q_before[:0]
+        gathered_q_b = q_before[control_idx_t] if control_n else empty
+        gathered_q_a = q_after[control_idx_t] if control_n else empty
+        gathered_acc_b = acc_before[control_idx_t] if control_n else empty
+        gathered_acc_p = acc_pre[control_idx_t] if control_n else empty
+        gathered_acc_a = acc_after[control_idx_t] if control_n else empty
+        control = control_emission(
+            control_indices=failing,
+            untouched_by_index=untouched_by,
+            raw_by_index=raw_by,
+            population_size=control_n,
+            untouched_count=untouched_n,
+            precomputed_hashes={
+                "untouched_mask_sha256": tensor_sha256(
+                    (control_mask & untouched_t).to(torch.uint8)
+                ),
+                "q_before_sha256": tensor_sha256(gathered_q_b),
+                "q_after_sha256": tensor_sha256(gathered_q_a),
+                "acc_before_sha256": tensor_sha256(gathered_acc_b),
+                "acc_pre_writeback_sha256": tensor_sha256(gathered_acc_p),
+                "acc_after_sha256": tensor_sha256(gathered_acc_a),
+            },
+        )
+        q_acc_obj = q_acc_by_key[state_key]
+        per_key[state_key] = {
+            "consumed_inputs": consumed_inputs_by_key.get(state_key),
+            "consumed_inputs_present": state_key in consumed_inputs_by_key,
+            "live_inputs": _emit_object_inventory(src_inputs),
+            "live_state": _emit_object_inventory(states_by_key[state_key]),
+            "live_spec": _emit_object_inventory(specs_by_key[state_key]),
+            "live_q_acc": {
+                "keys": sorted(q_acc_obj.keys()),
+                "values": {str(k): _emit_raw_value(v) for k, v in q_acc_obj.items()},
+            },
+            "apply_plan": {
+                "inventory": _emit_object_inventory(apply_plan),
+                "applied_indices": apply_idx,
+                "replay_ce_veto_indices": apply_veto_indices,
+                "replay_ce_veto_count": apply_veto,
+                "stats": _emit_raw_value(apply_plan.stats),
+                "planner_provenance": emit_planner_provenance(
+                    plan_integer_vote_update_reference
+                ),
+            },
+            "replans": {
+                "modeless_veto": {
+                    "inputs_inventory": _emit_object_inventory(modeless_inputs),
+                    "plan_inventory": _emit_object_inventory(modeless_plan),
+                    "replay_ce_veto_indices": listed,
+                    "applied_indices": [
+                        int(v) for v in modeless_plan.applied_indices.flatten().tolist()
+                    ],
+                    "planner_provenance": emit_planner_provenance(
+                        plan_integer_vote_update_reference
+                    ),
+                },
+                "mode_fed": {
+                    "inputs_inventory": _emit_object_inventory(mode_fed_inputs),
+                    "plan_inventory": _emit_object_inventory(mode_fed_plan),
+                    "replay_ce_veto_indices": mode_fed_veto,
+                    "applied_indices": mode_fed_applied,
+                    "planner_provenance": emit_planner_provenance(
+                        plan_integer_vote_update_reference
+                    ),
+                },
+            },
+            "examined_rows": examined_rows,
+            "control": control,
+            "plan_ids": {
+                "apply_plan_id": id(apply_plan),
+                "listed_plan_id": id(modeless_plan),
+                "mode_fed_plan_id": id(mode_fed_plan),
+            },
+            "input_hashes": {
+                "listed": _attribution_input_hashes(
+                    state=states_by_key[state_key], inputs=modeless_inputs
+                ),
+                "mode_fed": _attribution_input_hashes(
+                    state=states_by_key[state_key], inputs=mode_fed_inputs
+                ),
+            },
+        }
+    return {"schema": "hrm_text_158_attribution_emission/v0", "per_key": per_key}
 
 
 def _prior_support_sorted_rows(name: str, curriculum_seed: int) -> list[tuple[str, int, str]]:
@@ -1344,7 +1609,9 @@ def build_b2_full_prior_snapshot(
         if support in deltas
     }
     stop_supports_present = all(support in stop_status for support in stop_supports)
-    retained_true_priors_pass = bool(stop_supports_present and all(stop_status.values()))
+    retained_true_priors_pass = (
+        bool(all(stop_status.values())) if stop_supports_present else None
+    )
     math_cycles = b2_full_coverage_cycles(coverage_by_support, "math_a0")
     l0b_cycles = b2_full_coverage_cycles(coverage_by_support, "L0b")
     target_gate = b2_full_target_gate_met(target_audit)
@@ -1375,6 +1642,7 @@ def build_b2_full_prior_snapshot(
         "deltas": deltas,
         "stop_supports": list(stop_supports),
         "stop_support_status": stop_status,
+        "stop_supports_present": bool(stop_supports_present),
         "report_only_supports": list(report_only_supports),
         "retained_true_priors_no_new_broad_cluster": retained_true_priors_pass,
         "combined_stop_pass": bool(
@@ -1461,6 +1729,12 @@ def finalize_b2_full_verdict_state(
     terminal = state.get("terminal")
     if first is None:
         verdict = "no-target-acquisition"
+    elif terminal and terminal.get("retained_true_priors_no_new_broad_cluster") is None:
+        verdict = "artifact_insufficient"
+    elif terminal and (
+        terminal.get("target_gate_met") is None or terminal.get("coverage_gate_met") is None
+    ):
+        verdict = "artifact_insufficient"
     elif (
         terminal
         and terminal.get("target_gate_met")
@@ -2111,6 +2385,62 @@ def _append_host_rss_profile_mark(path: Path, payload: Mapping[str, Any]) -> Non
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(dict(payload), sort_keys=True))
         handle.write("\n")
+
+
+ATTRIBUTION_READ_SIDECAR_NAME = "attribution_read_step_{step:04d}.json"
+
+
+def attribution_read_sidecar_path(scratch_root: Path, step: int) -> Path:
+    return Path(scratch_root) / ATTRIBUTION_READ_SIDECAR_NAME.format(step=int(step))
+
+
+def persist_attribution_read_sidecar(
+    *,
+    scratch_root: Path,
+    step: int,
+    record: Mapping[str, Any],
+) -> Path:
+    path = attribution_read_sidecar_path(scratch_root, step)
+    _write_json_atomic(path, record)
+    return path
+
+
+ATTRIBUTION_ABORT_SITE_SIDECAR_NAME = "attribution_abort_site_step_{step:04d}.json"
+
+
+def attribution_abort_site_sidecar_path(scratch_root: Path, step: int) -> Path:
+    return Path(scratch_root) / ATTRIBUTION_ABORT_SITE_SIDECAR_NAME.format(step=int(step))
+
+
+def persist_attribution_abort_site_sidecar(
+    *,
+    scratch_root: Path,
+    step: int,
+    record: Mapping[str, Any],
+) -> Path:
+    path = attribution_abort_site_sidecar_path(scratch_root, step)
+    _write_json_atomic(path, record)
+    return path
+
+
+def emit_control_arm_abort_site_row(
+    *,
+    replay_ce_veto_indices: Sequence[int],
+    compact_stats: Mapping[str, Any],
+) -> dict[str, Any]:
+    count_present = "replay_ce_veto_count" in compact_stats
+    return {
+        "replay_ce_veto_indices": [int(v) for v in replay_ce_veto_indices],
+        "compact_replay_ce_veto_count": (
+            int(compact_stats["replay_ce_veto_count"]) if count_present else None
+        ),
+        "compact_replay_ce_veto_count_present": bool(count_present),
+        "planner_provenance": {
+            "control_arm_wrapper": _plan_integer_vote_update_for_control_arm_surfaces.__name__,
+            "control_arm_planner": plan_vote_update_for_emit.__name__,
+            "control_arm_planner_module": plan_vote_update_for_emit.__module__,
+        },
+    }
 
 
 def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
@@ -6363,6 +6693,8 @@ def _attach_control_arm_index_surfaces_to_compact(
     local_selection_ordering_mode: str,
     local_selection_ordering_seed: int,
     local_selection_ordering_step: int,
+    attribution_sidecar_dir: Path | None = None,
+    attribution_step: int | None = None,
 ) -> dict[str, Any]:
     compact = dict(step_result_compact)
     tensor_stats = {
@@ -6385,6 +6717,7 @@ def _attach_control_arm_index_surfaces_to_compact(
     global_rate_cap_enabled = bool(
         dict(compact.get("global_summary", {})).get("global_rate_cap_enabled")
     )
+    abort_site_by_key: dict[str, Any] = {}
     for state_key, plan in sorted(plans_by_key.items()):
         stats = dict(tensor_stats[state_key])
         replay_ce_veto_indices = [
@@ -6394,6 +6727,19 @@ def _attach_control_arm_index_surfaces_to_compact(
             int(value) for value in plan.applied_indices.detach().cpu().tolist()
         ]
         cap_enabled = bool(stats.get("global_rate_cap_enabled", global_rate_cap_enabled))
+        if attribution_sidecar_dir is not None and attribution_step is not None:
+            abort_site_by_key[state_key] = emit_control_arm_abort_site_row(
+                replay_ce_veto_indices=replay_ce_veto_indices,
+                compact_stats=stats,
+            )
+            persist_attribution_abort_site_sidecar(
+                scratch_root=attribution_sidecar_dir,
+                step=int(attribution_step),
+                record={
+                    "schema": "hrm_text_158_attribution_abort_site/v0",
+                    "per_key": abort_site_by_key,
+                },
+            )
         _assert_tier_a_index_surface_count_consistency(
             state_key,
             tensor_stats=stats,
@@ -6819,6 +7165,7 @@ def run_bounded_delta_steps(
     b2_parent_model: LMHead | None = None,
     b2_parent_consistency_weight: float = 0.0,
     b2_pc_aux_mode: str = "telemetry",
+    b2_replay_ce_mode: str = "veto",
     audit_callback: Callable[[int, Mapping[str, Any]], dict[str, Any]] | None = None,
     audit_interval: int = 0,
     stop_on_strict_exact: bool = False,
@@ -6843,6 +7190,8 @@ def run_bounded_delta_steps(
         str | None,
     ] | None = None,
     front_c_identity_collector: FrontCLiveIdentityCollector | None = None,
+    attribution_capture: list[Any] | None = None,
+    attribution_sidecar_dir: Path | None = None,
     phase_progress: PhaseProgress | None = None,
     b2b_sequential_capture_enabled: bool = False,
     b2b_sequential_capture_out: Path | None = None,
@@ -7211,7 +7560,7 @@ def run_bounded_delta_steps(
             pc_aux_votes_by_key = None
             pc_aux_moves_by_key = None
             aux_weighted_grad_finite = True
-            if retained_support_sets:
+            if retained_support_sets and str(b2_replay_ce_mode) != "off":
                 replay_grad_sums = _zero_weighted_grad_sums(states)
                 pc_grad_sums = _zero_weighted_grad_sums(states)
                 support_receipts: list[dict[str, Any]] = []
@@ -7338,6 +7687,9 @@ def run_bounded_delta_steps(
                     front_c_identity_collector,
                     step=int(step),
                     total_steps=int(steps),
+                )
+                attribution_capture_sink = (
+                    attribution_capture.append if attribution_capture is not None else None
                 )
                 global_cap_spec = resolve_named_global_cap_spec(
                     str(global_cap_contract),
@@ -7500,6 +7852,7 @@ def run_bounded_delta_steps(
                         pc_aux_votes_by_key=pc_aux_votes_by_key,
                         pc_aux_moves_by_key=pc_aux_moves_by_key,
                         pc_aux_mode=str(b2_pc_aux_mode),
+                        replay_ce_mode=str(b2_replay_ce_mode),
                         global_cap_spec=effective_global_cap_spec,
                         global_cap_tie_rule_mode=str(tie_rule_mode),
                         global_cap_contract_name=(
@@ -7511,6 +7864,7 @@ def run_bounded_delta_steps(
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),
                         front_c_identity_observer=front_c_identity_observer,
+                        attribution_capture_sink=attribution_capture_sink,
                         candidate_sparse_vote_events_by_key=sparse_events_by_key,
                         event_coded_sparse_vote_authority=bool(
                             event_coded_sparse_vote_authority
@@ -7706,6 +8060,19 @@ def run_bounded_delta_steps(
                     device,
                 )
                 step_result_compact = step_result.to_compact_dict()
+                if attribution_capture:
+                    step_result_compact["attribution_read"] = (
+                        _attribution_read_receipt_from_observation(
+                            attribution_capture[-1],
+                            two_tier_carry_w6_enabled=bool(two_tier_carry_w6_enabled),
+                        )
+                    )
+                    if attribution_sidecar_dir is not None:
+                        persist_attribution_read_sidecar(
+                            scratch_root=attribution_sidecar_dir,
+                            step=int(step),
+                            record=step_result_compact["attribution_read"],
+                        )
                 if two_tier_carry_w6_enabled:
                     assert local_loss_delta_by_key is not None
                     tier_a_plans_by_key = _plan_integer_vote_update_for_tier_a_surfaces(
@@ -7769,6 +8136,10 @@ def run_bounded_delta_steps(
                         local_selection_ordering_mode=step_selection_ordering_mode,
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),
+                        attribution_sidecar_dir=(
+                            attribution_sidecar_dir if attribution_capture else None
+                        ),
+                        attribution_step=int(step) if attribution_capture else None,
                     )
                     step_result_compact = _attach_cap_window_audit_surfaces(
                         step_result_compact,
@@ -8208,6 +8579,7 @@ def run_c2p1_probe(
     b2_retained_supports: str | Sequence[str] | None = None,
     b2_parent_consistency_weight: float = 0.0,
     b2_pc_aux_mode: str = "telemetry",
+    b2_replay_ce_mode: str = "veto",
     b2_full_verdict_mode: bool = False,
     b2_l0b_batch_size: int = 8,
     b2_math_a0_batch_size: int = 16,
@@ -8222,6 +8594,7 @@ def run_c2p1_probe(
     b2b_sequential_min_steps_for_verdict: int = 50,
     b2b_sequential_max_sampled_candidates: int = PIVOT_MEASUREMENT_REQUIRED_MAX_SAMPLED_CANDIDATES,
     two_tier_carry_w6_enabled: bool = False,
+    emit_attribution_read: bool = False,
     checkpoint_states_dump: Path | None = None,
     receipt_emit_profile: str = RECEIPT_EMIT_PROFILE_FULL,
     persistent_accumulator_w6_byte_packed: bool = False,
@@ -8426,17 +8799,22 @@ def run_c2p1_probe(
             )
         requested_prior_audit_supports = parse_prior_audit_supports(prior_audit_supports)
         requested_b2_retained_supports = parse_b2_retained_supports(b2_retained_supports)
+        if b2_replay_ce_mode not in B2_REPLAY_CE_MODES:
+            raise ValueError(
+                f"b2_replay_ce_mode must be one of {B2_REPLAY_CE_MODES}, got {b2_replay_ce_mode!r}"
+            )
         if b2_full_verdict_mode:
-            missing_retained = [
-                support
-                for support in B2_FULL_STOP_SUPPORTS
-                if support not in requested_b2_retained_supports
-            ]
-            if missing_retained:
-                raise ValueError(
-                    "B2-full verdict mode requires retained supports "
-                    f"{B2_FULL_STOP_SUPPORTS}; missing {tuple(missing_retained)}"
-                )
+            if str(b2_replay_ce_mode) != "off":
+                missing_retained = [
+                    support
+                    for support in B2_FULL_STOP_SUPPORTS
+                    if support not in requested_b2_retained_supports
+                ]
+                if missing_retained:
+                    raise ValueError(
+                        "B2-full verdict mode requires retained supports "
+                        f"{B2_FULL_STOP_SUPPORTS}; missing {tuple(missing_retained)}"
+                    )
             required_prior_supports = (*B2_FULL_STOP_SUPPORTS, "L0c1")
             missing_prior = [
                 support
@@ -8773,6 +9151,7 @@ def run_c2p1_probe(
             d_recompute_calibration_warmup_out=d_recompute_calibration_warmup_out,
         )
     
+        attribution_capture: list[Any] | None = [] if emit_attribution_read else None
         front_c_identity_collector = None
         if front_c_identity_emission_artifact is not None:
             artifact_path = Path(front_c_identity_emission_artifact)
@@ -9189,6 +9568,7 @@ def run_c2p1_probe(
                 b2_parent_model=b2_parent_model,
                 b2_parent_consistency_weight=float(b2_parent_consistency_weight),
                 b2_pc_aux_mode=str(b2_pc_aux_mode),
+                b2_replay_ce_mode=str(b2_replay_ce_mode),
                 audit_callback=audit_callback if audit_enabled else None,
                 audit_interval=int(audit_interval),
                 stop_on_strict_exact=bool(stop_on_strict_exact),
@@ -9202,6 +9582,8 @@ def run_c2p1_probe(
                 b2_full_prior_snapshot_callback=b2_full_prior_snapshot_callback,
                 b2_full_audit_export_callback=b2_full_audit_export_callback,
                 front_c_identity_collector=front_c_identity_collector,
+                attribution_capture=attribution_capture,
+                attribution_sidecar_dir=scratch_root,
                 phase_progress=phase_progress,
                 b2b_sequential_capture_enabled=bool(b2b_sequential_capture_enabled),
                 b2b_sequential_capture_out=b2b_sequential_capture_out,
@@ -9837,6 +10219,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
+        "--b2-replay-ce-mode",
+        choices=B2_REPLAY_CE_MODES,
+        default="off",
+        help=(
+            "Replay-CE channel mode. off builds no vote tensors; telemetry "
+            "records only; veto applies the legacy mask and residual clamp. "
+            "Default off."
+        ),
+    )
+    ap.add_argument(
+        "--emit-attribution-read",
+        action="store_true",
+        help=(
+            "Activate the attribution-read capture/emit path inside "
+            "run_bounded_delta_steps. Default off."
+        ),
+    )
+    ap.add_argument(
         "--b2-full-verdict-mode",
         action="store_true",
         help=(
@@ -10259,6 +10659,8 @@ def main(argv: list[str] | None = None) -> int:
         b2_retained_supports=args.b2_retained_supports,
         b2_parent_consistency_weight=args.b2_parent_consistency_weight,
         b2_pc_aux_mode=args.b2_pc_aux_mode,
+        b2_replay_ce_mode=args.b2_replay_ce_mode,
+        emit_attribution_read=bool(args.emit_attribution_read),
         b2_full_verdict_mode=args.b2_full_verdict_mode,
         b2_l0b_batch_size=args.b2_l0b_batch_size,
         b2_math_a0_batch_size=args.b2_math_a0_batch_size,

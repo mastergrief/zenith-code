@@ -892,9 +892,9 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     plan_two_tier_vote_update_reference_legacy,
 )
 
-B6_OFF_GOLDEN_SHA256 = "0b3a999592469c3b8b5e43644891e5d4c39dadf2b52cd5d72494fa95cd29756b"
+B6_OFF_GOLDEN_SHA256 = "f769a1d73a639d2edb3545e9cc4a443d9fca9d382e5bb77dc1a36035d87c0919"
 B6_OFF_GOLDEN_FIXTURE = {
-    "capture_head_sha": "2ec3d4df79b7e4d5b41498eab77439fc908d5315",
+    "capture_head_sha": "8bc9294f6b463560f0fba642a58ea04e36a16669",
     "cases": [
         {
             "S10_global_cap": {
@@ -917,6 +917,8 @@ B6_OFF_GOLDEN_FIXTURE = {
                         "pc_aux_votes": None,
                         "replay_ce_veto_moves": None,
                         "replay_ce_veto_votes": None,
+                        "sparse_vote_events": None,
+                        "vote_active_flat_indices": None,
                         "vote_format": "int16_votes",
                         "votes": [
                             3,
@@ -945,6 +947,8 @@ B6_OFF_GOLDEN_FIXTURE = {
                             0,
                             2
                         ],
+                        "event_coded_sparse_active_idx": None,
+                        "event_coded_sparse_post_active_i32": None,
                         "new_acc_i32": [
                             3,
                             0,
@@ -1226,6 +1230,8 @@ B6_OFF_GOLDEN_FIXTURE = {
                         "replay_ce_veto_votes": [
                             0
                         ],
+                        "sparse_vote_events": None,
+                        "vote_active_flat_indices": None,
                         "vote_format": "int16_votes",
                         "votes": [
                             12
@@ -1241,6 +1247,8 @@ B6_OFF_GOLDEN_FIXTURE = {
                         "candidate_indices": [
                             0
                         ],
+                        "event_coded_sparse_active_idx": None,
+                        "event_coded_sparse_post_active_i32": None,
                         "new_acc_i32": [
                             12
                         ],
@@ -1502,6 +1510,8 @@ B6_OFF_GOLDEN_FIXTURE = {
                         "pc_aux_votes": None,
                         "replay_ce_veto_moves": None,
                         "replay_ce_veto_votes": None,
+                        "sparse_vote_events": None,
+                        "vote_active_flat_indices": None,
                         "vote_format": "int16_votes",
                         "votes": [
                             12,
@@ -1528,6 +1538,8 @@ B6_OFF_GOLDEN_FIXTURE = {
                             0,
                             1
                         ],
+                        "event_coded_sparse_active_idx": None,
+                        "event_coded_sparse_post_active_i32": None,
                         "new_acc_i32": [
                             12,
                             12
@@ -1656,6 +1668,8 @@ B6_OFF_GOLDEN_FIXTURE = {
                     "exact_shadow_accepted_sha256": "c773b27f4c5b93a8227463ca4116357e78645021908de6fbace90c9ff684fe39",
                     "exact_shadow_deferred_sha256": "0eebb09249ec06c9a0c57a4bc7c0c65cfb1d43d061053519feea2079ef706e10",
                     "exact_shadow_full_demand_sha256": "21316f108eca8475cedba9d43e10aeee4b5f7fe8f2f18718744415e566fb1e97",
+                    "flip_application_deferred": False,
+                    "forgotten_accum_cap_site_branch": "DENSE_LEGACY_apply_global_rate_cap_reference@bounded_delta_learner.apply_bounded_delta_vote_step",
                     "functional_veto_policy": "deferred_non_scope",
                     "global_deferred_ratio": 0.5,
                     "global_pre_cap_would_apply_count": 2,
@@ -1848,6 +1862,7 @@ B6_OFF_GOLDEN_FIXTURE = {
     "fixture_id": "B6_OFF_GOLDEN_DFDB5CFE_V0",
     "off_semantics_basis_sha": "dfdb5cfe5301cd3a7b58a183ddff56c353d2761c"
 }
+
 
 
 def _b6_tensor_list(tensor: torch.Tensor) -> list:

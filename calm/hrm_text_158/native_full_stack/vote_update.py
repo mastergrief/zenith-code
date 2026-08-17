@@ -7,7 +7,7 @@ GPU-done kernel.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from enum import Enum
 import hashlib
 import os
@@ -77,6 +77,12 @@ class VoteUpdateVoteFormat(str, Enum):
 
 
 class PcAuxMode(str, Enum):
+    TELEMETRY = "telemetry"
+    VETO = "veto"
+
+
+class ReplayCeMode(str, Enum):
+    OFF = "off"
     TELEMETRY = "telemetry"
     VETO = "veto"
 
@@ -173,10 +179,14 @@ class VoteUpdateInputs:
     pc_aux_votes: Optional[torch.Tensor] = None
     pc_aux_moves: Optional[torch.Tensor] = None
     pc_aux_mode: PcAuxMode | str = PcAuxMode.TELEMETRY
+    replay_ce_mode: InitVar[ReplayCeMode | str] = ReplayCeMode.VETO
     vote_format: VoteUpdateVoteFormat | str = VoteUpdateVoteFormat.INT16_VOTES
     local_loss_delta: Optional[torch.Tensor] = None
     vote_active_flat_indices: Optional[torch.Tensor] = None
     sparse_vote_events: Any = None
+
+    def __post_init__(self, replay_ce_mode: ReplayCeMode | str) -> None:
+        object.__setattr__(self, "_replay_ce_mode", ReplayCeMode(replay_ce_mode))
 
     @property
     def normalized_vote_format(self) -> VoteUpdateVoteFormat:
@@ -185,6 +195,10 @@ class VoteUpdateInputs:
     @property
     def normalized_pc_aux_mode(self) -> PcAuxMode:
         return PcAuxMode(self.pc_aux_mode)
+
+    @property
+    def normalized_replay_ce_mode(self) -> ReplayCeMode:
+        return self._replay_ce_mode
 
 
 @dataclass(frozen=True)
@@ -225,6 +239,18 @@ class QAccApplyMutationResult:
 
 def _safe_ratio(numerator: int, denominator: int) -> float:
     return float(numerator) / float(denominator) if denominator else 0.0
+
+
+def _replay_ce_telemetry_stat_leaves(
+    inputs: VoteUpdateInputs,
+    replay_ce_negative: torch.Tensor,
+) -> dict[str, int | float | bool | str]:
+    if inputs.normalized_replay_ce_mode != ReplayCeMode.TELEMETRY:
+        return {}
+    return {
+        "replay_ce_mode": ReplayCeMode.TELEMETRY.value,
+        "replay_ce_negative_count": int(replay_ce_negative.numel()),
+    }
 
 
 def _validate_future_formats(state: VoteUpdateState, inputs: VoteUpdateInputs) -> None:
@@ -300,9 +326,11 @@ def _partition_pre_veto_by_replay_and_pc_veto(
     torch.Tensor,
     torch.Tensor,
     torch.Tensor,
+    torch.Tensor,
 ]:
     replay_veto_mask = torch.zeros_like(directions, dtype=torch.bool)
     replay_ce_vetoed = pre_veto_selected[:0]
+    replay_ce_negative = pre_veto_selected[:0]
     replay_veto_directions = torch.zeros_like(pre_veto_selected[:0], dtype=torch.int16)
     replay_veto_thresholds = torch.zeros_like(pre_veto_selected[:0], dtype=torch.int32)
     if inputs.replay_ce_veto_votes is not None:
@@ -316,9 +344,12 @@ def _partition_pre_veto_by_replay_and_pc_veto(
         ).to(torch.int16)
         replay_support = replay_direction * directions
         replay_veto_mask = replay_support < 0
-        replay_ce_vetoed = pre_veto_selected[replay_veto_mask]
-        replay_veto_directions = directions[replay_veto_mask]
-        replay_veto_thresholds = selected_thresholds[replay_veto_mask]
+        if inputs.normalized_replay_ce_mode == ReplayCeMode.TELEMETRY:
+            replay_ce_negative = pre_veto_selected[replay_veto_mask]
+        elif inputs.normalized_replay_ce_mode == ReplayCeMode.VETO:
+            replay_ce_vetoed = pre_veto_selected[replay_veto_mask]
+            replay_veto_directions = directions[replay_veto_mask]
+            replay_veto_thresholds = selected_thresholds[replay_veto_mask]
     pc_veto_mask = torch.zeros_like(directions, dtype=torch.bool)
     pc_aux_negative = pre_veto_selected[:0]
     pc_aux_vetoed = pre_veto_selected[:0]
@@ -338,7 +369,10 @@ def _partition_pre_veto_by_replay_and_pc_veto(
             # Replay remains the first veto layer; PC-veto only accounts for
             # additional flips that survived replay.
             pc_aux_vetoed = pre_veto_selected[pc_veto_mask & ~replay_veto_mask]
-    apply_mask = ~replay_veto_mask
+    if inputs.normalized_replay_ce_mode == ReplayCeMode.VETO:
+        apply_mask = ~replay_veto_mask
+    else:
+        apply_mask = torch.ones_like(replay_veto_mask)
     if inputs.normalized_pc_aux_mode == PcAuxMode.VETO:
         apply_mask = apply_mask & ~pc_veto_mask
     applied = pre_veto_selected[apply_mask]
@@ -349,6 +383,7 @@ def _partition_pre_veto_by_replay_and_pc_veto(
         applied_directions,
         applied_thresholds,
         replay_ce_vetoed,
+        replay_ce_negative,
         replay_veto_directions,
         replay_veto_thresholds,
         pc_aux_negative,
@@ -447,6 +482,7 @@ def _two_tier_vote_update_stats(
     pre_veto_selected: torch.Tensor,
     applied: torch.Tensor,
     replay_ce_vetoed: torch.Tensor,
+    replay_ce_negative: torch.Tensor,
     pc_aux_negative: torch.Tensor,
     pc_aux_vetoed: torch.Tensor,
     max_flips: int,
@@ -484,10 +520,17 @@ def _two_tier_vote_update_stats(
             if inputs.normalized_pc_aux_mode == PcAuxMode.VETO and inputs.pc_aux_votes is not None
             else "not_enabled"
         ),
-        "replay_ce_veto_consumes_threshold_event": inputs.replay_ce_veto_votes is not None,
+        "replay_ce_veto_consumes_threshold_event": (
+            inputs.normalized_replay_ce_mode == ReplayCeMode.VETO
+            and inputs.replay_ce_veto_votes is not None
+        ),
         "vetoed_accumulator_residual_policy": (
             "subtract_threshold_then_clamp_without_q_mutation"
-            if inputs.replay_ce_veto_votes is not None else "not_enabled"
+            if (
+                inputs.normalized_replay_ce_mode == ReplayCeMode.VETO
+                and inputs.replay_ce_veto_votes is not None
+            )
+            else "not_enabled"
         ),
         "vetoed_accumulator_clamp_count": replay_count,
         "vote_nonzero_count": int((votes != 0).sum().item()),
@@ -497,6 +540,7 @@ def _two_tier_vote_update_stats(
         "two_tier_canonical_threshold_abs": int(CROSSING_THRESHOLD_ABS),
         "two_tier_vote_spec_threshold_abs": int(vote_spec_threshold_abs),
     }
+    stats.update(_replay_ce_telemetry_stat_leaves(inputs, replay_ce_negative))
     assert_two_tier_threshold_receipt_consistent(stats)
     return stats
 
@@ -566,6 +610,7 @@ def plan_two_tier_vote_update_reference_legacy(
         applied_directions = torch.zeros_like(pre_veto_selected, dtype=torch.int16)
         applied_thresholds = torch.zeros_like(pre_veto_selected, dtype=torch.int32)
         replay_ce_vetoed = pre_veto_selected
+        replay_ce_negative = pre_veto_selected
         replay_veto_directions = applied_directions
         replay_veto_thresholds = applied_thresholds
         pc_aux_negative = pre_veto_selected
@@ -592,6 +637,7 @@ def plan_two_tier_vote_update_reference_legacy(
             applied_directions,
             applied_thresholds,
             replay_ce_vetoed,
+            replay_ce_negative,
             replay_veto_directions,
             replay_veto_thresholds,
             pc_aux_negative,
@@ -630,10 +676,17 @@ def plan_two_tier_vote_update_reference_legacy(
             if inputs.normalized_pc_aux_mode == PcAuxMode.VETO and inputs.pc_aux_votes is not None
             else "not_enabled"
         ),
-        "replay_ce_veto_consumes_threshold_event": inputs.replay_ce_veto_votes is not None,
+        "replay_ce_veto_consumes_threshold_event": (
+            inputs.normalized_replay_ce_mode == ReplayCeMode.VETO
+            and inputs.replay_ce_veto_votes is not None
+        ),
         "vetoed_accumulator_residual_policy": (
             "subtract_threshold_then_clamp_without_q_mutation"
-            if inputs.replay_ce_veto_votes is not None else "not_enabled"
+            if (
+                inputs.normalized_replay_ce_mode == ReplayCeMode.VETO
+                and inputs.replay_ce_veto_votes is not None
+            )
+            else "not_enabled"
         ),
         "vetoed_accumulator_clamp_count": replay_count,
         "vote_nonzero_count": int((votes != 0).sum().item()),
@@ -643,6 +696,7 @@ def plan_two_tier_vote_update_reference_legacy(
         "two_tier_canonical_threshold_abs": int(CROSSING_THRESHOLD_ABS),
         "two_tier_vote_spec_threshold_abs": int(vote_spec_threshold_abs),
     }
+    stats.update(_replay_ce_telemetry_stat_leaves(inputs, replay_ce_negative))
     assert_two_tier_threshold_receipt_consistent(stats)
     return VoteUpdatePlan(
         q_i16=q_i16.view_as(q_levels),
@@ -719,6 +773,7 @@ def plan_two_tier_vote_update_reference(
         applied_directions = torch.zeros_like(pre_veto_selected, dtype=torch.int16)
         applied_thresholds = torch.zeros_like(pre_veto_selected, dtype=torch.int32)
         replay_ce_vetoed = pre_veto_selected
+        replay_ce_negative = pre_veto_selected
         replay_veto_directions = applied_directions
         replay_veto_thresholds = applied_thresholds
         pc_aux_negative = pre_veto_selected
@@ -740,6 +795,7 @@ def plan_two_tier_vote_update_reference(
             applied_directions,
             applied_thresholds,
             replay_ce_vetoed,
+            replay_ce_negative,
             replay_veto_directions,
             replay_veto_thresholds,
             pc_aux_negative,
@@ -758,6 +814,7 @@ def plan_two_tier_vote_update_reference(
         pre_veto_selected=pre_veto_selected,
         applied=applied,
         replay_ce_vetoed=replay_ce_vetoed,
+        replay_ce_negative=replay_ce_negative,
         pc_aux_negative=pc_aux_negative,
         pc_aux_vetoed=pc_aux_vetoed,
         max_flips=int(max_flips),
@@ -847,12 +904,13 @@ def apply_two_tier_vote_update_reference(
         flat_index = int(write_back.flat_index)
         q_i16[flat_index] = int(write_back.current_q_level)
         new_acc_i32[flat_index] = int(write_back.post_accumulator_carry)
-    _apply_replay_veto_residual_clamp(
-        new_acc_i32,
-        replay_ce_veto_indices=plan.replay_ce_veto_indices,
-        replay_veto_directions=plan.replay_veto_directions,
-        replay_veto_thresholds=plan.replay_veto_thresholds,
-    )
+    if inputs.normalized_replay_ce_mode == ReplayCeMode.VETO:
+        _apply_replay_veto_residual_clamp(
+            new_acc_i32,
+            replay_ce_veto_indices=plan.replay_ce_veto_indices,
+            replay_veto_directions=plan.replay_veto_directions,
+            replay_veto_thresholds=plan.replay_veto_thresholds,
+        )
     q_out = q_i16.view_as(state.q_levels).to(torch.int8).contiguous()
     acc_out = new_acc_i32.view_as(state.accumulators).to(torch.int16).contiguous()
     stats = dict(plan.stats)
@@ -982,6 +1040,7 @@ def plan_integer_vote_update_reference(
     applied_directions = torch.zeros_like(candidate_idx[:0], dtype=torch.int16)
     applied_thresholds = torch.zeros_like(candidate_idx[:0], dtype=torch.int32)
     replay_ce_vetoed = candidate_idx[:0]
+    replay_ce_negative = candidate_idx[:0]
     replay_veto_directions = torch.zeros_like(candidate_idx[:0], dtype=torch.int16)
     replay_veto_thresholds = torch.zeros_like(candidate_idx[:0], dtype=torch.int32)
     pc_aux_negative = candidate_idx[:0]
@@ -1004,6 +1063,7 @@ def plan_integer_vote_update_reference(
             applied_directions,
             applied_thresholds,
             replay_ce_vetoed,
+            replay_ce_negative,
             replay_veto_directions,
             replay_veto_thresholds,
             pc_aux_negative,
@@ -1042,15 +1102,23 @@ def plan_integer_vote_update_reference(
             if inputs.normalized_pc_aux_mode == PcAuxMode.VETO and inputs.pc_aux_votes is not None
             else "not_enabled"
         ),
-        "replay_ce_veto_consumes_threshold_event": inputs.replay_ce_veto_votes is not None,
+        "replay_ce_veto_consumes_threshold_event": (
+            inputs.normalized_replay_ce_mode == ReplayCeMode.VETO
+            and inputs.replay_ce_veto_votes is not None
+        ),
         "vetoed_accumulator_residual_policy": (
             "subtract_threshold_then_clamp_without_q_mutation"
-            if inputs.replay_ce_veto_votes is not None else "not_enabled"
+            if (
+                inputs.normalized_replay_ce_mode == ReplayCeMode.VETO
+                and inputs.replay_ce_veto_votes is not None
+            )
+            else "not_enabled"
         ),
         "vetoed_accumulator_clamp_count": replay_count,
         "vote_nonzero_count": int((votes != 0).sum().item()),
         "acc_abs_max_after_decay_vote": int(new_acc_i32.abs().max().item()) if new_acc_i32.numel() else 0,
     }
+    stats.update(_replay_ce_telemetry_stat_leaves(inputs, replay_ce_negative))
     return VoteUpdatePlan(
         q_i16=q_i16.view_as(q_levels),
         new_acc_i32=new_acc_i32.view_as(accumulators),

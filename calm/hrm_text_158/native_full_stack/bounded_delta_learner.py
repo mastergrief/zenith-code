@@ -82,6 +82,10 @@ from calm.hrm_text_158.native_full_stack.vote_update import (
     apply_integer_vote_update_reference,
     plan_integer_vote_update_reference,
 )
+from calm.hrm_text_158.native_full_stack.attribution_read_arbiter import (
+    CONSUMED_INPUTS_INVENTORY_KEY,
+    emit_object_inventory,
+)
 
 
 _EVENT_CODED_CAP_STAT_OVERLAY_KEYS = frozenset(
@@ -1879,6 +1883,7 @@ def _clone_vote_update_inputs_for_front_c(inputs: VoteUpdateInputs) -> VoteUpdat
         pc_aux_votes=clone_optional(inputs.pc_aux_votes),
         pc_aux_moves=clone_optional(inputs.pc_aux_moves),
         pc_aux_mode=inputs.pc_aux_mode,
+        replay_ce_mode=inputs.normalized_replay_ce_mode,
         vote_format=inputs.vote_format,
         local_loss_delta=clone_optional(inputs.local_loss_delta),
     )
@@ -3074,6 +3079,7 @@ def apply_bounded_delta_vote_step(
     pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None = None,
     pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None = None,
     pc_aux_mode: str = "telemetry",
+    replay_ce_mode: str = "veto",
     global_cap_spec: GlobalRateCapSpec | None = None,
     global_cap_tie_rule_mode: str = EXACT_GLOBAL_CAP_TIE_RULE_MODE,
     global_cap_contract_name: str | None = None,
@@ -3084,6 +3090,7 @@ def apply_bounded_delta_vote_step(
     local_loss_delta_by_key: Mapping[str, torch.Tensor] | None = None,
     two_tier_carry_w6_enabled: bool = False,
     front_c_identity_observer: Callable[[Mapping[str, Any]], object] | None = None,
+    attribution_capture_sink: Callable[[Mapping[str, Any]], object] | None = None,
     candidate_mode: str | None = None,
     candidate_sparse_vote_events_by_key: Mapping[str, SparseVoteEvents | Mapping[int, int]] | None = None,
     candidate_oracle_control_enabled: bool = True,
@@ -3170,6 +3177,8 @@ def apply_bounded_delta_vote_step(
             raise ValueError("event-coded live carrier path does not support pc_aux maps")
         if front_c_identity_observer is not None:
             raise ValueError("event-coded live carrier path does not cover front_c observer")
+        if attribution_capture_sink is not None:
+            raise ValueError("event-coded live carrier path does not cover attribution capture sink")
         return _apply_bounded_delta_vote_step_event_coded_live(
             tensor_states,
             votes_by_key,
@@ -3203,6 +3212,8 @@ def apply_bounded_delta_vote_step(
             raise ValueError("candidate_mode local vote-update proof does not cover alternate local ordering")
         if front_c_identity_observer is not None:
             raise ValueError("candidate_mode does not cover front_c live identity observation")
+        if attribution_capture_sink is not None:
+            raise ValueError("candidate_mode does not cover attribution capture sink")
         if global_cap_spec is not None and not candidate_global_cap_production_seam_enabled:
             raise ValueError("candidate_mode local vote-update proof does not cover global cap")
         if deferred_backlog is not None:
@@ -3537,6 +3548,7 @@ def apply_bounded_delta_vote_step(
                 shape=votes.shape,
             ),
             pc_aux_mode=pc_aux_mode,
+            replay_ce_mode=replay_ce_mode,
             local_loss_delta=local_loss_delta,
         )
         spec = vote_specs_by_key[state_key]
@@ -3633,19 +3645,27 @@ def apply_bounded_delta_vote_step(
         summary["two_tier_enabled_pin_count"] = 1
         summary["two_tier_enabled_pin_sha256"] = _two_tier_enabled_pin_sha256()
 
-    if front_c_identity_observer is not None:
-        _ignored_observer_return = front_c_identity_observer(
-            _front_c_cloned_observation(
-                vote_update_states=vote_update_states,
-                inputs_by_key=inputs_by_key,
-                vote_specs_by_key=vote_specs_by_key,
-                plans_by_key=plans_by_key,
-                q_acc_by_key=q_acc_by_key,
-                deferred_backlog=backlog,
-                global_cap_used=global_cap_spec is not None,
-            ),
+    if front_c_identity_observer is not None or attribution_capture_sink is not None:
+        cloned_observation = _front_c_cloned_observation(
+            vote_update_states=vote_update_states,
+            inputs_by_key=inputs_by_key,
+            vote_specs_by_key=vote_specs_by_key,
+            plans_by_key=plans_by_key,
+            q_acc_by_key=q_acc_by_key,
+            deferred_backlog=backlog,
+            global_cap_used=global_cap_spec is not None,
         )
-        del _ignored_observer_return
+        if front_c_identity_observer is not None:
+            _ignored_observer_return = front_c_identity_observer(cloned_observation)
+            del _ignored_observer_return
+        if attribution_capture_sink is not None:
+            sink_payload = dict(cloned_observation)
+            sink_payload[CONSUMED_INPUTS_INVENTORY_KEY] = {
+                state_key: emit_object_inventory(inputs, tensor_hasher=tensor_sha256)
+                for state_key, inputs in sorted(inputs_by_key.items())
+            }
+            _ignored_sink_return = attribution_capture_sink(sink_payload)
+            del _ignored_sink_return
 
     next_states: dict[str, BoundedDeltaTensorState] = {}
     tensor_stats: dict[str, dict[str, Any]] = {}
