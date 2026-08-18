@@ -578,6 +578,17 @@ def _wrapper_hides_git_commit(command: str) -> bool:
     return False
 
 
+_QUOTED_HEREDOC_BODY = re.compile(
+    r"<<-?\s*(['\"])([A-Za-z0-9_]+)\1[ \t]*\n.*?\n\2[ \t]*(?:\n|$)",
+    re.DOTALL,
+)
+
+
+def _strip_quoted_heredoc_bodies(command: str) -> str:
+    """Drop <<'DELIM' ... DELIM bodies so data payloads are not shell segments."""
+    return _QUOTED_HEREDOC_BODY.sub("\n", command)
+
+
 def _is_git_commit_gated_command(command: str) -> bool:
     """Whether this Bash tool call should enter the commit gate (not pass-through).
 
@@ -585,19 +596,16 @@ def _is_git_commit_gated_command(command: str) -> bool:
     token + commit subcommand at any position). Pass-through ONLY for
     grep/echo single-segment quoted-arg substrings. Non-canonical bearing
     segments (eval, timeout, wrappers, …) gate → fail-closed BLOCK.
+    Quoted-delimiter heredoc bodies are data, not command text.
     """
-    normalized = _normalized_command(command)
+    normalized = _strip_quoted_heredoc_bodies(_normalized_command(command))
     if _is_grep_echo_pass_through(normalized):
         return False
-    if _git_commit_bearing_segments(command):
+    if _git_commit_bearing_segments(normalized):
         return True
     if any(
         _segment_has_git_ci(segment)
         for segment in _split_shell_segments(normalized)
-    ):
-        return True
-    if _has_risky_dynamic_expansion(normalized) and _command_mentions_git_and_commit(
-        normalized
     ):
         return True
     return False
@@ -785,6 +793,32 @@ def _staged_digest(command: str) -> str | None:
     return hashlib.sha256(proc.stdout.encode("utf-8")).hexdigest()
 
 
+def _staged_commit_tier(command: str) -> tuple[str, str]:
+    """Tier the staged path set. Fails CLOSED to HIGH on any doubt.
+
+    Every failure mode here — unresolved repo, git error, non-zero exit, empty
+    listing — returns HIGH, so a tiering fault costs a co_lead review rather
+    than skipping one. The pure allowlist lives in the classifier.
+    """
+    repo_dir, _explicit = resolve_target_repo(command)
+    if repo_dir is None:
+        return "HIGH", "target repo unresolved"
+    try:
+        proc = subprocess.run(
+            ["git", "-C", repo_dir, "diff", "--cached", "--name-only", "-z"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception:  # noqa: BLE001 - any failure tiers HIGH
+        return "HIGH", "staged path listing raised"
+    if proc.returncode != 0:
+        return "HIGH", "staged path listing failed"
+    # -z: NUL-separated, so paths with spaces or quotes are not re-parsed.
+    paths = [p for p in proc.stdout.split("\0") if p]
+    return _classifier.commit_tier(paths), f"{len(paths)} staged path(s)"
+
+
 def _extract_digest(body: str) -> str | None:
     return _classifier.extract_digest(body)
 
@@ -925,6 +959,17 @@ def main() -> int:
         )
         print(msg, file=sys.stderr)
         return 2
+
+    # Tiered gate: LOW (docs / tests, nothing control-plane) commits under
+    # claude gate-1 alone. Evaluated only AFTER the staged digest resolves, so
+    # an unresolvable commit shape still fail-closed BLOCKS above rather than
+    # reaching a tier decision.
+    tier, tier_detail = _staged_commit_tier(command)
+    if tier == "LOW":
+        return fail_open(
+            f"LOW-tier staged set ({tier_detail}) — claude gate-1 only per "
+            'CLAUDEX_ORCHESTRATION.md §"Commit and push gates"'
+        )
 
     ok, reason = _find_fresh_colead_pass(records, staged_digest)
     if ok:

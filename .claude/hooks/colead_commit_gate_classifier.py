@@ -49,16 +49,17 @@ _AUTH_PRIMARY_COLON = re.compile(
 
 _DEMOTION_LINE = re.compile(r"(?i)\b(prior|dead|void|superseded|old)\b")
 
-# F1–F8: anchored line acts only (no leading free-prose prefix)
+# F1–F9: anchored line acts only (no leading free-prose prefix)
 _F_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("F1", re.compile(r"(?im)^\s*#{0,3}\s*DIFF\s+GATE\s+REQUEST\b")),
-    ("F2", re.compile(r"(?im)^\s*#{0,3}\s*(?:claude\s+)?gate-1\b[^\n]{0,40}\bFREEZE\b")),
+    ("F2", re.compile(r"(?im)^\s*#{0,3}\s*(?:claude\s+)?gate-1(?:\s+PASS)?\s+freeze\b")),
     ("F3", re.compile(r"(?im)^\s*#{0,3}\s*GATE-1\s+PASS\s*\+\s*[^\n]{0,60}\bFREEZE\b")),
     ("F4", re.compile(r"(?im)^\s*#{0,3}\s*STAGED\s+FREEZE\b")),
     ("F5", re.compile(r"(?im)^\s*#{0,3}\s*FREEZE\s+LOCKED\b")),
     ("F6", re.compile(r"(?im)^\s*#{0,3}\s*frozen\s+handoff\b")),
     ("F7", re.compile(r"(?im)^\s*#{0,3}\s*validation/diff\s+handoff\b")),
     ("F8", re.compile(r"(?im)^\s*#{0,3}\s*FRESH\s+DIFF_DIGEST\b")),
+    ("F9", re.compile(r"(?im)^\s*#{0,3}\s*GATE-2\s+ON\s+FROZEN\b")),
 )
 
 # X1 line-start only; X2 nudge; X3 FOLLOW-UP opening; X5 quoted-only F hits
@@ -69,9 +70,9 @@ _X2 = re.compile(
 _X3_OPEN = re.compile(r"(?im)^\s*FOLLOW-UP\b")
 
 COLEAD_PASS_MARKERS = (
-    re.compile(r"(?im)co_lead\s+gate-2\s+PASS"),
-    re.compile(r"(?im)validation/diff\s+(?:review\s*:\s*)?PASS"),
-    re.compile(r"(?im)\bgate-2\s+PASS\b"),
+    re.compile(r"(?im)co_lead\s+gate-2\s+\**PASS\b"),
+    re.compile(r"(?im)validation/diff\s+(?:review\s*:\s*)?\**PASS\b"),
+    re.compile(r"(?im)\bgate-2\s+\**PASS\b"),
 )
 COLEAD_DEFERRAL_MARKERS = (
     re.compile(r"(?im)\bno\s+(?:co_lead\s+)?approval\b"),
@@ -81,9 +82,9 @@ COLEAD_DEFERRAL_MARKERS = (
     re.compile(r"(?im)\bvisibility\s+only\b"),
 )
 COLEAD_BLOCK_MARKERS = (
-    re.compile(r"(?im)co_lead\s+gate-2\s+(?:BLOCK|REVISE)"),
-    re.compile(r"(?im)\bgate-2\s+(?:BLOCK|REVISE)\b"),
-    re.compile(r"(?im)validation/diff\s+.*\b(?:BLOCK|REVISE)\b"),
+    re.compile(r"(?im)co_lead\s+gate-2\s+\**(?:BLOCK|REVISE)\b"),
+    re.compile(r"(?im)\bgate-2\s+\**(?:BLOCK|REVISE)\b"),
+    re.compile(r"(?im)validation/diff\s+(?:review\s*:\s*)?\**(?:BLOCK|REVISE)\b"),
 )
 
 
@@ -226,7 +227,7 @@ def record_authoritatively_binds(body_text: str, staged_digest: str) -> bool:
 
 
 def _has_anchored_f_marker(body_text: str) -> bool:
-    """True if any F1–F8 matches as an anchored non-quoted line act."""
+    """True if any F1–F9 matches as an anchored non-quoted line act."""
     for _fid, pat in _F_PATTERNS:
         for _i, line in _nonquoted_lines(body_text):
             if pat.search(line):
@@ -451,3 +452,58 @@ def find_fresh_colead_pass(
             "no codex_co_lead validation/diff PASS echoing staged DIFF_DIGEST on-thread after freeze",
         )
     return True, "fresh co_lead PASS matches staged DIFF_DIGEST"
+
+
+# --- commit tier (pure) ------------------------------------------------------
+#
+# Tiers the STAGED PATH SET for the tiered commit gate
+# (`CLAUDEX_ORCHESTRATION.md` §"Commit and push gates"). LOW commits under
+# claude gate-1 alone; everything else keeps the co_lead DIFF_DIGEST PASS.
+#
+# This weakens an authorization gate, so it is built as a closed ALLOWLIST and
+# fails CLOSED in every direction a caller could get it wrong:
+#   - a path that is not provably low-risk makes the WHOLE commit HIGH;
+#   - a MIXED set is HIGH — one control-plane file among twenty docs is still a
+#     control-plane change, and tiering by majority would be the bypass;
+#   - an EMPTY set is HIGH — "nothing staged" is not proof of low risk, it is
+#     absence of evidence, and the caller may have failed to list the paths.
+# `CLAUDEX:208-209` — control-plane edits are never LOW.
+
+_CONTROL_PLANE_DIRS = frozenset({".claude", ".codex", ".github"})
+# Case-folded deny copies only. Allow-list comparisons stay case-sensitive so
+# a fold cannot widen toward LOW (`docs/a.MD` / `TEST_X.PY` / `Tests/` stay HIGH).
+_CONTROL_PLANE_DIRS_CF = frozenset(p.casefold() for p in _CONTROL_PLANE_DIRS)
+
+# Durable control-plane files that live outside those directories.
+_CONTROL_PLANE_BASENAMES = frozenset(
+    {"CLAUDE.md", "AGENTS.md", ".mcp.json", ".gitignore", ".gitmodules"}
+)
+_CONTROL_PLANE_BASENAMES_CF = frozenset(p.casefold() for p in _CONTROL_PLANE_BASENAMES)
+
+_LOW_DOC_SUFFIXES = (".md", ".txt", ".rst")
+
+
+def _path_is_low(path: str) -> bool:
+    """True only for paths provably in the LOW class. Unknown shapes are False."""
+    if not path or path.startswith("/") or path.startswith("~"):
+        return False  # absolute paths escape the repo-relative reasoning below
+    parts = [p for p in path.replace("\\", "/").split("/") if p and p != "."]
+    if not parts or any(p == ".." for p in parts):
+        return False
+    if any(p.casefold() in _CONTROL_PLANE_DIRS_CF for p in parts):
+        return False
+    base = parts[-1]
+    if base.casefold() in _CONTROL_PLANE_BASENAMES_CF:
+        return False
+    if base.startswith("test_") and base.endswith(".py"):
+        return True
+    if parts[0] == "tests":
+        return True
+    return base.endswith(_LOW_DOC_SUFFIXES)
+
+
+def commit_tier(paths: list[str]) -> str:
+    """Return "LOW" or "HIGH" for a staged path set. Fails closed to HIGH."""
+    if not paths:
+        return "HIGH"
+    return "LOW" if all(_path_is_low(p) for p in paths) else "HIGH"

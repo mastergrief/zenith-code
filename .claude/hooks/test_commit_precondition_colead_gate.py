@@ -108,9 +108,18 @@ def setup_git_repo_with_staged(content: str = "hello\n") -> Path:
         check=True,
         capture_output=True,
     )
-    f = tmp / "file.txt"
+    # Stages a HIGH-tier path deliberately. The tiered commit gate lets a LOW
+    # staged set (docs / tests) through on claude gate-1 alone, so a docs-like
+    # fixture — this was `file.txt` — makes every co_lead assertion below pass
+    # without the gate ever running. Tier coverage lives in test_commit_tier.py;
+    # these tests are about the co_lead chain and must stay HIGH to exercise it.
+    src = tmp / "src"
+    src.mkdir()
+    f = src / "main.rs"
     f.write_text(content, encoding="utf-8")
-    subprocess.run(["git", "add", "file.txt"], cwd=tmp, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", "src/main.rs"], cwd=tmp, check=True, capture_output=True
+    )
     return tmp
 
 
@@ -496,6 +505,42 @@ def test_echo_git_commit_substring_pass_through() -> None:
     assert rc == 0, "echo containing git commit substring must not trigger gate"
 
 
+def test_combo_echo_commit_and_var_git_not_gated() -> None:
+    cmd = (
+        "R=/mnt/c/Users/gabes/projects/claw-code\n"
+        "echo \"=== HEAD ===\"; git -C \"$R\" log -1 --format='%H%n%s'\n"
+        "echo; echo \"=== commit content: mode-only? ===\"\n"
+        "git -C \"$R\" show --stat --format='' HEAD | tail -3"
+    )
+    assert HOOK_MOD._is_git_commit_gated_command(cmd) is False
+    repo_path = setup_git_repo_with_staged("repo\n")
+    rc = run(cmd, None, repo_path)
+    assert rc == 0, "combo must not enter the commit gate"
+
+
+def test_allowlisted_literal_commit_still_gated() -> None:
+    repo_path = setup_git_repo_with_staged("repo\n")
+    rc = run("git commit -m test", None, repo_path)
+    assert rc == 2, "allowlisted git commit without PASS must still block"
+
+
+_PINNED_DENIED_SHA = (
+    "8b0ac5e88b4330da5d7812bf04e7c76c8a3f0f0469d87ca805a0868067f0458d"
+)
+_PINNED_DENIED_COMMAND = 'cd /mnt/c/Users/gabes/projects/claw-code\nmkdir -p /tmp/recheck && git show HEAD:.claude/hooks/commit_precondition_colead_gate.py > /tmp/recheck/gate_HEAD.py\ngit show HEAD:.claude/hooks/colead_commit_gate_classifier.py > /tmp/recheck/colead_commit_gate_classifier.py\ncp .claude/hooks/colead_commit_gate_classifier.py /tmp/recheck/cls_WT.py\npython3 - <<\'PY\'\nimport importlib.util, sys, pathlib\nCMD = \'\'\'R=/mnt/c/Users/gabes/projects/claw-code\necho "=== HEAD ==="; git -C "$R" log -1 --format=\'%H%n%s\'\necho; echo "=== commit content: mode-only? ==="\ngit -C "$R" show --stat --format=\'\' HEAD | tail -3\n\'\'\'\ndef load(p, name):\n    spec = importlib.util.spec_from_file_location(name, p)\n    m = importlib.util.module_from_spec(spec)\n    sys.modules[name] = m\n    spec.loader.exec_module(m)\n    return m\n# HEAD gate needs its classifier sibling resolvable from the same dir\nsys.path.insert(0, "/tmp/recheck")\nhead = load("/tmp/recheck/gate_HEAD.py", "gate_head")\nwt   = load("/mnt/c/Users/gabes/projects/claw-code/.claude/hooks/commit_precondition_colead_gate.py", "gate_wt")\nfor label, m in (("HEAD (pre-fix)", head), ("worktree (post-fix)", wt)):\n    print(f"{label:22} _is_git_commit_gated_command(original blocked cmd) -> {m._is_git_commit_gated_command(CMD)}")\nPY'
+
+
+def test_pinned_denied_command_not_gated() -> None:
+    cmd = _PINNED_DENIED_COMMAND
+    digest = hashlib.sha256(cmd.encode()).hexdigest()
+    assert digest == _PINNED_DENIED_SHA, digest
+    assert HOOK_MOD._is_git_commit_gated_command(cmd) is False
+    stripped = HOOK_MOD._strip_quoted_heredoc_bodies(
+        HOOK_MOD._normalized_command(cmd)
+    )
+    assert HOOK_MOD._git_commit_bearing_segments(stripped) == []
+
+
 def test_core_worktree_global_blocks() -> None:
     repo_path = setup_git_repo_with_staged("repo\n")
     digest = staged_digest(repo_path)
@@ -727,6 +772,9 @@ def main() -> int:
         test_env_string_exec_option_blocks,
         test_eval_git_commit_blocks,
         test_timeout_git_commit_blocks,
+        test_combo_echo_commit_and_var_git_not_gated,
+        test_allowlisted_literal_commit_still_gated,
+        test_pinned_denied_command_not_gated,
     )
     for test_fn in integration_tests:
         try:
