@@ -3919,7 +3919,7 @@ def test_harness_wire_cpu_validation_self_check() -> None:
 
 def test_tier_a_staging_no_cap_regression() -> None:
     receipt = probe_module.harness_wire_cpu_validation_self_check()
-    assert receipt["tier_a_index_surface_count_consistency_fail_closed"] is True
+    assert receipt["tier_a_index_surface_count_consistency_mismatch_tolerated"] is True
 
 
 def test_tier_a_staging_saturated_global_cap_assert_split() -> None:

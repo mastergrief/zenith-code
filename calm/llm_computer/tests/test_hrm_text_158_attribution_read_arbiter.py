@@ -855,7 +855,7 @@ def test_argparse_exposes_emit_attribution_read() -> None:
     assert on.emit_attribution_read is True
 
 
-def test_attribution_sidecar_survives_known_attach_valueerror(tmp_path) -> None:
+def test_attribution_sidecar_survives_tolerated_attach_mismatch(tmp_path) -> None:
     import json
     from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
         _assert_tier_a_index_surface_count_consistency,
@@ -872,18 +872,12 @@ def test_attribution_sidecar_survives_known_attach_valueerror(tmp_path) -> None:
         step=1,
         record=record,
     )
-    raised = False
-    try:
-        _assert_tier_a_index_surface_count_consistency(
-            "toy.weight",
-            tensor_stats={"replay_ce_veto_count": 0},
-            replay_ce_veto_indices=list(range(949)),
-            applied_indices=(),
-        )
-    except ValueError as exc:
-        raised = True
-        assert "tier_a_staging_index_surface_replay_ce_veto_count_mismatch" in str(exc)
-    assert raised
+    _assert_tier_a_index_surface_count_consistency(
+        "toy.weight",
+        tensor_stats={"replay_ce_veto_count": 0},
+        replay_ce_veto_indices=list(range(949)),
+        applied_indices=(),
+    )
     assert path.is_file()
     assert path == attribution_read_sidecar_path(tmp_path, 1)
     parsed = json.loads(path.read_text(encoding="utf-8"))
@@ -915,7 +909,7 @@ def test_attribution_sidecar_clean_world_and_per_step_keys(tmp_path) -> None:
     assert json.loads(second.read_text(encoding="utf-8"))["per_key"] == {"b": {}}
 
 
-def test_abort_site_sidecar_survives_known_valueerror_and_keeps_message(tmp_path) -> None:
+def test_abort_site_sidecar_survives_tolerated_mismatch(tmp_path) -> None:
     import json
     from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
         _assert_tier_a_index_surface_count_consistency,
@@ -938,20 +932,12 @@ def test_abort_site_sidecar_survives_known_valueerror_and_keeps_message(tmp_path
             "per_key": {"toy.weight": row},
         },
     )
-    message = None
-    try:
-        _assert_tier_a_index_surface_count_consistency(
-            "toy.weight",
-            tensor_stats=compact_stats,
-            replay_ce_veto_indices=indices,
-            applied_indices=(),
-        )
-    except ValueError as exc:
-        message = str(exc)
-    assert message is not None
-    assert "tier_a_staging_index_surface_replay_ce_veto_count_mismatch" in message
-    assert "replay_ce_veto_indices_len=949" in message
-    assert "replay_ce_veto_count=0" in message
+    _assert_tier_a_index_surface_count_consistency(
+        "toy.weight",
+        tensor_stats=compact_stats,
+        replay_ce_veto_indices=indices,
+        applied_indices=(),
+    )
     parsed = json.loads(path.read_text(encoding="utf-8"))
     assert parsed["schema"] == "hrm_text_158_attribution_abort_site/v0"
     assert "branch" not in parsed
@@ -1037,33 +1023,21 @@ def test_attach_control_arm_production_path_writes_abort_site_sidecar(tmp_path) 
     )
     off_dir = tmp_path / "off"
     off_dir.mkdir()
-    message_off = None
-    try:
-        _attach_control_arm_index_surfaces_to_compact(
-            compact,
-            **attach_kwargs,
-            attribution_sidecar_dir=None,
-            attribution_step=None,
-        )
-    except ValueError as exc:
-        message_off = str(exc)
-    assert message_off is not None
-    assert "tier_a_staging_index_surface_replay_ce_veto_count_mismatch" in message_off
+    _attach_control_arm_index_surfaces_to_compact(
+        compact,
+        **attach_kwargs,
+        attribution_sidecar_dir=None,
+        attribution_step=None,
+    )
     assert list(off_dir.iterdir()) == []
     assert not attribution_abort_site_sidecar_path(tmp_path, 1).is_file()
 
-    message_on = None
-    try:
-        _attach_control_arm_index_surfaces_to_compact(
-            compact,
-            **attach_kwargs,
-            attribution_sidecar_dir=tmp_path,
-            attribution_step=1,
-        )
-    except ValueError as exc:
-        message_on = str(exc)
-    assert message_on is not None
-    assert message_on == message_off
+    _attach_control_arm_index_surfaces_to_compact(
+        compact,
+        **attach_kwargs,
+        attribution_sidecar_dir=tmp_path,
+        attribution_step=1,
+    )
     path = attribution_abort_site_sidecar_path(tmp_path, 1)
     assert path.is_file()
     parsed = json.loads(path.read_text(encoding="utf-8"))

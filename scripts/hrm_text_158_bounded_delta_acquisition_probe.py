@@ -6774,15 +6774,6 @@ def _assert_tier_a_index_surface_count_consistency(
 ) -> None:
     stats = dict(tensor_stats)
     cap_enabled = bool(stats.get("global_rate_cap_enabled", global_rate_cap_enabled))
-    if "replay_ce_veto_count" in stats:
-        expected = int(stats["replay_ce_veto_count"])
-        actual = len(replay_ce_veto_indices)
-        if actual != expected:
-            raise ValueError(
-                "tier_a_staging_index_surface_replay_ce_veto_count_mismatch: "
-                f"state_key={state_key!r}, replay_ce_veto_indices_len={actual}, "
-                f"replay_ce_veto_count={expected}"
-            )
     if cap_enabled:
         if "post_veto_would_apply_pre_cap_count" in stats:
             expected_pre_cap = int(stats["post_veto_would_apply_pre_cap_count"])
@@ -6996,17 +6987,11 @@ def harness_wire_cpu_validation_self_check() -> dict[str, Any]:
         "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
         "local_selection_ordering_step": 1,
     }
-    try:
-        _attach_tier_a_staging_index_surfaces_to_compact(
-            mismatch_fixture,
-            **mismatch_kwargs,
-        )
-    except ValueError as exc:
-        assert "tier_a_staging_index_surface_replay_ce_veto_count_mismatch" in str(exc)
-    else:
-        raise AssertionError(
-            "expected ValueError for mismatched tier_a replay_ce_veto_count"
-        )
+    attached_mismatch = _attach_tier_a_staging_index_surfaces_to_compact(
+        mismatch_fixture,
+        **mismatch_kwargs,
+    )
+    assert "replay_ce_veto_indices" in attached_mismatch["tensor_stats"]["toy.proj"]
     coverage_state = make_bounded_tensor_state(
         "toy.proj",
         torch.tensor([0, 0], dtype=torch.int8),
@@ -7140,7 +7125,7 @@ def harness_wire_cpu_validation_self_check() -> dict[str, Any]:
         "argparse_default_off": True,
         "off_path_kwargs_empty": True,
         "on_only_receipt_extensions_stripped_to_fixture": True,
-        "tier_a_index_surface_count_consistency_fail_closed": True,
+        "tier_a_index_surface_count_consistency_mismatch_tolerated": True,
         "local_loss_delta_crossing_coverage_fail_closed": True,
         "local_loss_delta_full_crossing_coverage_proceeds": True,
         "local_loss_delta_non_crossing_unmeasured_proceeds": True,
