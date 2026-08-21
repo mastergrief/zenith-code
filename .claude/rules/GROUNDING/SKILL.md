@@ -55,7 +55,15 @@ any project's rules; the body references no repo-specific paths or tools.
 - Record-referential fields — hashes, pins, ids, paths, counts — are emitted by
   the tool that verified them, never typed. Checking a hand-made transfer
   afterwards is a comparison you can also get wrong; removing the transfer step
-  is the cure. Calibrate the generator, not each hop.
+  is the cure. Calibrate the generator, not each hop. A load-bearing count
+  appears only as pasted emitted output of two mechanically different
+  derivations on the named operand at authoring time, transcribed zero times;
+  mechanically different = not sharing the suspected failure mode, never the
+  same instrument re-parameterized. Mutable operands named by emitted
+  content-hash in the paste; a count crossing a version boundary is re-derived
+  at the destination.
+- A claim whose operand is the artifact carrying it is artifact-metadata and
+  lives outside the artifact.
 
 ## Cure the class, not the instance
 

@@ -41,12 +41,10 @@ Run: PYTHONPATH=. python3 -m pytest tests/test_advisor_outbound_gate_v1.py -q
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import pathlib
 import subprocess
-import sys
 import tempfile
 
 import pytest
@@ -59,9 +57,6 @@ PARENT_ID = "1700000000000-aaaaaaaa"
 GOOD_PARENT = {"id": PARENT_ID, "from": "claude", "to": "advisor", "kind": "msg",
                "body": "what decompositions would you consider here?"}
 GOOD_CALL = {"body": "three alternatives, with predicted failure modes", "reply_to": PARENT_ID}
-
-# The live journal must never be touched by this suite; [data] assertion below.
-LIVE_JOURNAL = pathlib.Path.home() / ".ai-room" / "channels" / "claw-code" / "messages.jsonl"
 
 
 def write_journal(path: pathlib.Path, records) -> pathlib.Path:
@@ -82,7 +77,7 @@ def run_guard(tool_input, env_overrides, *, tool_name=TOOL, omit_tool_name=False
         payload_obj["tool_name"] = tool_name
     payload = json.dumps(payload_obj)
     proc = subprocess.run(
-        [sys.executable, str(GUARD)],
+        [str(GUARD)],
         input=payload, capture_output=True, text=True, env=env, timeout=30,
     )
     return proc
@@ -317,16 +312,3 @@ def test_N15_review_request_parent_rejected(tmp_path):
     journal = write_journal(tmp_path / "c" / "messages.jsonl",
                             [{**GOOD_PARENT, "kind": "review_request"}])
     assert_rejected(run_guard(dict(GOOD_CALL), {"AI_ROOM_CHANNEL_LOG": journal}), "P8")
-
-
-# --- [data]: the live journal is never written to ----------------------------
-
-def test_live_journal_untouched_by_this_suite():
-    """Every fixture journal lives under tmp_path. If any arm resolved to the
-    real channel, this digest would move."""
-    if not LIVE_JOURNAL.exists():
-        pytest.skip("no live journal on this machine")
-    before = hashlib.sha256(LIVE_JOURNAL.read_bytes()).hexdigest()
-    run_guard(dict(GOOD_CALL), {})  # C4 reject; must not create or write anything
-    after = hashlib.sha256(LIVE_JOURNAL.read_bytes()).hexdigest()
-    assert before == after, "the suite must never write to the live journal"

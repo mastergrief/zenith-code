@@ -69,6 +69,9 @@ There is ONE expiry set with one owner. Expiry sends the lineage back to
 `advisor` for renewal or kill — there is no delegated variant that expires on
 its own rows, and no waiver.
 
+A renewal is an explicit record naming itself a renewal and the BLOCKs it consumes; the counter re-arms at zero; a disposition citing a license never renews it.
+The advisor may **law-freeze** a lineage as a route term: governing law is fixed at that record; later adoptions bind from the next measurement boundary.
+
 **Every disposition names a delta or names its absence.** A consultation MATTERED
 iff its disposition names a route changed or killed, a premise corrected, a branch
 added or removed, or a prescription refuted — refuting the advisor counts. It was
@@ -121,6 +124,14 @@ Commit completed measured work before the next round; one round per commit;
 before/after table in perf/correctness messages; checkpoint before risky
 swings. Template: `workflow_part_1.md` §"Commit discipline".
 
+**Gate cost is tiered, so the round cadence survives.** LOW-tier rounds (docs,
+tests — non-control-plane, reversible) commit under claude's commit gate alone;
+HIGH
+and every control-plane change keep the co_lead `DIFF_DIGEST` PASS. Tier by
+claim effect, per `CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk
+tier". `commit_precondition_colead_gate.py` enforces this from the STAGED PATH
+SET and fails closed: a mixed or empty set, or any unreadable listing, is HIGH.
+
 Commit shell shape: prefer `git -C <literal-path> commit -F <file>`.
 Do not pipe a commit through another command — that defeats the
 co_lead-gate shape allowlist and masks the commit's exit status.
@@ -143,7 +154,8 @@ transfers.
 ## Long-running training supervision
 
 **Review routing (ai-room):** thinking parallel; artifact gates sequential
-(claude gate-1 → co_lead gate-2 on frozen handoff). **Passive-wait-don't-poll**
+(gate1_audit gate-1 → co_lead gate-2 on frozen handoff; claude frames the
+handoff and authors all `+1` records). **Passive-wait-don't-poll**
 at gates. Tiered ceremony (HIGH / LEAN-MEASUREMENT / LOW):
 `CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
 

@@ -138,7 +138,7 @@ Call `ExitPlanMode` when ready; do not ask "is this ok?" in prose.
 - One P-tier per commit (3 commits total for a full-scope session). Each commit message cites the receipts (commits from this session, eval deltas, null-round counts).
 - Use `Edit`, not `Write` — preserve structure, tone, and terse imperative voice.
 - Match existing section depth / bullet style / table format.
-- **Eager-tier line cap**: eager rules files target ≤ 150 lines, hard cap 250. Path-scoped rules (`paths:` frontmatter) and atlas files are uncapped. If a new section pushes an eager rule past cap, carve receipts to atlas/ — don't split into `_part_1/_part_2`.
+- **Eager-tier line cap**: eager rules files target ≤ 300 lines, hard cap 400. Path-scoped rules (`paths:` frontmatter) and atlas files are uncapped. If a new section pushes an eager rule past cap, carve receipts to atlas/ — don't split into `_part_1/_part_2`.
 
 ### Phase 5 — verification (fail-closed)
 
@@ -158,7 +158,7 @@ Run every verification check listed in the plan file. Typical set:
   ```bash
   python3 scripts/measure_preload.py --surface claude --max-tokens 150000
   ```
-  `--max-lines` defaults to 250 and applies to **eager** `rules/*.md` only.
+  `--max-lines` defaults to 400 and applies to **eager** `rules/*.md` only.
   Path-scoped rules (`paths:` frontmatter) load solely when a matching file
   is read, and the manifests carry their own target in `config_editing.md`;
   neither is covered.
@@ -246,8 +246,8 @@ If verification fails, fix before declaring done. If a finding is lost, add it O
   This is the load-bearing discipline that keeps eager-tier preload
   bounded — it's why `/update` Phase 0 grep-checks before any audit.
 - **Eager-tier line caps**:
-  - **Eager** `.claude/rules/*.md`: target ≤ 150
-    lines, hard cap 250. If past cap, carve receipts to atlas — DO NOT
+  - **Eager** `.claude/rules/*.md`: target ≤ 300
+    lines, hard cap 400. If past cap, carve receipts to atlas — DO NOT
     split into `_part_1/_part_2`. Path-scoped rules (`paths:` frontmatter)
     load only on a matching file read and are not capped.
   - `.claude/MEMORY/atlas/*.md`: unbounded

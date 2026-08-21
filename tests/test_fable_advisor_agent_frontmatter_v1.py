@@ -1,14 +1,23 @@
 """Durable regression guard for .claude/agents/fable-advisor.md frontmatter.
 
-The advisor is a STANDING read-only peer with exactly one outbound tool. This
+The advisor is a STANDING read-only peer with exactly two outbound tools. This
 test is its least-privilege boundary:
 - name == fable-advisor, model == fable (the hard stop rides on this key)
-- exact 10-tool set (no ai_room_post -- reply-only is the whole containment
-  design; ai_room_reply defaults to the parent's sender, which removes
-  recipient selection as a surface)
+- exact tool set, count carried by INTENDED_TOOLS alone
 - forbidden mutation/spawn/dispatch/board families ABSENT
-- the PreToolUse guard is wired IN THIS FILE, matching ai_room_reply
+- EVERY outbound tool is covered by the PreToolUse guard matcher, wired IN THIS
+  FILE
 - direct loader surface (no rendered sibling)
+
+Containment moved rather than loosened. It used to be "ai_room_post is absent,
+so recipient selection does not exist as a surface." The advisor is the
+direction lead and Gabe's portal, and requiring a solicitation before it could
+speak made its own leash decide when Gabe could be heard, so post is now
+present and the containment lives in advisor_outbound_gate.py: an initiation
+must be addressed to `claude` alone, scalar, with a key allowlist of
+{body, to, kind}. That is a predicate, not an absence, which is why the
+outbound-coverage test below is load-bearing: adding an outbound tool without
+extending the guard matcher would leave it ungated.
 
 Run: PYTHONPATH=. python3 -m unittest tests.test_fable_advisor_agent_frontmatter_v1 -v
 """
@@ -32,13 +41,19 @@ INTENDED_TOOLS = [
     "mcp__ai-room__ai_room_inbox",
     "mcp__ai-room__ai_room_resume_check",
     "mcp__ai-room__ai_room_reply",
+    "mcp__ai-room__ai_room_post",
+    "CronCreate",
+    "ScheduleWakeup",
+]
+
+# Tools that can emit into the room. Each MUST appear in the guard matcher; an
+# outbound tool the matcher does not name is an ungated egress.
+OUTBOUND_TOOLS = [
+    "mcp__ai-room__ai_room_reply",
+    "mcp__ai-room__ai_room_post",
 ]
 
 FORBIDDEN_TOOLS = [
-    # The one that makes this agent reply-only. A tools allowlist does not by
-    # itself forbid dispatch -- ai_room_reply accepts kind=task_dispatch -- but
-    # removing post narrows the surface the guard has to close.
-    "mcp__ai-room__ai_room_post",
     # Mutating filesystem / shell
     "Edit",
     "Write",
@@ -110,24 +125,36 @@ class FableAdvisorAgentFrontmatterV1(unittest.TestCase):
         # route to the model. The slice's hard stop is defined against it.
         self.assertEqual(self.fields.get("model"), "fable")
 
-    def test_exact_10_tool_set_present(self) -> None:
-        self.assertEqual(len(self.tools), 10)
+    def test_exact_tool_set_present(self) -> None:
+        # The count is carried by INTENDED_TOOLS alone. It used to be asserted
+        # here as a literal too, which is two authored copies of one fact with
+        # nothing forcing agreement -- the defect class this repo removes by
+        # deletion rather than by keeping both in sync.
         self.assertEqual(self.tools, INTENDED_TOOLS)
 
     def test_forbidden_tools_absent(self) -> None:
         present_forbidden = [t for t in FORBIDDEN_TOOLS if t in self.tools]
         self.assertEqual(present_forbidden, [])
 
-    def test_ai_room_post_absent_everywhere(self) -> None:
-        # Not merely absent from the tool list: the prose must not instruct its
-        # use either, or a future reader will wire it back in.
-        self.assertNotIn("ai_room_post", self.text)
+    def test_every_outbound_tool_is_guard_covered(self) -> None:
+        # The containment predicate: an outbound tool the matcher does not name
+        # reaches the room ungated. Property, not spelling -- this fires for any
+        # future outbound tool, not just post.
+        granted = [t for t in OUTBOUND_TOOLS if t in self.tools]
+        self.assertEqual(granted, OUTBOUND_TOOLS)
+        # Bind the MATCHER lines, not the whole frontmatter block. Searching the
+        # block is tautological: the tool name is in it because `tools:` granted
+        # it, so the check passes with no matcher at all -- observed doing
+        # exactly that before this line existed.
+        matchers = " ".join(ln.split("matcher:", 1)[1]
+                            for ln in self.block.splitlines() if "matcher:" in ln)
+        uncovered = [t for t in granted if t not in matchers]
+        self.assertEqual(uncovered, [], f"ungated egress; matcher line: {matchers!r}")
 
     def test_pretooluse_guard_wired_agent_locally(self) -> None:
         # Agent-local by design: .claude/settings.json hooks are project-global
         # and would apply this guard to every session.
         self.assertIn("PreToolUse", self.block)
-        self.assertIn("mcp__ai-room__ai_room_reply", self.block)
         self.assertIn(GUARD_BASENAME, self.block)
 
     def test_guard_file_exists(self) -> None:

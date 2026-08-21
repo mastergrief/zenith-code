@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse guard for the `advisor` peer's only outbound tool.
+"""PreToolUse guard for the `advisor` peer's two outbound tools.
 
 Wired ONLY in `.claude/agents/fable-advisor.md` frontmatter. It is deliberately
 agent-local: hooks in `.claude/settings.json` are project-global and would apply
@@ -7,14 +7,26 @@ this to every session. Because the wiring already guarantees the caller, the
 guard resolves no caller identity at all -- re-deriving a fact the wiring
 guarantees is what made an earlier revision's predicate unsatisfiable.
 
-The advisor is a pre-artifact advisory peer. It may answer a solicitation from
-Claude and nothing else. A tools allowlist does not achieve that on its own:
-`ai_room_reply` accepts `kind="task_dispatch"`, so the surface must be closed
-here rather than by tool selection.
+The advisor is a pre-artifact advisory peer with two permitted outbound shapes.
 
-ALLOW requires every predicate:
+REPLY (`ai_room_reply`): answering a solicitation from Claude. A tools allowlist
+does not achieve that on its own -- `ai_room_reply` accepts `kind="task_dispatch"`
+-- so the surface is closed here rather than by tool selection.
 
-  P9 the payload's tool_name is exactly the acting tool (evaluated FIRST)
+INITIATION (`ai_room_post`): An initiated post may carry: (i) a correction to
+my own record; (ii) verbatim-marked Gabe-directed content — route licenses
+included, because the authority is Gabe's and I am its transport; (iii)
+standing-obligation output. An initiated post may NEVER carry self-originated
+route judgment — a route created, changed, or killed absent either a Claude
+solicitation or a captured Gabe directive.
+
+The artifact bar survives both transports: it is a rule about what the advisor
+may be shown and may judge, not about which tool carries the message, and no
+predicate here relaxes it.
+
+REPLY allows only when every predicate holds:
+
+  P9 the payload's tool_name is one of the two acting tools (evaluated FIRST)
   P1 the call's key set is a subset of {body, reply_to, kind}
   P2 body and reply_to are both present and non-empty strings
   P3 kind, when present, is exactly one of {msg, design_proposal}
@@ -24,10 +36,28 @@ ALLOW requires every predicate:
   P7 the parent record's to is a scalar string exactly equal to "advisor"
   P8 the parent record's kind is exactly one of {msg, design_proposal}
 
-P1 is a whitelist, not a blacklist of known-bad fields, so anything added to the
-schema later fails by default instead of needing enumeration. P8 exists because
-a solicitation is a msg or a design_proposal -- a dispatch, review request, or
-gate record is not something the advisor may answer at all.
+INITIATION allows only when every predicate holds:
+
+  P9  as above
+  P10 the call's key set is a subset of {body, to, kind}
+  P11 body and to are both present, non-empty strings -- `to` scalar, never a
+      list and never absent, because both spellings mean broadcast
+  P12 to is exactly "claude"
+  P13 kind, when present, is exactly one of {msg, design_proposal}
+
+P1 and P10 are whitelists, not blacklists of known-bad fields, so anything added
+to the schema later fails by default instead of needing enumeration. That is what
+closes dispatch, board mutation, and `requires_response_from` on the initiation
+path without enumerating them: they are simply not in the allowlist. P8 exists
+because a solicitation is a msg or a design_proposal -- a dispatch, review
+request, or gate record is not something the advisor may answer at all.
+
+P12 is why workers cannot be addressed: `codex`, `codex_co_lead`, `gabe` and any
+broadcast fail it. Initiation is a channel to Claude, so an advisor ruling still
+reaches a worker only by Claude relaying it, and `@gabe` routing is untouched.
+P13 is deliberately a separate constant from the reply path's SOLICITATION_KINDS
+even though the two currently hold the same members: they answer different
+questions, and one set would silently move both.
 
 P9 is numbered last but runs first; P1-P8 keep their numbers because frozen gate
 records already cite them. It exists because an earlier revision wrote
@@ -63,7 +93,9 @@ import pathlib
 import re
 import sys
 
-ACTING_TOOL = "mcp__ai-room__ai_room_reply"
+REPLY_TOOL = "mcp__ai-room__ai_room_reply"
+POST_TOOL = "mcp__ai-room__ai_room_post"
+ACTING_TOOLS = frozenset({REPLY_TOOL, POST_TOOL})
 
 # The server's channel pattern (config.py `^[A-Za-z0-9_-]{1,64}$`), anchored with
 # \Z rather than $ -- here the name composes a filesystem path, and $ also matches
@@ -75,6 +107,13 @@ REQUIRED_KEYS = ("body", "reply_to")
 SOLICITATION_KINDS = frozenset({"msg", "design_proposal"})
 ADVISOR_HANDLE = "advisor"
 SOLICITOR_HANDLE = "claude"
+
+# Initiation path. Held separately from the reply path's sets on purpose: they
+# answer different questions, so a later change to one must not move the other.
+INITIATION_KEYS = frozenset({"body", "to", "kind"})
+INITIATION_REQUIRED_KEYS = ("body", "to")
+INITIATION_KINDS = frozenset({"msg", "design_proposal"})
+INITIATION_RECIPIENT = "claude"
 
 
 class Reject(Exception):
@@ -176,21 +215,59 @@ def check(tool_input: dict) -> None:
         raise Reject("P8", f"parent kind {parent_kind!r} is not a solicitation")
 
 
+def check_initiation(tool_input: dict) -> None:
+    """P10-P13. An advisor-initiated post, addressed to Claude and no one else.
+
+    No journal lookup: an initiation has no parent by definition, so there is
+    nothing to resolve. The reply path's P4-P8 do not apply and are not faked.
+    """
+    extra = sorted(set(tool_input) - INITIATION_KEYS)
+    if extra:
+        raise Reject("P10", f"non-allowlisted key(s) present: {', '.join(extra)}")
+
+    for key in INITIATION_REQUIRED_KEYS:
+        value = tool_input.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise Reject(
+                "P11",
+                f"{key} must be a present, non-empty scalar string "
+                "(a list or an absent `to` is a broadcast)",
+            )
+
+    to = tool_input["to"].strip()
+    if to != INITIATION_RECIPIENT:
+        raise Reject(
+            "P12",
+            f"initiation addressed to {to!r}; the advisor may initiate only to "
+            f"{INITIATION_RECIPIENT!r}",
+        )
+
+    kind = tool_input.get("kind")
+    if kind is not None and kind not in INITIATION_KINDS:
+        raise Reject("P13", f"kind {kind!r} is not permitted for an initiation")
+
+
 def main() -> int:
     try:
         payload = json.loads(sys.stdin.read() or "{}")
         tool_name = payload.get("tool_name")
-        if tool_name != ACTING_TOOL:
-            raise Reject("P9", f"tool_name {tool_name!r} is not {ACTING_TOOL!r}")
+        if tool_name not in ACTING_TOOLS:
+            raise Reject(
+                "P9", f"tool_name {tool_name!r} is not one of {sorted(ACTING_TOOLS)}")
         tool_input = payload.get("tool_input")
         if not isinstance(tool_input, dict):
             raise Reject("P2", "tool_input missing or not an object")
-        check(tool_input)
+        if tool_name == POST_TOOL:
+            check_initiation(tool_input)
+        else:
+            check(tool_input)
     except Reject as rej:
         print(
             f"BLOCKED [advisor_outbound_gate] {rej.predicate} failed -- {rej.detail}.\n"
-            "The advisor may only reply to a Claude solicitation addressed to it "
-            "(kind msg or design_proposal), using only body/reply_to/kind.",
+            "The advisor may reply to a Claude solicitation addressed to it "
+            "(kind msg or design_proposal), using only body/reply_to/kind; or "
+            "initiate a post to `claude` alone (kind msg or design_proposal), "
+            "using only body/to/kind.",
             file=sys.stderr,
         )
         return 2

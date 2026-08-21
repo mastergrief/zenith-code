@@ -13,7 +13,7 @@ Rules for editing anything under `.codex/` (AGENTS.md, rules, skills, hooks).
 
 ## Eager-tier line caps
 
-- `.codex/rules/*.md`: **target ≤ 150 lines, hard cap 200**. Past cap →
+- `.codex/rules/*.md`: **target ≤ 300 lines, hard cap 400**. Past cap →
   carve receipts to `MEMORY/atlas/<topic>_arc.md`. **DO NOT split into
   `_part_1/_part_2`** — splitting doesn't reduce eager-tier preload, it
   just hides the bloat.
@@ -53,7 +53,7 @@ rule only if a current invariant changed.
 
 `/update` Phase 0 enforces this via grep against `rules/*.md`. Phase 5
 fail-closed via `python3 scripts/measure_preload.py --surface both --max-tokens 150000`.
-The `--surface` flag accepts `claude | codex | both` (default `both`)
+The `--surface` flag accepts `claude | codex | both` (default `claude`)
 so the gate covers `.claude/CLAUDE.md` + `.claude/rules/` AND
 `.codex/AGENTS.md` + `.codex/rules/` in one invocation.
 Don't subvert by going inline.

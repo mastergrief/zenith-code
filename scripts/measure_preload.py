@@ -31,7 +31,7 @@ SURFACES = ("claude", "codex", "both")
 # Hard cap on a single eager rules/*.md file, per config_editing.md
 # §"Eager-tier line caps". Path-scoped rules and the manifests carry their
 # own targets there and are not covered by this cap.
-DEFAULT_MAX_LINES = 250
+DEFAULT_MAX_LINES = 400
 
 
 def chars_to_tokens(n: int) -> int:

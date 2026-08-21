@@ -26,23 +26,23 @@ not evidence of a codex backend.
 
 **Gabe** = direction owner, final authority. **`advisor`** = direction lead —
 binding route judgement at route birth / death / escalation, never an artifact
-reviewer or gate. **Claude** = orchestrator, AUQ/dispatch, gate-1 gatekeeper,
-synthesizer. **`codex_co_lead`** = read-only gate-2 review authority.
+reviewer or gate. **Claude** = orchestrator, AUQ/dispatch, handoff framer,
+`+1`/commit/push/launch authority, synthesizer. **`gate1_audit`** = gate-1
+verify+freeze. **`codex_co_lead`** = read-only gate-2 review authority.
 
 **Named Codex role lanes** — normal route for gated mutating repo-file work:
 
 - **`plan-dev`** — planning/contract/packet lane AND **default** bounded
   implementation executor (developer template). Owns plan/packet drafting,
   run-packet contracts, and approved implementation — **NOT** implementation
-  review (implementation receipts route to claude gate-1 ONLY; co_lead gate-2
-  only after claude freezes the handoff), **NOT** formal run execution.
-  Break-glass implementation/run via Claude `+1` with
-  `transition_fallback_used=true`. After `+1 implement` may invoke
+  review (receipts → claude ONLY; `gate1_audit` verifies+freezes; co_lead
+  gate-2 after), **NOT** formal run execution. Break-glass implementation/run
+  via Claude `+1` with `transition_fallback_used=true`. After `+1 implement` may invoke
   `.codex/agents/developer.toml` (`subagent-claimed` until verified). **cwd =
   provenance/dispatch match, not repo permission.** No `.pt` commits.
   **health-proven existing backend/config** — do NOT change backend as the fix.
   Edits + focused developer validation in scope; **material receipts to claude
-  gate-1 ONLY** (`REPORT_TO: [claude]` — naming co_lead in `REPORT_TO` does NOT
+  ONLY** (`REPORT_TO: [claude]` — naming co_lead in `REPORT_TO` does NOT
   wake or route to co_lead); on dual accept proceed to claude commit/push
   gates, then run packets execute claude-side. FORBIDDEN: spawn/kill/grant/
   dispatch, training launch, commit/push unless the claude gate authorizes.
@@ -56,15 +56,16 @@ packet → STOP, code fixes → `plan-dev`, packet fixes → `plan-dev`. Claude 
 the packet does **not** let Claude authorize it — the launch still needs a
 persisted `+1 launch` after gate-1 freeze and co_lead gate-2 on the frozen bytes.
 
-**Role vs handle**: `role="<name>"` loads role home; routable target is a
-`codex_N` handle — role name is NOT a room handle; developer executor reports
-through `plan-dev`. **Not a second dispatcher**: co_lead recommends only.
+**Role vs handle**: `role="<name>"` loads role home; routable target = PINNED
+handle (`codex`=`plan-dev`, `codex_co_lead`=`co_lead`, `gate1_audit`=gate-1
+auditor); role name is NOT a room handle; developer executor reports through
+`plan-dev`. **Not a second dispatcher**: co_lead recommends only.
 
 ## Lifecycle
 
 ```
-claude creates task + provenance → plan-dev plan → claude gate-1 freeze →
-co_lead gate-2 plan review → +1 implement → plan-dev implements → claude
+claude creates task + provenance → plan-dev plan → gate1_audit gate-1 freeze →
+co_lead gate-2 plan review → +1 implement → plan-dev implements → gate1_audit
 gate-1 → co_lead gate-2 implementation review (dual accept) → +1 commit →
 commit → +1 push → push → +1 launch → claude-as-test-operator runs packets →
 complete + recycle
@@ -72,8 +73,8 @@ complete + recycle
 
 **Advisor at route birth / death / escalation:** the route license is issued before contract/gates and **binds** — Claude executes it, escalating disagreement to Gabe rather than overriding in place; never between gate-1 and gate-2; never fed plans/packets/diffs/receipts. Canonical sequence and authority bar: `AI_ROOM_COLLAB.md` §advisor (**Placement**).
 
-Claude load-bearing at gate-1 freeze/verify, commit, push, and launch gates;
-co_lead gate-2 reviews frozen handoffs only (independent, not rubber-stamp).
+gate1_audit owns gate-1 freeze/verify; Claude framing + commit/push/launch
+gates; co_lead gate-2 reviews frozen handoffs (independent, not rubber-stamp).
 
 **Converged-contract fast path ("plan-dev = dev" mode).** When the slice
 contract is already converged — measured defect cycle, mechanical re-scope,
@@ -112,7 +113,8 @@ PreToolUse block-and-explain guards on `ai_room_post`/`_reply` (fail-open on par
   dispatches exempt.
 - **`commit_precondition_colead_gate.py`** (Bash matcher) — once `git commit` is
   recognized, blocks unless a fresh co_lead validation/diff PASS echoes the
-  staged `DIFF_DIGEST`. `git push` is not co_lead-gated (force-push blocked).
+  staged `DIFF_DIGEST`, or the staged set tiers LOW (§"Commit and push gates").
+  `git push` is not co_lead-gated (force-push blocked).
   No auto-match of a room-posted PASS → executor flags first; claude authorizes
   `CO_LEAD_GATE_OVERRIDE` bound to target-repo path + 64-hex DIFF_DIGEST +
   co_lead PASS msg id — never unilateral.
@@ -125,7 +127,8 @@ PreToolUse block-and-explain guards on `ai_room_post`/`_reply` (fail-open on par
 Non-trivial tasks include: provenance, decision contract, scope, workflow,
 stop conditions, `REPORT_TO` + `CROSS_THREAD_REQUIRED`. Dispatch to exact handles.
 
-**Wake semantics**: `task_update` does NOT wake — pair with direct addressed
+**Wake semantics**: `task_update` wakes only with `notify=true` (auto-set on
+terminal statuses); wake-eligible ≠ delivered, so pair with a direct addressed
 post. **Completed-task ack-idle**: don't `complete` between gates; reopen
 `in_progress` + execution wake for continuations.
 
@@ -134,7 +137,7 @@ post. **Completed-task ack-idle**: don't `complete` between gates; reopen
 1. Read task; verify provenance + contract.
 2. Ground narrowly (no session-log scans).
 3. Post plan + risk; wait for persisted `+1 implement`.
-4. Implement/prove; receipt to claude gate-1 ONLY (co_lead gate-2 after freeze).
+4. Implement/prove; receipt to claude ONLY (gate1_audit freezes; co_lead after).
 5. Commit after `+1 commit`; push after `+1 push` or `+1 commit+push`.
 6. Report SHA; wait for recycle.
 
@@ -146,6 +149,11 @@ Read-only handles that mutate = safety failure. Plan gate = refinement loop
 Match risk + user impact. Receipts: commands, outputs, artifacts, cites, msg
 ids, caveats. Cited gate ids must resolve as authored records. Receipt commands
 are exact replayable argv (env vars verbatim, no ellipsis) — else receipt defect.
+
+**Predecessor-diff sidecar.** Only the evidence record owes a predecessor
+diff. The sidecar is tool-generated from the frozen predecessor plus the
+final pinned draft; operand shas are emitted, never typed; classified
+hunk-by-hunk; frozen beside the record; reviewed as one bundle.
 
 **Disposition on EVERY frozen record** (quantifier quoted from `AI_ROOM_COLLAB.md`): required on every frozen record — `ADVISOR_ROUTE: <id>` citing the route decision the lineage runs under. One form, no alternative, no waiver; absent field = gate defect. Gate-defect semantics live there; do not restate them.
 
@@ -191,7 +199,7 @@ HIGH — mints a science verdict, touches a banked/`.pt` artifact, makes an
 acquisition/sub-2 claim, **or alters cross-session control-plane behavior**
 (gates, authorization hooks, staging/index semantics, review rules) → full
 dual-gate + per-round freeze/DIFF_DIGEST. LOW — local, reversible,
-non-control-plane surfaces (docs, local tooling, tests) → claude gate-1 + one
+non-control-plane surfaces (docs, local tooling, tests) → gate-1 + one
 co_lead pass expected. **LEAN-MEASUREMENT** — measurement-only CPU
 slice (CREATE-only / bounded-correction surface; no `.pt`/banked touch) whose
 terminal output is a preregistered feasibility/plumbing/parity/null
@@ -218,6 +226,11 @@ control-plane edits are never LOW or LEAN.
 Never commit on plan alone. Push only after `+1 push` or persisted `+1
 commit+push`. Ordinary `+1 commit` does NOT authorize push. Stage specific
 files (never `git add -A`); preserve unrelated drift.
+
+**Tiered commit gate.** LOW (docs, tests; non-control-plane, reversible)
+commits under claude's commit gate alone; HIGH and control-plane keep the fresh
+co_lead `DIFF_DIGEST` PASS. Tier comes from the STAGED PATH SET, fails closed,
+and a MIXED set is HIGH — one control-plane file gates the whole commit.
 
 ### Low-blast-radius commit+push collapse
 

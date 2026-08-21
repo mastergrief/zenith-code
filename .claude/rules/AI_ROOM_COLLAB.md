@@ -10,13 +10,15 @@ unaffected.
 
 **Gabe** = human direction owner, final authority. **`advisor`** = direction
 lead — **binding** route judgement at route birth / death / escalation, never an
-artifact reviewer or gate. **Claude** = ops/orchestration + gate-1 +
-test-operator. **`codex_co_lead`** = gate-2 review authority.
+artifact reviewer or gate. **Claude** = ops/orchestration + test-operator.
+**`gate1_audit`** = gate-1 verify+freeze (Opus; provisional — reversion is an
+advisor ruling). **`codex_co_lead`** = gate-2 review authority.
 
 Gabe seeds → **advisor licenses the route** → claude+co_lead
 co-hypothesize/challenge inside it → `plan-dev` plans and
-bounded-implements after +1 → **claude gate-1 (verify+freeze or bounce) →
-co_lead gate-2 (independent review of the FROZEN handoff) → dual accept** →
+bounded-implements after +1 → **gate1_audit gate-1 (verify+freeze or bounce;
+claude frames the handoff) → co_lead gate-2 (independent review of the FROZEN
+handoff) → dual accept** →
 claude commit/push gates → **claude as test-operator** runs formal training/
 proof/tests → iterate. Thinking is parallel; **artifact review gates are
 sequential.** Claude+co_lead review/audit — direct Claude repo-file edits/runs
@@ -24,16 +26,17 @@ need a persisted named exception or break-glass reason.
 
 **Standing auto-research mode (this is the live topology).** Gabe's gates are
 WAIVED by standing directive, including pushes and GPU runs. **Peer gates are
-never waived**: claude gate-1 verify+freeze → co_lead gate-2 on the frozen
-handoff → dual accept, then persisted `+1 implement` / `+1 commit` / `+1 push` /
-`+1 launch` records. Claude carries **`test-operator` directly** (shell +
+never waived**: gate1_audit gate-1 verify+freeze → co_lead gate-2 on the frozen
+handoff → dual accept, then persisted Claude-authored `+1 implement` /
+`+1 commit` / `+1 push` / `+1 launch` records. Claude carries **`test-operator` directly** (shell +
 Monitor, minimal polling to a terminal condition). Waiving the human gate raises
 the peer gates' load; it never lowers them.
 
 **Peers are Claude peers on legacy codex handles — no peer is codex-backed.**
 All are spawned by `ai_room_spawn_claude`: `codex_co_lead` with `sol=true`
 (GPT-backed), `plan-dev` on handle `codex` with `grok=true` (grok-backed),
-`advisor` on Anthropic Fable, Claude on Opus. The `codex*` handle names are a
+`advisor` on Anthropic Fable, `gate1_audit` on Opus (agent `gate1-auditor`),
+Claude on Opus. The `codex*` handle names are a
 naming artifact kept for routing stability — read "codex role" anywhere in these
 rules as **worker role on a codex handle**, never as a codex-backed session.
 
@@ -43,13 +46,19 @@ rules as **worker role on a codex handle**, never as a codex-backed session.
 - **Claude + `codex_co_lead`**: hypothesis quality, gate design, counter-cases,
   audit — inside the licensed route, never over it. **codex_co_lead** read-only
   gate-2 authority; planning and bounded implementation route to `plan-dev`.
-- **Claude**: AUQ/relay, board/dispatch, launch dispatch+review, plan/
-  validation/commit/push/launch gates, synthesis. One active executor per slice.
+- **Claude**: AUQ/relay, board/dispatch, launch dispatch+review, handoff
+  framing, commit/push/launch gates + `+1` records, synthesis. One executor per slice.
+- **`gate1_audit`**: gate-1 verify+freeze — hashes, enumerators, denominators,
+  calibration (both sides observed), declared comparisons, terminal check
+  phase, O_EXCL mint, external verdict binding the freeze sha. Never
+  dispatches, frames cures, authors `+1`s, or reviews judgment. Brief:
+  `.claude/agents/gate1-auditor.md`.
 - **Named Codex roles** (under the licensed route + gates):
   - **`plan-dev`**: planning/contract/packet lane AND default bounded
     implementation executor for HRM + main-repo slices. **NOT** implementation
-    review, **NOT** formal run execution. **Receipts to claude gate-1 FIRST**
-    (material sink); co_lead gate-2 reviews only claude's frozen handoff. On
+    review, **NOT** formal run execution. **Receipts to claude FIRST**
+    (material sink + framing); claude hands off to `gate1_audit` for gate-1
+    verify+freeze; co_lead gate-2 reviews only the frozen handoff. On
     dual accept → claude commit/push gates → run packets execute claude-side.
     No spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
     Break-glass, developer-template use, and backend discipline:
@@ -64,7 +73,8 @@ rules as **worker role on a codex handle**, never as a codex-backed session.
     `CLAUDEX_ORCHESTRATION.md` §Lifecycle. Diff gates never skipped.
 
 **Active worker roster (this repo):** `codex_co_lead` and `plan-dev` only —
-`test-operator` is Claude-carried, not a spawnable worker role. Retired role
+`test-operator` is Claude-carried, not a spawnable worker role. `gate1_audit`
+is a Claude-side standing peer on its own handle, not a codex worker. Retired role
 names, and the things mistaken for further roles, are enumerated in
 `MEMORY/atlas/AI_ROOM_COLLAB_arc.md` §"Retired spawnable codex role names".
 
@@ -190,14 +200,18 @@ science/acquisition/runtime claim. HIGH keeps a separate `+1 push`:
 force/shared-history rewrite, `main`/`master`, `.pt`/large binary, science
 claim — all hard-forbidden or separately gated.
 
-**`ai_room_task_update` does NOT wake peers** — pair durable corrections with
-direct addressed post citing the task_update msg id.
+**`ai_room_task_update` wakes ONLY with `notify=true`** — a bare task_update is
+quiet board state (`routing_core.py:74`), and terminal statuses auto-set
+`notify`. Wake-eligible is not delivered: a target with no live lease, codex
+handle, or SDK-agent registration is journalled and never woken, so pair
+durable corrections with a direct addressed post citing the task_update msg id.
 
 ## Review gate glossary
 
 **UNIFYING RULE:** routine material receipts (plan/packet/validation/diff/proof/
-launch) → **claude gate-1 sink ONLY**. co_lead gate-2 follows claude's frozen
-handoff. Only **safety/liveness escalations** (stall, commit/push/launch safety
+launch) → **claude sink ONLY** (framing); claude hands off to `gate1_audit` for
+gate-1 verify+freeze (kind=msg measurement handoffs). co_lead gate-2 follows
+the frozen handoff. Only **safety/liveness escalations** (stall, commit/push/launch safety
 blockers) may cc both claude and co_lead, with **claude as the sole required responder**.
 
 **REPORT_TO** on worker dispatches = `claude` only for routing (not parallel
@@ -208,6 +222,13 @@ and byte-preserved; superseded versions are DEAD immutable lineage, enumerated
 revision-neutrally in the successor. **Draft mutable, freeze once**: a plan
 artifact converges as ONE 0644 draft re-hashed per review pass and is
 O_EXCL-frozen exactly once, on PASS — a freeze is never a drafting surface.
+The capture obligation binds by operand property, not gate identity. A gate
+handed a **mutable** operand captures it (O_EXCL 0444, sha-verified against
+the handoff) before its first check and audits only the capture; bounce
+makes that capture dead lineage. A gate handed an **immutable** operand
+verifies immutability instead — sha match against the handoff-named freeze
+plus an append-refused probe, both read-only — and audits the operand in
+place.
 **Passive-wait-don't-poll** at gates.
 
 **Gate-2 convergence:** full plan-derived checklist every pass, all
@@ -217,8 +238,9 @@ Semantics: `CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
 
 ## Fast Training Launch Contract
 
-Compress gates, not safety: (1) `plan-dev` drafts launch packet; (2) claude
-gate-1 validates hash/paths/preflight + FREEZE; (3) co_lead gate-2 launch-plan
+Compress gates, not safety: (1) `plan-dev` drafts launch packet; (2) gate1_audit
+gate-1 validates hash/paths/preflight + FREEZE (claude frames the handoff);
+(3) co_lead gate-2 launch-plan
 review of frozen packet; (4) claude `+1 launch/watch-to-terminal-condition`;
 (5) **claude as test-operator** runs + posts terminal receipt; (6) interrupt only
 for bank/fail/criteria/liveness/deviation; (7) one terminal receipt.
