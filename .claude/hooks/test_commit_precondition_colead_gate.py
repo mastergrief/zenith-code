@@ -128,10 +128,9 @@ def staged_digest(repo: Path) -> str:
         ["git", "diff", "--cached"],
         cwd=repo,
         capture_output=True,
-        text=True,
         check=True,
     )
-    return hashlib.sha256(proc.stdout.encode("utf-8")).hexdigest()
+    return hashlib.sha256(proc.stdout).hexdigest()
 
 
 CASES = []
@@ -719,6 +718,53 @@ def test_timeout_git_commit_blocks() -> None:
     assert rc == 2
 
 
+def test_staged_digest_bytes_match_crlf() -> None:
+    tmp = Path(tempfile.mkdtemp())
+    subprocess.run(["git", "init"], cwd=tmp, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "test"],
+        cwd=tmp,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "core.autocrlf", "false"],
+        cwd=tmp,
+        check=True,
+        capture_output=True,
+    )
+    src = tmp / "src"
+    src.mkdir()
+    (src / "main.rs").write_bytes(b"hello\r\nworld\r\n")
+    subprocess.run(
+        ["git", "add", "src/main.rs"], cwd=tmp, check=True, capture_output=True
+    )
+    byte_proc = subprocess.run(
+        ["git", "diff", "--cached"],
+        cwd=tmp,
+        capture_output=True,
+        check=True,
+    )
+    byte_exact = hashlib.sha256(byte_proc.stdout).hexdigest()
+    collapsed_proc = subprocess.run(
+        ["git", "diff", "--cached"],
+        cwd=tmp,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    collapsed = hashlib.sha256(collapsed_proc.stdout.encode("utf-8")).hexdigest()
+    assert collapsed != byte_exact
+    assert staged_digest(tmp) == byte_exact
+    assert HOOK_MOD._staged_digest(f"git -C {tmp} commit -m x") == byte_exact
+
+
 def main() -> int:
     failed = 0
     try:
@@ -775,6 +821,7 @@ def main() -> int:
         test_combo_echo_commit_and_var_git_not_gated,
         test_allowlisted_literal_commit_still_gated,
         test_pinned_denied_command_not_gated,
+        test_staged_digest_bytes_match_crlf,
     )
     for test_fn in integration_tests:
         try:

@@ -783,14 +783,13 @@ def _staged_digest(command: str) -> str | None:
         proc = subprocess.run(
             ["git", "-C", repo_dir, "diff", "--cached"],
             capture_output=True,
-            text=True,
             timeout=30,
         )
     except Exception:
         return None
     if proc.returncode != 0:
         return None
-    return hashlib.sha256(proc.stdout.encode("utf-8")).hexdigest()
+    return hashlib.sha256(proc.stdout).hexdigest()
 
 
 def _staged_commit_tier(command: str) -> tuple[str, str]:
