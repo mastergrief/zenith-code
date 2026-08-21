@@ -875,7 +875,6 @@ def test_attribution_sidecar_survives_tolerated_attach_mismatch(tmp_path) -> Non
     _assert_tier_a_index_surface_count_consistency(
         "toy.weight",
         tensor_stats={"replay_ce_veto_count": 0},
-        replay_ce_veto_indices=list(range(949)),
         applied_indices=(),
     )
     assert path.is_file()
@@ -935,7 +934,6 @@ def test_abort_site_sidecar_survives_tolerated_mismatch(tmp_path) -> None:
     _assert_tier_a_index_surface_count_consistency(
         "toy.weight",
         tensor_stats=compact_stats,
-        replay_ce_veto_indices=indices,
         applied_indices=(),
     )
     parsed = json.loads(path.read_text(encoding="utf-8"))
@@ -993,11 +991,15 @@ def test_attach_control_arm_production_path_writes_abort_site_sidecar(tmp_path) 
         pc_aux_votes_by_key=None,
         pc_aux_moves_by_key=None,
         pc_aux_mode="telemetry",
+        replay_ce_mode="telemetry",
         local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
         local_selection_ordering_seed=0,
         local_selection_ordering_step=1,
     )
-    wrapper_plans = _plan_integer_vote_update_for_control_arm_surfaces(**wrapper_kwargs)
+    wrapper_plans = _plan_integer_vote_update_for_control_arm_surfaces(
+        replay_ce_mode=wrapper_kwargs["replay_ce_mode"],
+        **{k: v for k, v in wrapper_kwargs.items() if k != "replay_ce_mode"},
+    )
     real_plan = wrapper_plans["toy.weight"]
     assert isinstance(real_plan, VoteUpdatePlan)
     expected_indices = [
@@ -1017,6 +1019,7 @@ def test_attach_control_arm_production_path_writes_abort_site_sidecar(tmp_path) 
         pc_aux_votes_by_key=None,
         pc_aux_moves_by_key=None,
         pc_aux_mode="telemetry",
+        replay_ce_mode="telemetry",
         local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
         local_selection_ordering_seed=0,
         local_selection_ordering_step=1,
@@ -1025,7 +1028,8 @@ def test_attach_control_arm_production_path_writes_abort_site_sidecar(tmp_path) 
     off_dir.mkdir()
     _attach_control_arm_index_surfaces_to_compact(
         compact,
-        **attach_kwargs,
+        replay_ce_mode=attach_kwargs["replay_ce_mode"],
+        **{k: v for k, v in attach_kwargs.items() if k != "replay_ce_mode"},
         attribution_sidecar_dir=None,
         attribution_step=None,
     )
@@ -1034,7 +1038,8 @@ def test_attach_control_arm_production_path_writes_abort_site_sidecar(tmp_path) 
 
     _attach_control_arm_index_surfaces_to_compact(
         compact,
-        **attach_kwargs,
+        replay_ce_mode=attach_kwargs["replay_ce_mode"],
+        **{k: v for k, v in attach_kwargs.items() if k != "replay_ce_mode"},
         attribution_sidecar_dir=tmp_path,
         attribution_step=1,
     )

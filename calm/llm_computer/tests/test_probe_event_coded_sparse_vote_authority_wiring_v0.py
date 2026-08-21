@@ -512,6 +512,7 @@ def test_control_arm_planner_requires_dense_votes_by_key() -> None:
             pc_aux_votes_by_key=None,
             pc_aux_moves_by_key=None,
             pc_aux_mode="telemetry",
+            replay_ce_mode="telemetry",
             local_selection_ordering_mode="rank_bucket_current",
             local_selection_ordering_seed=17,
             local_selection_ordering_step=1,

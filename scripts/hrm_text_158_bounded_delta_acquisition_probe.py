@@ -6580,6 +6580,7 @@ def _plan_integer_vote_update_for_tier_a_surfaces(
     pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None,
     pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None,
     pc_aux_mode: str,
+    replay_ce_mode: str,
     local_loss_delta_by_key: Mapping[str, torch.Tensor],
     local_selection_ordering_seed: int,
     local_selection_ordering_step: int,
@@ -6611,6 +6612,7 @@ def _plan_integer_vote_update_for_tier_a_surfaces(
                 dtype=torch.int8,
             ),
             pc_aux_mode=str(pc_aux_mode),
+            replay_ce_mode=str(replay_ce_mode),
             local_loss_delta=local_loss_delta_by_key[state_key].detach().cpu().contiguous(),
         )
         plans_by_key[state_key] = plan_integer_vote_update_reference(
@@ -6635,6 +6637,7 @@ def _plan_integer_vote_update_for_control_arm_surfaces(
     pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None,
     pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None,
     pc_aux_mode: str,
+    replay_ce_mode: str,
     local_selection_ordering_mode: str,
     local_selection_ordering_seed: int,
     local_selection_ordering_step: int,
@@ -6666,6 +6669,7 @@ def _plan_integer_vote_update_for_control_arm_surfaces(
                 dtype=torch.int8,
             ),
             pc_aux_mode=str(pc_aux_mode),
+            replay_ce_mode=str(replay_ce_mode),
         )
         plans_by_key[state_key] = plan_vote_update_for_emit(
             vu_state,
@@ -6693,6 +6697,7 @@ def _attach_control_arm_index_surfaces_to_compact(
     local_selection_ordering_mode: str,
     local_selection_ordering_seed: int,
     local_selection_ordering_step: int,
+    replay_ce_mode: str,
     attribution_sidecar_dir: Path | None = None,
     attribution_step: int | None = None,
 ) -> dict[str, Any]:
@@ -6710,6 +6715,7 @@ def _attach_control_arm_index_surfaces_to_compact(
         pc_aux_votes_by_key=pc_aux_votes_by_key,
         pc_aux_moves_by_key=pc_aux_moves_by_key,
         pc_aux_mode=str(pc_aux_mode),
+        replay_ce_mode=str(replay_ce_mode),
         local_selection_ordering_mode=str(local_selection_ordering_mode),
         local_selection_ordering_seed=int(local_selection_ordering_seed),
         local_selection_ordering_step=int(local_selection_ordering_step),
@@ -6743,7 +6749,6 @@ def _attach_control_arm_index_surfaces_to_compact(
         _assert_tier_a_index_surface_count_consistency(
             state_key,
             tensor_stats=stats,
-            replay_ce_veto_indices=replay_ce_veto_indices,
             applied_indices=applied_indices,
             global_rate_cap_enabled=cap_enabled,
         )
@@ -6768,7 +6773,6 @@ def _assert_tier_a_index_surface_count_consistency(
     state_key: str,
     *,
     tensor_stats: Mapping[str, Any],
-    replay_ce_veto_indices: Sequence[int],
     applied_indices: Sequence[int],
     global_rate_cap_enabled: bool = False,
 ) -> None:
@@ -6821,6 +6825,7 @@ def _attach_tier_a_staging_index_surfaces_to_compact(
     pc_aux_votes_by_key: Mapping[str, torch.Tensor] | None,
     pc_aux_moves_by_key: Mapping[str, torch.Tensor] | None,
     pc_aux_mode: str,
+    replay_ce_mode: str,
     local_loss_delta_by_key: Mapping[str, torch.Tensor],
     local_selection_ordering_seed: int,
     local_selection_ordering_step: int,
@@ -6839,6 +6844,7 @@ def _attach_tier_a_staging_index_surfaces_to_compact(
         pc_aux_votes_by_key=pc_aux_votes_by_key,
         pc_aux_moves_by_key=pc_aux_moves_by_key,
         pc_aux_mode=str(pc_aux_mode),
+        replay_ce_mode=str(replay_ce_mode),
         local_loss_delta_by_key=local_loss_delta_by_key,
         local_selection_ordering_seed=int(local_selection_ordering_seed),
         local_selection_ordering_step=int(local_selection_ordering_step),
@@ -6858,7 +6864,6 @@ def _attach_tier_a_staging_index_surfaces_to_compact(
         _assert_tier_a_index_surface_count_consistency(
             state_key,
             tensor_stats=stats,
-            replay_ce_veto_indices=replay_ce_veto_indices,
             applied_indices=applied_indices,
             global_rate_cap_enabled=cap_enabled,
         )
@@ -6943,6 +6948,7 @@ def harness_wire_cpu_validation_self_check() -> dict[str, Any]:
         pc_aux_votes_by_key=None,
         pc_aux_moves_by_key=None,
         pc_aux_mode="telemetry",
+        replay_ce_mode="veto",
         local_loss_delta_by_key={"toy.proj": torch.tensor([-0.1], dtype=torch.float32)},
         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
         local_selection_ordering_step=1,
@@ -6983,13 +6989,15 @@ def harness_wire_cpu_validation_self_check() -> dict[str, Any]:
         "pc_aux_votes_by_key": None,
         "pc_aux_moves_by_key": None,
         "pc_aux_mode": "telemetry",
+        "replay_ce_mode": "veto",
         "local_loss_delta_by_key": {"toy.proj": torch.tensor([-0.1], dtype=torch.float32)},
         "local_selection_ordering_seed": SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
         "local_selection_ordering_step": 1,
     }
     attached_mismatch = _attach_tier_a_staging_index_surfaces_to_compact(
         mismatch_fixture,
-        **mismatch_kwargs,
+        replay_ce_mode=mismatch_kwargs["replay_ce_mode"],
+        **{k: v for k, v in mismatch_kwargs.items() if k != "replay_ce_mode"},
     )
     assert "replay_ce_veto_indices" in attached_mismatch["tensor_stats"]["toy.proj"]
     coverage_state = make_bounded_tensor_state(
@@ -8069,6 +8077,7 @@ def run_bounded_delta_steps(
                         pc_aux_votes_by_key=pc_aux_votes_by_key,
                         pc_aux_moves_by_key=pc_aux_moves_by_key,
                         pc_aux_mode=str(b2_pc_aux_mode),
+                        replay_ce_mode=str(b2_replay_ce_mode),
                         local_loss_delta_by_key=local_loss_delta_by_key,
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),
@@ -8083,6 +8092,7 @@ def run_bounded_delta_steps(
                         pc_aux_votes_by_key=pc_aux_votes_by_key,
                         pc_aux_moves_by_key=pc_aux_moves_by_key,
                         pc_aux_mode=str(b2_pc_aux_mode),
+                        replay_ce_mode=str(b2_replay_ce_mode),
                         local_loss_delta_by_key=local_loss_delta_by_key,
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),
@@ -8104,6 +8114,7 @@ def run_bounded_delta_steps(
                         pc_aux_votes_by_key=pc_aux_votes_by_key,
                         pc_aux_moves_by_key=pc_aux_moves_by_key,
                         pc_aux_mode=str(b2_pc_aux_mode),
+                        replay_ce_mode=str(b2_replay_ce_mode),
                         local_selection_ordering_mode=step_selection_ordering_mode,
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),
@@ -8118,6 +8129,7 @@ def run_bounded_delta_steps(
                         pc_aux_votes_by_key=pc_aux_votes_by_key,
                         pc_aux_moves_by_key=pc_aux_moves_by_key,
                         pc_aux_mode=str(b2_pc_aux_mode),
+                        replay_ce_mode=str(b2_replay_ce_mode),
                         local_selection_ordering_mode=step_selection_ordering_mode,
                         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
                         local_selection_ordering_step=int(step),

@@ -1819,6 +1819,7 @@ def test_attach_control_arm_index_surfaces_off_arm() -> None:
         pc_aux_votes_by_key=None,
         pc_aux_moves_by_key=None,
         pc_aux_mode="telemetry",
+        replay_ce_mode="telemetry",
         local_selection_ordering_mode=LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
         local_selection_ordering_seed=SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
         local_selection_ordering_step=1,

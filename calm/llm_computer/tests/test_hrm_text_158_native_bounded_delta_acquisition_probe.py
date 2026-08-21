@@ -3903,6 +3903,7 @@ def _tier_a_staging_toy_attach_kwargs() -> dict[str, Any]:
         "pc_aux_votes_by_key": None,
         "pc_aux_moves_by_key": None,
         "pc_aux_mode": "telemetry",
+        "replay_ce_mode": "telemetry",
         "local_loss_delta_by_key": {
             "toy.proj": torch.tensor([-0.1], dtype=torch.float32)
         },
@@ -3935,7 +3936,6 @@ def test_tier_a_staging_saturated_global_cap_assert_split() -> None:
     probe_module._assert_tier_a_index_surface_count_consistency(
         state_key,
         tensor_stats=stats,
-        replay_ce_veto_indices=[],
         applied_indices=replan_indices,
         global_rate_cap_enabled=True,
     )
@@ -3949,7 +3949,6 @@ def test_tier_a_staging_saturated_global_cap_assert_split() -> None:
                 "post_veto_would_apply_pre_cap_count": 4096,
                 "post_veto_applied_flip_count": 256,
             },
-            replay_ce_veto_indices=[],
             applied_indices=replan_indices,
             global_rate_cap_enabled=False,
         )
@@ -3973,9 +3972,11 @@ def test_tier_a_staging_receipt_uses_post_cap_indices() -> None:
             "local_selection_ordering_mode": probe_module.LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
         },
     }
+    toy_kwargs = _tier_a_staging_toy_attach_kwargs()
     on_path = probe_module._attach_tier_a_staging_index_surfaces_to_compact(
         fixture_compact,
-        **_tier_a_staging_toy_attach_kwargs(),
+        replay_ce_mode=toy_kwargs["replay_ce_mode"],
+        **{k: v for k, v in toy_kwargs.items() if k != "replay_ce_mode"},
     )
     stats = on_path["tensor_stats"]["toy.proj"]
     assert stats["post_veto_would_apply_pre_cap_indices"] == [0]
@@ -3996,7 +3997,6 @@ def test_tier_a_staging_fail_closed_missing_post_cap_indices() -> None:
         probe_module._assert_tier_a_index_surface_count_consistency(
             "toy.proj",
             tensor_stats=stats,
-            replay_ce_veto_indices=[],
             applied_indices=[0],
             global_rate_cap_enabled=True,
         )
@@ -4016,7 +4016,6 @@ def test_tier_a_staging_fail_closed_mismatched_post_cap_indices() -> None:
         probe_module._assert_tier_a_index_surface_count_consistency(
             "toy.proj",
             tensor_stats=stats,
-            replay_ce_veto_indices=[],
             applied_indices=[0],
             global_rate_cap_enabled=True,
         )
@@ -4068,6 +4067,7 @@ def test_control_arm_staging_receipt_uses_post_cap_indices() -> None:
         pc_aux_votes_by_key=None,
         pc_aux_moves_by_key=None,
         pc_aux_mode="telemetry",
+        replay_ce_mode="telemetry",
         local_selection_ordering_mode=probe_module.LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
         local_selection_ordering_seed=probe_module.SCIENCE_LOCAL_SELECTION_ORDERING_SEED,
         local_selection_ordering_step=1,
@@ -4076,6 +4076,246 @@ def test_control_arm_staging_receipt_uses_post_cap_indices() -> None:
     assert stats["post_veto_would_apply_pre_cap_indices"] == [0]
     assert stats["applied_indices"] == [42]
     assert stats["applied_indices"] != stats["post_veto_would_apply_pre_cap_indices"]
+
+
+def test_ast_replay_ce_mode_calls() -> None:
+    import ast
+
+    root = Path(__file__).resolve().parents[3]
+    files = [
+        root / "scripts/hrm_text_158_bounded_delta_acquisition_probe.py",
+        root / "calm/llm_computer/tests/test_hrm_text_158_attribution_read_arbiter.py",
+        root / "calm/llm_computer/tests/test_hrm_text_158_native_bounded_delta_acquisition_probe.py",
+        root / "calm/llm_computer/tests/test_probe_event_coded_sparse_vote_authority_wiring_v0.py",
+        root / "calm/llm_computer/tests/test_hrm_text_158_grad_proxy_audit.py",
+    ]
+    helpers = {
+        "_plan_integer_vote_update_for_tier_a_surfaces",
+        "_plan_integer_vote_update_for_control_arm_surfaces",
+        "_attach_tier_a_staging_index_surfaces_to_compact",
+        "_attach_control_arm_index_surfaces_to_compact",
+    }
+
+    def call_name(node: ast.AST) -> str | None:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return node.attr
+        return None
+
+    def kw_value_name_id(value: ast.AST) -> str | None:
+        if isinstance(value, ast.Name):
+            return value.id
+        if (
+            isinstance(value, ast.Call)
+            and call_name(value.func) == "str"
+            and value.args
+            and isinstance(value.args[0], ast.Name)
+        ):
+            return value.args[0].id
+        return None
+
+    def fn_params(fn: ast.FunctionDef) -> set[str]:
+        args = list(fn.args.args) + list(fn.args.kwonlyargs)
+        if fn.args.vararg:
+            args.append(fn.args.vararg)
+        if fn.args.kwarg:
+            args.append(fn.args.kwarg)
+        return {a.arg for a in args}
+
+    def assigned_names(fn: ast.FunctionDef) -> set[str]:
+        names: set[str] = set()
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Assign):
+                for t in n.targets:
+                    if isinstance(t, ast.Name):
+                        names.add(t.id)
+            elif isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name):
+                names.add(n.target.id)
+        return names
+
+    def nearest_mode_source(enclosing: list[ast.FunctionDef]) -> str | None:
+        for fn in reversed(enclosing):
+            params = fn_params(fn)
+            assigned = assigned_names(fn)
+            if "replay_ce_mode" in params:
+                return "replay_ce_mode"
+            if "b2_replay_ce_mode" in params or "b2_replay_ce_mode" in assigned:
+                return "b2_replay_ce_mode"
+        return None
+
+    def walk(path: Path, source: str) -> list[dict]:
+        tree = ast.parse(source)
+        rows: list[dict] = []
+
+        def visit(node: ast.AST, enclosing: list[ast.FunctionDef]) -> None:
+            if isinstance(node, ast.FunctionDef):
+                child = enclosing + [node]
+                for ch in ast.iter_child_nodes(node):
+                    visit(ch, child)
+                return
+            if isinstance(node, ast.Call):
+                name = call_name(node.func)
+                if name in helpers:
+                    kws = {k.arg: k for k in node.keywords if k.arg}
+                    has = "replay_ce_mode" in kws
+                    src = nearest_mode_source(enclosing)
+                    bucket = "THREADING" if src else "SUPPLY"
+                    vid = kw_value_name_id(kws["replay_ce_mode"].value) if has else None
+                    rows.append(
+                        {
+                            "file": path.name,
+                            "lineno": getattr(node, "lineno", None),
+                            "helper": name,
+                            "enclosing": [fn.name for fn in enclosing],
+                            "bucket": bucket,
+                            "mode_source": src,
+                            "value_id": vid,
+                            "fire_presence": not has,
+                            "fire_identity": bucket == "THREADING" and has and vid != src,
+                            "production": path.parent.name == "scripts",
+                        }
+                    )
+            for ch in ast.iter_child_nodes(node):
+                visit(ch, enclosing)
+
+        visit(tree, [])
+        return rows
+
+    rows: list[dict] = []
+    for p in files:
+        rows.extend(walk(p, p.read_text(encoding="utf-8")))
+    buckets = {r["bucket"] for r in rows}
+    threading_n = sum(1 for r in rows if r["bucket"] == "THREADING")
+    supply_n = sum(1 for r in rows if r["bucket"] == "SUPPLY")
+    residue = len(rows) - threading_n - supply_n
+    print("C3_INVENTORY n=%s THREADING=%s SUPPLY=%s residue=%s" % (len(rows), threading_n, supply_n, residue))
+    for r in rows:
+        print(
+            "  file=%s lineno=%s helper=%s enclosing=%s bucket=%s mode_source=%s value_id=%s fire_presence=%s fire_identity=%s"
+            % (
+                r["file"],
+                r["lineno"],
+                r["helper"],
+                r["enclosing"],
+                r["bucket"],
+                r["mode_source"],
+                r["value_id"],
+                r["fire_presence"],
+                r["fire_identity"],
+            )
+        )
+    assert buckets <= {"THREADING", "SUPPLY"}
+    assert residue == 0
+    assert threading_n + supply_n == len(rows)
+    assert all(not r["fire_presence"] for r in rows)
+    assert all(not r["fire_identity"] for r in rows)
+
+    def _production_threading_floor(inventory: list[dict]) -> None:
+        for helper in helpers:
+            assert any(
+                r["helper"] == helper
+                and r["bucket"] == "THREADING"
+                and r["production"]
+                for r in inventory
+            ), helper
+
+    _production_threading_floor(rows)
+
+
+def test_constructor_mode_value_diverges_on_conflicting_replay() -> None:
+    key = "toy.proj"
+    state = make_bounded_tensor_state(
+        key, torch.tensor([0], dtype=torch.int8), 0.5, torch.zeros(1, dtype=torch.int16)
+    )
+    votes = {key: torch.tensor([12], dtype=torch.int16)}
+    spec = VoteUpdateSpec(
+        threshold_abs=10, accumulator_clip_min=-127, accumulator_clip_max=127, max_abs_per_tensor=1
+    )
+    specs = {key: spec}
+    veto_votes = {key: torch.tensor([-1], dtype=torch.int16)}
+    veto_moves = {key: torch.tensor([0], dtype=torch.int8)}
+    loss = {key: torch.tensor([-0.1], dtype=torch.float32)}
+    compact = {
+        "schema": "hrm_text_158_c2p0_bounded_delta_step_result/v0.compact",
+        "tensor_stats": {
+            key: {
+                "replay_ce_veto_count": 0,
+                "q_changed_count": 0,
+                "global_rate_cap_enabled": False,
+            }
+        },
+        "global_summary": {
+            "global_rate_cap_enabled": False,
+            "q_changed_count": 0,
+            "local_selection_ordering_mode": probe_module.LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+        },
+    }
+    base = dict(
+        tensor_states={key: state},
+        votes_by_key=votes,
+        vote_specs_by_key=specs,
+        replay_ce_veto_votes_by_key=veto_votes,
+        replay_ce_veto_moves_by_key=veto_moves,
+        pc_aux_votes_by_key=None,
+        pc_aux_moves_by_key=None,
+        pc_aux_mode="telemetry",
+        local_selection_ordering_seed=int(probe_module.SCIENCE_LOCAL_SELECTION_ORDERING_SEED),
+        local_selection_ordering_step=1,
+    )
+
+    def contains_plan(plans: dict) -> bool:
+        return 0 in [int(x) for x in plans[key].applied_indices.detach().cpu().tolist()]
+
+    def contains_att(c: dict) -> bool:
+        return 0 in [int(x) for x in c["tensor_stats"][key]["applied_indices"]]
+
+    flags: dict[str, bool] = {}
+    for mode in ("telemetry", "veto"):
+        pa = probe_module._plan_integer_vote_update_for_tier_a_surfaces(
+            **base, local_loss_delta_by_key=loss, replay_ce_mode=mode
+        )
+        pc = probe_module._plan_integer_vote_update_for_control_arm_surfaces(
+            **base,
+            local_selection_ordering_mode=probe_module.LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+            replay_ce_mode=mode,
+        )
+        aa = probe_module._attach_tier_a_staging_index_surfaces_to_compact(
+            compact, **base, local_loss_delta_by_key=loss, replay_ce_mode=mode
+        )
+        ac = probe_module._attach_control_arm_index_surfaces_to_compact(
+            compact,
+            **base,
+            local_selection_ordering_mode=probe_module.LOCAL_SELECTION_ORDER_CURRENT_MARGIN_INDEX,
+            replay_ce_mode=mode,
+        )
+        suffix = "tel" if mode == "telemetry" else "veto"
+        flags["tier_a_plan_%s" % suffix] = contains_plan(pa)
+        flags["control_plan_%s" % suffix] = contains_plan(pc)
+        flags["tier_a_attach_%s" % suffix] = contains_att(aa)
+        flags["control_attach_%s" % suffix] = contains_att(ac)
+
+    ordered = (
+        "tier_a_plan_tel",
+        "tier_a_plan_veto",
+        "control_plan_tel",
+        "control_plan_veto",
+        "tier_a_attach_tel",
+        "tier_a_attach_veto",
+        "control_attach_tel",
+        "control_attach_veto",
+    )
+    eight = tuple(flags[k] for k in ordered)
+    print("PREREG_EIGHT", eight)
+    for k in ordered:
+        print("  %s=%s" % (k, flags[k]))
+    if eight != (True, False, True, False, True, False, True, False):
+        raise AssertionError("STOP: cure unproven eight=%s" % (eight,))
+    artifact = Path(
+        "/home/gabe/claw-code-creditdir/transient_fp_credit/decay_screen_reentry_v1/scratch_pastes/constructor_mode_value_diverges_on_conflicting_replay.json"
+    )
+    payload = {k: flags[k] for k in ordered}
+    artifact.write_text(json.dumps(payload, indent=2) + "\n")
 
 
 def test_flush_probe_terminal_artifacts_writes_exit_code_and_posthash(tmp_path) -> None:
