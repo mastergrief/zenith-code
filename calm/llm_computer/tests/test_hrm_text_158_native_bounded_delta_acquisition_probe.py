@@ -748,6 +748,17 @@ def test_b2_retained_l0b_pin_is_per_curriculum_seed():
     assert proof44["support_hash16"] != pins["expected_hash16"]
     assert len(rows44) == pins["expected_count"]
 
+    for extra in (0, 99):
+        rows_x, proof_x = build_prior_audit_support_rows(
+            "L0b",
+            run_curriculum_seed=extra,
+            use_fixed_audit_seed=False,
+        )
+        assert proof_x["support_hash16"] == by_seed[extra]
+        assert proof_x["expected_hash16"] == by_seed[extra]
+        assert proof_x["audit_seed"] == extra
+        assert len(rows_x) == pins["expected_count"]
+
     _, math_proof = build_prior_audit_support_rows(
         "math_a0",
         run_curriculum_seed=44,
@@ -771,9 +782,8 @@ def test_b2_retained_l0b_pin_is_per_curriculum_seed():
 def test_b2_retained_l0b_missing_seed_fails_closed():
     pins = B1_PRIOR_AUDIT_PINS["L0b"]
     by_seed = pins["expected_hash16_by_curriculum_seed"]
-    seed = 0
     assert isinstance(by_seed, dict)
-    assert seed not in by_seed
+    seed = next(s for s in range(0, 10**6) if s not in by_seed)
     try:
         build_prior_audit_support_rows(
             "L0b",
@@ -784,9 +794,9 @@ def test_b2_retained_l0b_missing_seed_fails_closed():
         msg = str(exc)
         assert "fail-closed" in msg
         assert "L0b" in msg
-        assert "curriculum_seed=0" in msg
+        assert f"curriculum_seed={seed}" in msg
     else:
-        raise AssertionError("L0b B2 path at unpinned seed 0 must fail closed")
+        raise AssertionError(f"L0b B2 path at unpinned seed {seed} must fail closed")
 
 
 def test_prior_audit_support_parser_rejects_unknowns_and_duplicates():

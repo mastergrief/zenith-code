@@ -600,8 +600,10 @@ B1_PRIOR_AUDIT_PINS: dict[str, dict[str, Any]] = {
         "expected_count": 230,
         "expected_hash16": "89174273d21845bc",
         "expected_hash16_by_curriculum_seed": {
+            0: "4e477e9d7759dc08",
             17: "89174273d21845bc",
             44: "5b31b1b1b89e6b62",
+            99: "8959535c883a709f",
         },
         "builder_path": "calm.hrm_text_158.curriculum.language_supports._l0b_support",
         "support_role": "true_prior",
