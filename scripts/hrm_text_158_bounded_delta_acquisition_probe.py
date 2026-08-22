@@ -594,10 +594,15 @@ DEFAULT_PARENT = (
 IDENTITY_FULL_RUNG = "L0c2-K1-identity-2digit-full"
 B1_PRIOR_AUDIT_SUPPORTS: tuple[str, ...] = ("L0b", "math_a0", "L0c1")
 B1_PRIOR_AUDIT_FIXED_SEED = 17
+B1_B2_SEED_DEPENDENT_SUPPORTS: frozenset[str] = frozenset({"L0b", "L0c1"})
 B1_PRIOR_AUDIT_PINS: dict[str, dict[str, Any]] = {
     "L0b": {
         "expected_count": 230,
         "expected_hash16": "89174273d21845bc",
+        "expected_hash16_by_curriculum_seed": {
+            17: "89174273d21845bc",
+            44: "5b31b1b1b89e6b62",
+        },
         "builder_path": "calm.hrm_text_158.curriculum.language_supports._l0b_support",
         "support_role": "true_prior",
     },
@@ -1245,14 +1250,27 @@ def build_prior_audit_support_rows(
     construction_seed = (
         B1_PRIOR_AUDIT_FIXED_SEED if use_fixed_audit_seed else int(run_curriculum_seed)
     )
+    expected_count = int(pins["expected_count"])
+    if use_fixed_audit_seed:
+        expected_hash16 = str(pins["expected_hash16"])
+    elif name in B1_B2_SEED_DEPENDENT_SUPPORTS:
+        by_seed = pins.get("expected_hash16_by_curriculum_seed")
+        if not isinstance(by_seed, dict) or int(construction_seed) not in by_seed:
+            raise RuntimeError(
+                f"no per-seed retained-support pin for {name} "
+                f"curriculum_seed={construction_seed} (fail-closed)"
+            )
+        expected_hash16 = str(by_seed[int(construction_seed)])
+    else:
+        expected_hash16 = str(pins["expected_hash16"])
     sorted_rows = _prior_support_sorted_rows(name, int(construction_seed))
     row_count = len(sorted_rows)
     support_hash16 = hashlib.sha256(repr(sorted_rows).encode("utf-8")).hexdigest()[:16]
-    if row_count != int(pins["expected_count"]) or support_hash16 != pins["expected_hash16"]:
+    if row_count != expected_count or support_hash16 != expected_hash16:
         raise RuntimeError(
             f"prior audit support pin mismatch for {name}: "
             f"count/hash {row_count}/{support_hash16} != "
-            f"{pins['expected_count']}/{pins['expected_hash16']}"
+            f"{expected_count}/{expected_hash16}"
         )
     rows = [
         {
@@ -1276,9 +1294,9 @@ def build_prior_audit_support_rows(
         "run_curriculum_seed": int(run_curriculum_seed),
         "builder_path": pins["builder_path"],
         "row_count": row_count,
-        "expected_count": int(pins["expected_count"]),
+        "expected_count": expected_count,
         "support_hash16": support_hash16,
-        "expected_hash16": pins["expected_hash16"],
+        "expected_hash16": expected_hash16,
         "pinned_count_hash_pass": True,
         "source_bucket_counts": dict(sorted(source_counts.items())),
         "report_only": True,

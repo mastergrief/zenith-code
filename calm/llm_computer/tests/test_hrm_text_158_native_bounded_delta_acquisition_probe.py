@@ -108,6 +108,7 @@ from calm.hrm_text_158.native_full_stack.oracle_screen_runner import (
     run_within_tie_band_discriminator_oracle_screen,
 )
 from scripts.hrm_text_158_bounded_delta_acquisition_probe import (
+    B1_B2_SEED_DEPENDENT_SUPPORTS,
     B1_PRIOR_AUDIT_PINS,
     B1_PRIOR_AUDIT_SCHEMA_VERSION,
     B1_PRIOR_AUDIT_SUPPORTS,
@@ -716,6 +717,76 @@ def test_prior_audit_support_builders_use_fixed_audit_seed_with_run_seed_44():
         assert proof["audit_seed"] == 17
         assert proof["run_curriculum_seed"] == 44
         assert proof["support_hash16"] == B1_PRIOR_AUDIT_PINS[support]["expected_hash16"]
+
+
+def test_b2_retained_l0b_pin_is_per_curriculum_seed():
+    pins = B1_PRIOR_AUDIT_PINS["L0b"]
+    by_seed = pins["expected_hash16_by_curriculum_seed"]
+    assert by_seed[17] == pins["expected_hash16"]
+    assert "L0b" in B1_B2_SEED_DEPENDENT_SUPPORTS
+    assert "L0c1" in B1_B2_SEED_DEPENDENT_SUPPORTS
+    assert "math_a0" not in B1_B2_SEED_DEPENDENT_SUPPORTS
+
+    rows17, proof17 = build_prior_audit_support_rows(
+        "L0b",
+        run_curriculum_seed=17,
+        use_fixed_audit_seed=False,
+    )
+    assert proof17["support_hash16"] == pins["expected_hash16"]
+    assert proof17["expected_hash16"] == pins["expected_hash16"]
+    assert proof17["audit_seed"] == 17
+    assert len(rows17) == pins["expected_count"]
+
+    rows44, proof44 = build_prior_audit_support_rows(
+        "L0b",
+        run_curriculum_seed=44,
+        use_fixed_audit_seed=False,
+    )
+    assert proof44["support_hash16"] == by_seed[44]
+    assert proof44["expected_hash16"] == by_seed[44]
+    assert proof44["audit_seed"] == 44
+    assert proof44["support_hash16"] != pins["expected_hash16"]
+    assert len(rows44) == pins["expected_count"]
+
+    _, math_proof = build_prior_audit_support_rows(
+        "math_a0",
+        run_curriculum_seed=44,
+        use_fixed_audit_seed=False,
+    )
+    assert math_proof["support_hash16"] == B1_PRIOR_AUDIT_PINS["math_a0"]["expected_hash16"]
+
+    try:
+        build_prior_audit_support_rows(
+            "L0c1",
+            run_curriculum_seed=44,
+            use_fixed_audit_seed=False,
+        )
+    except RuntimeError as exc:
+        assert "fail-closed" in str(exc)
+        assert "L0c1" in str(exc)
+    else:
+        raise AssertionError("L0c1 B2 path at seed 44 must fail closed")
+
+
+def test_b2_retained_l0b_missing_seed_fails_closed():
+    pins = B1_PRIOR_AUDIT_PINS["L0b"]
+    by_seed = pins["expected_hash16_by_curriculum_seed"]
+    seed = 0
+    assert isinstance(by_seed, dict)
+    assert seed not in by_seed
+    try:
+        build_prior_audit_support_rows(
+            "L0b",
+            run_curriculum_seed=seed,
+            use_fixed_audit_seed=False,
+        )
+    except RuntimeError as exc:
+        msg = str(exc)
+        assert "fail-closed" in msg
+        assert "L0b" in msg
+        assert "curriculum_seed=0" in msg
+    else:
+        raise AssertionError("L0b B2 path at unpinned seed 0 must fail closed")
 
 
 def test_prior_audit_support_parser_rejects_unknowns_and_duplicates():
