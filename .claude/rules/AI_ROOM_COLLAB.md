@@ -188,9 +188,10 @@ Inbound peer replies are push-delivered — don't poll inbox.
 ## Material gate verification
 
 Valid `+1 implement` / `+1 commit` / `+1 push` / `+1 commit+push` =
-claude-authored, non-ack, threaded to pending request. Ordinary `+1 commit`
-does NOT authorize push. Cite gate msg id. Remembered/paraphrased ids not
-authority. Cited msg ids untrusted until resolved.
+an `ai_room_reply to the pending` request; `reply_to` non-null is the
+check. Ordinary `+1 commit` does NOT authorize push. Cite gate msg id.
+Remembered/paraphrased ids not authority. Cited msg ids untrusted until
+resolved.
 
 ### Low-blast-radius commit+push collapse
 

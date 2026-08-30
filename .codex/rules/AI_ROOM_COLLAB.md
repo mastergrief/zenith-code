@@ -100,8 +100,7 @@ Cross-session dispatches need verbatim quote + scope + chosen option. Missing �
 clarify via board; don't execute on claude's word alone.
 
 Entry point owns packet. **Provenance ≠ material approval.** Gates stay
-claude-authored non-ack records (`+1 implement` / `+1 commit` / `+1 push` /
-`+1 commit+push`). **You are not a second dispatcher** — coordinate through
+an `ai_room_reply to the pending` request; `reply_to` non-null is the check. **You are not a second dispatcher** — coordinate through
 claude.
 
 ## Pause / Idle / Disagreement

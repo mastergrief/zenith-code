@@ -146,9 +146,16 @@ Read-only handles that mutate = safety failure. Plan gate = refinement loop
 
 ## Validation and receipts
 
+**Plan / gate-record split.** The plan carries requirements (declared,
+citing); the gate record carries observations; the verdict is the gate's
+comparison. An artifact does not carry both sides. A plan names the SET and the emitter, never the size. Frozen argv is a program pinned by sha;
+executables do not live in plans. Receipts cite that pin plus argv (env
+vars verbatim, no ellipsis). The
+plan/packet declares known-bad and known-good worlds with declared
+consequences; observed firing and silence live in the gate record.
+
 Match risk + user impact. Receipts: commands, outputs, artifacts, cites, msg
-ids, caveats. Cited gate ids must resolve as authored records. Receipt commands
-are exact replayable argv (env vars verbatim, no ellipsis) — else receipt defect.
+ids, caveats. Cited gate ids must resolve as authored records.
 
 **Predecessor-diff sidecar.** Only the evidence record owes a predecessor
 diff. The sidecar is tool-generated from the frozen predecessor plus the
@@ -158,11 +165,7 @@ hunk-by-hunk; frozen beside the record; reviewed as one bundle.
 **Disposition on EVERY frozen record** (quantifier quoted from `AI_ROOM_COLLAB.md`): required on every frozen record — `ADVISOR_ROUTE: <id>` citing the route decision the lineage runs under. One form, no alternative, no waiver; absent field = gate defect. Gate-defect semantics live there; do not restate them.
 
 **Check pre-registration.** Every check in a plan/packet carries, row-exhaustively
-over ALL checks with the denominator stated (never only the bounced ones): the
-deciding property; the declared consequence; a known-bad fixture observed FIRING
-(that consequence occurs, not only an emitted field) plus a known-good observed
-SILENT, where the silent side asserts the check's **emitted fields**, not the
-verdict alone; per-operand declared provenance disjointness; a safe-execution seam or explicit STOP. Operands sharing one provenance are tautological BY
+over ALL checks: the deciding property; the declared consequence; per-operand declared provenance disjointness; a safe-execution seam or explicit STOP. Operands sharing one provenance are tautological BY
 CONSTRUCTION — no added read cures it, and **deleting a tautological check is a
 valid cure**. Aggregates report extremal row + failing-row set, never a bare mean.
 
@@ -234,8 +237,7 @@ and a MIXED set is HIGH — one control-plane file gates the whole commit.
 
 ### Low-blast-radius commit+push collapse
 
-Compress commit→push via explicit persisted **`+1 commit+push`** (claude-authored,
-non-ack, threaded). LOW (all required): CPU/docs/tooling/config; scope-clean;
+Compress commit→push via explicit persisted **`+1 commit+push`**. LOW (all required): CPU/docs/tooling/config; scope-clean;
 non-force FF; no `.pt`/large binary; no science claim; drift excluded;
 `HEAD == remote` post-push. HIGH keeps separate `+1 push`.
 

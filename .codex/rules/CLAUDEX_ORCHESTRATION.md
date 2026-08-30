@@ -67,7 +67,7 @@ name is NOT a room handle. Developer executor reports through `plan-dev`.
    PASS) and the quality floor (spec freeze, claim-vs-execution, source
    pinning, non-vacuous hostiles + packet dry-exec) never compress.
    Canonical: `.claude/rules/CLAUDEX_ORCHESTRATION.md`.
-4. Verify gate (`from: claude`, non-ack, threaded). Cite gate msg id.
+4. Verify gate per `.codex/rules/AI_ROOM_COLLAB.md` §"Provenance / Ingress-Owned". Cite gate msg id.
 5. Implement/prove within scope.
 6. Validate; post receipt to claude gate-1 ONLY.
 7. Commit after `+1 commit`; push after `+1 push` or `+1 commit+push`.
@@ -75,7 +75,7 @@ name is NOT a room handle. Developer executor reports through `plan-dev`.
 
 ### Low-blast-radius commit+push collapse
 
-Explicit persisted **`+1 commit+push`** for LOW only (non-ack, threaded).
+Explicit persisted **`+1 commit+push`** for LOW only.
 Ordinary `+1 commit` does NOT authorize push. LOW: CPU/docs/tooling/config;
 scope-clean; non-force FF; no `.pt`/large binary; no science claim; drift
 excluded; `HEAD == remote`. HIGH: separate `+1 push`.
@@ -103,9 +103,12 @@ Questions → claude with provenance. See `.codex/rules/AI_ROOM_COLLAB.md`.
 
 Fresh-process for landing-day code. Real-product-path > unit tests for visible
 shape. Receipts: commands, outputs, artifacts, cites, msg ids, caveats.
-Receipt commands/results are exact replayable argv (env vars verbatim, no
-ellipsis; result must replay from its own recorded command) — else receipt
-defect. Commit-hook no-auto-match of a room PASS → flag to claude first;
+The plan carries requirements; the gate record carries observations; the
+verdict is the gate's comparison. An artifact does not carry both sides. A
+plan names the SET and the emitter, never the size. Frozen argv is a program
+pinned by sha; executables do not live in plans. Receipts cite that pin plus
+argv (env vars verbatim, no ellipsis).
+Commit-hook no-auto-match of a room PASS → flag to claude first;
 `CO_LEAD_GATE_OVERRIDE` is claude-authorized only (bound to target-repo path +
 64-hex DIFF_DIGEST + co_lead PASS msg id) — never executor-unilateral.
 
