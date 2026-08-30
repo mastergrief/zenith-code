@@ -24,7 +24,7 @@ Active fork target: **`hrm-158-base`**, a robust all-rounder native HRM-Text-1.5
 
 Default slice is one atom: **auditable full-density finite support** (usually ~100-150 rows / ~120 natural), trained slow-safe under the 90/90 bank gate; numeric recipe band → `.claude/rules/hrm-158.md` §"Recipe band".
 
-Bank gate is acquire ≥90% / retain ≥90% per slice. Bank earliest all-clear save; final has no privilege. Close siblings clear by numeric gate OR no-new-broad-cluster/parent-floor. Retention uses explicit replay + parent consistency + broad retained supports (L0b, math_a0) + direct close-sibling protection for shared template/emission surfaces; extra run-specific KL pins must be launch-command entries with ENABLED count/hash proof, never default-on and never on the target. Anchors are sentinels, not the primary retention mechanism.
+Bank gate binds two DIFFERENT surfaces and conflating them is a recipe error: acquire on the active target slice (≥90%, exact-finite for small supports), retain ≥90% on true prior/banked surfaces the parent actually has. A surface the parent has NOT acquired is an acquisition diagnostic, not a retain gate. Bank earliest all-clear save; final has no privilege. Close siblings clear by numeric gate OR no-new-broad-cluster/parent-floor. Retention uses explicit replay + parent consistency + broad retained supports (L0b, math_a0) + direct close-sibling protection for shared template/emission surfaces; extra run-specific KL pins must be launch-command entries with ENABLED count/hash proof, never default-on and never on the target. Anchors are sentinels, not the primary retention mechanism.
 
 On a miss: classify, then split smaller / protect / redesign. Do **not** stretch runway, bump LR, or add model capacity to force a fragile slice through. Cached/batched probe path is default; native ternary train is preferred when available. `.pt` artifacts are runtime/research outputs; commit code/tooling/docs/manifest receipts, not `.pt` by default.
 
@@ -47,13 +47,13 @@ Commit completed, measured work before starting the next risky round. Do not use
 
 ## Working Policy
 
-Direct tools are default for orchestration, AUQ, board dispatch, training launch/watch, gates, synthesis, trivial non-mutating work, and explicit named exceptions. Mutating repo-file work defaults to gated `plan-dev`; narrow exception: after reviewed plan/contract + Claude `+1 implement`, `plan-dev` may invoke `.codex/agents/developer.toml` for bounded edits/tests, then must review before any gate, run, commit, or push. ai-room collaboration is not a subagent pattern.
+Direct tools are default for orchestration, AUQ, board dispatch, training launch/watch, gates, synthesis, trivial non-mutating work, and explicit named exceptions. Mutating repo-file work defaults to gated `plan-dev`, which uses no subagents: it grounds, edits, validates, and reports itself. ai-room collaboration is not a subagent pattern.
 
 ## AI Room Collaboration
 
-Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. The standing `advisor` peer is the **direction lead**: it issues, renews, and kills each lineage's route license at route birth, route death, and escalation, and those decisions **bind** — Claude executes them and escalates disagreement to Gabe rather than overriding in place. Its authority stops at the artifact bar: never a reviewer, never at gate-1 or gate-2, never shown plans/packets/diffs/receipts. Claude is orchestration/execution lead and gate-1: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, validation/commit/push gates, and final synthesis. `codex_co_lead` is read-only gate-2 review authority. Route licenses per `.claude/rules/workflow.md` §"Route license".
+Gabe is the human direction owner / research sponsor / final risk-cost-goal authority. The standing `advisor` peer is the **direction lead**: it issues, renews, and kills each lineage's route license at route birth, route death, and escalation, and those decisions **bind** — Claude executes them and escalates disagreement to Gabe rather than overriding in place. Its authority stops at the artifact bar: never a reviewer, never at gate-1 or gate-2, never shown plans/packets/diffs/receipts. The `claude` handle is the grok-backed `orchestrator` peer and is orchestration/execution lead: AUQ capture/relay, board orchestration, role bootstrap/dispatch, training launch/run/watch, gate-1 handoff framing, commit/push/launch gates + all `+1` records, and final synthesis. The interactive Fable session Gabe drives holds handle `advisor` and is **team lead**: the direction lead above plus Gabe's interface, room steering (posts to `claude` only), and room-infrastructure edits (hooks/agents/rules/config) — never a lineage-artifact author or reviewer. The standing `gate1_audit` peer (dedicated grok-backed auditor) carries gate-1 verification + freeze + external verdict — never dispatch, cure framing, `+1` authorship, or judgment review. `codex_co_lead` is read-only gate-2 review authority. Route licenses per `.claude/rules/workflow.md` §"Route license".
 
-Mutating repo-file work routes to `plan-dev` by default for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe support; direct Claude repo-file edits require a persisted named exception or break-glass reason. `plan-dev` is the always-on lane, owns any delegated developer-executor output, and remains responsible for the reviewed receipt. **`test-operator` is Claude-carried, not a spawnable worker role**: under the standing auto-research directive Gabe's gates are waived (including pushes and GPU runs) and Claude runs frozen packets directly — but peer gates are never waived, so claude gate-1 freeze → co_lead gate-2 → persisted `+1` still precede every implement, commit, push, and launch. **No peer is codex-backed** — all are Claude peers spawned by `ai_room_spawn_claude` on legacy `codex*` handles (`codex_co_lead` `sol=true` GPT, `plan-dev` on handle `codex` `grok=true` grok, `advisor` Fable, Claude Opus); "codex role" means worker role on a codex handle. Detailed lane boundaries live in the ai-room rules.
+Mutating repo-file work routes to `plan-dev` by default for HRM and main-repo docs/config/tooling/scripts/tests/curriculum/probe support; direct Claude repo-file edits require a persisted named exception or break-glass reason. `plan-dev` is the always-on lane and performs every edit, validation run, and receipt itself. **`test-operator` is Claude-carried, not a spawnable worker role**: under the standing auto-research directive Gabe's gates are waived (including pushes and GPU runs) and Claude runs frozen packets directly — but peer gates are never waived, so gate1_audit gate-1 freeze → co_lead gate-2 → persisted Claude-authored `+1` still precede every implement, commit, push, and launch. **No peer is codex-backed** — all are Claude peers spawned by `ai_room_spawn_claude` (`codex_co_lead` `sol=true` GPT, `plan-dev` on handle `codex` Opus with no subagents, `gate1_audit` `grok=true` grok, `claude` = `orchestrator` `grok=true` grok; `advisor` is the interactive Fable session, not spawned); "codex role" means worker role on a codex handle. Detailed lane boundaries live in the ai-room rules.
 
 Non-trivial cross-agent work follows:
 
@@ -67,11 +67,11 @@ Key invariants:
 - Provenance: cross-session dispatches carry verbatim Gabe quote, scope, chosen option, and rejected alternatives when relevant.
 - Material gates: see `.claude/rules/AI_ROOM_COLLAB.md` §"Material gate verification". Ordinary `+1 commit` does not authorize push unless the gate text is `+1 commit+push`.
 - Capture then relay: non-trivial durable Gabe decisions are captured chat-side and immediately relayed to the room before material action.
-- `ai_room_task_update` is durable board state but not a wake; pair required action with a direct addressed post.
+- `ai_room_task_update` is durable board state; it wakes only with `notify=true` (auto-set on terminal statuses), and wake-eligible is not delivered — pair required action with a direct addressed post.
 - Before idle, run `ai_room_resume_check`; board state is canonical.
 - Codex never directly asks Gabe for non-trivial durable decisions; route questions through Claude's AUQ flow.
 - Cross-thread refinement loop: non-trivial thinking boundaries iterate to convergence — anchor to the receipt, decompose proposed mechanisms, classify before building, converged design becomes pre-registered folds. See `AI_ROOM_COLLAB.md` §"Refinement loop".
-- Review gates are sequential: Claude freezes/verifies first; co_lead reviews the frozen artifact second. Worker material receipts route to **claude gate-1 only**; co_lead gate-2 follows the frozen handoff. **UNIFYING RULE:** routine receipts → claude-only; safety/liveness escalations may cc both with claude sole responder. Passive-wait-don't-poll at gates.
+- Review gates are sequential: `gate1_audit` verifies/freezes first (claude frames the handoff); co_lead reviews the frozen artifact second. Worker material receipts route to **claude only** (sink + framing); co_lead gate-2 follows the frozen handoff. **UNIFYING RULE:** routine receipts → claude-only; safety/liveness escalations may cc both with claude sole responder. Passive-wait-don't-poll at gates.
 
 ## Architecture Index
 
@@ -97,7 +97,7 @@ Serving, hardware, and VRAM details live in `.claude/rules/environment.md`. Turb
 `feature/hrm-158` on `mastergrief/zenith-code` (forked from `ultraworkers/claw-code`).
 
 ## IMPORTANT
-- No mutating subagent delegation — one mutating executor per slice owns every
-  edit, validation run, and receipt. Read-only `Explore` fan-out for discovery
-  is allowed (orchestration, not a role); results are pointers — fresh-read
-  before editing.
+- One mutating OWNER per slice — performs every edit, validation run, and
+  receipt itself; there is no delegated executor and no subagent exception.
+  Read-only `Explore` fan-out for discovery is allowed (orchestration, not a
+  role); results are pointers — fresh-read before editing.

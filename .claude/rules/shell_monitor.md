@@ -11,7 +11,10 @@ Two PreToolUse hooks enforce the convention:
 
 - `.claude/hooks/enforce-monitor-on-bg-shell.sh` blocks Bash launch patterns
   that hide long-running work from Monitor: `run_in_background: true`,
-  `setsid`, `nohup`, and `until <cond>; do sleep ...; done` poll loops.
+  `setsid`, `nohup`, `disown`, `&` as a control operator, and poll loops —
+  any loop header whose body sleeps, `while` and `until` alike. Tokens
+  inside quoted arguments (`grep 'while true' f`) are not launches and are
+  not blocked.
 - `.claude/hooks/enforce-watch-wrap.sh` blocks raw `tail -f` / `tail -F`
   Monitor commands unless they use `bin/watch-wrap`.
 
@@ -20,8 +23,6 @@ Allowed patterns:
 - Ordinary foreground Bash commands.
 - Long jobs run in a dedicated foreground shell/session with output
   redirected to a log.
-- Continuous `while true; do ...; sleep N; done` poll loops when they
-  produce their own stream of events.
 - Monitor commands that use `bin/watch-wrap --log <path>` with error,
   progress, success, heartbeat, replay, and stop filters.
 

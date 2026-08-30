@@ -17,8 +17,9 @@ after shipped slices.
 
 **No worker is codex-backed.** Every peer is a Claude peer spawned by
 `ai_room_spawn_claude` on a legacy `codex*` handle — `codex_co_lead` `sol=true`
-(GPT), `plan-dev` on handle `codex` `grok=true` (grok), `advisor` on Fable,
-Claude on Opus. "Codex role" in this file means **worker role on a codex
+(GPT), `plan-dev` on handle `codex` (Opus, no subagents), `gate1_audit` `grok=true`
+(grok), `claude` `grok=true` (agent `orchestrator`); `advisor` is the
+interactive Fable session, not spawned. "Codex role" in this file means **worker role on a codex
 handle**; the `.codex-roles` paths and `claudex` tool names are naming artifacts,
 not evidence of a codex backend.
 
@@ -33,12 +34,12 @@ verify+freeze. **`codex_co_lead`** = read-only gate-2 review authority.
 **Named Codex role lanes** — normal route for gated mutating repo-file work:
 
 - **`plan-dev`** — planning/contract/packet lane AND **default** bounded
-  implementation executor (developer template). Owns plan/packet drafting,
+  implementation executor, with NO subagents: it performs every edit,
+  validation run, and receipt itself. Owns plan/packet drafting,
   run-packet contracts, and approved implementation — **NOT** implementation
   review (receipts → claude ONLY; `gate1_audit` verifies+freezes; co_lead
   gate-2 after), **NOT** formal run execution. Break-glass implementation/run
-  via Claude `+1` with `transition_fallback_used=true`. After `+1 implement` may invoke
-  `.codex/agents/developer.toml` (`subagent-claimed` until verified). **cwd =
+  via Claude `+1` with `transition_fallback_used=true`. **cwd =
   provenance/dispatch match, not repo permission.** No `.pt` commits.
   **health-proven existing backend/config** — do NOT change backend as the fix.
   Edits + focused developer validation in scope; **material receipts to claude
@@ -58,8 +59,9 @@ persisted `+1 launch` after gate-1 freeze and co_lead gate-2 on the frozen bytes
 
 **Role vs handle**: `role="<name>"` loads role home; routable target = PINNED
 handle (`codex`=`plan-dev`, `codex_co_lead`=`co_lead`, `gate1_audit`=gate-1
-auditor); role name is NOT a room handle; developer executor reports through
-`plan-dev`. **Not a second dispatcher**: co_lead recommends only.
+auditor); role name is NOT a room handle. plan-dev delegates to no executor
+template and spawns no subagents. **Not a second dispatcher**: co_lead
+recommends only.
 
 ## Lifecycle
 
@@ -70,6 +72,13 @@ gate-1 → co_lead gate-2 implementation review (dual accept) → +1 commit →
 commit → +1 push → push → +1 launch → claude-as-test-operator runs packets →
 complete + recycle
 ```
+
+**Run-first (Gabe-directed).** Launches of pinned frozen bytes take the LEAN
+path in `AI_ROOM_COLLAB.md` §"Fast Training Launch Contract": freeze → one
+co_lead pass on the bytes → `+1 launch` naming the output class → run → one
+receipt. The plan/implementation dual gate above governs artifacts and the
+**consumption** of a run's output, not the launch. Iterate from the observed
+terminal of the last run, never from a predicted one.
 
 **Advisor at route birth / death / escalation:** the route license is issued before contract/gates and **binds** — Claude executes it, escalating disagreement to Gabe rather than overriding in place; never between gate-1 and gate-2; never fed plans/packets/diffs/receipts. Canonical sequence and authority bar: `AI_ROOM_COLLAB.md` §advisor (**Placement**).
 
@@ -165,7 +174,14 @@ hunk-by-hunk; frozen beside the record; reviewed as one bundle.
 **Disposition on EVERY frozen record** (quantifier quoted from `AI_ROOM_COLLAB.md`): required on every frozen record — `ADVISOR_ROUTE: <id>` citing the route decision the lineage runs under. One form, no alternative, no waiver; absent field = gate defect. Gate-defect semantics live there; do not restate them.
 
 **Check pre-registration.** Every check in a plan/packet carries, row-exhaustively
-over ALL checks: the deciding property; the declared consequence; per-operand declared provenance disjointness; a safe-execution seam or explicit STOP. Operands sharing one provenance are tautological BY
+over ALL checks: the deciding property; the declared consequence; a known-bad
+world and a known-good world, named; the **emitted field names** the silent
+side must show, not the verdict alone; per-operand declared provenance
+disjointness; a safe-execution seam or explicit STOP.
+**Observations live in the gate record, never in the plan**: known-bad observed
+FIRING (the consequence occurs, not only an emitted field), known-good observed
+SILENT with its field values, and the denominator are gate-1 EMISSIONS beside
+the frozen bytes. A plan that shows values is the artifact vouching for itself. Operands sharing one provenance are tautological BY
 CONSTRUCTION — no added read cures it, and **deleting a tautological check is a
 valid cure**. Aggregates report extremal row + failing-row set, never a bare mean.
 
@@ -175,7 +191,9 @@ authority each placeholder needs and the gate that issues it; gate-1 BLOCKS if t
 issuing gate is downstream, regardless of closure. Split bindings so no object
 must cite an id younger than itself.
 
-**Consumption is the effect surface.** A measurement run ahead of its gates
+**Consumption is the effect surface.** Running is cheap and licensed LEAN
+(§Lifecycle run-first); a run's OUTPUT is what the gates guard. A measurement
+run ahead of its consumption gates
 becomes a MATERIAL breach the moment its output feeds a decision — discarded-and-
 rerun is a process defect, consumed is material. Re-running under authority does
 not retract a consumed claim; a post-hoc PASS on consumed output is itself

@@ -6,28 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "(\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ai-room-ensure-codex-roles.sh &)"
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ai-room-session-brief.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-compact-directive.py"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto-research-resume-directive.py"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh"
           }
         ]
       }
@@ -60,6 +39,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ai_room_handle_precision_pretooluse_gate.py"
+          },
+          {
+            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/at_gabe_askuserquestion_gate.py"
           },
           {
@@ -73,6 +56,15 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/worker_gate_wake_pairing_gate.py"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__ai-room__ai_room_task_create|mcp__ai-room__ai_room_task_update|mcp__ai_room__ai_room_task_create|mcp__ai_room__ai_room_task_update",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ai_room_handle_precision_pretooluse_gate.py"
           }
         ]
       },

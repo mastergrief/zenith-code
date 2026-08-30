@@ -159,6 +159,12 @@ handoff and authors all `+1` records). **Passive-wait-don't-poll**
 at gates. Tiered ceremony (HIGH / LEAN-MEASUREMENT / LOW):
 `CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
 
+**Run first, gate the claim (Gabe-directed):** a launch of pinned frozen bytes
+is LEAN — freeze → one co_lead pass on the bytes → `+1 launch` naming the output
+class → run → one receipt; the dual gate sits at consumption of the output, not
+at launch. Iterate from the observed terminal, never a predicted run-state.
+Contract: `AI_ROOM_COLLAB.md` §"Fast Training Launch Contract".
+
 **Foreground only — no detach:** forbid `setsid`, `nohup`, `disown`,
 `run_in_background`, trailing `&`. Run training foreground in a dedicated
 shell; log to file; arm `bin/watch-wrap` Monitor with failure signatures

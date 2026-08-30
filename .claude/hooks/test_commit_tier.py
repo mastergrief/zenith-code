@@ -49,7 +49,7 @@ HIGH_SETS = [
     (["AGENTS.md"], "root agent manifest"),
     ([".mcp.json"], "mcp wiring"),
     ([".github/workflows/ci.yml"], "CI is control plane"),
-    ([".codex/agents/developer.toml"], "codex role home"),
+    ([".codex/agents/x.toml"], "codex role home"),
     (["rust/src/main.rs"], "source is not LOW"),
     (["calm/hrm/checkpoints/model.pt"], "banked artifact"),
     (["docs/a.md", ".claude/rules/x.md"], "MIXED set is HIGH"),

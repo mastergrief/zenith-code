@@ -10,8 +10,8 @@ unaffected.
 
 **Gabe** = human direction owner, final authority. **`advisor`** = direction
 lead — **binding** route judgement at route birth / death / escalation, never an
-artifact reviewer or gate. **Claude** = ops/orchestration + test-operator.
-**`gate1_audit`** = gate-1 verify+freeze (Opus; provisional — reversion is an
+artifact reviewer or gate; the interactive Fable session Gabe drives, handle `advisor`, also team lead (room steering + infrastructure edits). **Claude** (`claude` handle, grok `orchestrator` peer) = ops/orchestration + test-operator.
+**`gate1_audit`** = gate-1 verify+freeze (grok-backed; provisional — reversion is an
 advisor ruling). **`codex_co_lead`** = gate-2 review authority.
 
 Gabe seeds → **advisor licenses the route** → claude+co_lead
@@ -34,9 +34,10 @@ the peer gates' load; it never lowers them.
 
 **Peers are Claude peers on legacy codex handles — no peer is codex-backed.**
 All are spawned by `ai_room_spawn_claude`: `codex_co_lead` with `sol=true`
-(GPT-backed), `plan-dev` on handle `codex` with `grok=true` (grok-backed),
-`advisor` on Anthropic Fable, `gate1_audit` on Opus (agent `gate1-auditor`),
-Claude on Opus. The `codex*` handle names are a
+(GPT-backed), `plan-dev` on handle `codex` on Opus (no subagents),
+`gate1_audit` with `grok=true` (grok-backed, agent `gate1-auditor`),
+`claude` with `grok=true` (agent `orchestrator`). `advisor` is not spawned: it
+is the interactive Fable session (`.mcp.json` `AI_ROOM_HANDLE` default). The `codex*` handle names are a
 naming artifact kept for routing stability — read "codex role" anywhere in these
 rules as **worker role on a codex handle**, never as a codex-backed session.
 
@@ -61,7 +62,8 @@ rules as **worker role on a codex handle**, never as a codex-backed session.
     verify+freeze; co_lead gate-2 reviews only the frozen handoff. On
     dual accept → claude commit/push gates → run packets execute claude-side.
     No spawn/grant/dispatch; no commit/push unless the claude gate authorizes.
-    Break-glass, developer-template use, and backend discipline:
+    No subagents: plan-dev performs every edit, validation run, and receipt
+    itself. Break-glass and backend discipline:
     `CLAUDEX_ORCHESTRATION.md` §"Team model + named role lanes".
   - **`test-operator` is NOT a live worker role** — Claude carries it directly:
     runs the frozen packet, monitors, posts the terminal receipt. Code fixes and
@@ -78,13 +80,13 @@ is a Claude-side standing peer on its own handle, not a codex worker. Retired ro
 names, and the things mistaken for further roles, are enumerated in
 `MEMORY/atlas/AI_ROOM_COLLAB_arc.md` §"Retired spawnable codex role names".
 
-**`advisor`** (Claude-side, not a codex role): standing **direction lead**, three
-modes. Route decisions **BIND** — Claude executes, never re-derives or overrides
+**`advisor`** (the interactive Fable session, not a codex role): standing
+**direction lead** and team lead, three modes. Route decisions **BIND** — Claude executes, never re-derives or overrides
 in place; disagreement escalates to Gabe. Authority stops at the artifact bar:
 never an artifact reviewer, never at gate-1 or gate-2. Modes, deliverables,
 solicitation shape: `.claude/agents/fable-advisor.md`.
 
-- **Advisor is not a subagent path:** never invoke the advisor via Claude Code subagent spawn. The agent definition file's existence does not authorize that path; use the documented in-room spawn (see peers paragraph above).
+- **Advisor is not a subagent path:** never invoke the advisor via Claude Code subagent spawn. It is reached in-room at handle `advisor`; the agent file is its charter and a spawn fallback only.
 - **Mode is set by what the solicitation carries**, never by stage label, under
   total precedence **check > journal request > route question**: answer the
   highest-priority present, return the rest, never blend two. No mode is
@@ -239,14 +241,21 @@ Semantics: `CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier".
 
 ## Fast Training Launch Contract
 
-Compress gates, not safety: (1) `plan-dev` drafts launch packet; (2) gate1_audit
-gate-1 validates hash/paths/preflight + FREEZE (claude frames the handoff);
-(3) co_lead gate-2 launch-plan
-review of frozen packet; (4) claude `+1 launch/watch-to-terminal-condition`;
-(5) **claude as test-operator** runs + posts terminal receipt; (6) interrupt only
-for bank/fail/criteria/liveness/deviation; (7) one terminal receipt.
-GPU-hot-loop = kernelized execution, not merely `device=cuda:0`. `.pt` not
-committed. Sibling for measurement-only CPU slices whose claim effect is a
+**Run first, gate the claim** (Gabe-directed). A launch of pinned frozen bytes
+is LEAN: (1) gate-1 freeze exists (hash/paths/preflight); (2) ONE co_lead pass
+on the frozen bytes — paths, pins, exclusive paths absent, nothing else; (3)
+claude `+1 launch` naming the run's **output class** (`pre_full_stack_diagnostic`
+or science); (4) **claude as test-operator** runs foreground + Monitor to a
+terminal condition, wall cap with kill as a classified outcome; (5) ONE
+terminal receipt. The packet IS the executable and the log IS the transcript —
+no plan document, emitter, or launch record as separate artifacts for a run.
+The full dual gate applies at the **consumption boundary** — before a run's
+output mints a verdict (bank / parity / acquisition / stability / sub-2), never
+at the launch. The next slice is chosen from the last run's observed terminal;
+a slice premised on a predicted run-state of pinned bytes is not licensable
+until that behaviour has been observed once. Interrupt only for
+bank/fail/criteria/liveness/deviation. GPU-hot-loop = kernelized execution, not
+merely `device=cuda:0`. `.pt` not committed. Sibling for measurement-only CPU slices whose claim effect is a
 feasibility/plumbing/parity/null read: **LEAN-MEASUREMENT** tier
 (`CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk tier").
 

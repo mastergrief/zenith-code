@@ -35,10 +35,10 @@ policy. On any conflict those files win.
 
 **STEP 7 - IMPLEMENT + TEST** (plan-dev)
 - `plan-dev` implements AND runs focused validation; posts validation_receipt to
-  **claude gate-1 ONLY** (`REPORT_TO: [claude]`). Worker NEVER commits.
+  **claude ONLY** (`REPORT_TO: [claude]` — sink + framing). Worker NEVER commits.
 
-**STEP 8 - REVIEW GATE** (sequential: Claude gate-1 → co_lead gate-2)
-- Claude reads ACTUAL diff, re-runs validation, freezes or bounces.
+**STEP 8 - REVIEW GATE** (sequential: gate1_audit gate-1 → co_lead gate-2)
+- Claude frames the handoff; `gate1_audit` verifies, freezes, or bounces.
 - Cross-thread frozen handoff + `DIFF_DIGEST` to codex_co_lead; passive-wait
   for PASS/REVISE. co_lead gate-2 is the LAST gate per changed diff.
 - On REVISE/FAIL: redispatch (STEP 10) WITHOUT eval.

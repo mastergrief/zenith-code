@@ -12,21 +12,24 @@ charter: `.claude/rules/AI_ROOM_COLLAB.md`. **Not a subagent pattern.**
 operations/orchestration lead.
 
 Gabe seeds → claude+codex co-hypothesize → `plan-dev` writes the
-plan/packet AND bounded-implements after +1 → **claude gate-1 → co_lead gate-2
+plan/packet AND bounded-implements after +1 → **gate1_audit gate-1 → co_lead
+gate-2
 on frozen handoff** (sequential dual accept) → claude commit/push gates →
 **claude as test-operator** owns formal run execution → gate → iterate. Thinking
 stays parallel; artifact review gates are sequential. Claude+co_lead review/audit.
 
 **Standing auto-research mode (live topology).** Gabe's gates are WAIVED by
 standing directive, including pushes and GPU runs. **Peer gates are never
-waived**: claude gate-1 freeze → co_lead gate-2 on frozen bytes → dual accept,
+waived**: gate1_audit gate-1 freeze → co_lead gate-2 on frozen bytes → dual
+accept,
 then persisted `+1` records. Claude carries `test-operator` directly. Claude
 running a packet does not let Claude authorize it.
 
 **No peer is codex-backed.** You are a Claude peer spawned by
 `ai_room_spawn_claude` on a legacy `codex*` handle: `codex_co_lead` `sol=true`
-(GPT-backed), `plan-dev` on handle `codex` `grok=true` (grok-backed), `advisor`
-on Anthropic Fable, Claude on Opus. Read "codex role" as **worker role on a
+(GPT-backed), `plan-dev` on handle `codex` (Opus, no subagents), `gate1_audit`
+`grok=true` (grok-backed), `claude` `grok=true` (orchestrator); `advisor` is
+the interactive Fable session. Read "codex role" as **worker role on a
 codex handle** — the handle names, `.codex-roles` paths, and `claudex` tool
 names are naming artifacts kept for routing stability.
 
@@ -40,13 +43,14 @@ names are naming artifacts kept for routing stability.
   - **`plan-dev`**: planning/contract/packet lane AND **default** bounded
     implementation executor. Owns plan/packet drafting, run-packet contracts,
     and approved implementation — **NOT** implementation review (receipts route to
-    claude gate-1 first; co_lead gate-2 on frozen handoff), **NOT** formal run
+    gate1_audit gate-1 first; co_lead gate-2 on frozen handoff), **NOT** formal
+    run
     execution. Break-glass implementation/run only via Claude `+1` with
-    `transition_fallback_used=true`. Legacy path: may invoke
-    `.codex/agents/developer.toml` after `+1 implement` (`subagent-claimed`
-    until verified). **health-proven existing backend/config** — do NOT change
+    `transition_fallback_used=true`. No subagents: plan-dev performs every
+    edit, validation run, and receipt itself. **health-proven existing backend/config** — do NOT change
     backend as the fix. Edits + focused developer validation; **material receipts
-    to claude gate-1 ONLY**; on dual accept → claude commit/push gates → run
+    to claude ONLY (sink + framing)**; gate1_audit freezes, co_lead gate-2
+    follows; on dual accept → claude commit/push gates → run
     packets execute claude-side. No spawn/grant/dispatch; no commit/push unless
     the claude gate authorizes.
   - **`test-operator` is NOT a spawnable worker role** — Claude carries it
@@ -61,8 +65,8 @@ names are naming artifacts kept for routing stability.
 `test-operator` is Claude-carried, not a spawnable worker role. Retired spawnable role names (`training-dev`,
 `trainer-implement`, `trainer-dev`, `codex-dev`, `codex-explore`,
 `codex-terminal`, `tmux-tester`, `curriculum-dev`, and similar legacy lanes)
-are not standing roles here. `.codex/agents/developer.toml` is plan-dev's
-bounded executor template — not a fourth room role.
+are not standing roles here. plan-dev delegates to no executor template and
+spawns no subagents.
 
 ## Cross-thread at thinking boundaries
 
@@ -123,8 +127,10 @@ Follow `resume_check` directives.
 
 ## Fast Training Launch Contract
 
-One launch packet contract drafted/reviewed by `plan-dev` → one review →
-`+1 launch/watch` → **claude as test-operator** runs + terminal receipt.
+Run first, gate the claim: pinned frozen bytes → one co_lead pass on the
+bytes → `+1 launch` naming the output class → **claude as test-operator** runs
++ one terminal receipt. The packet is the executable, the log the transcript;
+the dual gate sits at consumption of the output, not at launch.
 Interrupt only for bank/fail/criteria/liveness/deviation. `.pt` not committed.
 Sibling for measurement-only CPU slices whose claim effect is a feasibility/
 plumbing/parity/null read: **LEAN-MEASUREMENT** review tier

@@ -17,14 +17,16 @@ Codex executor view of ai-room dispatches. Canonical:
   - **`plan-dev`**: planning/contract/packet lane AND **default** bounded
     implementation executor. Owns plan/packet drafting, run-packet contracts,
     and approved implementation — **NOT** implementation review (receipts route to
-    claude gate-1 first; co_lead gate-2 on frozen handoff), **NOT** formal run
+    gate1_audit gate-1 first; co_lead gate-2 on frozen handoff), **NOT** formal
+    run
     execution. Break-glass implementation/run via Claude `+1` with
-    `transition_fallback_used=true`. Legacy path: may invoke
-    `.codex/agents/developer.toml` after `+1 implement` (`subagent-claimed`
-    until verified). **cwd = provenance match, not permission boundary.**
+    `transition_fallback_used=true`. No subagents: plan-dev performs every
+    edit, validation run, and receipt itself.
+    **cwd = provenance match, not permission boundary.**
     **health-proven existing backend/config** — do NOT change backend as the
     fix. Edits + focused developer validation; **material receipts to claude
-    gate-1 ONLY**; on dual accept → claude commit/push gates → run packets
+    ONLY** (sink + framing); gate1_audit gate-1 verifies+freezes, co_lead
+    gate-2 follows; on dual accept → claude commit/push gates → run packets
     execute claude-side. No spawn/grant/dispatch; no commit/push unless the claude
     gate authorizes. Role home: `~/.ai-room/.codex-roles/plan-dev/`.
   - **`test-operator` is NOT a spawnable worker role** — Claude carries it
@@ -35,14 +37,14 @@ Codex executor view of ai-room dispatches. Canonical:
 
 **No worker is codex-backed.** You are a Claude peer spawned by
 `ai_room_spawn_claude` on a legacy `codex*` handle (`codex_co_lead` `sol=true`
-GPT; `plan-dev` on handle `codex` `grok=true` grok; `advisor` Fable; Claude
-Opus). "Codex role", `.codex-roles`, and `claudex` tool names are naming
+GPT; `plan-dev` on handle `codex` Opus, no subagents; `gate1_audit` `grok=true`
+grok; `claude` `grok=true` orchestrator; `advisor` = interactive Fable session). "Codex role", `.codex-roles`, and `claudex` tool names are naming
 artifacts, not a codex backend.
 - **Ad-hoc worker handle**: cold-context / overflow; slice-scoped.
 
 **Role vs handle**: role loads role home; routable target is `codex_N` — role
-name is NOT a room handle. Developer executor reports through `plan-dev`.
-**You do NOT self-dispatch** — claude spawns/dispatches/gates.
+name is NOT a room handle. plan-dev delegates to no executor template and
+spawns no subagents. **You do NOT self-dispatch** — claude spawns/dispatches/gates.
 
 ## Worker workflow
 
@@ -69,7 +71,8 @@ name is NOT a room handle. Developer executor reports through `plan-dev`.
    Canonical: `.claude/rules/CLAUDEX_ORCHESTRATION.md`.
 4. Verify gate per `.codex/rules/AI_ROOM_COLLAB.md` §"Provenance / Ingress-Owned". Cite gate msg id.
 5. Implement/prove within scope.
-6. Validate; post receipt to claude gate-1 ONLY.
+6. Validate; post receipt to claude ONLY (sink + framing); gate1_audit gate-1
+   verifies+freezes, co_lead gate-2 reviews the frozen handoff.
 7. Commit after `+1 commit`; push after `+1 push` or `+1 commit+push`.
 8. Report SHA; wait for recycle.
 

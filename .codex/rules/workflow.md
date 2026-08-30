@@ -92,7 +92,7 @@ transfers.
 ## Long-running training supervision
 
 **Review routing (ai-room):** thinking parallel; artifact gates sequential
-(claude gate-1 → co_lead gate-2 on frozen handoff). **Passive-wait-don't-poll**
+(gate1_audit gate-1 → co_lead gate-2 on frozen handoff). **Passive-wait-don't-poll**
 at gates. Tiered ceremony (HIGH / LEAN-MEASUREMENT / LOW):
 `.claude/rules/CLAUDEX_ORCHESTRATION.md` §"Gate-2 convergence + review-risk
 tier".

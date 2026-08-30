@@ -15,6 +15,7 @@ hooks:
         - type: command
           command: "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ai-room-claude-arm-redrive.py"
 tools: Read, Grep, Glob, Bash, mcp__ai-room__ai_room_ack, mcp__ai-room__ai_room_deliveries, mcp__ai-room__ai_room_doctor, mcp__ai-room__ai_room_inbox, mcp__ai-room__ai_room_cursor_commit, mcp__ai-room__ai_room_peek, mcp__ai-room__ai_room_peer_status, mcp__ai-room__ai_room_post, mcp__ai-room__ai_room_provenance_lint, mcp__ai-room__ai_room_read, mcp__ai-room__ai_room_read_image, mcp__ai-room__ai_room_reply, mcp__ai-room__ai_room_resource_lane_status, mcp__ai-room__ai_room_resume_check, mcp__ai-room__ai_room_scratch_delete, mcp__ai-room__ai_room_scratch_get, mcp__ai-room__ai_room_scratch_list, mcp__ai-room__ai_room_scratch_set, mcp__ai-room__ai_room_search, mcp__ai-room__ai_room_status, mcp__ai-room__ai_room_tail, mcp__ai-room__ai_room_task_contract_lint, mcp__ai-room__ai_room_task_list, mcp__ai-room__ai_room_task_show
+effort: medium
 ---
 
 # co_lead — co-planner and hard-gate reviewer

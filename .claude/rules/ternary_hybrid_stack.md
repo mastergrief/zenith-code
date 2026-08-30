@@ -168,7 +168,11 @@ sign/direction problem; no arm improves → representation-not-viable.
 **Sub-2-first launch gate**: no main mechanism-science launch until the
 executable `full_sub2_runtime_ready_for_science` checker passes — OR a named
 `pre_full_stack_diagnostic` exception is justified BEFORE launch (diagnostic
-reason + why cheaper than completing the full stack first). Readiness is
+reason + why cheaper than completing the full stack first). Under run-first
+(`workflow.md`) the diagnostic exception is the DEFAULT first move on any
+terminal whose pinned bytes have never been observed running: launch LEAN,
+classify the output diagnostic, design the science packet from the observed
+terminal. Readiness is
 fail-closed over a stable surface enum; classes are `sub2` /
 `explicit_exception` / `transient_fp_debt` / `pre_full_stack_diagnostic` /
 `missing`. `transient_fp_debt` (dense transient credit / FP captures) and
