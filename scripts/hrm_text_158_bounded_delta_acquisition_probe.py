@@ -6,6 +6,8 @@ separates implementation validation from GPU launch validation: CPU-safe
 step-0 checks are allowed under the C2.1 implementation gate, while CUDA
 forward-level fidelity and acquisition dynamics require separate +1 LAUNCH
 gates.
+`resolve_probe_vote_update_spec` accepts `threshold_abs` (task
+1788456823866-aa9a873d). ADVISOR_ROUTE: 1788456771491-42f1f60c.
 """
 from __future__ import annotations
 
@@ -5717,9 +5719,11 @@ def compute_forward_level_init_fidelity(
     return report
 
 
-def default_vote_update_spec(max_abs_per_tensor: int) -> VoteUpdateSpec:
+def default_vote_update_spec(
+    max_abs_per_tensor: int, threshold_abs: int = 1
+) -> VoteUpdateSpec:
     return VoteUpdateSpec(
-        threshold_abs=1,
+        threshold_abs=int(threshold_abs),
         accumulator_clip_min=-127,
         accumulator_clip_max=127,
         max_abs_per_tensor=int(max_abs_per_tensor),
@@ -5730,14 +5734,23 @@ def resolve_probe_vote_update_spec(
     *,
     max_abs_per_tensor: int,
     confirmation_envelope: str | None,
+    threshold_abs: int = 1,
     vote_update_decay_numerator: int | None = None,
     vote_update_decay_denominator: int | None = None,
 ) -> VoteUpdateSpec:
     envelope = resolve_confirmation_envelope(confirmation_envelope)
     if envelope is not None:
+        if int(threshold_abs) != 1:
+            raise ValueError(
+                "confirmation_envelope carries its own threshold_abs; refusing "
+                f"threshold_abs={int(threshold_abs)}, which would be dropped: "
+                f"envelope={confirmation_envelope!r}"
+            )
         vote_spec = envelope.vote_update_spec(max_abs_per_tensor=int(max_abs_per_tensor))
     else:
-        vote_spec = default_vote_update_spec(int(max_abs_per_tensor))
+        vote_spec = default_vote_update_spec(
+            int(max_abs_per_tensor), int(threshold_abs)
+        )
     if (
         vote_update_decay_numerator is not None
         or vote_update_decay_denominator is not None

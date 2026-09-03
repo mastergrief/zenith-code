@@ -6,6 +6,10 @@ sha256 8f059a7c9101c920acff3ef68e8d97c38d14e7565aa680912dd5086c3992716a
 Task 1788428215079-af9995e7, slice S1 (MOVE). Dispatch 1788439996018-8b9a8f0e.
 ADVISOR_ROUTE: 1788439962383-bd9b8b20.
 
+`threshold_abs` is threaded from the phase entry points into `run_loop` and the
+emitted `run_env`. Task 1788456823866-aa9a873d.
+ADVISOR_ROUTE: 1788456771491-42f1f60c.
+
 Out of scope for this slice and authored in S2: the run-root / log /
 `timeout.stderr` O_EXCL mint, the exclusivity probe, the pre-exec hash checks,
 and the outer `timeout --verbose` classification.
@@ -85,7 +89,7 @@ def _driver_version() -> str:
         return "UNAVAILABLE:" + type(exc).__name__
 
 
-def _run_env(device: Any, batch_size: int) -> dict[str, Any]:
+def _run_env(device: Any, batch_size: int, threshold_abs: int) -> dict[str, Any]:
     import torch
 
     names = sorted(
@@ -97,6 +101,7 @@ def _run_env(device: Any, batch_size: int) -> dict[str, Any]:
         "seed": SEED,
         "eligible_scope": ELIGIBLE_SCOPE,
         "max_abs_per_tensor": MAX_ABS_PER_TENSOR,
+        "threshold_abs": int(threshold_abs),
         "batch_size_from_manifest": int(batch_size),
         "device": str(device),
         "python_version": sys.version,
@@ -171,7 +176,9 @@ def _build(device: Any, batch_size: int):
     return model, support_batches, eligible, states, parent_sha_pre
 
 
-def _run(model, support_batches, eligible, states, device: Any, steps: int):
+def _run(
+    model, support_batches, eligible, states, device: Any, steps: int, threshold_abs: int
+):
     from calm.hrm_text_158.native_full_stack.global_rate_cap import (
         C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
     )
@@ -186,6 +193,7 @@ def _run(model, support_batches, eligible, states, device: Any, steps: int):
         steps=steps,
         require_q_change=False,
         max_abs_per_tensor=MAX_ABS_PER_TENSOR,
+        threshold_abs=int(threshold_abs),
         support_batches=support_batches,
         r7_deferred_backlog_carry_enabled=True,
         global_cap_contract=C1_BANKED_FAITHFUL_LONG_RUN_GLOBAL_CAP_CONTRACT_NAME,
@@ -346,7 +354,13 @@ def _step_flush_monitor(run_loop: Any, phase: str, total: int, flushed: list[int
         sys.monitoring.free_tool_id(tool_id)
 
 
-def _phase(name: str, steps: int, cap_seconds: int, out_name: str) -> tuple[dict[str, Any], str]:
+def _phase(
+    name: str,
+    steps: int,
+    cap_seconds: int,
+    out_name: str,
+    threshold_abs: int = 1,
+) -> tuple[dict[str, Any], str]:
     """One protected phase: the cap covers material evidence through the write.
 
     Event order inside the armed interval is exactly device > identity > run_env >
@@ -368,7 +382,7 @@ def _phase(name: str, steps: int, cap_seconds: int, out_name: str) -> tuple[dict
         device = _device()
         identity = _parent_identity()
         batch_size = int(identity["batch_size_from_manifest"])
-        run_env = _run_env(device, batch_size)
+        run_env = _run_env(device, batch_size, threshold_abs)
         _emit("[PROG] " + name + " run_env " + json.dumps(run_env, sort_keys=True))
         setup0 = time.perf_counter()
         model, support_batches, eligible, states, parent_sha_pre = _build(device, batch_size)
@@ -376,7 +390,9 @@ def _phase(name: str, steps: int, cap_seconds: int, out_name: str) -> tuple[dict
         _emit("[PROG] " + name + " build complete leaves=" + str(len(states)))
         flushed: list[int] = []
         with _step_flush_monitor(run_loop, name, steps, flushed):
-            step_reports = _run(model, support_batches, eligible, states, device, steps)[0]
+            step_reports = _run(
+                model, support_batches, eligible, states, device, steps, threshold_abs
+            )[0]
         _check_flush(flushed, steps)
         _check_step_schema(step_reports, steps)
         durations = [float(step_reports[str(i)]["duration_seconds"]) for i in range(1, steps + 1)]
@@ -441,7 +457,7 @@ def _phase(name: str, steps: int, cap_seconds: int, out_name: str) -> tuple[dict
     return result
 
 
-def run_smoke() -> tuple[dict[str, Any], str | None]:
+def run_smoke(threshold_abs: int = 1) -> tuple[dict[str, Any], str | None]:
     """10 steps under the internal 600 s cap; the JSON is written INSIDE that cap.
 
     Returns (payload, digest). The digest is None on every failure path. Admission
@@ -458,7 +474,9 @@ def run_smoke() -> tuple[dict[str, Any], str | None]:
         "published": False,
     }
     try:
-        return _phase("smoke", SMOKE_STEPS, SMOKE_WALL_CAP_SECONDS, SMOKE_OUT)
+        return _phase(
+            "smoke", SMOKE_STEPS, SMOKE_WALL_CAP_SECONDS, SMOKE_OUT, threshold_abs
+        )
     except _PhaseWallCapExceeded as exc:
         return dict(failed, cap_exceeded=str(exc)), None
     except SystemExit as exc:
@@ -476,10 +494,12 @@ def run_smoke() -> tuple[dict[str, Any], str | None]:
         )
 
 
-def run_k200() -> tuple[dict[str, Any], str]:
+def run_k200(threshold_abs: int = 1) -> tuple[dict[str, Any], str]:
     """One uninterrupted run_loop(steps=200); terminal JSON written under the cap."""
     try:
-        return _phase("k200", K200_STEPS, K200_WALL_CAP_SECONDS, TERMINAL_OUT)
+        return _phase(
+            "k200", K200_STEPS, K200_WALL_CAP_SECONDS, TERMINAL_OUT, threshold_abs
+        )
     except _PhaseWallCapExceeded as exc:
         # Classified STOP, never a partial terminal accepted as complete.
         _stop(

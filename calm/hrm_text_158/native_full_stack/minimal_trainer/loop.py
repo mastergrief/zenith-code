@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # ADVISOR_ROUTE: 1787660482744-362bf43f + 1787661679613-29749c30 + 1787662064718-ba0850ee + 1787662756505-b67b7ec7 + 1787662818490-9e6356f6 + 1787663294729-ae3398e4 + 1787663396497-a3e41b3b + 1787664407382-bd1d5e9d + 1787664473238-f8ba85b3 + 1787667968372-bc5f49a3 + 1787668333973-45d3c65d + 1787669129125-44516dbf + 1787669631996-db859015 + 1787670631494-80766415 + 1787672249157-2a04e77b + 1787673873550-79467121 + 1787673958027-de5f6a07 + 1787997347232-69ad666d
+# ADVISOR_ROUTE: 1788456771491-42f1f60c (threshold_abs threading, task 1788456823866-aa9a873d)
 """Minimal SHARE step loop for freeze_v1 kwargs (S1)."""
 
 # INVARIANT: never import bounded_delta_loop*.py.
@@ -269,6 +270,7 @@ def run_loop(
     science_arm: str = ARM_A0_RANK_BUCKET_CURRENT,
     start_step: int = 1,
     confirmation_envelope: str | None = None,
+    threshold_abs: int = 1,
     two_tier_carry_w6_enabled: bool = False,
     event_coded_sparse_vote_authority: bool = False,
     global_horizon: int | None = None,
@@ -289,6 +291,7 @@ def run_loop(
     vote_spec = resolve_probe_vote_update_spec(
         max_abs_per_tensor=int(max_abs_per_tensor),
         confirmation_envelope=confirmation_envelope,
+        threshold_abs=int(threshold_abs),
         vote_update_decay_numerator=None,
         vote_update_decay_denominator=None,
     )
