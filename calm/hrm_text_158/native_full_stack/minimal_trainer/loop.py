@@ -345,6 +345,7 @@ def run_loop(
             device=device,
             extras=extras,
         )
+        step_loss = float(loss)
         del loss, metrics
         sparse_events_by_key: dict[str, Any] = {}
         votes_by_key, vote_pressure_by_key, finite_weighted_grad = (
@@ -415,6 +416,7 @@ def run_loop(
         step_report: dict[str, Any] = {
             "duration_seconds": float(time.perf_counter() - t0),
             "q_changed_count": q_changed_count,
+            "loss": step_loss,
         }
         if ever_crossed_masks is not None and last_candidate_steps is not None:
             _require_fresh_observation(observed_step[0], int(step))
